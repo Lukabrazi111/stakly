@@ -276,9 +276,12 @@ The pink→purple gradient is the visual signature. Apply *sparingly* — 2-3 gr
 
 ### Shadow tokens (CSS variables)
 
-Component-specific shadow values live as CSS variables in `:root, .dark` in `app.css`, then are referenced inline via `shadow-[var(--token-name)]`. This keeps shadow tuning centralized in one file. Current tokens:
+Component-specific shadow values live as CSS variables in `:root, .dark` in `app.css`, then are referenced inline via `shadow-[var(--token-name)]` (box-shadow) or `[text-shadow:var(--token-name)]` (text-shadow). This keeps shadow tuning centralized in one file. Current tokens:
 
 - `--shadow-button-glow` / `--shadow-button-glow-hover` — used by the `gradient` button variant. The gradient button references both inline (`shadow-[var(--shadow-button-glow)] hover:shadow-[var(--shadow-button-glow-hover)]`). Tune button glow by editing the variables, not the component.
+- `--text-shadow-glow` — soft white text-shadow used by the `ghost` button variant on hover. Implemented as a layered text-shadow (tight bright inner + wider outer) at full white. Mirrors the gradient button's halo concept but applied to letterforms instead of the button box.
+
+**Ghost button hover convention:** ghost variants in Stakly use **text-shadow** (white text glow) on hover, NOT `bg-accent`/`bg-muted` like default shadcn. This was an intentional deviation — purple-background hover felt heavy on the dark theme. If you need a ghost-like button with the original `bg-accent` hover (e.g. sidebar nav items, dropdown menu items), introduce a new variant rather than reverting the global `ghost`.
 
 When adding a new component-specific shadow, prefer this pattern over inline arbitrary values like `shadow-[0_0_24px_...]` — keep design tokens in `app.css`.
 

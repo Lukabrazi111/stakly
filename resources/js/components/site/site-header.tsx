@@ -22,7 +22,7 @@ export function SiteHeader() {
                             type="search"
                             placeholder="Search listings, players, games..."
                             aria-label="Search"
-                            className="border-border bg-card text-foreground placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-ring h-10 w-full rounded-full border pr-4 pl-11 text-sm focus-visible:ring-1 focus-visible:outline-none"
+                            className="border-border bg-card text-foreground placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-ring focus-visible:shadow-glow-sm h-10 w-full rounded-full border pr-4 pl-11 text-sm transition-shadow duration-200 ease-out focus-visible:ring-1 focus-visible:outline-none"
                         />
                     </div>
                 </div>
