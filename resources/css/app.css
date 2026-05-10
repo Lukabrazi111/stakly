@@ -1,5 +1,8 @@
 @import 'tailwindcss';
 
+@import '@fontsource-variable/bricolage-grotesque';
+@import '@fontsource-variable/inter';
+
 @import 'tw-animate-css';
 
 @source '../views';
@@ -9,9 +12,12 @@
 
 @theme {
     --font-sans:
-        'Instrument Sans', ui-sans-serif, system-ui, sans-serif,
+        'Inter Variable', 'Inter', ui-sans-serif, system-ui, sans-serif,
         'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol',
         'Noto Color Emoji';
+    --font-display:
+        'Bricolage Grotesque Variable', 'Bricolage Grotesque', ui-sans-serif,
+        system-ui, sans-serif;
 
     --radius-lg: var(--radius);
     --radius-md: calc(var(--radius) - 2px);
@@ -45,6 +51,15 @@
     --color-input: var(--input);
     --color-ring: var(--ring);
 
+    --color-success: var(--success);
+    --color-success-foreground: var(--success-foreground);
+    --color-warning: var(--warning);
+    --color-warning-foreground: var(--warning-foreground);
+
+    --color-gradient-from: var(--gradient-from);
+    --color-gradient-to: var(--gradient-to);
+    --color-gradient-glow: var(--gradient-glow);
+
     --color-chart-1: var(--chart-1);
     --color-chart-2: var(--chart-2);
     --color-chart-3: var(--chart-3);
@@ -59,77 +74,129 @@
     --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
     --color-sidebar-border: var(--sidebar-border);
     --color-sidebar-ring: var(--sidebar-ring);
+
+    --animate-marquee: marquee 40s linear infinite;
 }
 
-:root {
-    --background: oklch(1 0 0);
-    --foreground: oklch(0.145 0 0);
-    --card: oklch(1 0 0);
-    --card-foreground: oklch(0.145 0 0);
-    --popover: oklch(1 0 0);
-    --popover-foreground: oklch(0.145 0 0);
-    --primary: oklch(0.205 0 0);
-    --primary-foreground: oklch(0.985 0 0);
-    --secondary: oklch(0.97 0 0);
-    --secondary-foreground: oklch(0.205 0 0);
-    --muted: oklch(0.97 0 0);
-    --muted-foreground: oklch(0.556 0 0);
-    --accent: oklch(0.97 0 0);
-    --accent-foreground: oklch(0.205 0 0);
-    --destructive: oklch(0.577 0.245 27.325);
-    --destructive-foreground: oklch(0.577 0.245 27.325);
-    --border: oklch(0.922 0 0);
-    --input: oklch(0.922 0 0);
-    --ring: oklch(0.87 0 0);
-    --chart-1: oklch(0.646 0.222 41.116);
-    --chart-2: oklch(0.6 0.118 184.704);
-    --chart-3: oklch(0.398 0.07 227.392);
-    --chart-4: oklch(0.828 0.189 84.429);
-    --chart-5: oklch(0.769 0.188 70.08);
-    --radius: 0.625rem;
-    --sidebar: oklch(0.985 0 0);
-    --sidebar-foreground: oklch(0.145 0 0);
-    --sidebar-primary: oklch(0.205 0 0);
-    --sidebar-primary-foreground: oklch(0.985 0 0);
-    --sidebar-accent: oklch(0.97 0 0);
-    --sidebar-accent-foreground: oklch(0.205 0 0);
-    --sidebar-border: oklch(0.922 0 0);
-    --sidebar-ring: oklch(0.87 0 0);
+@keyframes marquee {
+    from {
+        transform: translateX(0);
+    }
+    to {
+        transform: translateX(-50%);
+    }
 }
 
+:root,
 .dark {
-    --background: oklch(0.145 0 0);
-    --foreground: oklch(0.985 0 0);
-    --card: oklch(0.145 0 0);
-    --card-foreground: oklch(0.985 0 0);
-    --popover: oklch(0.145 0 0);
-    --popover-foreground: oklch(0.985 0 0);
-    --primary: oklch(0.985 0 0);
-    --primary-foreground: oklch(0.205 0 0);
-    --secondary: oklch(0.269 0 0);
-    --secondary-foreground: oklch(0.985 0 0);
-    --muted: oklch(0.269 0 0);
-    --muted-foreground: oklch(0.708 0 0);
-    --accent: oklch(0.269 0 0);
-    --accent-foreground: oklch(0.985 0 0);
-    --destructive: oklch(0.396 0.141 25.723);
-    --destructive-foreground: oklch(0.637 0.237 25.331);
-    --border: oklch(0.269 0 0);
-    --input: oklch(0.269 0 0);
-    --ring: oklch(0.439 0 0);
-    --chart-1: oklch(0.488 0.243 264.376);
-    --chart-2: oklch(0.696 0.17 162.48);
-    --chart-3: oklch(0.769 0.188 70.08);
-    --chart-4: oklch(0.627 0.265 303.9);
-    --chart-5: oklch(0.645 0.246 16.439);
-    --sidebar: oklch(0.205 0 0);
-    --sidebar-foreground: oklch(0.985 0 0);
-    --sidebar-primary: oklch(0.985 0 0);
-    --sidebar-primary-foreground: oklch(0.985 0 0);
-    --sidebar-accent: oklch(0.269 0 0);
-    --sidebar-accent-foreground: oklch(0.985 0 0);
-    --sidebar-border: oklch(0.269 0 0);
-    --sidebar-ring: oklch(0.439 0 0);
+    /* surfaces */
+    --background: #0a0710;
+    --foreground: #f5f5f7;
+    --card: #14101c;
+    --card-foreground: #f5f5f7;
+    --popover: #14101c;
+    --popover-foreground: #f5f5f7;
+
+    /* primary — pink, anchor for the brand gradient */
+    --primary: #ec4899;
+    --primary-foreground: #0a0710;
+
+    /* secondary surface */
+    --secondary: #1c1626;
+    --secondary-foreground: #f5f5f7;
+
+    /* muted */
+    --muted: #1c1626;
+    --muted-foreground: #8a8696;
+
+    /* accent — purple, gradient endpoint */
+    --accent: #a855f7;
+    --accent-foreground: #f5f5f7;
+
+    /* destructive */
+    --destructive: #ef4444;
+    --destructive-foreground: #f5f5f7;
+
+    /* borders and inputs */
+    --border: #2a2330;
+    --input: #1c1626;
+    --ring: #ec4899;
+
+    /* status (stakly additions) */
+    --success: #10b981;
+    --success-foreground: #0a0710;
+    --warning: #f59e0b;
+    --warning-foreground: #0a0710;
+
+    /* brand gradient endpoints + glow color */
+    --gradient-from: #ec4899;
+    --gradient-to: #a855f7;
+    --gradient-glow: #d946ef;
+
+    /* button glow shadows (gradient variant) */
+    --shadow-button-glow: 0 0 20px -4px var(--gradient-glow);
+    --shadow-button-glow-hover: 0 0 24px -2px var(--gradient-glow);
+
+    /* white text glow — used by ghost button hover; mirrors gradient button glow but on text */
+    --text-shadow-glow:
+        0 0 6px var(--foreground),
+        0 0 15px var(--foreground);
+
+    /* charts */
+    --chart-1: #ec4899;
+    --chart-2: #a855f7;
+    --chart-3: #d946ef;
+    --chart-4: #10b981;
+    --chart-5: #f59e0b;
+
+    /* radius — slightly larger than shadcn default for a softer pill feel */
+    --radius: 0.75rem;
+
+    /* sidebar */
+    --sidebar: #0a0710;
+    --sidebar-foreground: #f5f5f7;
+    --sidebar-primary: #ec4899;
+    --sidebar-primary-foreground: #0a0710;
+    --sidebar-accent: #1c1626;
+    --sidebar-accent-foreground: #f5f5f7;
+    --sidebar-border: #2a2330;
+    --sidebar-ring: #ec4899;
+}
+
+/* Stakly brand utilities — gradient + glow */
+
+@utility bg-gradient-primary {
+    background-image: linear-gradient(
+        135deg,
+        var(--gradient-from),
+        var(--gradient-to)
+    );
+}
+
+@utility text-gradient-primary {
+    background-image: linear-gradient(
+        135deg,
+        var(--gradient-from),
+        var(--gradient-to)
+    );
+    background-clip: text;
+    -webkit-background-clip: text;
+    color: transparent;
+}
+
+@utility shadow-glow {
+    box-shadow: 0 0 18px -7px var(--gradient-glow);
+}
+
+@utility shadow-glow-sm {
+    box-shadow: 0 0 18px -7px var(--gradient-glow);
+}
+
+@utility border-glow {
+    border-color: var(--gradient-glow);
+    box-shadow:
+        0 0 18px -7px var(--gradient-glow),
+        inset 0 0 0 1px var(--gradient-glow);
 }
 
 @layer base {

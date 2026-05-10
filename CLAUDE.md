@@ -50,7 +50,7 @@ This project has domain-specific skills available in `**/skills/**`. You MUST ac
 
 ## Frontend Bundling
 
-- If the user doesn't see a frontend change reflected in the UI, it could mean they need to run `npm run build`, `npm run dev`, or `composer run dev`. Ask them.
+- If the user doesn't see a frontend change reflected in the UI, it could mean they need to run `vendor/bin/sail npm run build`, `vendor/bin/sail npm run dev`, or `vendor/bin/sail composer run dev`. Ask them.
 
 ## Documentation Files
 
@@ -88,16 +88,16 @@ This project has domain-specific skills available in `**/skills/**`. You MUST ac
 
 ## Artisan
 
-- Run Artisan commands directly via the command line (e.g., `php artisan route:list`). Use `php artisan list` to discover available commands and `php artisan [command] --help` to check parameters.
-- Inspect routes with `php artisan route:list`. Filter with: `--method=GET`, `--name=users`, `--path=api`, `--except-vendor`, `--only-vendor`.
-- Read configuration values using dot notation: `php artisan config:show app.name`, `php artisan config:show database.default`. Or read config files directly from the `config/` directory.
+- Run Artisan commands directly via the command line (e.g., `vendor/bin/sail artisan route:list`). Use `vendor/bin/sail artisan list` to discover available commands and `vendor/bin/sail artisan [command] --help` to check parameters.
+- Inspect routes with `vendor/bin/sail artisan route:list`. Filter with: `--method=GET`, `--name=users`, `--path=api`, `--except-vendor`, `--only-vendor`.
+- Read configuration values using dot notation: `vendor/bin/sail artisan config:show app.name`, `vendor/bin/sail artisan config:show database.default`. Or read config files directly from the `config/` directory.
 - To check environment variables, read the `.env` file directly.
 
 ## Tinker
 
 - Execute PHP in app context for debugging and testing code. Do not create models without user approval, prefer tests with factories instead. Prefer existing Artisan commands over custom tinker code.
-- Always use single quotes to prevent shell expansion: `php artisan tinker --execute 'Your::code();'`
-  - Double quotes for PHP strings inside: `php artisan tinker --execute 'User::where("active", true)->count();'`
+- Always use single quotes to prevent shell expansion: `vendor/bin/sail artisan tinker --execute 'Your::code();'`
+  - Double quotes for PHP strings inside: `vendor/bin/sail artisan tinker --execute 'User::where("active", true)->count();'`
 
 === php rules ===
 
@@ -116,12 +116,26 @@ This project has domain-specific skills available in `**/skills/**`. You MUST ac
 
 - Laravel can be deployed using [Laravel Cloud](https://cloud.laravel.com/), which is the fastest way to deploy and scale production Laravel applications.
 
+=== sail rules ===
+
+# Laravel Sail
+
+- This project runs inside Laravel Sail's Docker containers. You MUST execute all commands through Sail.
+- Start services using `vendor/bin/sail up -d` and stop them with `vendor/bin/sail stop`.
+- Open the application in the browser by running `vendor/bin/sail open`.
+- Always prefix PHP, Artisan, Composer, and Node commands with `vendor/bin/sail`. Examples:
+    - Run Artisan Commands: `vendor/bin/sail artisan migrate`
+    - Install Composer packages: `vendor/bin/sail composer install`
+    - Execute Node commands: `vendor/bin/sail npm run dev`
+    - Execute PHP scripts: `vendor/bin/sail php [script]`
+- View all available Sail commands by running `vendor/bin/sail` without arguments.
+
 === tests rules ===
 
 # Test Enforcement
 
 - Every change must be programmatically tested. Write a new test or update an existing test, then run the affected tests to make sure they pass.
-- Run the minimum number of tests needed to ensure code quality and speed. Use `php artisan test --compact` with a specific filename or filter.
+- Run the minimum number of tests needed to ensure code quality and speed. Use `vendor/bin/sail artisan test --compact` with a specific filename or filter.
 
 === inertia-laravel/core rules ===
 
@@ -150,13 +164,13 @@ This project has domain-specific skills available in `**/skills/**`. You MUST ac
 
 # Do Things the Laravel Way
 
-- Use `php artisan make:` commands to create new files (i.e. migrations, controllers, models, etc.). You can list available Artisan commands using `php artisan list` and check their parameters with `php artisan [command] --help`.
-- If you're creating a generic PHP class, use `php artisan make:class`.
+- Use `vendor/bin/sail artisan make:` commands to create new files (i.e. migrations, controllers, models, etc.). You can list available Artisan commands using `vendor/bin/sail artisan list` and check their parameters with `vendor/bin/sail artisan [command] --help`.
+- If you're creating a generic PHP class, use `vendor/bin/sail artisan make:class`.
 - Pass `--no-interaction` to all Artisan commands to ensure they work without user input. You should also pass the correct `--options` to ensure correct behavior.
 
 ### Model Creation
 
-- When creating new models, create useful factories and seeders for them too. Ask the user if they need any other things, using `php artisan make:model --help` to check the available options.
+- When creating new models, create useful factories and seeders for them too. Ask the user if they need any other things, using `vendor/bin/sail artisan make:model --help` to check the available options.
 
 ## APIs & Eloquent Resources
 
@@ -170,11 +184,11 @@ This project has domain-specific skills available in `**/skills/**`. You MUST ac
 
 - When creating models for tests, use the factories for the models. Check if the factory has custom states that can be used before manually setting up the model.
 - Faker: Use methods such as `$this->faker->word()` or `fake()->randomDigit()`. Follow existing conventions whether to use `$this->faker` or `fake()`.
-- When creating tests, make use of `php artisan make:test [options] {name}` to create a feature test, and pass `--unit` to create a unit test. Most tests should be feature tests.
+- When creating tests, make use of `vendor/bin/sail artisan make:test [options] {name}` to create a feature test, and pass `--unit` to create a unit test. Most tests should be feature tests.
 
 ## Vite Error
 
-- If you receive an "Illuminate\Foundation\ViteException: Unable to locate file in Vite manifest" error, you can run `npm run build` or ask the user to run `npm run dev` or `composer run dev`.
+- If you receive an "Illuminate\Foundation\ViteException: Unable to locate file in Vite manifest" error, you can run `vendor/bin/sail npm run build` or ask the user to run `vendor/bin/sail npm run dev` or `vendor/bin/sail composer run dev`.
 
 === wayfinder/core rules ===
 
@@ -186,16 +200,16 @@ Use Wayfinder to generate TypeScript functions for Laravel routes. Import from `
 
 # Laravel Pint Code Formatter
 
-- If you have modified any PHP files, you must run `vendor/bin/pint --dirty --format agent` before finalizing changes to ensure your code matches the project's expected style.
-- Do not run `vendor/bin/pint --test --format agent`, simply run `vendor/bin/pint --format agent` to fix any formatting issues.
+- If you have modified any PHP files, you must run `vendor/bin/sail bin pint --dirty --format agent` before finalizing changes to ensure your code matches the project's expected style.
+- Do not run `vendor/bin/sail bin pint --test --format agent`, simply run `vendor/bin/sail bin pint --format agent` to fix any formatting issues.
 
 === pest/core rules ===
 
 ## Pest
 
-- This project uses Pest for testing. Create tests: `php artisan make:test --pest {name}`.
-- The `{name}` argument should not include the test suite directory. Use `php artisan make:test --pest SomeFeatureTest` instead of `php artisan make:test --pest Feature/SomeFeatureTest`.
-- Run tests: `php artisan test --compact` or filter: `php artisan test --compact --filter=testName`.
+- This project uses Pest for testing. Create tests: `vendor/bin/sail artisan make:test --pest {name}`.
+- The `{name}` argument should not include the test suite directory. Use `vendor/bin/sail artisan make:test --pest SomeFeatureTest` instead of `vendor/bin/sail artisan make:test --pest Feature/SomeFeatureTest`.
+- Run tests: `vendor/bin/sail artisan test --compact` or filter: `vendor/bin/sail artisan test --compact --filter=testName`.
 - Do NOT delete tests without approval.
 
 === inertia-react/core rules ===
@@ -240,6 +254,110 @@ Anything outside this scope is v2 and should be flagged, not built.
 - **Outcome verification — primary path is the game's official API.** Players link their chess.com / Lichess account at signup with verified ownership (e.g. bio-code challenge). When a match ends, the system queries the API for the result. Both-players-confirm is the fast path; on disagreement, the API is the tiebreaker. Screenshots + manual support are last-resort only — never the primary mechanism.
 - **All financial state lives in a Postgres ledger.** The chain is the rail; the database is the source of truth. Every state transition (deposit, escrow, refund, payout, fee) is an immutable ledger entry. Money operations must be transactional and idempotent.
 
+## Visual System
+
+Stakly is **dark-only**, no light-mode toggle. `<html class="dark">` is hardcoded in `app.blade.php`; theme values are duplicated to `:root` and `.dark` for shadcn variant compatibility. Always use Tailwind token classes (`bg-card`, `text-foreground`) — never raw hex in components.
+
+### Palette tokens
+
+- **Surfaces**: `bg-background` (deep purple-black `#0a0710`), `bg-card` (raised `#14101c`), `bg-secondary`/`bg-muted` (`#1c1626`), `border-border` (`#2a2330`)
+- **Text**: `text-foreground` (`#f5f5f7`), `text-muted-foreground` (`#8a8696`)
+- **Brand**: `bg-primary`/`text-primary` (pink `#ec4899`), `bg-accent`/`text-accent` (purple `#a855f7`)
+- **Status**: `bg-success`/`text-success` (emerald — online, prices, profit), `bg-warning`/`text-warning` (amber — disputes), `bg-destructive`/`text-destructive` (red — errors, losses)
+
+### Brand gradient + glow utilities
+
+The pink→purple gradient is the visual signature. Apply *sparingly* — 2-3 gradient elements per page max.
+
+- `bg-gradient-primary` — gradient background (CTAs, hero accents)
+- `text-gradient-primary` — gradient-filled text (display headlines)
+- `shadow-glow` / `shadow-glow-sm` — magenta glow halos (hover/focus/selected). Currently tuned to a soft `0 0 18px -7px` so they read as a subtle haze, not a block of color.
+- `border-glow` — magenta border with inner glow (active tile in selector rows)
+
+### Shadow tokens (CSS variables)
+
+Component-specific shadow values live as CSS variables in `:root, .dark` in `app.css`, then are referenced inline via `shadow-[var(--token-name)]`. This keeps shadow tuning centralized in one file. Current tokens:
+
+- `--shadow-button-glow` / `--shadow-button-glow-hover` — used by the `gradient` button variant. The gradient button references both inline (`shadow-[var(--shadow-button-glow)] hover:shadow-[var(--shadow-button-glow-hover)]`). Tune button glow by editing the variables, not the component.
+
+When adding a new component-specific shadow, prefer this pattern over inline arbitrary values like `shadow-[0_0_24px_...]` — keep design tokens in `app.css`.
+
+### Fonts
+
+- `font-sans` (Inter Variable) — body, UI, paragraphs
+- `font-display` (Bricolage Grotesque Variable) — headlines and large numbers. Use heavy weights (700/800) for display impact.
+
+### General visual rules
+
+- Pill everything: buttons, badges, chips, search bars → `rounded-full` or `rounded-lg`.
+- Avoid hard right angles on top-level UI; soften with at least `rounded-md`.
+- Glow is for interactive states (hover/selected/focus), not static — overuse kills the meaning.
+- No character art for stakly v1. Hero uses gradient + typography + abstract atmosphere. Avatars are initials or generated.
+
+### M1 design references + decisions
+
+Layout reference for the homepage and broader site flow is **mmrangels.com**. Screenshots live in `images-examples/` at the project root. Stakly mirrors the *structure* (sticky header → marquee → hero → game selector row → listings + filters → listing detail with two-column profile + booking widget) but **diverges on visual identity**: Stakly is a skill platform, not a hire-a-girl-gamer platform, so we keep the dark + pink/purple gradient palette, drop the character-art-driven hero, and the listing detail later in M4 frames a competitive opponent listing rather than a service-hire.
+
+**M1 hero direction (locked):** typography-only, no character art. Atmospheric background = radial gradients + blurred glow blobs. The "no character art" rule may be revisited in a post-MVP polish pass; until then, type does the work.
+
+**M1 GameSelector direction (locked):** multiple game tiles are visible for visual fullness, but **chess is the only functional game in v1**. Non-chess tiles look identical to the active tile (same dimensions, same treatment) and carry a small "Coming soon" badge — don't dim them, don't lock them visually. This avoids broadcasting scarcity while staying honest. Selected tile uses `border-glow`.
+
+### Design assistance — `ui-ux-pro-max` skill
+
+For any frontend / UI design work — building or reviewing pages, picking layouts, choosing typography, animation timings, accessibility checks, component composition — **activate the `ui-ux-pro-max` skill**. It contains a curated database of styles, palettes, font pairings, charts, and UX rules (accessibility, touch targets, performance, layout, animation) prioritized by impact.
+
+When to activate:
+- Designing a new page, section, or component (e.g. Hero, GameSelector, listing card).
+- Reviewing existing UI for accessibility, layout, typography, or interaction issues.
+- Choosing animation durations, spacing scales, or interactive states.
+- Any time the user asks to "design", "build", "improve", or "review" UI.
+
+The skill complements — does not replace — Stakly's locked visual system above (dark-only, pink→purple gradient, pill shapes, glow on interactive states). Use it to inform decisions *within* the Stakly design system, not to override it.
+
+## Component Folder Convention
+
+Components live in `resources/js/components/` and are organized by **domain**, not by type. Starter-kit components (`app-*`, `nav-*`, `user-*`, `two-factor-*`, `breadcrumbs`, `heading`, `input-error`, etc.) stay at the root of `components/` — don't reorganize them; they're well-known to anyone familiar with the Laravel React starter and the prefix system already groups them logically.
+
+**New Stakly-specific code goes into a domain subfolder.** Current and planned folders:
+
+- `components/ui/` — shadcn primitives (untouched, don't add domain code here)
+- `components/site/` — public site shell: `site-header`, `site-footer`, `marquee-strip`
+- `components/home/` — homepage sections (M1): `hero`, `game-selector`, `how-it-works`
+- `components/listings/` — listings index (M3): listing card, filters, etc.
+- `components/listing-detail/` — listing detail page (M4): two-column profile + booking widget
+- `components/match/` — match flow (M6)
+- `components/wallet/` — wallet UI (M7)
+
+**Rule of thumb:** if a component is shared across multiple Stakly domains (e.g. a generic `Stat` card used on profile + listing detail + dashboard), put it in `components/shared/` rather than copying it. If a component is only used in one domain, keep it in that domain's folder.
+
+Imports always use the alias path: `@/components/home/hero`, not relative paths.
+
+## Frontend-First MVP Approach
+
+While business logic (matchmaking, escrow, payouts) is still being designed, build the UI against **real database infrastructure with seeded fake data** — not hardcoded route-closure props.
+
+For each entity that has a UI:
+
+1. Create the migration (`sail artisan make:migration ...`).
+2. Create the model + factory (`sail artisan make:model -mf ...`).
+3. Create a seeder that produces realistic, varied fake data (lots of items, varied states, edge cases like empty lists, long names, very high stakes, etc.).
+4. Create a controller (or simple route + Eloquent query) that returns the data via `Inertia::render(...)`.
+5. Build the React page component to render it.
+
+Why this over hardcoded props: when real backend logic lands, only the controller logic changes — the data shape, frontend, and routes are already wired. Seeders also let us test edge cases (empty states, pagination, filtering with lots of records) trivially.
+
+Conventions for this phase:
+- **Define a TypeScript interface for each page's props** in `resources/js/types/` (or co-located with the page). The interface is the contract between backend and frontend.
+- Re-run `sail artisan migrate:fresh --seed` when schema or seed data changes.
+- Don't build a Storybook or component library — ship full pages.
+- Design references will come from the user (screenshots, links). Wait for them before designing visuals; do not invent UX.
+
+## Library / Documentation Lookups
+
+- **Always use the Context7 MCP** (`mcp__context7__resolve-library-id` then `mcp__context7__query-docs`) when the user asks about a library, framework, or API — including ones in this stack (Inertia v3, Laravel 13, Tailwind v4, React 19, Pest 4, Fortify, Wayfinder, shadcn/ui, etc.). Do not rely on training data, even when confident — versions move fast.
+- This is in addition to Boost's `search-docs` tool, which covers the project's installed Laravel-ecosystem packages. Use Boost's tool first for installed Laravel packages; Context7 for everything else (frontend libraries, third-party APIs, etc.).
+- When citing docs in an answer, mention the version retrieved.
+
 ## Conventions for AI Assistance
 
 - **Push back on scope creep.** If a request implies team matches, Dota 2, multi-chain, or non-USDT currencies, flag it as v2 before implementing.
@@ -248,6 +366,7 @@ Anything outside this scope is v2 and should be flagged, not built.
 - **No financial code without tests.** Deposit watchers, escrow, payout, fee calculation, refund — every path needs feature tests. Use Pest. The starter kit's `RefreshDatabase` trait works fine against the Sail Postgres.
 - **No production payout code without a dispute resolution flow.** If a feature lets money leave the platform, the dispute path must exist.
 - **Custody and jurisdiction are unresolved blockers** for any code that custodies real funds. Flag this if asked to integrate a real chain wallet — confirm whether we are still on testnet/dev posture.
+- **Pre-production migrations**: edit existing migration files directly and use `sail artisan migrate:fresh`. Do not create incremental "add_X_columns_to_Y_table.php" migrations until stakly has launched with real users.
 
 ## Deferred / Unresolved (do not assume)
 
