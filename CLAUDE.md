@@ -299,6 +299,15 @@ When adding a new component-specific shadow, prefer this pattern over inline arb
 - Avoid hard right angles on top-level UI; soften with at least `rounded-md`.
 - Glow is for interactive states (hover/selected/focus), not static — overuse kills the meaning.
 - No character art for stakly v1. Hero uses gradient + typography + abstract atmosphere. Avatars are initials or generated.
+- **Every new UI must fit the Stakly design — including shadcn primitives.** Defaults like `bg-accent` (saturated purple `#a855f7`) for hover, `bg-muted` for hover, and chunky `ring-[3px] ring-ring/50` focus glows are *not* Stakly — they leak the upstream shadcn palette. When adding a new shadcn component, immediately Stakly-skin it at the source (`components/ui/<name>.tsx`):
+  - Hover/focus bg → **`bg-primary/10`** (translucent pink wash), not `bg-accent` or `bg-muted`.
+  - Selected/active state → **`bg-primary/15 text-foreground border-primary/40`**, not `bg-accent`.
+  - Hovered icon color → **`hover:[&_svg]:!text-primary`** (note the `!` — needed because shadcn's icon descendant selectors have higher specificity than ours; without `!` they don't take effect).
+  - Focus ring → **`ring-2 ring-primary/25 border-primary/40`**, not `ring-[3px] ring-ring/50`. The chunky default reads as a bug.
+  - Surface backgrounds for inputs/triggers/cards → **`bg-card/60`** or `bg-card/95` with `border-border/60`, not raw `bg-transparent` over the page background.
+  - Radius → match the surrounding context; mostly `rounded-md` or `rounded-xl` for popovers / sheets / dropdown content.
+- The above defaults are already applied to `select.tsx`, `input.tsx`, `toggle.tsx`, `dropdown-menu.tsx`, `popover.tsx`. New shadcn components must match.
+- If a per-usage override is needed (e.g. a specific component wants a `bg-destructive/10` Log-out hover), apply it at the call site — but never re-introduce `bg-accent`/`bg-muted` as a hover default at the primitive level.
 
 ### M1 design references + decisions
 
@@ -367,6 +376,7 @@ Conventions for this phase:
 
 ## Conventions for AI Assistance
 
+- **Proactively surface suggestions, improvements, and security/abuse concerns *before* building.** Don't silently apply the safest defaults — call out non-obvious design choices, alternatives, and trade-offs so we can decide together. Especially for: input validation, pagination caps, sort/filter whitelists, exposing data via API resources, auth/access boundaries, rate limiting, and anything that touches money or user PII. A two-sentence "I'd do X because Y, alternative is Z — okay?" is the right shape; don't over-explain. If you spot a security issue mid-implementation, stop and flag it rather than patching silently.
 - **Push back on scope creep.** If a request implies team matches, Dota 2, multi-chain, or non-USDT currencies, flag it as v2 before implementing.
 - **Do not introduce Solidity, smart-contract escrow, or wallet-connect flows in v1.** The custody model is custodial-by-database. If the user later commits to non-custodial escrow, that is a v2-or-later architectural change.
 - **Prefer service APIs (Tatum, QuickNode, Alchemy, Coinbase Commerce) for blockchain integration before raw RPC.** Less code, less crypto-specific bug surface, fewer edge cases. Raw `kornrunner/ethereum-offline-raw-tx` + JSON-RPC is acceptable but should be a deliberate choice, not a default.

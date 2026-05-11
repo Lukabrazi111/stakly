@@ -21,7 +21,18 @@ interface Props {
 }
 
 const menuItemClass =
-    'text-muted-foreground hover:text-foreground focus:text-foreground hover:bg-primary/10 focus:bg-primary/10 [&_svg]:text-muted-foreground hover:[&_svg]:text-primary focus:[&_svg]:text-primary flex w-full cursor-pointer items-center rounded-md px-2.5 py-2 text-sm transition-colors duration-150 ease-out';
+    'text-muted-foreground hover:text-foreground focus:text-foreground hover:bg-primary/10 focus:bg-primary/10 hover:[&_svg]:!text-primary focus:[&_svg]:!text-primary flex w-full cursor-pointer items-center rounded-md px-2.5 py-2 text-sm transition-colors duration-150 ease-out';
+
+const disabledMenuItemClass =
+    'text-muted-foreground/60 flex w-full items-center rounded-md px-2.5 py-2 text-sm';
+
+function SoonBadge() {
+    return (
+        <span className="bg-background/80 text-muted-foreground ml-auto rounded-full px-2 py-0.5 text-[10px] tracking-wide uppercase backdrop-blur">
+            Soon
+        </span>
+    );
+}
 
 export function ProfileMenu({ user }: Props) {
     const getInitials = useInitials();
@@ -64,23 +75,21 @@ export function ProfileMenu({ user }: Props) {
                 </DropdownMenuLabel>
                 <DropdownMenuSeparator className="bg-border/60" />
                 <DropdownMenuGroup className="py-1">
-                    <DropdownMenuItem asChild>
-                        <Link
-                            href="#"
-                            className={menuItemClass}
-                        >
-                            <UserIcon className="mr-2 size-4" />
-                            My profile
-                        </Link>
+                    <DropdownMenuItem
+                        disabled
+                        className={disabledMenuItemClass}
+                    >
+                        <UserIcon className="mr-2 size-4" />
+                        <span>My profile</span>
+                        <SoonBadge />
                     </DropdownMenuItem>
-                    <DropdownMenuItem asChild>
-                        <Link
-                            href="#"
-                            className={menuItemClass}
-                        >
-                            <Wallet className="mr-2 size-4" />
-                            Wallet
-                        </Link>
+                    <DropdownMenuItem
+                        disabled
+                        className={disabledMenuItemClass}
+                    >
+                        <Wallet className="mr-2 size-4" />
+                        <span>Wallet</span>
+                        <SoonBadge />
                     </DropdownMenuItem>
                     <DropdownMenuItem asChild>
                         <Link
@@ -100,7 +109,7 @@ export function ProfileMenu({ user }: Props) {
                         method="post"
                         as="button"
                         onClick={handleLogout}
-                        className="text-muted-foreground hover:text-destructive focus:text-destructive hover:bg-destructive/10 focus:bg-destructive/10 [&_svg]:text-muted-foreground hover:[&_svg]:text-destructive focus:[&_svg]:text-destructive flex w-full cursor-pointer items-center rounded-md px-2.5 py-2 text-sm transition-colors duration-150 ease-out"
+                        className="text-muted-foreground hover:text-destructive focus:text-destructive hover:bg-destructive/10 focus:bg-destructive/10 hover:[&_svg]:!text-destructive focus:[&_svg]:!text-destructive flex w-full cursor-pointer items-center rounded-md px-2.5 py-2 text-sm transition-colors duration-150 ease-out"
                     >
                         <LogOut className="mr-2 size-4" />
                         Log out

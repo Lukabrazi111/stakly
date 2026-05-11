@@ -1,78 +1,57 @@
 import { Link } from '@inertiajs/react';
+import { Palette, Shield, User as UserIcon } from 'lucide-react';
 import type { PropsWithChildren } from 'react';
 import Heading from '@/components/heading';
-import { Button } from '@/components/ui/button';
-import { Separator } from '@/components/ui/separator';
 import { useCurrentUrl } from '@/hooks/use-current-url';
-import { cn, toUrl } from '@/lib/utils';
+import { cn } from '@/lib/utils';
 import { edit as editAppearance } from '@/routes/appearance';
-import { edit } from '@/routes/profile';
+import { edit as editProfile } from '@/routes/profile';
 import { edit as editSecurity } from '@/routes/security';
-import type { NavItem } from '@/types';
 
-const sidebarNavItems: NavItem[] = [
-    {
-        title: 'Profile',
-        href: edit(),
-        icon: null,
-    },
-    {
-        title: 'Security',
-        href: editSecurity(),
-        icon: null,
-    },
-    {
-        title: 'Appearance',
-        href: editAppearance(),
-        icon: null,
-    },
+const settingsNavItems = [
+    { title: 'Profile', href: editProfile(), icon: UserIcon },
+    { title: 'Security', href: editSecurity(), icon: Shield },
+    { title: 'Appearance', href: editAppearance(), icon: Palette },
 ];
 
 export default function SettingsLayout({ children }: PropsWithChildren) {
     const { isCurrentOrParentUrl } = useCurrentUrl();
 
     return (
-        <div className="px-4 py-6">
+        <div className="mx-auto w-full max-w-3xl px-4 py-8 md:px-6 md:py-12">
             <Heading
                 title="Settings"
                 description="Manage your profile and account settings"
             />
 
-            <div className="flex flex-col lg:flex-row lg:space-x-12">
-                <aside className="w-full max-w-xl lg:w-48">
-                    <nav
-                        className="flex flex-col space-y-1 space-x-0"
-                        aria-label="Settings"
-                    >
-                        {sidebarNavItems.map((item, index) => (
-                            <Button
-                                key={`${toUrl(item.href)}-${index}`}
-                                size="sm"
-                                variant="ghost"
-                                asChild
-                                className={cn('w-full justify-start', {
-                                    'bg-muted': isCurrentOrParentUrl(item.href),
-                                })}
-                            >
-                                <Link href={item.href}>
-                                    {item.icon && (
-                                        <item.icon className="h-4 w-4" />
-                                    )}
-                                    {item.title}
-                                </Link>
-                            </Button>
-                        ))}
-                    </nav>
-                </aside>
+            <nav
+                aria-label="Settings"
+                className="-mx-1 mt-6 flex gap-2 overflow-x-auto px-1 pb-1"
+            >
+                {settingsNavItems.map((item) => {
+                    const Icon = item.icon;
+                    const isActive = isCurrentOrParentUrl(item.href);
 
-                <Separator className="my-6 lg:hidden" />
+                    return (
+                        <Link
+                            key={item.title}
+                            href={item.href}
+                            prefetch
+                            className={cn(
+                                'inline-flex shrink-0 items-center gap-2 rounded-full border px-4 py-2 text-sm font-medium transition-colors duration-150 ease-out',
+                                isActive
+                                    ? 'border-primary/40 bg-primary/15 text-foreground [&_svg]:!text-primary'
+                                    : 'border-border/60 text-muted-foreground hover:bg-primary/10 hover:text-foreground hover:[&_svg]:!text-primary [&_svg]:text-muted-foreground',
+                            )}
+                        >
+                            <Icon className="size-4" />
+                            {item.title}
+                        </Link>
+                    );
+                })}
+            </nav>
 
-                <div className="flex-1 md:max-w-2xl">
-                    <section className="max-w-xl space-y-12">
-                        {children}
-                    </section>
-                </div>
-            </div>
+            <section className="mt-8 space-y-12">{children}</section>
         </div>
     );
 }

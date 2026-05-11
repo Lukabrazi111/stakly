@@ -1,0 +1,405 @@
+import { router } from '@inertiajs/react';
+import { ChevronDown, X } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { ListingFilters } from '@/components/listings/listing-filters';
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from '@/components/ui/select';
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
+import { CURRENCIES, DEFAULT_CURRENCY } from '@/config/currencies';
+import { gameSupports } from '@/config/games';
+import { useIsMobile } from '@/hooks/use-mobile';
+import { index as listingsIndex } from '@/routes/listings';
+import type {
+    ListingFilters as ListingFiltersType,
+    ListingSort,
+    TimeControl,
+} from '@/types';
+
+interface Props {
+    filters: ListingFiltersType;
+    sorts: ListingSort[];
+}
+
+const SORT_LABELS: Record<ListingSort, string> = {
+    newest: 'Newest',
+    highest_stake: 'Highest stake',
+    lowest_stake: 'Lowest stake',
+    ending_soon: 'Ending soon',
+};
+
+const TIME_CONTROL_LABELS: Record<TimeControl, string> = {
+    blitz: 'Blitz',
+    rapid: 'Rapid',
+    classical: 'Classical',
+};
+
+const TIME_CONTROL_OPTIONS: TimeControl[] = ['blitz', 'rapid', 'classical'];
+
+const STAKE_INPUT_DEBOUNCE_MS = 400;
+
+function activeFilterCount(filters: ListingFiltersType): number {
+    let count = 0;
+
+    if (filters.stake_min !== null) {
+        count++;
+    }
+
+    if (filters.stake_max !== null) {
+        count++;
+    }
+
+    if (filters.skill_min !== null) {
+        count++;
+    }
+
+    if (filters.skill_max !== null) {
+        count++;
+    }
+
+    if (filters.time_control.length > 0) {
+        count++;
+    }
+
+    if (filters.region) {
+        count++;
+    }
+
+    if (filters.language) {
+        count++;
+    }
+
+    return count;
+}
+
+function visit(
+    params: Record<string, string | number | string[] | undefined>,
+) {
+    router.get(listingsIndex().url, params, {
+        preserveState: true,
+        preserveScroll: true,
+        replace: true,
+    });
+}
+
+function stripFilters(
+    filters: ListingFiltersType,
+): Record<string, string | number | string[] | undefined> {
+    return {
+        game: filters.game,
+        stake_min: filters.stake_min ?? undefined,
+        stake_max: filters.stake_max ?? undefined,
+        skill_min: filters.skill_min ?? undefined,
+        skill_max: filters.skill_max ?? undefined,
+        time_control:
+            filters.time_control.length > 0 ? filters.time_control : undefined,
+        region: filters.region ?? undefined,
+        language: filters.language ?? undefined,
+        sort: filters.sort,
+    };
+}
+
+export function ListingFiltersBar({ filters, sorts }: Props) {
+    const isMobile = useIsMobile();
+    const count = activeFilterCount(filters);
+    const showTimeControlChips = gameSupports(filters.game, 'time_control');
+
+    const updateSort = (sort: ListingSort) => {
+        visit({ ...stripFilters(filters), sort });
+    };
+
+    const removeFilter = (key: keyof ListingFiltersType) => {
+        const next = { ...filters };
+
+        if (key === 'time_control') {
+            next.time_control = [];
+        } else if (key === 'sort' || key === 'game') {
+            return;
+        } else {
+            (next[key] as unknown) = null;
+        }
+
+        visit(stripFilters(next));
+    };
+
+    const removeTimeControl = (value: TimeControl) => {
+        const next = filters.time_control.filter((tc) => tc !== value);
+
+        visit({ ...stripFilters(filters), time_control: next });
+    };
+
+    const clearAll = () => {
+        visit({ game: filters.game, sort: filters.sort });
+    };
+
+    return (
+        <div className="space-y-3">
+            {/* Row 1: Sort + (desktop quick filters inline) + Filters button. */}
+            <div className="flex items-center gap-3">
+                <Select
+                    value={filters.sort}
+                    onValueChange={(value) => updateSort(value as ListingSort)}
+                >
+                    <SelectTrigger className="w-40 shrink-0">
+                        <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                        {sorts.map((sort) => (
+                            <SelectItem key={sort} value={sort}>
+                                {SORT_LABELS[sort]}
+                            </SelectItem>
+                        ))}
+                    </SelectContent>
+                </Select>
+
+                {/* Desktop only — stake + chips live in the bar. */}
+                {!isMobile && (
+                    <>
+                        <StakeAmountInput filters={filters} />
+
+                        {showTimeControlChips && (
+                            <ToggleGroup
+                                type="multiple"
+                                variant="outline"
+                                value={filters.time_control}
+                                onValueChange={(value: string[]) =>
+                                    visit({
+                                        ...stripFilters(filters),
+                                        time_control:
+                                            value.length > 0
+                                                ? (value as TimeControl[])
+                                                : undefined,
+                                    })
+                                }
+                                className="hidden flex-wrap md:flex"
+                            >
+                                {TIME_CONTROL_OPTIONS.map((tc) => (
+                                    <ToggleGroupItem
+                                        key={tc}
+                                        value={tc}
+                                        aria-label={TIME_CONTROL_LABELS[tc]}
+                                        className="rounded-full px-4 py-2"
+                                    >
+                                        {TIME_CONTROL_LABELS[tc]}
+                                    </ToggleGroupItem>
+                                ))}
+                            </ToggleGroup>
+                        )}
+                    </>
+                )}
+
+                <div className="ml-auto">
+                    <ListingFilters filters={filters} activeCount={count} />
+                </div>
+            </div>
+
+            {/* Row 2: full-width stake input on mobile only. */}
+            {isMobile && (
+                <StakeAmountInput filters={filters} fullWidth />
+            )}
+
+            {count > 0 && (
+                <div className="flex flex-wrap items-center gap-2">
+                    {filters.stake_min !== null && (
+                        <ActiveChip
+                            label={`Min $${filters.stake_min}`}
+                            onRemove={() => removeFilter('stake_min')}
+                        />
+                    )}
+                    {filters.stake_max !== null && (
+                        <ActiveChip
+                            label={`Max $${filters.stake_max}`}
+                            onRemove={() => removeFilter('stake_max')}
+                        />
+                    )}
+                    {filters.skill_min !== null && (
+                        <ActiveChip
+                            label={`Skill ${filters.skill_min}+`}
+                            onRemove={() => removeFilter('skill_min')}
+                        />
+                    )}
+                    {filters.skill_max !== null && (
+                        <ActiveChip
+                            label={`Skill up to ${filters.skill_max}`}
+                            onRemove={() => removeFilter('skill_max')}
+                        />
+                    )}
+                    {filters.time_control.map((tc) => (
+                        <ActiveChip
+                            key={tc}
+                            label={TIME_CONTROL_LABELS[tc]}
+                            onRemove={() => removeTimeControl(tc)}
+                        />
+                    ))}
+                    {filters.region && (
+                        <ActiveChip
+                            label={filters.region}
+                            onRemove={() => removeFilter('region')}
+                        />
+                    )}
+                    {filters.language && (
+                        <ActiveChip
+                            label={filters.language}
+                            onRemove={() => removeFilter('language')}
+                        />
+                    )}
+                    <button
+                        type="button"
+                        onClick={clearAll}
+                        className="text-muted-foreground hover:text-foreground ml-1 cursor-pointer text-xs font-medium underline-offset-4 transition-colors hover:underline"
+                    >
+                        Clear all
+                    </button>
+                </div>
+            )}
+        </div>
+    );
+}
+
+interface StakeAmountInputProps {
+    filters: ListingFiltersType;
+    fullWidth?: boolean;
+}
+
+/**
+ * Bar quick-action: "Up to $X | USDT ▾" — Bybit-style compound input.
+ * Single bordered container holding the amount input + a vertical divider
+ * + a currency dropdown. v1 = USDT-only enabled; others show "Soon" badges.
+ *
+ * Sets `stake_max` via debounced router.get so we don't fire on every
+ * keystroke. Local state echoes input while typing; commits after the
+ * user pauses.
+ */
+function StakeAmountInput({ filters, fullWidth }: StakeAmountInputProps) {
+    const [value, setValue] = useState<string>(
+        filters.stake_max !== null ? String(filters.stake_max) : '',
+    );
+    const lastCommitted = useRef<string>(value);
+
+    useEffect(() => {
+        if (value === lastCommitted.current) {
+            return;
+        }
+
+        const handle = window.setTimeout(() => {
+            lastCommitted.current = value;
+
+            visit({
+                ...stripFilters(filters),
+                stake_max: value === '' ? undefined : value,
+            });
+        }, STAKE_INPUT_DEBOUNCE_MS);
+
+        return () => window.clearTimeout(handle);
+    }, [value, filters]);
+
+    return (
+        <div
+            className={`border-border/60 bg-card/60 focus-within:border-primary/40 focus-within:ring-primary/25 hover:border-border h-9 items-center rounded-md border transition-[color,box-shadow] focus-within:ring-2 ${
+                fullWidth ? 'flex w-full' : 'inline-flex'
+            }`}
+        >
+            <input
+                type="number"
+                inputMode="decimal"
+                min={0}
+                max={100000}
+                placeholder="Up to $"
+                value={value}
+                onChange={(e) => setValue(e.target.value)}
+                aria-label="Maximum stake"
+                className={`placeholder:text-muted-foreground bg-transparent px-3 text-sm outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none ${
+                    fullWidth ? 'min-w-0 flex-1' : 'w-32'
+                }`}
+            />
+            <span className="bg-border/60 h-5 w-px shrink-0" aria-hidden />
+            <CurrencyDropdown />
+        </div>
+    );
+}
+
+function CurrencyDropdown() {
+    return (
+        <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+                <button
+                    type="button"
+                    aria-label="Select currency"
+                    className="text-foreground hover:text-primary inline-flex h-full cursor-pointer items-center gap-1.5 rounded-r-md px-3 text-sm font-medium outline-none transition-colors"
+                >
+                    <CurrencyBadge currency={DEFAULT_CURRENCY} />
+                    USDT
+                    <ChevronDown className="size-3.5 opacity-60" />
+                </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent
+                align="end"
+                sideOffset={6}
+                className="border-border/60 bg-card/95 w-44 rounded-xl backdrop-blur-md"
+            >
+                {CURRENCIES.map((currency) => (
+                    <DropdownMenuItem
+                        key={currency.id}
+                        disabled={!currency.available}
+                        className="text-muted-foreground focus:bg-primary/10 focus:text-foreground flex cursor-pointer items-center gap-2 rounded-md px-2.5 py-2 text-sm transition-colors duration-150 ease-out"
+                    >
+                        <CurrencyBadge currency={currency.id} />
+                        <span>{currency.id}</span>
+                        {!currency.available && (
+                            <span className="bg-background/80 text-muted-foreground ml-auto rounded-full px-2 py-0.5 text-[10px] tracking-wide uppercase">
+                                Soon
+                            </span>
+                        )}
+                    </DropdownMenuItem>
+                ))}
+            </DropdownMenuContent>
+        </DropdownMenu>
+    );
+}
+
+function CurrencyBadge({ currency }: { currency: string }) {
+    const styles =
+        currency === 'USDT'
+            ? 'bg-success/15 text-success'
+            : 'bg-muted text-muted-foreground';
+
+    return (
+        <span
+            className={`inline-flex size-5 items-center justify-center rounded-full text-[11px] font-bold ${styles}`}
+            aria-hidden
+        >
+            {CURRENCIES.find((c) => c.id === currency)?.symbol ?? '?'}
+        </span>
+    );
+}
+
+interface ActiveChipProps {
+    label: string;
+    onRemove: () => void;
+}
+
+function ActiveChip({ label, onRemove }: ActiveChipProps) {
+    return (
+        <span className="border-primary/30 bg-primary/10 text-foreground inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium">
+            {label}
+            <button
+                type="button"
+                onClick={onRemove}
+                aria-label={`Remove ${label} filter`}
+                className="text-muted-foreground hover:text-primary -mr-1 inline-flex size-4 cursor-pointer items-center justify-center rounded-full transition-colors"
+            >
+                <X className="size-3" />
+            </button>
+        </span>
+    );
+}

@@ -5,6 +5,7 @@ import { MobileMenu } from '@/components/site/mobile-menu';
 import { ProfileMenu } from '@/components/site/profile-menu';
 import { UnverifiedChip } from '@/components/site/unverified-chip';
 import { Button } from '@/components/ui/button';
+import { index as listingsIndex } from '@/routes/listings';
 
 export function SiteHeader() {
     const { openLogin, openRegister } = useAuthModal();
@@ -37,7 +38,7 @@ export function SiteHeader() {
 
                 <nav className="hidden items-center gap-1 md:flex">
                     <Link
-                        href="#"
+                        href={listingsIndex()}
                         className="text-foreground hover:text-primary px-3 py-2 text-sm transition-colors"
                     >
                         Listings

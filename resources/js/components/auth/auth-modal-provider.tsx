@@ -17,7 +17,7 @@ interface State {
     view: AuthView;
 }
 
-function readState(): State {
+function readUrlState(): State {
     if (typeof window === 'undefined') {
         return { open: false, view: 'login' };
     }
@@ -29,6 +29,38 @@ function readState(): State {
     }
 
     return { open: false, view: 'login' };
+}
+
+// AuthModalProvider lives outside the Inertia tree (mounted in `withApp`), so
+// `usePage()` is unavailable. Read auth from the initial page JSON serialized
+// onto `<div id="app" data-page="...">`.
+function readAuthFromDom(): boolean {
+    if (typeof window === 'undefined') {
+        return false;
+    }
+
+    try {
+        const root = document.getElementById('app');
+        const raw = root?.dataset.page;
+
+        if (!raw) {
+            return false;
+        }
+
+        const page = JSON.parse(raw);
+
+        return Boolean(page?.props?.auth?.user);
+    } catch {
+        return false;
+    }
+}
+
+function computeState(isAuthenticated: boolean): State {
+    if (isAuthenticated) {
+        return { open: false, view: 'login' };
+    }
+
+    return readUrlState();
 }
 
 function writeAuthParam(view: AuthView | null, mode: 'push' | 'replace') {
@@ -74,16 +106,43 @@ export function useAuthModal() {
 }
 
 export function AuthModalProvider({ children }: { children: ReactNode }) {
-    const [state, setState] = useState<State>(readState);
+    const [state, setState] = useState<State>(() =>
+        computeState(readAuthFromDom()),
+    );
 
     useEffect(() => {
-        const sync = () => setState(readState());
+        // If a logged-in user landed here with `?auth=*` (shared link / leftover
+        // history), strip the param so the modal never opens for them and the
+        // URL doesn't bait a refresh into reopening it.
+        if (
+            readAuthFromDom()
+            && new URLSearchParams(window.location.search).has('auth')
+        ) {
+            writeAuthParam(null, 'replace');
+        }
 
-        window.addEventListener('popstate', sync);
-        const removeInertiaListener = router.on('navigate', sync);
+        const syncFromUrl = () =>
+            setState(computeState(readAuthFromDom()));
+
+        window.addEventListener('popstate', syncFromUrl);
+
+        const removeInertiaListener = router.on('navigate', (event) => {
+            const isAuth = Boolean(
+                event.detail.page?.props?.auth?.user,
+            );
+
+            if (
+                isAuth
+                && new URLSearchParams(window.location.search).has('auth')
+            ) {
+                writeAuthParam(null, 'replace');
+            }
+
+            setState(computeState(isAuth));
+        });
 
         return () => {
-            window.removeEventListener('popstate', sync);
+            window.removeEventListener('popstate', syncFromUrl);
             removeInertiaListener();
         };
     }, []);

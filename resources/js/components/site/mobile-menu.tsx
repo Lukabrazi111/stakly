@@ -1,5 +1,5 @@
 import { Link, router, usePage } from '@inertiajs/react';
-import { LogOut, Search, Settings, User as UserIcon, Wallet, X } from 'lucide-react';
+import { LogOut, Search, Settings, User as UserIcon, Wallet } from 'lucide-react';
 import { useState } from 'react';
 import { useAuthModal } from '@/components/auth/auth-modal-provider';
 import { UnverifiedChip } from '@/components/site/unverified-chip';
@@ -15,18 +15,33 @@ import {
 } from '@/components/ui/sheet';
 import { useInitials } from '@/hooks/use-initials';
 import { home, logout } from '@/routes';
+import { index as listingsIndex } from '@/routes/listings';
 import { edit as editProfile } from '@/routes/profile';
 
 interface NavLink {
     label: string;
-    href: string;
+    href: ReturnType<typeof listingsIndex> | string;
 }
 
 const navLinks: NavLink[] = [
-    { label: 'Listings', href: '#' },
+    { label: 'Listings', href: listingsIndex() },
     { label: 'How it Works', href: '#how-it-works' },
     { label: 'Support', href: '#' },
 ];
+
+const mobileMenuItemClass =
+    'text-muted-foreground hover:text-foreground active:text-foreground hover:bg-primary/10 active:bg-primary/10 [&_svg]:text-muted-foreground hover:[&_svg]:text-primary active:[&_svg]:text-primary flex w-full cursor-pointer items-center gap-3 rounded-xl px-3 py-3 text-sm font-medium transition-colors duration-150 ease-out';
+
+const mobileDisabledItemClass =
+    'text-muted-foreground/60 [&_svg]:text-muted-foreground/60 flex w-full items-center gap-3 rounded-xl px-3 py-3 text-sm font-medium';
+
+function SoonBadge() {
+    return (
+        <span className="bg-background/80 text-muted-foreground ml-auto rounded-full px-2 py-0.5 text-[10px] tracking-wide uppercase backdrop-blur">
+            Soon
+        </span>
+    );
+}
 
 export function MobileMenu() {
     const [open, setOpen] = useState(false);
@@ -63,14 +78,14 @@ export function MobileMenu() {
 
             <SheetContent
                 side="right"
-                className="bg-background/95 border-border/50 flex w-full flex-col gap-0 border-l p-0 backdrop-blur-xl sm:max-w-none [&>button.rounded-xs]:hidden"
+                className="bg-background/95 border-border/50 flex w-full flex-col gap-0 border-l p-0 backdrop-blur-xl sm:max-w-none"
             >
                 <SheetTitle className="sr-only">Stakly menu</SheetTitle>
                 <SheetDescription className="sr-only">
                     Site navigation, search, and account actions.
                 </SheetDescription>
 
-                <div className="border-border/50 flex items-center justify-between border-b px-5 py-4">
+                <div className="border-border/50 flex items-center border-b px-5 py-4">
                     <SheetClose asChild>
                         <Link
                             href={home()}
@@ -79,15 +94,6 @@ export function MobileMenu() {
                         >
                             stakly
                         </Link>
-                    </SheetClose>
-                    <SheetClose asChild>
-                        <button
-                            type="button"
-                            aria-label="Close menu"
-                            className="text-muted-foreground hover:text-foreground hover:shadow-glow-sm focus-visible:ring-primary focus-visible:ring-offset-background inline-flex size-10 cursor-pointer items-center justify-center rounded-full transition-all duration-200 ease-out focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none"
-                        >
-                            <X className="size-5" />
-                        </button>
                     </SheetClose>
                 </div>
 
@@ -124,19 +130,19 @@ export function MobileMenu() {
 
                 <div className="mt-auto flex flex-col gap-3 p-5">
                     {user ? (
-                        <>
-                            <div className="border-border/40 flex items-center gap-3 border-t pt-4">
-                                <Avatar className="size-10 overflow-hidden rounded-full">
+                        <div className="border-border/60 bg-card/95 flex flex-col overflow-hidden rounded-2xl border backdrop-blur-md">
+                            <div className="flex items-center gap-3 p-4">
+                                <Avatar className="size-12 overflow-hidden rounded-full">
                                     <AvatarImage
                                         src={user.avatar}
                                         alt={user.name}
                                     />
-                                    <AvatarFallback className="bg-gradient-primary text-primary-foreground text-sm font-semibold">
+                                    <AvatarFallback className="bg-gradient-primary text-primary-foreground text-base font-semibold">
                                         {getInitials(user.name)}
                                     </AvatarFallback>
                                 </Avatar>
                                 <div className="flex min-w-0 flex-1 flex-col">
-                                    <span className="text-foreground truncate text-sm font-medium">
+                                    <span className="text-foreground truncate text-sm font-semibold">
                                         {user.name}
                                     </span>
                                     <span className="text-muted-foreground truncate text-xs">
@@ -146,50 +152,55 @@ export function MobileMenu() {
                             </div>
 
                             {isUnverified && (
-                                <UnverifiedChip className="self-start" />
+                                <div className="px-4 pb-3">
+                                    <UnverifiedChip />
+                                </div>
                             )}
 
-                            <SheetClose asChild>
-                                <Link
-                                    href="#"
-                                    className="text-foreground hover:text-primary flex items-center gap-2 text-sm transition-colors"
+                            <div className="border-border/60 flex flex-col gap-0.5 border-t p-2">
+                                <div
+                                    aria-disabled="true"
+                                    className={mobileDisabledItemClass}
                                 >
-                                    <UserIcon className="size-4" />
-                                    My profile
-                                </Link>
-                            </SheetClose>
-                            <SheetClose asChild>
-                                <Link
-                                    href="#"
-                                    className="text-foreground hover:text-primary flex items-center gap-2 text-sm transition-colors"
+                                    <UserIcon className="size-5" />
+                                    <span>My profile</span>
+                                    <SoonBadge />
+                                </div>
+                                <div
+                                    aria-disabled="true"
+                                    className={mobileDisabledItemClass}
                                 >
-                                    <Wallet className="size-4" />
-                                    Wallet
-                                </Link>
-                            </SheetClose>
-                            <SheetClose asChild>
-                                <Link
-                                    href={editProfile()}
-                                    prefetch
-                                    className="text-foreground hover:text-primary flex items-center gap-2 text-sm transition-colors"
-                                >
-                                    <Settings className="size-4" />
-                                    Settings
-                                </Link>
-                            </SheetClose>
-                            <SheetClose asChild>
-                                <Link
-                                    href={logout()}
-                                    method="post"
-                                    as="button"
-                                    onClick={handleLogout}
-                                    className="text-destructive hover:text-destructive flex items-center gap-2 text-sm transition-colors"
-                                >
-                                    <LogOut className="size-4" />
-                                    Log out
-                                </Link>
-                            </SheetClose>
-                        </>
+                                    <Wallet className="size-5" />
+                                    <span>Wallet</span>
+                                    <SoonBadge />
+                                </div>
+                                <SheetClose asChild>
+                                    <Link
+                                        href={editProfile()}
+                                        prefetch
+                                        className={mobileMenuItemClass}
+                                    >
+                                        <Settings className="size-5" />
+                                        Settings
+                                    </Link>
+                                </SheetClose>
+                            </div>
+
+                            <div className="border-border/60 border-t p-2">
+                                <SheetClose asChild>
+                                    <Link
+                                        href={logout()}
+                                        method="post"
+                                        as="button"
+                                        onClick={handleLogout}
+                                        className="text-muted-foreground hover:text-destructive active:text-destructive hover:bg-destructive/10 active:bg-destructive/10 [&_svg]:text-muted-foreground hover:[&_svg]:text-destructive active:[&_svg]:text-destructive flex w-full cursor-pointer items-center gap-3 rounded-xl px-3 py-3 text-sm font-medium transition-colors duration-150 ease-out"
+                                    >
+                                        <LogOut className="size-5" />
+                                        Log out
+                                    </Link>
+                                </SheetClose>
+                            </div>
+                        </div>
                     ) : (
                         <>
                             <Button

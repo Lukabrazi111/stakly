@@ -3,9 +3,9 @@ import { AuthModalProvider } from '@/components/auth/auth-modal-provider';
 import { Toaster } from '@/components/ui/sonner';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { initializeTheme } from '@/hooks/use-appearance';
-import AppLayout from '@/layouts/app-layout';
 import AuthLayout from '@/layouts/auth-layout';
 import SettingsLayout from '@/layouts/settings/layout';
+import SiteLayout from '@/layouts/site-layout';
 
 const appName = import.meta.env.VITE_APP_NAME || 'Laravel';
 
@@ -18,9 +18,9 @@ createInertiaApp({
             case name.startsWith('auth/'):
                 return AuthLayout;
             case name.startsWith('settings/'):
-                return [AppLayout, SettingsLayout];
+                return [SiteLayout, SettingsLayout];
             default:
-                return AppLayout;
+                return null;
         }
     },
     strictMode: true,
