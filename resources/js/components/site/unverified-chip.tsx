@@ -92,9 +92,11 @@ export function UnverifiedChip({ className }: Props) {
         if (sending) {
             return 'Sending...';
         }
+
         if (cooldown > 0) {
             return `Resend in ${cooldown}s`;
         }
+
         return 'Verify email';
     })();
 

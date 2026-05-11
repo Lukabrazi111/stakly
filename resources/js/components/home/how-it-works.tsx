@@ -53,6 +53,7 @@ export function HowItWorks() {
                 <ol className="mt-14 grid gap-4 md:grid-cols-3 md:gap-6">
                     {steps.map((step, index) => {
                         const Icon = step.icon;
+
                         return (
                             <li
                                 key={step.number}

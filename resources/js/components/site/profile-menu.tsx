@@ -20,6 +20,9 @@ interface Props {
     user: User;
 }
 
+const menuItemClass =
+    'text-muted-foreground hover:text-foreground focus:text-foreground hover:bg-primary/10 focus:bg-primary/10 [&_svg]:text-muted-foreground hover:[&_svg]:text-primary focus:[&_svg]:text-primary flex w-full cursor-pointer items-center rounded-md px-2.5 py-2 text-sm transition-colors duration-150 ease-out';
+
 export function ProfileMenu({ user }: Props) {
     const getInitials = useInitials();
 
@@ -45,12 +48,12 @@ export function ProfileMenu({ user }: Props) {
                 </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent
-                className="border-border/60 bg-card/95 w-56 rounded-xl shadow-[0_8px_32px_-12px_rgba(0,0,0,0.7),0_0_36px_-16px_var(--gradient-glow)] backdrop-blur-md"
+                className="border-border/60 bg-card/95 w-60 rounded-xl p-1.5 shadow-[0_8px_32px_-12px_rgba(0,0,0,0.7),0_0_36px_-16px_var(--gradient-glow)] backdrop-blur-md"
                 align="end"
                 sideOffset={8}
             >
                 <DropdownMenuLabel className="p-0 font-normal">
-                    <div className="flex flex-col gap-0.5 px-2 py-2">
+                    <div className="flex flex-col gap-0.5 px-2.5 py-2">
                         <span className="text-foreground truncate text-sm font-medium">
                             {user.name}
                         </span>
@@ -59,12 +62,12 @@ export function ProfileMenu({ user }: Props) {
                         </span>
                     </div>
                 </DropdownMenuLabel>
-                <DropdownMenuSeparator />
-                <DropdownMenuGroup>
+                <DropdownMenuSeparator className="bg-border/60" />
+                <DropdownMenuGroup className="py-1">
                     <DropdownMenuItem asChild>
                         <Link
                             href="#"
-                            className="cursor-pointer rounded-md text-sm"
+                            className={menuItemClass}
                         >
                             <UserIcon className="mr-2 size-4" />
                             My profile
@@ -73,7 +76,7 @@ export function ProfileMenu({ user }: Props) {
                     <DropdownMenuItem asChild>
                         <Link
                             href="#"
-                            className="cursor-pointer rounded-md text-sm"
+                            className={menuItemClass}
                         >
                             <Wallet className="mr-2 size-4" />
                             Wallet
@@ -83,21 +86,21 @@ export function ProfileMenu({ user }: Props) {
                         <Link
                             href={editProfile()}
                             prefetch
-                            className="cursor-pointer rounded-md text-sm"
+                            className={menuItemClass}
                         >
                             <Settings className="mr-2 size-4" />
                             Settings
                         </Link>
                     </DropdownMenuItem>
                 </DropdownMenuGroup>
-                <DropdownMenuSeparator />
+                <DropdownMenuSeparator className="bg-border/60" />
                 <DropdownMenuItem asChild>
                     <Link
                         href={logout()}
                         method="post"
                         as="button"
                         onClick={handleLogout}
-                        className="text-destructive focus:text-destructive cursor-pointer rounded-md text-sm"
+                        className="text-muted-foreground hover:text-destructive focus:text-destructive hover:bg-destructive/10 focus:bg-destructive/10 [&_svg]:text-muted-foreground hover:[&_svg]:text-destructive focus:[&_svg]:text-destructive flex w-full cursor-pointer items-center rounded-md px-2.5 py-2 text-sm transition-colors duration-150 ease-out"
                     >
                         <LogOut className="mr-2 size-4" />
                         Log out
