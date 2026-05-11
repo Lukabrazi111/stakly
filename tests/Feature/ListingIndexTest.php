@@ -53,7 +53,7 @@ test('stake_min filter narrows results', function () {
     Listing::factory()->open()->state(['stake_amount' => 50])->create();
     Listing::factory()->open()->state(['stake_amount' => 500])->create();
 
-    $response = $this->get('/listings?stake_min=100');
+    $response = $this->get('/listings?filter[stake_min]=100');
 
     $response->assertInertia(fn ($page) => $page->has('listings.data', 1));
 });
@@ -63,17 +63,17 @@ test('stake_max filter narrows results', function () {
     Listing::factory()->open()->state(['stake_amount' => 50])->create();
     Listing::factory()->open()->state(['stake_amount' => 500])->create();
 
-    $response = $this->get('/listings?stake_max=100');
+    $response = $this->get('/listings?filter[stake_max]=100');
 
     $response->assertInertia(fn ($page) => $page->has('listings.data', 2));
 });
 
-test('time_control filter accepts multiple values', function () {
+test('time_control filter accepts multiple values (CSV)', function () {
     Listing::factory()->open()->state(['time_control' => TimeControl::Blitz])->create();
     Listing::factory()->open()->state(['time_control' => TimeControl::Rapid])->create();
     Listing::factory()->open()->state(['time_control' => TimeControl::Classical])->create();
 
-    $response = $this->get('/listings?time_control[]=blitz&time_control[]=rapid');
+    $response = $this->get('/listings?filter[time_control]=blitz,rapid');
 
     $response->assertInertia(fn ($page) => $page->has('listings.data', 2));
 });
@@ -84,7 +84,7 @@ test('skill range overlap matches listings that intersect the filter', function 
     Listing::factory()->open()->state(['skill_min' => 1900, 'skill_max' => 2200])->create();
     Listing::factory()->open()->state(['skill_min' => null, 'skill_max' => null])->create();
 
-    $response = $this->get('/listings?skill_min=1500&skill_max=1800');
+    $response = $this->get('/listings?filter[skill_min]=1500&filter[skill_max]=1800');
 
     // matches: [1400-1600] (overlaps), [1700-2000] (overlaps), null/null (any skill) = 3
     $response->assertInertia(fn ($page) => $page->has('listings.data', 3));
@@ -94,7 +94,7 @@ test('region filter matches exact value', function () {
     Listing::factory()->open()->state(['region' => 'EU'])->count(2)->create();
     Listing::factory()->open()->state(['region' => 'NA'])->create();
 
-    $response = $this->get('/listings?region=EU');
+    $response = $this->get('/listings?filter[region]=EU');
 
     $response->assertInertia(fn ($page) => $page->has('listings.data', 2));
 });
@@ -140,10 +140,15 @@ test('sort=ending_soon orders by expires_at ascending', function () {
 test('invalid query params redirect to clean /listings (no error wall)', function () {
     Listing::factory()->open()->count(3)->create();
 
-    $this->get('/listings?stake_min=not-a-number')->assertRedirect('/listings');
+    $this->get('/listings?filter[stake_min]=not-a-number')->assertRedirect('/listings');
     $this->get('/listings?sort=DROP_TABLE_USERS')->assertRedirect('/listings');
-    $this->get('/listings?time_control[]=bogus')->assertRedirect('/listings');
-    $this->get('/listings?skill_min=99999')->assertRedirect('/listings');
+    $this->get('/listings?filter[time_control]=bogus')->assertRedirect('/listings');
+    $this->get('/listings?filter[skill_min]=99999')->assertRedirect('/listings');
+});
+
+test('unknown filter keys are rejected by validation (redirect to clean /listings)', function () {
+    $this->get('/listings?filter[admin]=1')->assertRedirect('/listings');
+    $this->get('/listings?filter[user_id]=42')->assertRedirect('/listings');
 });
 
 test('creator data is whitelisted — no email or sensitive fields ship', function () {
@@ -169,7 +174,7 @@ test('creator data is whitelisted — no email or sensitive fields ship', functi
 test('filters are echoed back in props for URL → form hydration', function () {
     Listing::factory()->open()->count(2)->create();
 
-    $response = $this->get('/listings?stake_min=10&sort=highest_stake&time_control[]=blitz');
+    $response = $this->get('/listings?filter[stake_min]=10&sort=highest_stake&filter[time_control]=blitz');
 
     $response->assertInertia(fn ($page) => $page
         ->where('filters.stake_min', 10)
@@ -190,5 +195,56 @@ test('game filter defaults to chess', function () {
 });
 
 test('unknown game in query redirects to clean /listings', function () {
-    $this->get('/listings?game=fortnite')->assertRedirect('/listings');
+    $this->get('/listings?filter[game]=fortnite')->assertRedirect('/listings');
+});
+
+test('paginator meta exposes current_page + last_page for the frontend', function () {
+    Listing::factory()->open()->count(30)->create();
+
+    $response = $this->get('/listings');
+
+    // 30 listings / 12 per page = 3 pages
+    $response->assertInertia(fn ($page) => $page
+        ->where('listings.meta.current_page', 1)
+        ->where('listings.meta.last_page', 3)
+        ->where('listings.meta.per_page', 12)
+        ->where('listings.meta.total', 30)
+    );
+});
+
+test('page=2 returns the second slice', function () {
+    Listing::factory()->open()->count(20)->create();
+
+    $response = $this->get('/listings?page=2');
+
+    $response->assertInertia(fn ($page) => $page
+        ->where('listings.meta.current_page', 2)
+        ->has('listings.data', 8)
+    );
+});
+
+test('filters apply consistently across pages (filter narrows total + pagination)', function () {
+    // 15 listings at $50 (matching), 10 at $500 (not matching).
+    Listing::factory()->open()->count(15)->state(['stake_amount' => 50])->create();
+    Listing::factory()->open()->count(10)->state(['stake_amount' => 500])->create();
+
+    // stake_max=100 filter → 15 matches → 2 pages (12 + 3).
+    $page1 = $this->get('/listings?filter[stake_max]=100');
+    $page1->assertInertia(fn ($page) => $page
+        ->where('listings.meta.total', 15)
+        ->where('listings.meta.last_page', 2)
+        ->has('listings.data', 12)
+    );
+
+    $page2 = $this->get('/listings?filter[stake_max]=100&page=2');
+    $page2->assertInertia(fn ($page) => $page
+        ->where('listings.meta.current_page', 2)
+        ->has('listings.data', 3)
+    );
+});
+
+test('invalid page param redirects to clean /listings (no error wall)', function () {
+    $this->get('/listings?page=abc')->assertRedirect('/listings');
+    $this->get('/listings?page=-1')->assertRedirect('/listings');
+    $this->get('/listings?page=999999')->assertRedirect('/listings');
 });

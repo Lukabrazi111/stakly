@@ -14,7 +14,10 @@
         "laravel/fortify": "^1.34",
         "laravel/framework": "^13.7",
         "laravel/tinker": "^3.0",
-        "laravel/wayfinder": "^0.1.14"
+        "laravel/wayfinder": "^0.1.14",
+        "spatie/laravel-medialibrary": "^11.22",
+        "spatie/laravel-permission": "^7.4",
+        "spatie/laravel-query-builder": "^7.3"
     },
     "require-dev": {
         "fakerphp/faker": "^1.24",

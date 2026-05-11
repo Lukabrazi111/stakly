@@ -19,6 +19,7 @@ import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { CURRENCIES, DEFAULT_CURRENCY } from '@/config/currencies';
 import { gameSupports } from '@/config/games';
 import { useIsMobile } from '@/hooks/use-mobile';
+import { buildListingsQuery } from '@/lib/listings-query';
 import { index as listingsIndex } from '@/routes/listings';
 import type {
     ListingFilters as ListingFiltersType,
@@ -82,31 +83,12 @@ function activeFilterCount(filters: ListingFiltersType): number {
     return count;
 }
 
-function visit(
-    params: Record<string, string | number | string[] | undefined>,
-) {
-    router.get(listingsIndex().url, params, {
+function visit(filters: ListingFiltersType) {
+    router.get(listingsIndex().url, buildListingsQuery(filters), {
         preserveState: true,
         preserveScroll: true,
         replace: true,
     });
-}
-
-function stripFilters(
-    filters: ListingFiltersType,
-): Record<string, string | number | string[] | undefined> {
-    return {
-        game: filters.game,
-        stake_min: filters.stake_min ?? undefined,
-        stake_max: filters.stake_max ?? undefined,
-        skill_min: filters.skill_min ?? undefined,
-        skill_max: filters.skill_max ?? undefined,
-        time_control:
-            filters.time_control.length > 0 ? filters.time_control : undefined,
-        region: filters.region ?? undefined,
-        language: filters.language ?? undefined,
-        sort: filters.sort,
-    };
 }
 
 export function ListingFiltersBar({ filters, sorts }: Props) {
@@ -115,7 +97,7 @@ export function ListingFiltersBar({ filters, sorts }: Props) {
     const showTimeControlChips = gameSupports(filters.game, 'time_control');
 
     const updateSort = (sort: ListingSort) => {
-        visit({ ...stripFilters(filters), sort });
+        visit({ ...filters, sort });
     };
 
     const removeFilter = (key: keyof ListingFiltersType) => {
@@ -129,17 +111,28 @@ export function ListingFiltersBar({ filters, sorts }: Props) {
             (next[key] as unknown) = null;
         }
 
-        visit(stripFilters(next));
+        visit(next);
     };
 
     const removeTimeControl = (value: TimeControl) => {
-        const next = filters.time_control.filter((tc) => tc !== value);
-
-        visit({ ...stripFilters(filters), time_control: next });
+        visit({
+            ...filters,
+            time_control: filters.time_control.filter((tc) => tc !== value),
+        });
     };
 
     const clearAll = () => {
-        visit({ game: filters.game, sort: filters.sort });
+        visit({
+            game: filters.game,
+            stake_min: null,
+            stake_max: null,
+            skill_min: null,
+            skill_max: null,
+            time_control: [],
+            region: null,
+            language: null,
+            sort: filters.sort,
+        });
     };
 
     return (
@@ -174,11 +167,8 @@ export function ListingFiltersBar({ filters, sorts }: Props) {
                                 value={filters.time_control}
                                 onValueChange={(value: string[]) =>
                                     visit({
-                                        ...stripFilters(filters),
-                                        time_control:
-                                            value.length > 0
-                                                ? (value as TimeControl[])
-                                                : undefined,
+                                        ...filters,
+                                        time_control: value as TimeControl[],
                                     })
                                 }
                                 className="hidden flex-wrap md:flex"
@@ -295,8 +285,8 @@ function StakeAmountInput({ filters, fullWidth }: StakeAmountInputProps) {
             lastCommitted.current = value;
 
             visit({
-                ...stripFilters(filters),
-                stake_max: value === '' ? undefined : value,
+                ...filters,
+                stake_max: value === '' ? null : Number(value),
             });
         }, STAKE_INPUT_DEBOUNCE_MS);
 
@@ -330,7 +320,7 @@ function StakeAmountInput({ filters, fullWidth }: StakeAmountInputProps) {
 
 function CurrencyDropdown() {
     return (
-        <DropdownMenu>
+        <DropdownMenu modal={false}>
             <DropdownMenuTrigger asChild>
                 <button
                     type="button"

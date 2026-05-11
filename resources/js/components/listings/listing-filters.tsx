@@ -22,6 +22,7 @@ import {
 } from '@/components/ui/sheet';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { useIsMobile } from '@/hooks/use-mobile';
+import { buildListingsQuery } from '@/lib/listings-query';
 import { index as listingsIndex } from '@/routes/listings';
 import type { ListingFilters as ListingFiltersType, TimeControl } from '@/types';
 
@@ -123,7 +124,7 @@ export function ListingFilters({ filters, activeCount }: Props) {
             <PopoverContent
                 align="end"
                 sideOffset={8}
-                className="bg-card/95 border-border/60 w-[420px] rounded-xl border p-0 shadow-[0_8px_32px_-12px_rgba(0,0,0,0.7),0_0_36px_-16px_var(--gradient-glow)] backdrop-blur-md"
+                className="bg-card/95 border-border/60 shadow-glow-sm w-[420px] rounded-xl border p-0 backdrop-blur-md"
             >
                 {form}
             </PopoverContent>
@@ -142,28 +143,24 @@ function FilterForm({ filters, onClose }: FormProps) {
     );
 
     const apply = () => {
-        router.get(
-            listingsIndex().url,
-            {
-                stake_min: draft.stake_min || undefined,
-                stake_max: draft.stake_max || undefined,
-                skill_min: draft.skill_min || undefined,
-                skill_max: draft.skill_max || undefined,
-                time_control:
-                    draft.time_control.length > 0
-                        ? draft.time_control
-                        : undefined,
-                region: draft.region ?? undefined,
-                language: draft.language ?? undefined,
-                sort: filters.sort,
-            },
-            {
-                preserveState: true,
-                preserveScroll: true,
-                replace: true,
-                onFinish: onClose,
-            },
-        );
+        const next: ListingFiltersType = {
+            game: filters.game,
+            stake_min: draft.stake_min === '' ? null : Number(draft.stake_min),
+            stake_max: draft.stake_max === '' ? null : Number(draft.stake_max),
+            skill_min: draft.skill_min === '' ? null : Number(draft.skill_min),
+            skill_max: draft.skill_max === '' ? null : Number(draft.skill_max),
+            time_control: draft.time_control,
+            region: draft.region,
+            language: draft.language,
+            sort: filters.sort,
+        };
+
+        router.get(listingsIndex().url, buildListingsQuery(next), {
+            preserveState: true,
+            preserveScroll: true,
+            replace: true,
+            onFinish: onClose,
+        });
     };
 
     const reset = () => {

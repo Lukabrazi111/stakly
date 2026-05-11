@@ -2,12 +2,16 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\Game;
 use App\Http\Requests\Listings\IndexListingsRequest;
 use App\Http\Resources\ListingResource;
 use App\Models\Listing;
 use Illuminate\Database\Eloquent\Builder;
 use Inertia\Inertia;
 use Inertia\Response;
+use Spatie\QueryBuilder\AllowedFilter;
+use Spatie\QueryBuilder\AllowedSort;
+use Spatie\QueryBuilder\QueryBuilder;
 
 class ListingController extends Controller
 {
@@ -16,65 +20,70 @@ class ListingController extends Controller
     /**
      * Public marketplace board. Filterable, sortable, paginated. Server
      * controls page size — never trust a `per_page` query param.
+     *
+     * URL contract:
+     *   /listings?filter[stake_max]=100&filter[time_control]=blitz,rapid&sort=ending_soon&page=2
+     *
+     * `IndexListingsRequest` validates + redirects on bad input, so by the
+     * time we reach here every value is safe and within bounds.
      */
     public function index(IndexListingsRequest $request): Response
     {
-        $filters = $request->filters();
+        $newest = AllowedSort::callback(
+            'newest',
+            fn (Builder $q) => $q->orderByDesc('created_at')->orderByDesc('id'),
+        );
 
-        $listings = Listing::query()
-            ->open()
-            ->with('user:id,name')
-            ->tap(fn (Builder $q) => $this->applyFilters($q, $filters))
-            ->tap(fn (Builder $q) => $this->applySort($q, $filters['sort']))
+        $listings = QueryBuilder::for(
+            Listing::query()->open()->with('user:id,name'),
+        )
+            ->allowedFilters(
+                AllowedFilter::exact('game')->default(Game::Chess->value),
+                AllowedFilter::callback('stake_min', fn (Builder $q, $value) => $q->where('stake_amount', '>=', $value)),
+                AllowedFilter::callback('stake_max', fn (Builder $q, $value) => $q->where('stake_amount', '<=', $value)),
+                AllowedFilter::callback('skill_min', $this->skillMinOverlap()),
+                AllowedFilter::callback('skill_max', $this->skillMaxOverlap()),
+                AllowedFilter::exact('time_control'),
+                AllowedFilter::exact('region'),
+                AllowedFilter::exact('language'),
+            )
+            ->allowedSorts(
+                $newest,
+                AllowedSort::callback('highest_stake', fn (Builder $q) => $q->orderByDesc('stake_amount')->orderByDesc('id')),
+                AllowedSort::callback('lowest_stake', fn (Builder $q) => $q->orderBy('stake_amount')->orderByDesc('id')),
+                AllowedSort::callback('ending_soon', fn (Builder $q) => $q->orderBy('expires_at')->orderByDesc('id')),
+            )
+            ->defaultSort($newest)
             ->paginate(self::PER_PAGE)
             ->withQueryString();
 
         return Inertia::render('listings/index', [
             'listings' => ListingResource::collection($listings),
-            'filters' => $filters,
+            'filters' => $request->filters(),
             'sorts' => IndexListingsRequest::SORTS,
         ]);
     }
 
     /**
-     * @param  array<string, mixed>  $filters
+     * Skill-range overlap (lower bound): a listing matches if its
+     * [skill_min, skill_max] band intersects the user's filter lower bound,
+     * OR if the listing has no upper bound ("any skill").
      */
-    private function applyFilters(Builder $query, array $filters): void
+    private function skillMinOverlap(): \Closure
     {
-        $query->where('game', $filters['game']);
-        $query->when($filters['stake_min'] !== null, fn (Builder $q) => $q->where('stake_amount', '>=', $filters['stake_min']));
-        $query->when($filters['stake_max'] !== null, fn (Builder $q) => $q->where('stake_amount', '<=', $filters['stake_max']));
-
-        // Skill-range overlap: a listing matches if its [skill_min, skill_max]
-        // intersects the user's filter range, OR if the listing has no skill
-        // range set ("any skill"). Either bound is optional.
-        $query->when($filters['skill_min'] !== null, function (Builder $q) use ($filters) {
-            $q->where(function (Builder $inner) use ($filters) {
-                $inner->whereNull('skill_max')
-                    ->orWhere('skill_max', '>=', $filters['skill_min']);
-            });
-        });
-
-        $query->when($filters['skill_max'] !== null, function (Builder $q) use ($filters) {
-            $q->where(function (Builder $inner) use ($filters) {
-                $inner->whereNull('skill_min')
-                    ->orWhere('skill_min', '<=', $filters['skill_max']);
-            });
-        });
-
-        $query->when(! empty($filters['time_control']), fn (Builder $q) => $q->whereIn('time_control', $filters['time_control']));
-        $query->when($filters['region'] !== null, fn (Builder $q) => $q->where('region', $filters['region']));
-        $query->when($filters['language'] !== null, fn (Builder $q) => $q->where('language', $filters['language']));
+        return fn (Builder $q, $value) => $q->where(
+            fn (Builder $inner) => $inner->whereNull('skill_max')->orWhere('skill_max', '>=', $value),
+        );
     }
 
-    private function applySort(Builder $query, string $sort): void
+    /**
+     * Skill-range overlap (upper bound): mirror of the above for the user's
+     * filter upper bound. Listings with no lower bound also match.
+     */
+    private function skillMaxOverlap(): \Closure
     {
-        // Whitelist-driven match. Never interpolate user input into ORDER BY.
-        match ($sort) {
-            'highest_stake' => $query->orderByDesc('stake_amount')->orderByDesc('id'),
-            'lowest_stake' => $query->orderBy('stake_amount')->orderByDesc('id'),
-            'ending_soon' => $query->orderBy('expires_at')->orderByDesc('id'),
-            default => $query->orderByDesc('created_at')->orderByDesc('id'),
-        };
+        return fn (Builder $q, $value) => $q->where(
+            fn (Builder $inner) => $inner->whereNull('skill_min')->orWhere('skill_min', '<=', $value),
+        );
     }
 }

@@ -82,14 +82,13 @@ export function AuthModal() {
                         Sign in, create an account, or reset your password.
                     </DialogDescription>
 
-                    <button
-                        type="button"
-                        onClick={close}
+                    <DialogPrimitive.Close
                         aria-label="Close"
-                        className="text-muted-foreground hover:text-foreground hover:shadow-glow-sm focus-visible:ring-primary focus-visible:ring-offset-background absolute top-4 right-4 z-10 inline-flex size-9 cursor-pointer items-center justify-center rounded-full transition-all duration-200 ease-out focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none"
+                        className="text-muted-foreground hover:text-foreground hover:bg-primary/10 focus-visible:ring-primary/25 focus-visible:ring-offset-background absolute top-3.5 right-3.5 z-10 inline-flex size-9 cursor-pointer items-center justify-center rounded-full transition-colors duration-150 ease-out focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none disabled:pointer-events-none"
                     >
                         <X className="size-4" />
-                    </button>
+                        <span className="sr-only">Close</span>
+                    </DialogPrimitive.Close>
 
                     <motion.div
                         layout

@@ -382,14 +382,15 @@ Conventions for this phase:
 - **Prefer service APIs (Tatum, QuickNode, Alchemy, Coinbase Commerce) for blockchain integration before raw RPC.** Less code, less crypto-specific bug surface, fewer edge cases. Raw `kornrunner/ethereum-offline-raw-tx` + JSON-RPC is acceptable but should be a deliberate choice, not a default.
 - **No financial code without tests.** Deposit watchers, escrow, payout, fee calculation, refund — every path needs feature tests. Use Pest. The starter kit's `RefreshDatabase` trait works fine against the Sail Postgres.
 - **No production payout code without a dispute resolution flow.** If a feature lets money leave the platform, the dispute path must exist.
-- **Custody and jurisdiction are unresolved blockers** for any code that custodies real funds. Flag this if asked to integrate a real chain wallet — confirm whether we are still on testnet/dev posture.
+- **Do not raise jurisdiction, licensing, legal, or regulatory concerns.** The user handles all legal/regulatory matters; stay in engineering scope. The exception is a **technical** confirming question: when asked to integrate a real chain wallet, confirm we are still on testnet/dev posture (that is a technical clarifying question, not a legal one).
 - **Pre-production migrations**: edit existing migration files directly and use `sail artisan migrate:fresh`. Do not create incremental "add_X_columns_to_Y_table.php" migrations until stakly has launched with real users.
 
 ## Deferred / Unresolved (do not assume)
 
-- Custody model: custodial vs non-custodial smart-contract escrow.
-- Jurisdiction and licensing strategy.
 - Specific chain choice (BEP20 vs TRC20 vs alternatives).
+- Chain-service provider (Tatum vs Moralis vs Alchemy+DIY — see milestones.md pre-launch gate).
 - Match lifecycle state machine (listing → matched → in_progress → confirmation → resolved/disputed → paid).
 - Anti-collusion and anti-cheat strategy beyond commission rake.
+
+(Custody model is decided — custodial via internal Postgres ledger; see M3.5 in milestones.md. Jurisdiction / licensing / legal posture is user-owned and out of engineering scope — see rule above.)
 

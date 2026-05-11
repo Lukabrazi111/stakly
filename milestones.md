@@ -4,78 +4,103 @@ Frontend-first MVP. Build UI against real DB infrastructure + seeded fake data; 
 
 ## Phases (map)
 
-- **M1** — Design Foundation + Homepage
-- **M2** — Auth Flow (styled)
-- **M3** — Listings Index
+- **M1** — Design Foundation + Homepage ✅
+- **M2** — Auth Flow ✅
+- **M2.5** — Pre-M3 polish ✅
+- **M3** — Listings Index ✅
+- **M3.5** — Wallet / Ledger Foundation **(next)**
 - **M4** — Listing Detail + Create Flow
 - **M5** — User Profile
 - **M6** — Match Flow (mock)
-- **M7** — Wallet UI (mock)
+- **M7** — Wallet UI
 - **M8** — Settings / Linked Accounts (chess.com / Lichess)
 
-> Only the current milestone has a detailed task list. Future milestones expand when started. Move completed milestones to the top and mark with ✅.
+> Only the current milestone keeps a detailed task list. Future milestones expand when started. Completed milestones live at the top as short summaries.
 
 ---
 
 ## M1 — Design Foundation + Homepage ✅
 
-Stakly's dark + pink/purple gradient visual system shipped: design tokens (`bg-card`, `text-gradient-primary`, `shadow-glow`, etc.), Bricolage + Inter fonts, gradient `Button` variant + `pill` size, `MarqueeStrip`, `SiteHeader`, `SiteFooter`, `SiteLayout`, `MobileMenu` (three-pill hamburger morph). Homepage `/` renders Hero (typography-only, atmospheric background — no character art per locked decision), `GameSelector` (chess selected by `border-glow`, 8 other games with "Soon" badges), and `HowItWorks` (three-step grid).
+Stakly's dark + pink/purple gradient visual system shipped: design tokens, Bricolage + Inter fonts, gradient `Button` variant + `pill` size, `MarqueeStrip`, `SiteHeader`, `SiteFooter`, `SiteLayout`, `MobileMenu`. Homepage renders Hero (typography-only, no character art), `GameSelector` (chess + 8 "Soon" tiles), `HowItWorks`.
 
-**Locked decisions referenced often:**
-- `/` is hybrid: marketing sections + a featured-listings strip (strip built in M3, never ship fake data on `/`).
-- Visual system rules — see CLAUDE.md "Visual System" + memory.
+**Locked decisions:**
+- `/` is hybrid: marketing sections + featured-listings strip (built in M3 — never ship fake data on `/`).
+- Visual system rules live in CLAUDE.md "Visual System" + memory.
 
 ---
 
 ## M2 — Auth Flow ✅
 
-Modal-only auth (`?auth=*` URL-driven), page-only destinations for reset/2FA/confirm, email verification via `MustVerifyEmail` + amber `UnverifiedChip` (60s cooldown), `ProfileMenu` + mobile account card, Inertia v3 native flash + Stakly-styled Sonner toasts, custom Fortify response bindings on register / verify / resend / forgot-password / password-reset (success → `/?auth=login` with toast), reset-token guard, `ThrottleVerificationSend` (1/min), Mailpit for local mail. **42 tests / 166 assertions.**
+Modal-only auth (`?auth=*` URL-driven), page-only destinations for reset/2FA/confirm, email verification via `MustVerifyEmail`, `ProfileMenu` + mobile account card, Inertia v3 flash + Stakly-styled Sonner toasts, custom Fortify response bindings (register / verify / resend / forgot-password / password-reset → `/?auth=login` with toast), reset-token guard, `ThrottleVerificationSend` (1/min). **42 tests / 166 assertions.**
 
-Locked architecture: `memory/project_milestones_state.md`.
+Locked architecture in `memory/project_milestones_state.md`.
 
 ---
 
 ## M2.5 — Pre-M3 polish ✅
 
-Settings now renders inside `SiteLayout` (same `SiteHeader` + footer as the rest of the site) with an inline pill-tabs sub-nav (Profile / Security / Appearance). `AppLayout` / `AppShell` / `AppSidebar` / `AppSidebarHeader` / `AppContent` / `Breadcrumbs` + the rest of the starter-kit shell are deleted — settings is no longer a "separate app". `AuthModalProvider` no longer flashes the modal at logged-in users + strips stale `?auth=*` query. `ProfileMenu` "Coming soon" stubs replaced with disabled items.
+Settings rendered inside `SiteLayout` with inline pill-tabs sub-nav (Profile / Security / Appearance). Starter-kit shell (`AppLayout` / `AppShell` / `AppSidebar` / `Breadcrumbs` etc.) deleted. `AuthModalProvider` no longer flashes the modal at logged-in users + strips stale `?auth=*` query.
 
 ---
 
-## M3 — Listings Index
+## M3 — Listings Index ✅
 
-The marketplace board: `/listings` — filterable, sortable, paginated grid of open listings. **No "take listing" logic yet** (that's M4/M6) — the CTA is UI-only. **No "create listing" form yet** (that's M4). Frontend-first: build against real Postgres + seeded fake data.
+Public marketplace `/listings` is live: filterable / sortable / paginated grid of open listings (12/page, server-controlled). Featured strip on `/` shows top 4 ending-soon. PII-safe `ListingResource`. Bybit-inspired filter bar (`ListingFiltersBar`, `ListingFilters` popover/sheet via `useIsMobile()`), two card variants (`ListingCard` marketing / `ListingRow` index). Smart-ellipsis pagination with `Skeleton` loading rows wired to `router.on('start'/'finish')`. Game + currency registries (`config/games.ts`, `config/currencies.ts`) — adding a future game/currency is a one-line change. Stakly-skinned shadcn primitives at the source (select, input, toggle, sheet, dialog, popover). **69 tests / 434 assertions.**
 
-### Backend
-- [x] **M3.1 — Migration**: `listings` table created with `user_id` FK (cascadeOnDelete, TODO comment to harden when escrow lands), `game` (default `chess`), `stake_amount` (decimal 12,2), `skill_min` / `skill_max` (unsignedSmallInt, nullable), `time_control`, `region`, `language`, `expires_at`, `status` (default `open`), timestamps. Indexes on `status`, `stake_amount`, `expires_at`, `created_at`. Verified via Boost `database-schema`.
-- [x] **M3.2 — Model + factory + enums**: `App\Enums\ListingStatus` + `App\Enums\TimeControl` (string-backed PHP enums). `Listing` model with `belongsTo(User)`, casts (`stake_amount` → decimal:2, `time_control` → enum, `status` → enum, `expires_at` → datetime), `scopeOpen()` (status=open AND not yet expired). Factory generates realistic data: stake distribution skewed low (more $10-50 than $500), 70% have a skill band / 30% "any", chess only (per MVP), varied time controls / regions / languages / expiries. Factory states: `open()`, `expired()`, `taken()`, `cancelled()`, `endingSoon()`, `highStake()`, `lowStake()`. Verified via tinker.
-- [x] **M3.3 — Seeder**: `ListingSeeder` creates 20 users + 50 listings (40 open + 5 taken + 3 expired + 2 ending-soon), using `recycle()` so listings are spread across the user pool — power users own 4-5 listings each, mirroring a real marketplace. Wired into `DatabaseSeeder` so `migrate:fresh --seed` produces a full dev dataset. Verified via Boost `database-query` (42 open / 5 taken / 3 expired, 19 unique owners, ending-soon listings have ~20-40 min windows).
-- [x] **M3.4 — Controller + route + request + resource**: `ListingController@index` is public, paginates 12/page (server-controlled, not URL-controlled), eager-loads `user:id,name`, and ships `ListingResource` data — whitelist only, no PII leak. Filters via `IndexListingsRequest` (strict validation: stake/skill bounded, time_control validated against enum, sort whitelisted via match-expression). Skill-range overlap query handles nullable listing bounds correctly. Route `GET /listings` named `listings.index`.
-- [x] **M3.5 — Backend feature tests**: 15 tests / 147 assertions covering public route, default `scopeOpen` filter (only open + non-expired show), server-controlled pagination (12/page, ignores user-supplied `per_page`), filters (stake min/max, time_control multi, skill-range overlap, region), sorts (newest default, highest_stake, ending_soon), validation redirect to clean `/listings` on bad input (no 422 wall for stale share-links), filters echoed back for URL→form hydration, and **explicit PII guard** (`assertDontSee` on creator email). Tiny stub `listings/index.tsx` added so Inertia component-resolution passes — real page lands in M3.9.
+**Locked decisions:**
+- **URL contract** project-wide (via Spatie query-builder): `?filter[stake_max]=100&filter[time_control]=blitz,rapid&sort=ending_soon&page=2`. Future filtered endpoints use the same shape — no per-controller adapters.
+- **Take CTA is UI-only** in M3 (wired to nothing). Real take lands in M4 (UI) + M6 (match flow).
+- **Create listing form doesn't exist** — lands in M4 *after* M3.5 ledger is in place.
+- `IndexListingsRequest` keeps `$redirect = '/listings'` for graceful share-link UX; `?filter[admin]=1` rejected via `array:keys` whitelist.
+- `lib/listings-query.ts` `buildListingsQuery(filters, { page? })` centralizes URL building across filter bar / popover / pagination.
 
-### Frontend
-- [x] **M3.6 — TypeScript types**: `resources/js/types/listings.ts` defines `Listing` (mirrors `ListingResource`), `ListingFilters`, `ListingSort`, `ListingStatus`, `TimeControl`, generic `Paginator<T>`, and the `ListingsIndexProps` shape consumed by `pages/listings/index.tsx`. Re-exported from the `@/types` barrel.
-- [x] **M3.7 — `ListingRow` component** (`components/listings/listing-row.tsx`): horizontal row layout (per locked design choice — list view, not grid). Avatar + creator + region / skill range badge / time control badge / language badge / time remaining (amber text when < 1h left) / stake amount (`font-display` `text-gradient-primary`) / disabled "Take" CTA with `title="Coming in M4"`. Hover lift + soft pink glow. Responsive: collapses to vertical stack on mobile. Helper fns (`formatTimeRemaining`, `formatSkillRange`, `isEndingSoon`) live at module scope so `react-hooks/purity` lint is happy with `Date.now()` reads.
-- [x] **M3.8 — Filter UI (Bybit-inspired, Stakly-skinned) + game registry + currency dropdown**: top bar (desktop) = Sort dropdown + **`StakeAmountInput`** compound (input + USDT currency dropdown in one bordered box, Bybit-style, debounced 400ms) + **Time control chip row** (multi-select) + **`Filters (N)`** button (popover on desktop / sheet on mobile via `useIsMobile()`, ~420px popover with brand-glow shadow). Mobile bar: 2 rows (Sort + Filters on row 1, full-width `StakeAmountInput` on row 2; chips live in the popover only). Active filter chips strip below with × removers + "Clear all". Popover/sheet body shares the same `FilterForm` (stake range, skill range, time control, region, language, Apply/Reset). URL sync via `router.get` with `preserveState`+`preserveScroll`+`replace`. **Game registry**: `App\Enums\Game` (PHP) + `resources/js/config/games.ts` (frontend) — adding a game = enum case + registry entry. **Currency registry**: `resources/js/config/currencies.ts` — USDT enabled, BTC/ETH as `Soon` (matches GameSelector). Time control chips only render if `gameSupports(filters.game, 'time_control')`. **Stakly-skinned shadcn primitives at the source** (per CLAUDE.md rule): `select.tsx` / `input.tsx` / `toggle.tsx` / `toggle-group.tsx` / `sheet.tsx` close button — soft pink-wash hovers (`bg-primary/10`), soft pink focus rings (`ring-2 ring-primary/25`), no more `bg-accent` purple defaults, no more chunky `ring-[3px]` focus glows, no more segmented-control default (chips are independent pills by default), number inputs hide their spin-arrows. Mobile menu uses the default Sheet close button (was rendering a duplicate before). Lint compliance: `FilterForm` re-mounts on open via conditional render (avoids `react-hooks/set-state-in-effect`). Sheet `SheetTitle` + `SheetDescription` added (a11y). Added `@radix-ui/react-popover` + shadcn `Popover` wrapper. **+2 tests** for game default + invalid-game redirect (now 17 / 159 in this suite, 59 / 325 overall).
-- [ ] **M3.9 — Pagination + loading skeletons**: page shell + listing row rendering already shipped in M3.7/M3.8 (`pages/listings/index.tsx` uses `SiteLayout`, renders `<ListingRow>` stack, empty state, "{total} open / matching" count). Still to do: (1) **Pagination UI** — render Laravel paginator links (Prev / 1 / 2 / 3 / Next) styled with Stakly pills; preserve filter+sort query string on page change. With 42 open seeded listings + 12/page, we have 4 pages visible. (2) **Loading skeletons** — when Inertia visit is in flight (after filter / sort / page change), show ~6 shimmer rows in place of the current rows so the user gets immediate feedback instead of a stale list during the round-trip. Use the existing `Skeleton` component (`@/components/ui/skeleton`) wrapped to mimic the `ListingRow` silhouette. Source the in-flight state from Inertia's `useRemember` or `router` events.
-- [x] **M3.10 — Header "Listings" link**: `SiteHeader` + `MobileMenu` "Listings" nav items now use Wayfinder's `@/routes/listings::index` typed route generator. Bumped while touching adjacent files.
-- [ ] **M3.11 — Featured strip on `/`**: top 4–6 listings rendered as a horizontal row of `ListingCard`s on the homepage (server-fetched, never seeded directly into the page). Below `Hero`, above `GameSelector` or `HowItWorks` — TBD design.
+---
 
-### Out of scope for M3
-- "Take listing" action (M4/M6)
-- "Create listing" form (M4)
-- Listing detail page (M4)
-- Real escrow / on-chain funds locked at listing creation (deferred until custody is decided)
+## M3.5 — Wallet / Ledger Foundation **(next)**
+
+### Why this milestone exists
+
+M4 (Create Listing) is inseparable from balance debits + escrow holds — you can't ship "Create listing" without "what does Create listing actually do to money?" Doing the **bookkeeping first**, with the on-chain layer mocked, lets us iterate marketplace mechanics with $0 risk. Once the ledger is correct, the on-chain layer is glue (webhook in → `Wallet::credit()`; user clicks withdraw → `Wallet::debit()` + Tatum API call).
+
+### Locked decisions
+
+- **Custody model**: balance-based custodial. Users deposit USDT once → the system tracks an internal `usdt_balance` → listing create / take / cancel / payout / fee all draw from balance. **Per-match deposits rejected** (5x operational complexity, no UX win).
+- **Source of truth**: Postgres ledger (`wallet_transactions`). **Append-only, immutable.** Every money state change writes a row. **Never mutate `users.usdt_balance` outside a `Wallet` service method** — direct writes in seeders / migrations / controllers are forbidden, lint-check in tests if useful.
+- **Transactional + idempotent**: every money operation wraps `DB::transaction(...)` with `lockForUpdate()` on the user row. Each accepts a `reference_id` — repeat calls with the same reference return the existing transaction (no-op), never double-debit.
+- **On-chain integration deferred** to post-MVP. M3.5 mocks deposit/withdrawal as ledger entries with no chain interaction.
+- **Vendor-agnostic by design**: M3.5 builds the entire ledger + mock deposit/withdrawal layer without touching any external service. The chain provider (Tatum / Moralis / Alchemy+DIY / other) is **undecided** and the decision is intentionally deferred to the pre-launch gate. Choosing later costs nothing because the ledger is the contract everything else plugs into.
+
+### Scope
+
+- [ ] **Migration**: add `usdt_balance` (decimal 18,6, default 0) to `users`. New `wallet_transactions` table — `id`, `user_id` FK, `type` enum, `amount` (signed decimal), `balance_after` (snapshot), `related_listing_id` nullable FK, `reference_id` (unique nullable, for idempotency), `description`, `created_at`. **No `updated_at`, no soft deletes.**
+- [ ] **Enum**: `App\Enums\WalletTransactionType` — `Deposit`, `Withdrawal`, `EscrowHold`, `EscrowRelease`, `Payout`, `Fee`.
+- [ ] **Model + factory**: `WalletTransaction` model with `belongsTo(User)` + `belongsTo(Listing)`. Factory states for each `type`.
+- [ ] **Seeder**: dev users start with $1000 via a seeded `deposit` ledger entry — **never set `usdt_balance` directly**, always via the service so ledger + balance stay consistent.
+- [ ] **Service**: `App\Services\Wallet` — methods `hold`, `release`, `payout`, `fee`, `deposit`, `withdraw`. Each wraps `DB::transaction(...)` + `lockForUpdate()`, validates, appends ledger row, updates `users.usdt_balance`. Rejects negative amounts. Reference-id replay is a no-op (return existing row).
+- [ ] **Exceptions**: `InsufficientBalanceException`. Idempotent replay is *not* an exception — returns the prior transaction silently.
+- [ ] **Tests** (Pest): happy paths for each operation, insufficient balance, concurrent hold race (two simultaneous holds on the same balance — only one succeeds), idempotency replay (same `reference_id` twice = no-op), ledger immutability invariant (`balance_after` always matches `users.usdt_balance` after every operation), no `UPDATE` statements on `wallet_transactions`.
+- [ ] **No UI** in M3.5. Wallet UI is M7.
+- [ ] **CLAUDE.md** update — capture the locked decisions above + service-only-write rule.
+
+### Out of scope for M3.5
+
+- Deposit / withdraw UI (M7).
+- Real on-chain integration (pre-launch, gated — see bottom).
+- Match settlement / dispute money flow (M6).
 
 ---
 
 ## M4 — Listing Detail + Create Flow
 
-Public listing detail page (two-column profile + take widget) and the "create a listing" form.
+Builds on M3.5. Public listing detail page + create form.
 
 _Rough scope:_
 - Listing detail page (mirror mmrangels' profile + booking widget layout)
-- "Create listing" form with validation
-- "Take listing" CTA (UI only, no real escrow yet)
+- "Create listing" form → `Wallet::hold(...)` debits balance + writes escrow ledger entry, then creates listing. Transactional + idempotent.
+- Auth gate (must be logged in + email verified) on create.
+- "Take listing" CTA still UI-only — real take lands in M6.
+- "Cancel listing" → `Wallet::release(...)` refunds creator.
+- `ListingPolicy` for owner-only cancel.
 
 ---
 
@@ -87,16 +112,43 @@ Public player profile — stats, match history, ratings, linked game accounts.
 
 ## M6 — Match Flow (mock)
 
-Match-in-progress page, both-players-confirm UI, dispute opening UI. All mocked — no real game-API integration yet.
+Match-in-progress page, both-players-confirm UI, dispute opening UI. Game-API integration mocked. Match settlement = `Wallet::payout(winner)` + `Wallet::fee(platform)`.
 
 ---
 
-## M7 — Wallet UI (mock)
+## M7 — Wallet UI
 
-Deposit address display, withdrawal form, transaction history. Mock data only; real on-chain integration is a separate backend pass.
+Deposit address display, withdrawal form, transaction history. Backed by the real M3.5 ledger; on-chain layer still mocked here. Real Tatum wiring lives in the pre-launch gate below.
 
 ---
 
 ## M8 — Settings / Linked Accounts
 
 Profile settings, chess.com / Lichess account linking flow with ownership verification (UI only).
+
+---
+
+## Pre-launch gate — Custody + Jurisdiction (BLOCKER)
+
+Real on-chain integration (Tatum or similar) is gated by these blockers. **Do not proceed without explicit go-ahead.** Once Stakly accepts a single real deposit, it's operating a regulated money-handling business and the engineering becomes hard to unwind.
+
+Required answers before mainnet wiring:
+1. **Custody committed**: custodial via Stakly hot wallet. Key storage (AWS KMS / HashiCorp Vault / hardware). Multisig threshold for large withdrawals. Cold-wallet sweep policy.
+2. **Jurisdiction committed**: where Stakly is registered + license path (e.g., Curaçao sublicense, Malta MGA, US state-by-state map, or testnet-only / fake-money for the foreseeable future).
+3. **Chain-service provider committed** — see shortlist below. **Currently undecided.**
+4. **Incident response plan**: hot-wallet compromise procedure, user notification template, insurance (if any).
+5. **Terms of Service + dispute resolution** policy drafted.
+6. **KYC/AML** required? If yes, integration with which provider, threshold that triggers it.
+
+> No traditional banking / payment processor in scope — Stakly is **crypto-end-to-end** (USDT deposits, USDT withdrawals, USDT-denominated platform revenue). The only fiat touchpoint is the operating company's own expenses (taxes, legal), which is part of the jurisdiction decision (#2), not a user-facing gate.
+
+### Chain-service provider shortlist (decision pending)
+
+Need to pick one before any real-chain code lands. Honest comparison at MVP scale:
+
+- **Tatum** — single API for both deposit-watching (webhooks) and withdrawal-signing. Lowest integration code. Free dev tier covers MVP; ~$50–100/mo production. *Easiest path.*
+- **Moralis** — similar abstraction to Tatum, Web3-app-focused, often cheaper free tier. Verify BEP20 USDT support depth before committing.
+- **Alchemy + DIY signing** — Address Activity webhook is free for monitoring; you write withdrawal signing yourself (Laravel job + `web3.php` + AWS KMS for key storage, ~$1–5/mo). **Cheapest viable option**; ~15 extra hours of engineering upfront, two integrations to maintain.
+- **Rejected**: NOWPayments / Coinbase Commerce / BitPay (transaction-fee model stacks on top of our 10-15% rake — bad unit economics); DIY-everything with raw RPC (200+ hours of crypto-specific bug surface for a solo dev); BitGo / Fireblocks (enterprise, way overkill).
+
+Decision criteria: free-tier limits vs MVP volume, DX of each dashboard, BSC/BEP20 USDT support depth. Action item: sign up for Tatum + Moralis free tiers, spend 30 min in each dashboard, pick the better DX.

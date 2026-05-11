@@ -1,15 +1,51 @@
-import { Head } from '@inertiajs/react';
+import { Head, router } from '@inertiajs/react';
+import { useEffect, useState } from 'react';
 import { ListingFiltersBar } from '@/components/listings/listing-filters-bar';
+import { ListingPagination } from '@/components/listings/listing-pagination';
 import { ListingRow } from '@/components/listings/listing-row';
+import { ListingRowSkeleton } from '@/components/listings/listing-row-skeleton';
 import SiteLayout from '@/layouts/site-layout';
+import { index as listingsIndex } from '@/routes/listings';
 import type { ListingsIndexProps } from '@/types';
 
-// Pagination UI lands in M3.9. For now: filters bar + rows + empty state.
+const SKELETON_ROW_COUNT = 6;
+
 export default function ListingsIndex({
     listings,
     filters,
     sorts,
 }: ListingsIndexProps) {
+    const [isLoading, setIsLoading] = useState(false);
+
+    useEffect(() => {
+        const listingsPath = listingsIndex().url;
+
+        const isListingsVisit = (url: string): boolean => {
+            try {
+                return new URL(url, window.location.origin).pathname === listingsPath;
+            } catch {
+                return false;
+            }
+        };
+
+        const removeStart = router.on('start', (event) => {
+            if (isListingsVisit(event.detail.visit.url.toString())) {
+                setIsLoading(true);
+            }
+        });
+
+        const removeFinish = router.on('finish', (event) => {
+            if (isListingsVisit(event.detail.visit.url.toString())) {
+                setIsLoading(false);
+            }
+        });
+
+        return () => {
+            removeStart();
+            removeFinish();
+        };
+    }, []);
+
     return (
         <SiteLayout>
             <Head title="Listings" />
@@ -32,7 +68,13 @@ export default function ListingsIndex({
                     <ListingFiltersBar filters={filters} sorts={sorts} />
                 </div>
 
-                {listings.data.length === 0 ? (
+                {isLoading ? (
+                    <div className="flex flex-col gap-3">
+                        {Array.from({ length: SKELETON_ROW_COUNT }).map((_, i) => (
+                            <ListingRowSkeleton key={i} />
+                        ))}
+                    </div>
+                ) : listings.data.length === 0 ? (
                     <p className="text-muted-foreground py-16 text-center text-sm">
                         No listings match your filters yet.
                     </p>
@@ -43,6 +85,12 @@ export default function ListingsIndex({
                         ))}
                     </div>
                 )}
+
+                <ListingPagination
+                    currentPage={listings.meta.current_page}
+                    lastPage={listings.meta.last_page}
+                    filters={filters}
+                />
             </div>
         </SiteLayout>
     );
