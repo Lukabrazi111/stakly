@@ -253,6 +253,9 @@ Anything outside this scope is v2 and should be flagged, not built.
 - **Stake is escrowed at listing creation**, not at match. This prevents bait-listings and makes match start instant. Refund on listing expiry.
 - **Outcome verification — primary path is the game's official API.** Players link their chess.com / Lichess account at signup with verified ownership (e.g. bio-code challenge). When a match ends, the system queries the API for the result. Both-players-confirm is the fast path; on disagreement, the API is the tiebreaker. Screenshots + manual support are last-resort only — never the primary mechanism.
 - **All financial state lives in a Postgres ledger.** The chain is the rail; the database is the source of truth. Every state transition (deposit, escrow, refund, payout, fee) is an immutable ledger entry. Money operations must be transactional and idempotent.
+- **Auth UX — modal-only for entry points, pages for destinations, URL-driven.** Login, register, and forgot-password are presented exclusively as a single shadcn `Dialog` triggered via `useAuthModal()` (context mounted at `app.tsx` root, modal rendered inside `SiteLayout` because it needs Inertia's `usePage`). **The `?auth=login|register|forgot-password` query param is the source of truth for modal state** — opening writes the param (pushState the first time, replaceState on view-swap), closing removes it (replaceState), and the provider listens to `popstate` so back-button/manual-URL-clearing closes or restores the modal accordingly. Fortify view callbacks for these three surfaces redirect to `/?auth=*` — there are **no** `/login`, `/register`, or `/forgot-password` page components. Reset-password, verify-email, two-factor-challenge, and confirm-password remain **page-only** because users land on them from email links or post-auth redirects, where there's nothing to overlay.
+- **Fortify is the auth foundation.** TOTP 2FA is already wired. SMS OTP, email OTP, magic links, passkeys, and social login are all reachable as extensions (custom columns + middleware + provider) but are not in v1.
+- **Three animation systems, each with a specific job.** (1) **CSS transitions** (`transition-colors`, `hover:shadow-glow-sm`) for hover/focus/simple state changes — never wrap clickable elements in `motion.*` just for hover. (2) **`tw-animate-css`** (`data-[state=open]:animate-in fade-in-0`) for Radix/shadcn primitives where state is controlled by `data-state` — Sheet, Dialog, Popover, Tooltip. Don't fight Radix by replacing these with motion; we'd lose focus management, scroll-lock, and a11y. (3) **`motion`** (`AnimatePresence`, `motion.div layout`, spring physics) for our own React-state-driven animations: enter/exit, layout/size animation, sequenced reveals. The auth modal uses motion correctly; future cases like animated listing cards (M3), match flow state reveals (M6), and wallet success states (M7) should also use motion.
 
 ## Visual System
 
@@ -324,8 +327,9 @@ Components live in `resources/js/components/` and are organized by **domain**, n
 **New Stakly-specific code goes into a domain subfolder.** Current and planned folders:
 
 - `components/ui/` — shadcn primitives (untouched, don't add domain code here)
-- `components/site/` — public site shell: `site-header`, `site-footer`, `marquee-strip`
+- `components/site/` — public site shell: `site-header`, `site-footer`, `marquee-strip`, `mobile-menu`
 - `components/home/` — homepage sections (M1): `hero`, `game-selector`, `how-it-works`
+- `components/auth/` — auth forms + modal infrastructure (M2): `login-form`, `register-form`, `forgot-password-form`, `auth-modal`, `auth-modal-provider` (URL-driven). Modal-only — there are no entry-point auth page components.
 - `components/listings/` — listings index (M3): listing card, filters, etc.
 - `components/listing-detail/` — listing detail page (M4): two-column profile + booking widget
 - `components/match/` — match flow (M6)

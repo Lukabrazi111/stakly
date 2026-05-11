@@ -27,9 +27,9 @@ export default function PasswordInput({
                 tabIndex={-1}
             >
                 {showPassword ? (
-                    <EyeOff className="size-4" />
-                ) : (
                     <Eye className="size-4" />
+                ) : (
+                    <EyeOff className="size-4" />
                 )}
             </button>
         </div>

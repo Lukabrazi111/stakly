@@ -10,15 +10,15 @@ beforeEach(function () {
     $this->skipUnlessFortifyHas(Features::emailVerification());
 });
 
-test('email verification screen can be rendered', function () {
+test('verification notice redirects to home', function () {
     $user = User::factory()->unverified()->create();
 
-    $response = $this->actingAs($user)->get(route('verification.notice'));
-
-    $response->assertOk();
+    $this->actingAs($user)
+        ->get(route('verification.notice'))
+        ->assertRedirect('/');
 });
 
-test('email can be verified', function () {
+test('email can be verified and flashes a toast', function () {
     $user = User::factory()->unverified()->create();
 
     Event::fake();
@@ -33,7 +33,11 @@ test('email can be verified', function () {
 
     Event::assertDispatched(Verified::class);
     expect($user->fresh()->hasVerifiedEmail())->toBeTrue();
-    $response->assertRedirect(route('dashboard', absolute: false).'?verified=1');
+    $response->assertRedirect('/');
+    $response->assertInertiaFlash('toast', [
+        'type' => 'success',
+        'message' => 'Email verified.',
+    ]);
 });
 
 test('email is not verified with invalid hash', function () {
@@ -70,7 +74,7 @@ test('email is not verified with invalid user id', function () {
     expect($user->fresh()->hasVerifiedEmail())->toBeFalse();
 });
 
-test('verified user is redirected to dashboard from verification prompt', function () {
+test('verified user is redirected home from verification prompt', function () {
     $user = User::factory()->create();
 
     Event::fake();
@@ -78,7 +82,7 @@ test('verified user is redirected to dashboard from verification prompt', functi
     $response = $this->actingAs($user)->get(route('verification.notice'));
 
     Event::assertNotDispatched(Verified::class);
-    $response->assertRedirect(route('dashboard', absolute: false));
+    $response->assertRedirect('/');
 });
 
 test('already verified user visiting verification link is redirected without firing event again', function () {
@@ -93,7 +97,7 @@ test('already verified user visiting verification link is redirected without fir
     );
 
     $this->actingAs($user)->get($verificationUrl)
-        ->assertRedirect(route('dashboard', absolute: false).'?verified=1');
+        ->assertRedirect('/');
 
     Event::assertNotDispatched(Verified::class);
     expect($user->fresh()->hasVerifiedEmail())->toBeTrue();

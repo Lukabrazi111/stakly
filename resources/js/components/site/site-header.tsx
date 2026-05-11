@@ -1,9 +1,17 @@
-import { Link } from '@inertiajs/react';
-import { Menu, Search } from 'lucide-react';
+import { Link, usePage } from '@inertiajs/react';
+import { Search } from 'lucide-react';
+import { useAuthModal } from '@/components/auth/auth-modal-provider';
+import { MobileMenu } from '@/components/site/mobile-menu';
+import { ProfileMenu } from '@/components/site/profile-menu';
+import { UnverifiedChip } from '@/components/site/unverified-chip';
 import { Button } from '@/components/ui/button';
-import { login, register } from '@/routes';
 
 export function SiteHeader() {
+    const { openLogin, openRegister } = useAuthModal();
+    const { auth } = usePage().props;
+    const user = auth.user;
+    const isUnverified = Boolean(user && !user.email_verified_at);
+
     return (
         <header className="border-border/50 bg-background/80 sticky top-0 z-50 w-full border-b backdrop-blur-lg">
             <div className="mx-auto flex h-16 max-w-7xl items-center justify-between gap-6 px-4">
@@ -46,24 +54,34 @@ export function SiteHeader() {
                     >
                         Support
                     </Link>
-                    <div className="ml-3 flex items-center gap-2">
-                        <Button variant="ghost" size="default" asChild>
-                            <Link href={login()}>Sign in</Link>
-                        </Button>
-                        <Button variant="gradient" size="pill" asChild>
-                            <Link href={register()}>Sign up</Link>
-                        </Button>
+                    <div className="ml-3 flex items-center gap-3">
+                        {user ? (
+                            <>
+                                {isUnverified && <UnverifiedChip />}
+                                <ProfileMenu user={user} />
+                            </>
+                        ) : (
+                            <>
+                                <Button
+                                    variant="ghost"
+                                    size="default"
+                                    onClick={openLogin}
+                                >
+                                    Sign in
+                                </Button>
+                                <Button
+                                    variant="gradient"
+                                    size="pill"
+                                    onClick={openRegister}
+                                >
+                                    Sign up
+                                </Button>
+                            </>
+                        )}
                     </div>
                 </nav>
 
-                <Button
-                    variant="ghost"
-                    size="icon"
-                    className="md:hidden"
-                    aria-label="Open menu"
-                >
-                    <Menu />
-                </Button>
+                <MobileMenu />
             </div>
         </header>
     );

@@ -193,10 +193,11 @@
 }
 
 @utility border-glow {
-    border-color: var(--gradient-glow);
+    border-color: color-mix(in srgb, var(--gradient-glow) 50%, transparent);
     box-shadow:
-        0 0 18px -7px var(--gradient-glow),
-        inset 0 0 0 1px var(--gradient-glow);
+        0 0 22px -8px var(--gradient-glow),
+        inset 0 0 0 1px
+            color-mix(in srgb, var(--gradient-glow) 35%, transparent);
 }
 
 @layer base {

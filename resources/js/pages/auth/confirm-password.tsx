@@ -1,4 +1,5 @@
 import { Form, Head } from '@inertiajs/react';
+import { authInputClass } from '@/components/auth/input-styles';
 import InputError from '@/components/input-error';
 import PasswordInput from '@/components/password-input';
 import { Button } from '@/components/ui/button';
@@ -11,33 +12,41 @@ export default function ConfirmPassword() {
         <>
             <Head title="Confirm password" />
 
-            <Form {...store.form()} resetOnSuccess={['password']}>
+            <Form
+                {...store.form()}
+                resetOnSuccess={['password']}
+                className="flex flex-col gap-6"
+            >
                 {({ processing, errors }) => (
-                    <div className="space-y-6">
-                        <div className="grid gap-2">
-                            <Label htmlFor="password">Password</Label>
+                    <>
+                        <div className="flex flex-col gap-2">
+                            <Label htmlFor="password" className="text-sm">
+                                Password
+                            </Label>
                             <PasswordInput
                                 id="password"
                                 name="password"
-                                placeholder="Password"
+                                placeholder="••••••••"
                                 autoComplete="current-password"
                                 autoFocus
+                                required
+                                className={authInputClass}
                             />
-
                             <InputError message={errors.password} />
                         </div>
 
-                        <div className="flex items-center">
-                            <Button
-                                className="w-full"
-                                disabled={processing}
-                                data-test="confirm-password-button"
-                            >
-                                {processing && <Spinner />}
-                                Confirm password
-                            </Button>
-                        </div>
-                    </div>
+                        <Button
+                            type="submit"
+                            variant="gradient"
+                            size="pill"
+                            className="w-full"
+                            disabled={processing}
+                            data-test="confirm-password-button"
+                        >
+                            {processing && <Spinner />}
+                            Confirm password
+                        </Button>
+                    </>
                 )}
             </Form>
         </>
@@ -47,5 +56,5 @@ export default function ConfirmPassword() {
 ConfirmPassword.layout = {
     title: 'Confirm your password',
     description:
-        'This is a secure area of the application. Please confirm your password before continuing.',
+        'This is a secure area. Confirm your password to continue.',
 };

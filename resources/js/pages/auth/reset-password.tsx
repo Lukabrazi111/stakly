@@ -1,4 +1,5 @@
 import { Form, Head } from '@inertiajs/react';
+import { authInputClass } from '@/components/auth/input-styles';
 import InputError from '@/components/input-error';
 import PasswordInput from '@/components/password-input';
 import { Button } from '@/components/ui/button';
@@ -21,66 +22,76 @@ export default function ResetPassword({ token, email }: Props) {
                 {...update.form()}
                 transform={(data) => ({ ...data, token, email })}
                 resetOnSuccess={['password', 'password_confirmation']}
+                className="flex flex-col gap-6"
             >
                 {({ processing, errors }) => (
-                    <div className="grid gap-6">
-                        <div className="grid gap-2">
-                            <Label htmlFor="email">Email</Label>
-                            <Input
-                                id="email"
-                                type="email"
-                                name="email"
-                                autoComplete="email"
-                                value={email}
-                                className="mt-1 block w-full"
-                                readOnly
-                            />
-                            <InputError
-                                message={errors.email}
-                                className="mt-2"
-                            />
-                        </div>
+                    <>
+                        <div className="flex flex-col gap-4">
+                            <div className="flex flex-col gap-2">
+                                <Label htmlFor="email" className="text-sm">
+                                    Email
+                                </Label>
+                                <Input
+                                    id="email"
+                                    name="email"
+                                    type="email"
+                                    autoComplete="email"
+                                    value={email}
+                                    readOnly
+                                    className={`${authInputClass} opacity-70`}
+                                />
+                                <InputError message={errors.email} />
+                            </div>
 
-                        <div className="grid gap-2">
-                            <Label htmlFor="password">Password</Label>
-                            <PasswordInput
-                                id="password"
-                                name="password"
-                                autoComplete="new-password"
-                                className="mt-1 block w-full"
-                                autoFocus
-                                placeholder="Password"
-                            />
-                            <InputError message={errors.password} />
-                        </div>
+                            <div className="flex flex-col gap-2">
+                                <Label htmlFor="password" className="text-sm">
+                                    New password
+                                </Label>
+                                <PasswordInput
+                                    id="password"
+                                    name="password"
+                                    autoComplete="new-password"
+                                    placeholder="At least 8 characters"
+                                    required
+                                    autoFocus
+                                    className={authInputClass}
+                                />
+                                <InputError message={errors.password} />
+                            </div>
 
-                        <div className="grid gap-2">
-                            <Label htmlFor="password_confirmation">
-                                Confirm password
-                            </Label>
-                            <PasswordInput
-                                id="password_confirmation"
-                                name="password_confirmation"
-                                autoComplete="new-password"
-                                className="mt-1 block w-full"
-                                placeholder="Confirm password"
-                            />
-                            <InputError
-                                message={errors.password_confirmation}
-                                className="mt-2"
-                            />
+                            <div className="flex flex-col gap-2">
+                                <Label
+                                    htmlFor="password_confirmation"
+                                    className="text-sm"
+                                >
+                                    Confirm new password
+                                </Label>
+                                <PasswordInput
+                                    id="password_confirmation"
+                                    name="password_confirmation"
+                                    autoComplete="new-password"
+                                    placeholder="Repeat your password"
+                                    required
+                                    className={authInputClass}
+                                />
+                                <InputError
+                                    message={errors.password_confirmation}
+                                />
+                            </div>
                         </div>
 
                         <Button
                             type="submit"
-                            className="mt-4 w-full"
+                            variant="gradient"
+                            size="pill"
+                            className="w-full"
                             disabled={processing}
                             data-test="reset-password-button"
                         >
                             {processing && <Spinner />}
                             Reset password
                         </Button>
-                    </div>
+                    </>
                 )}
             </Form>
         </>
@@ -88,6 +99,6 @@ export default function ResetPassword({ token, email }: Props) {
 }
 
 ResetPassword.layout = {
-    title: 'Reset password',
-    description: 'Please enter your new password below',
+    title: 'Set a new password',
+    description: 'Pick a strong one — at least 8 characters.',
 };

@@ -9,20 +9,26 @@ beforeEach(function () {
     $this->skipUnlessFortifyHas(Features::resetPasswords());
 });
 
-test('reset password link screen can be rendered', function () {
+test('forgot password route redirects to home with auth modal flag', function () {
     $response = $this->get(route('password.request'));
 
-    $response->assertOk();
+    $response->assertRedirect('/?auth=forgot-password');
 });
 
-test('reset password link can be requested', function () {
+test('reset password link can be requested and flashes a toast', function () {
     Notification::fake();
 
     $user = User::factory()->create();
 
-    $this->post(route('password.email'), ['email' => $user->email]);
+    $response = $this->post(route('password.email'), ['email' => $user->email]);
 
     Notification::assertSentTo($user, ResetPassword::class);
+
+    $response->assertRedirect('/');
+    $response->assertInertiaFlash('toast', [
+        'type' => 'success',
+        'message' => "Password reset link sent to {$user->email}.",
+    ]);
 });
 
 test('reset password screen can be rendered', function () {

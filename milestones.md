@@ -17,53 +17,42 @@ Frontend-first MVP. Build UI against real DB infrastructure + seeded fake data; 
 
 ---
 
-## M1 — Design Foundation + Homepage
+## M1 — Design Foundation + Homepage ✅
 
-**Goal:** visiting `/` shows a styled, responsive homepage matching the dark + neon design direction. A small reusable component library and design-token system emerges in the process.
+Stakly's dark + pink/purple gradient visual system shipped: design tokens (`bg-card`, `text-gradient-primary`, `shadow-glow`, etc.), Bricolage + Inter fonts, gradient `Button` variant + `pill` size, `MarqueeStrip`, `SiteHeader`, `SiteFooter`, `SiteLayout`, `MobileMenu` (three-pill hamburger morph). Homepage `/` renders Hero (typography-only, atmospheric background — no character art per locked decision), `GameSelector` (chess selected by `border-glow`, 8 other games with "Soon" badges), and `HowItWorks` (three-step grid).
 
-**Definition of done:**
-- `/` renders correctly on mobile, tablet, and desktop.
-- Design tokens are in `tailwind.config` (or Tailwind v4 CSS theme) — not hardcoded hex values in components.
-- Header + Footer are reused across the layout.
-
-### Design tokens & fonts
-- [x] Install Bricolage Grotesque (display) and Inter (body) via `@fontsource-variable`
-- [x] Configure Tailwind v4 color tokens — background, card, border, foreground, muted-foreground, primary, accent, success, warning, destructive
-- [x] Configure font tokens — `font-display` (Bricolage), `font-sans` (Inter)
-- [x] Add gradient utilities — `bg-gradient-primary`, `text-gradient-primary`
-- [x] Add glow utilities — `shadow-glow`, `shadow-glow-sm`, `border-glow`
-- [x] Force dark-only mode in `app.blade.php` (`<html class="dark">`)
-
-### Base components
-- [x] Customize shadcn `Button` — added `gradient` variant + `pill` size
-- [x] `MarqueeStrip` — scrolling promo banner under nav, CSS-only `animate-marquee`
-- [x] `SiteHeader` — logo + search bar (visual only) + nav links + Sign in / Sign up CTAs, mobile menu button stub
-- [x] `SiteFooter` — minimal logo + tagline + nav links + copyright
-- [x] `SiteLayout` — composes header + marquee + main + footer; accepts custom marqueeItems
-
-### Homepage (`/`)
-- [x] `Hero` section — typography-only headline ("Stake your skill. Find your match."), subheadline, primary CTA, atmospheric background (blurred glow blobs + dot grid). No character art per locked decision.
-- [x] `GameSelector` row — horizontal snap-scroll, chess selected by default with 2px `border-glow` + lift, other games (Dota 2, LoL, CS2, Valorant, Apex, Rocket League, Overwatch, Fortnite) shown with "Soon" badge and clickable.
-- [x] `HowItWorks` section — three-step grid (Post listing → Match opponent → Play & get paid), anchored at `#how-it-works`.
-- [x] Wire `/` route to render the homepage.
-- [ ] Verify responsive on mobile / tablet / desktop in browser
-
-**Notes / decisions deferred:**
-- Search bar functionality (UI only for now)
-- Whether `/` and `/listings` are the same page or separate — decide in M3 based on visual flow
-- Hero copy / final wording — placeholder for now, polish later
+**Locked decisions referenced often:**
+- `/` is hybrid: marketing sections + a featured-listings strip (strip built in M3, never ship fake data on `/`).
+- Visual system rules — see CLAUDE.md "Visual System" + memory.
 
 ---
 
-## M2 — Auth Flow (styled)
+## M2 — Auth Flow ✅
 
-Fortify is already installed and routed. The work here is purely styling the existing auth views (login, register, password reset, email verification, two-factor if enabled) to match the design.
+Modal-only auth (login / register / forgot-password) with URL as source of truth (`?auth=*`); page-only destinations (`reset-password`, `two-factor-challenge`, `confirm-password`) all Stakly-skinned. Email verification enforced via `MustVerifyEmail`; unverified users see the amber `UnverifiedChip` in header + mobile menu (server-driven 60s cooldown via Inertia flash). `ProfileMenu` (avatar dropdown with My profile / Wallet / Settings / Log out) replaces Sign in / Sign up when logged in. `/dashboard` removed entirely. Inertia v3 native flash + Sonner toasts (top-center, Stakly-styled). Custom Fortify response bindings flash on register / verify / resend / forgot-password. `ThrottleVerificationSend` middleware caps resends at 1/min per user. Mailpit wired for local mail testing. **Tests: 40 passing, 158 assertions** (incl. flash assertions + rate-limit 429).
 
-_Rough scope (flesh out when starting):_
-- Style login + register pages
-- Style password reset + email verification
-- Decide on social login (Steam / Google) — likely deferred to v2
-- Test full flow end-to-end with seeded users
+Locked architecture lives in `memory/project_milestones_state.md` (auto-loaded each session).
+
+### Manual flow verification — still to walk through
+- [ ] **Register** — submit → toast + amber chip; mailpit shows verification email; click link → "Email verified" toast; chip disappears
+- [ ] **Forgot password → reset** — modal → submit → modal closes + toast; click reset link from mailpit → set new → log in
+- [ ] **Login** — happy path + invalid-creds errors stay inside modal
+- [ ] **Confirm-password** — trigger via 2FA setup or `/user/profile-information`
+- [ ] **2FA challenge** — enable → log out → log in → 2FA page → recovery-code toggle works
+- [ ] **URL-driven modal** — `/?auth=register` → Sign in inside → URL flips to `/?auth=login`; clear URL → closes; back-button → restores
+- [ ] **Verify-email spam** — immediately after signup, click chip → "Resend in 60s"; spam via direct API → 429
+
+---
+
+## M2.5 — Pre-M3 polish (small, ~1-2 hour pass)
+
+Three small items surfaced after M2 shipped. Quick to fix; worth clearing before opening M3 so the auth surface is fully polished.
+
+- [ ] **Settings shell restyle.** `/settings/profile` and friends still render starter-kit `AppLayout` / `AppHeader` / `AppSidebar` chrome (neutral palette, breadcrumbs, sidebar). Jarring transition from the Stakly site shell. Wrap settings in `SiteLayout` instead, or restyle the existing app shell with Stakly tokens (dark + gradient + pill). Likely the simpler win is "settings is a centered card inside `SiteLayout`" — same shell as the rest of the site.
+- [ ] **Logged-in user visiting `/?auth=login` flashes the modal.** Provider's `useEffect` watches `user && open` and closes after mount → brief visual flash. Fix: in `AuthModalProvider`'s `readState()`, return `{ open: false }` if `usePage().props.auth.user` is non-null. Note: `readState()` is called from `useState` initializer (no React context yet) — refactor so the user check lives in a separate effect, or read the initial Inertia page directly. Side benefit: sharing a Stakly URL with `?auth=*` won't pop the modal at logged-in users.
+- [ ] **`ProfileMenu` stubs (`#`) jump to page top on click.** Replace the two `<Link href="#">` items (My profile, Wallet) with disabled `<DropdownMenuItem>` entries plus a small "Coming in M5/M7" hint, or wire to `toast.info('My profile is coming in M5.')`. Anything but a `#` href.
+
+After these, M2 surface is fully shipped and we can open M3 cleanly.
 
 ---
 

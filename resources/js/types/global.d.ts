@@ -1,4 +1,5 @@
 import type { Auth } from '@/types/auth';
+import type { FlashToast } from '@/types/ui';
 
 declare module '@inertiajs/core' {
     export interface InertiaConfig {
@@ -7,6 +8,10 @@ declare module '@inertiajs/core' {
             auth: Auth;
             sidebarOpen: boolean;
             [key: string]: unknown;
+        };
+        flashDataType: {
+            toast?: FlashToast;
+            verify_cooldown_seconds?: number;
         };
     }
 }

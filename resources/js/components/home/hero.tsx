@@ -1,8 +1,10 @@
 import { Link } from '@inertiajs/react';
+import { useAuthModal } from '@/components/auth/auth-modal-provider';
 import { Button } from '@/components/ui/button';
-import { register } from '@/routes';
 
 export function Hero() {
+    const { openRegister } = useAuthModal();
+
     return (
         <section className="relative isolate overflow-hidden">
             <div aria-hidden className="pointer-events-none absolute inset-0 -z-10">
@@ -38,8 +40,12 @@ export function Hero() {
                 </p>
 
                 <div className="mt-10 flex flex-wrap items-center justify-center gap-3 ">
-                    <Button variant="gradient" size="pill" asChild>
-                        <Link href={register()}>Get started</Link>
+                    <Button
+                        variant="gradient"
+                        size="pill"
+                        onClick={openRegister}
+                    >
+                        Get started
                     </Button>
                     <Button variant="ghost" size="lg" asChild>
                         <Link href="#how-it-works">How it works</Link>

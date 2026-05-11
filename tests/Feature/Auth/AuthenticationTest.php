@@ -4,13 +4,13 @@ use App\Models\User;
 use Illuminate\Support\Facades\RateLimiter;
 use Laravel\Fortify\Features;
 
-test('login screen can be rendered', function () {
+test('login route redirects to home with auth modal flag', function () {
     $response = $this->get(route('login'));
 
-    $response->assertOk();
+    $response->assertRedirect('/?auth=login');
 });
 
-test('users can authenticate using the login screen', function () {
+test('users can authenticate using the login endpoint', function () {
     $user = User::factory()->create();
 
     $response = $this->post(route('login.store'), [
@@ -19,7 +19,7 @@ test('users can authenticate using the login screen', function () {
     ]);
 
     $this->assertAuthenticated();
-    $response->assertRedirect(route('dashboard', absolute: false));
+    $response->assertRedirect('/');
 });
 
 test('users with two factor enabled are redirected to two factor challenge', function () {

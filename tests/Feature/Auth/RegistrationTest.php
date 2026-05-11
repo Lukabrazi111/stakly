@@ -6,13 +6,13 @@ beforeEach(function () {
     $this->skipUnlessFortifyHas(Features::registration());
 });
 
-test('registration screen can be rendered', function () {
+test('register route redirects to home with auth modal flag', function () {
     $response = $this->get(route('register'));
 
-    $response->assertOk();
+    $response->assertRedirect('/?auth=register');
 });
 
-test('new users can register', function () {
+test('new users can register and land on home with a toast flash', function () {
     $response = $this->post(route('register.store'), [
         'name' => 'Test User',
         'email' => 'test@example.com',
@@ -21,5 +21,10 @@ test('new users can register', function () {
     ]);
 
     $this->assertAuthenticated();
-    $response->assertRedirect(route('dashboard', absolute: false));
+    $response->assertRedirect('/');
+    $response->assertInertiaFlash('toast', [
+        'type' => 'success',
+        'message' => "We've sent a verification link to test@example.com.",
+    ]);
+    $response->assertInertiaFlash('verify_cooldown_seconds', 60);
 });

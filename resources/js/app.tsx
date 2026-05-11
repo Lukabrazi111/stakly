@@ -1,4 +1,5 @@
 import { createInertiaApp } from '@inertiajs/react';
+import { AuthModalProvider } from '@/components/auth/auth-modal-provider';
 import { Toaster } from '@/components/ui/sonner';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { initializeTheme } from '@/hooks/use-appearance';
@@ -26,7 +27,7 @@ createInertiaApp({
     withApp(app) {
         return (
             <TooltipProvider delayDuration={0}>
-                {app}
+                <AuthModalProvider>{app}</AuthModalProvider>
                 <Toaster />
             </TooltipProvider>
         );
