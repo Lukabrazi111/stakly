@@ -26,9 +26,12 @@ export interface Listing {
     stake_amount: number;
     skill_min: number | null;
     skill_max: number | null;
-    time_control: TimeControl;
+    // Array of one or more time controls the creator is willing to play.
+    // Taker (M6) picks which one for the actual match.
+    time_control: TimeControl[];
     region: string | null;
-    language: string | null;
+    // Array of languages the creator speaks, or null = no restriction.
+    language: string[] | null;
     expires_at: string;
     status: ListingStatus;
     created_at: string | null;
@@ -76,4 +79,22 @@ export interface ListingsIndexProps {
     listings: Paginator<Listing>;
     filters: ListingFilters;
     sorts: ListingSort[];
+}
+
+// Phase 1 (M4) — props for the listing detail page. `listing` is the resource
+// resolved/unwrapped (no `data` wrapper), since the controller calls
+// `(new ListingResource($listing))->resolve()`.
+export interface ListingShowProps {
+    listing: Listing;
+}
+
+// Props for the create-listing form. Option lists (regions / languages /
+// durations) are passed from the backend so `StoreListingRequest`'s constants
+// stay the single source of truth — frontend never duplicates them.
+// `balance` is the user's current `usdt_balance` as a BCMath-safe string.
+export interface ListingCreateProps {
+    balance: string;
+    regions: string[];
+    languages: string[];
+    durations: number[];
 }

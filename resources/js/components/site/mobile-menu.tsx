@@ -15,7 +15,10 @@ import {
 } from '@/components/ui/sheet';
 import { useInitials } from '@/hooks/use-initials';
 import { home, logout } from '@/routes';
-import { index as listingsIndex } from '@/routes/listings';
+import {
+    create as listingsCreate,
+    index as listingsIndex,
+} from '@/routes/listings';
 import { edit as editProfile } from '@/routes/profile';
 
 interface NavLink {
@@ -127,6 +130,39 @@ export function MobileMenu() {
                         </SheetClose>
                     ))}
                 </nav>
+
+                {user && (
+                    <div className="px-5 pt-6">
+                        {isUnverified ? (
+                            <div className="space-y-2">
+                                <Button
+                                    variant="gradient"
+                                    size="pill"
+                                    className="w-full"
+                                    disabled
+                                >
+                                    Create listing
+                                </Button>
+                                <p className="text-muted-foreground text-center text-xs">
+                                    Verify your email to create listings.
+                                </p>
+                            </div>
+                        ) : (
+                            <SheetClose asChild>
+                                <Button
+                                    variant="gradient"
+                                    size="pill"
+                                    className="w-full"
+                                    asChild
+                                >
+                                    <Link href={listingsCreate().url}>
+                                        Create listing
+                                    </Link>
+                                </Button>
+                            </SheetClose>
+                        )}
+                    </div>
+                )}
 
                 <div className="mt-auto flex flex-col gap-3 p-5">
                     {user ? (

@@ -30,19 +30,27 @@ class ListingFactory extends Factory
         $skillMin = $hasSkillRange ? $this->faker->numberBetween(800, 2000) : null;
         $skillMax = $hasSkillRange ? $skillMin + $this->faker->numberBetween(200, 600) : null;
 
+        $timeControlValues = array_map(fn (TimeControl $tc) => $tc->value, TimeControl::cases());
+
         return [
             'user_id' => User::factory(),
             'game' => Game::Chess,
             'stake_amount' => $stake,
             'skill_min' => $skillMin,
             'skill_max' => $skillMax,
-            'time_control' => $this->faker->randomElement(TimeControl::cases()),
+            'time_control' => $this->faker->randomElements(
+                $timeControlValues,
+                $this->faker->numberBetween(1, 3),
+            ),
             'region' => $this->faker->randomElement([
                 'Global', 'EU', 'NA', 'Asia', 'CIS', 'LATAM',
             ]),
-            'language' => $this->faker->randomElement([
-                'English', 'Russian', 'Spanish', 'German', 'Portuguese', null,
-            ]),
+            'language' => $this->faker->boolean(70)
+                ? $this->faker->randomElements(
+                    ['English', 'Russian', 'Spanish', 'German', 'Portuguese'],
+                    $this->faker->numberBetween(1, 2),
+                )
+                : null,
             'expires_at' => $this->faker->dateTimeBetween('+1 hour', '+72 hours'),
             'status' => ListingStatus::Open,
         ];

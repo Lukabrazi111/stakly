@@ -1,3 +1,4 @@
+import '@inertiajs/core';
 import type { Auth } from '@/types/auth';
 import type { FlashToast } from '@/types/ui';
 

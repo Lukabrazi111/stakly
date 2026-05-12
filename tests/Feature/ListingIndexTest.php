@@ -69,13 +69,43 @@ test('stake_max filter narrows results', function () {
 });
 
 test('time_control filter accepts multiple values (CSV)', function () {
-    Listing::factory()->open()->state(['time_control' => TimeControl::Blitz])->create();
-    Listing::factory()->open()->state(['time_control' => TimeControl::Rapid])->create();
-    Listing::factory()->open()->state(['time_control' => TimeControl::Classical])->create();
+    Listing::factory()->open()->state(['time_control' => [TimeControl::Blitz->value]])->create();
+    Listing::factory()->open()->state(['time_control' => [TimeControl::Rapid->value]])->create();
+    Listing::factory()->open()->state(['time_control' => [TimeControl::Classical->value]])->create();
 
     $response = $this->get('/listings?filter[time_control]=blitz,rapid');
 
     $response->assertInertia(fn ($page) => $page->has('listings.data', 2));
+});
+
+test('time_control filter matches listings offering any of the requested controls', function () {
+    // Listing offering both Blitz and Rapid — should match either filter alone or both.
+    Listing::factory()->open()->state(['time_control' => [TimeControl::Blitz->value, TimeControl::Rapid->value]])->create();
+    Listing::factory()->open()->state(['time_control' => [TimeControl::Classical->value]])->create();
+
+    $this->get('/listings?filter[time_control]=blitz')
+        ->assertInertia(fn ($page) => $page->has('listings.data', 1));
+
+    $this->get('/listings?filter[time_control]=rapid')
+        ->assertInertia(fn ($page) => $page->has('listings.data', 1));
+
+    $this->get('/listings?filter[time_control]=classical')
+        ->assertInertia(fn ($page) => $page->has('listings.data', 1));
+});
+
+test('language filter matches listings offering that language OR no restriction', function () {
+    Listing::factory()->open()->state(['language' => ['Russian']])->create();
+    Listing::factory()->open()->state(['language' => ['English', 'Spanish']])->create();
+    Listing::factory()->open()->state(['language' => null])->create();
+    Listing::factory()->open()->state(['language' => ['German']])->create();
+
+    // Russian filter → matches the Russian-only listing + the null (any-language) listing.
+    $this->get('/listings?filter[language]=Russian')
+        ->assertInertia(fn ($page) => $page->has('listings.data', 2));
+
+    // English filter → matches the English/Spanish listing + the null listing.
+    $this->get('/listings?filter[language]=English')
+        ->assertInertia(fn ($page) => $page->has('listings.data', 2));
 });
 
 test('skill range overlap matches listings that intersect the filter', function () {

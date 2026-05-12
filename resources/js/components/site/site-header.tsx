@@ -1,11 +1,20 @@
 import { Link, usePage } from '@inertiajs/react';
 import { Search } from 'lucide-react';
+import type { ReactNode } from 'react';
 import { useAuthModal } from '@/components/auth/auth-modal-provider';
 import { MobileMenu } from '@/components/site/mobile-menu';
 import { ProfileMenu } from '@/components/site/profile-menu';
 import { UnverifiedChip } from '@/components/site/unverified-chip';
 import { Button } from '@/components/ui/button';
-import { index as listingsIndex } from '@/routes/listings';
+import {
+    Tooltip,
+    TooltipContent,
+    TooltipTrigger,
+} from '@/components/ui/tooltip';
+import {
+    create as listingsCreate,
+    index as listingsIndex,
+} from '@/routes/listings';
 
 export function SiteHeader() {
     const { openLogin, openRegister } = useAuthModal();
@@ -55,6 +64,13 @@ export function SiteHeader() {
                     >
                         Support
                     </Link>
+
+                    {user && (
+                        <div className="ml-2">
+                            <CreateListingCTA isUnverified={isUnverified} />
+                        </div>
+                    )}
+
                     <div className="ml-3 flex items-center gap-3">
                         {user ? (
                             <>
@@ -85,5 +101,46 @@ export function SiteHeader() {
                 <MobileMenu />
             </div>
         </header>
+    );
+}
+
+interface CreateListingCTAProps {
+    isUnverified: boolean;
+}
+
+/**
+ * Two states (logged-out users don't see this — Sign up covers that funnel):
+ *   - Unverified → disabled with a tooltip pointing at the verification chip.
+ *   - Verified   → links to `/listings/create`.
+ */
+function CreateListingCTA({ isUnverified }: CreateListingCTAProps): ReactNode {
+    if (isUnverified) {
+        return (
+            <Tooltip>
+                <TooltipTrigger asChild>
+                    {/* Span wrapper because disabled buttons don't fire pointer
+                        events — the tooltip needs the parent to listen. */}
+                    <span tabIndex={0}>
+                        <Button
+                            variant="gradient"
+                            size="default"
+                            disabled
+                            className="pointer-events-none"
+                        >
+                            Create listing
+                        </Button>
+                    </span>
+                </TooltipTrigger>
+                <TooltipContent>
+                    Verify your email to create listings.
+                </TooltipContent>
+            </Tooltip>
+        );
+    }
+
+    return (
+        <Button variant="gradient" size="default" asChild>
+            <Link href={listingsCreate().url}>Create listing</Link>
+        </Button>
     );
 }

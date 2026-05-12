@@ -109,7 +109,7 @@ export function UnverifiedChip({ className }: Props) {
             title={
                 cooldown > 0
                     ? `Wait ${cooldown}s before requesting another email`
-                    : 'Resend verification email'
+                    : 'Verify your email to create listings — click to resend'
             }
         >
             <MailWarning className="size-3.5" />

@@ -75,15 +75,101 @@ Append-only Postgres ledger (`wallet_transactions`) is now the source of truth f
 
 ## M4 — Listing Detail + Create Flow **(next)**
 
-Builds on M3.5. Public listing detail page + create form.
+First end-to-end money flow on the platform. Public listing detail page + auth-gated create form + owner-only cancel. Wires `Wallet::hold` on listing create and `Wallet::release` on cancel, both transactional with the listing row.
 
-_Rough scope:_
-- Listing detail page (mirror mmrangels' profile + booking widget layout)
-- "Create listing" form → `Wallet::hold(...)` debits balance + writes escrow ledger entry, then creates listing. Transactional + idempotent.
-- Auth gate (must be logged in + email verified) on create.
-- "Take listing" CTA still UI-only — real take lands in M6.
-- "Cancel listing" → `Wallet::release(...)` refunds creator.
-- `ListingPolicy` for owner-only cancel.
+### Locked decisions
+
+- **Expires-at UX**: duration dropdown (`1h / 6h / 12h / 24h / 48h / 72h`), not a datetime picker. Removes timezone confusion, matches how chess scheduling actually works.
+- **Insufficient balance handling**: two layers. `StoreListingRequest` validates `stake_amount ≤ current balance` upfront (nice 422 with form error). `Wallet::hold` still throws `InsufficientBalanceException` defensively for concurrent-tab races.
+- **Detail page for non-open listings**: render normally with a status badge (`Taken` / `Expired` / `Cancelled`), Take CTA disabled. No 404 — shared links to expired listings shouldn't error out.
+- **Cancel confirmation**: shadcn `AlertDialog` with copy like "Cancel this listing? Your $X stake will be refunded immediately." Money operations earn an extra click.
+- **Layout for detail page**: two-column desktop (creator info + listing details on left, sticky booking widget on right), single-column mobile. Mirrors mmrangels per CLAUDE.md M1 design reference.
+- **Balance display on create form**: "Available: $X USDT" shown near the stake input, submit button disabled if stake > balance.
+- **Build order: hybrid** — backend skeleton first (routes + minimal controller methods so Wayfinder generates real types), then frontend pages (visual iteration), then backend hardening (validation, policy, Wallet transactions, tests). Avoids both pure-frontend-first throwaway code and backend-first delayed-visual feedback.
+- **Out of scope**: listing edit/update (cancel + re-create is the v1 mental model); image uploads (stick with initials avatars); take CTA real behavior (M6); take race conditions (also M6).
+
+### Scope (step-by-step)
+
+> Marked off as we go. Two natural commit points: end of Phase 6 (UI shipped, money flow still mock) and end of Phase 9 (full M4 with real Wallet wiring + tests).
+
+**Phase 1 — Backend skeleton (real routes + types, minimal logic)**
+- [x] **1.1** Add `show(Listing $listing)` to `ListingController` — returns `Inertia::render('listings/show', ['listing' => ListingResource::make($listing)->resolve()])`.
+- [x] **1.2** Add `create()` to `ListingController` — returns `Inertia::render('listings/create', ['balance' => Wallet::balanceFor($request->user())])`. Auth-gated.
+- [x] **1.3** Add `store(StoreListingRequest)` placeholder — basic `Listing::create([...])` returning a redirect to the new listing. No `Wallet::hold` yet (Phase 7).
+- [x] **1.4** Add `cancel(Listing $listing)` placeholder — basic status update to `Cancelled`. No `Wallet::release` yet, no policy yet (Phase 7).
+- [x] **1.5** Routes in `web.php`: `GET /listings/create`, `POST /listings`, `GET /listings/{listing}`, `DELETE /listings/{listing}/cancel`. Auth + verified middleware on create / store / cancel.
+- [x] **1.6** Create `App\Http\Requests\Listings\StoreListingRequest` with rules skeleton (full validation in Phase 7).
+
+**Phase 2 — Wayfinder + TypeScript types**
+- [x] **2.1** Regenerate Wayfinder route functions (`vendor/bin/sail npm run build` or dev server).
+- [x] **2.2** Add `ListingShowProps` + `ListingCreateProps` types to `resources/js/types/listings.ts`.
+
+**Phase 3 — Listing detail page (`pages/listings/show.tsx`)**
+- [x] **3.1** Scaffold the page with `<SiteLayout>`, two-column on desktop / stacked on mobile.
+- [x] **3.2** Creator/profile column: avatar (initials), name, region, language, skill range.
+- [x] **3.3** Listing details column: stake amount (gradient display), time control, expires-at relative time, status badge for non-open.
+- [x] **3.4** Booking widget (sticky-right on desktop): stake repeat, **Take** CTA (disabled, "Coming in M6"), **Cancel** button (only when `auth.user.id === listing.creator.id` AND `status === 'open'`).
+- [x] **3.5** Cancel confirmation `Dialog` (existing shadcn primitive — `AlertDialog` would have required installing a new Radix package and conflicted with our Stakly-skinned `button.tsx`); submits `DELETE /listings/{listing}/cancel` via `router.delete`.
+
+**Phase 4 — Create listing page (`pages/listings/create.tsx`)**
+- [x] **4.1** Scaffold with `<SiteLayout>`, single-column form (max-w-2xl).
+- [x] **4.2** Stake input with USDT suffix + "Available: $X USDT" sublabel. Submit disabled when stake > balance or empty.
+- [x] **4.3** Skill range inputs (`skill_min`, `skill_max`, both optional). Backend enforces min ≤ max via `gte:skill_min`.
+- [x] **4.4** Time control selector (Blitz / Rapid / Classical) — built with our `ToggleGroup` primitive for visual consistency with the index page filters.
+- [x] **4.5** Region select — option list passed from `StoreListingRequest::REGIONS` (single source of truth, no frontend duplication).
+- [x] **4.6** Language select — option list from `StoreListingRequest::LANGUAGES` + "Any language" sentinel mapped to empty string at the boundary (Radix `Select` can't have empty-string values).
+- [x] **4.7** Duration dropdown driven by `StoreListingRequest::DURATION_HOURS`. Backend converts to `expires_at = now()->addHours($duration)`.
+- [x] **4.8** Game display (chess-only header with Crown icon + "More games coming soon" copy). Hidden `game: 'chess'` field. **Deviation from spec**: skipped the full multi-tile `GameSelector` clone in the form — adds 9 visual placeholders that don't serve form completion. Phase 6 can revisit if the user wants the marketing-style tiles in the form.
+- [x] **4.9** Inertia `useForm` submission with per-field error display; backend redirects to `listings.show` on success.
+
+**Phase 5 — Wiring (links + entry points)**
+- [x] **5.1** Add **Create listing** CTA to `SiteHeader` + `MobileMenu` — three-state component: unauthed (opens auth modal), unverified (disabled with tooltip pointing at the verification chip), verified (links to `/listings/create`).
+- [x] **5.2** Wrap `ListingRow` in `<Link>` to `listings.show(listing.id)` with `focus-visible:ring-2` for keyboard nav.
+- [x] **5.3** Wrap `ListingCard` (homepage featured strip) similarly. Also refactored away duplicated formatting helpers — now imports from the shared `lib/listings-format.ts`.
+- [x] **5.4** Updated `UnverifiedChip` title attribute to "Verify your email to create listings — click to resend." Closes the loop with the disabled Create listing CTA's tooltip.
+
+**Phase 6 — Manual UI walkthrough (user-driven, iteration) ✅**
+- [x] **6.1** Click through create-listing flow as a seeded dev user. Note any spacing / copy / animation tweaks.
+- [x] **6.2** Click through listing detail as the creator (Cancel visible) and as another user (Cancel hidden).
+- [x] **6.3** Click through listing detail as a guest (logged out).
+- [x] **6.4** Open a non-open listing — confirm status badge displays correctly, Take CTA disabled, Cancel hidden.
+- [x] **6.5** Cancel a listing — confirm `AlertDialog` works, refund happens, redirect lands correctly. (Used `Dialog` not `AlertDialog` — see Phase 3 deviation.)
+- [x] **6.6** Apply polish based on observations — hid logged-out Create-listing CTA (Sign up covers funnel), moved Back-to-listings to top of detail page, full-width form Selects, restyled Cancel button (outline destructive, no text-shadow smudge), success-toast flash on create + cancel via `Inertia::flash`, multi time_control + multi language (jsonb columns + `AsEnumCollection` + form ToggleGroups + `whereJsonContains` overlap filter), `h-full` + `mt-auto` on `ListingCard` to equalize Ending-soon grid heights, capped language chip at 3 + "+N" on `ListingRow`.
+- [x] **6.7** Optional commit checkpoint: `feat: listing detail + create UI (M4 stage 1)`.
+
+**Phase 7 — Backend hardening (real money wiring)**
+- [ ] **7.1** Create `App\Policies\ListingPolicy` with `cancel(User, Listing)` — owner-only AND `status === Open`. Auto-discovery in Laravel 11+ handles registration.
+- [ ] **7.2** Fill in `StoreListingRequest::rules()` — full validation: game enum, `stake_amount` numeric ≥ 1 ≤ user balance, optional skill range with min ≤ max, time_control enum, region/language whitelist, duration enum.
+- [ ] **7.3** Wrap `ListingController::store` in `DB::transaction(...)` — `Listing::create` then `Wallet::hold(user, amount, listing, reference: "listing-create:{$listing->id}")`. Both commit or both roll back.
+- [ ] **7.4** Wrap `ListingController::cancel` in `DB::transaction(...)` — `Gate::authorize('cancel', $listing)`, then `Wallet::release(user, amount, listing, reference: "listing-cancel:{$listing->id}")`, then status update.
+- [ ] **7.5** Catch `InsufficientBalanceException` in `store()` and convert to a validation error (rare, only on race; the request-level pre-validation handles the common case).
+
+**Phase 8 — Backend tests (Pest)**
+- [ ] **8.1** Show: public listing renders, props match `ListingResource` shape; 404 on bad ID.
+- [ ] **8.2** Show: taken / expired / cancelled listings still render (with status), no 404.
+- [ ] **8.3** Create form: unauthenticated → redirect to `/?auth=login`. Unverified → blocked.
+- [ ] **8.4** Store: happy path — listing row created + escrow hold ledger entry written + `usdt_balance` decremented.
+- [ ] **8.5** Store: insufficient balance → 422 with form error, no listing created, no ledger row written.
+- [ ] **8.6** Store idempotency: re-submitting with same `reference_id` doesn't double-charge (Wallet's responsibility, but verified end-to-end here).
+- [ ] **8.7** Cancel: non-owner gets 403 (ListingPolicy).
+- [ ] **8.8** Cancel: owner succeeds — listing status → Cancelled, refund ledger entry + balance restored.
+- [ ] **8.9** Cancel: listing already taken/expired/cancelled → 403.
+
+**Phase 9 — Verify + commit**
+- [ ] **9.1** `vendor/bin/sail artisan migrate:fresh --seed` clean.
+- [ ] **9.2** `vendor/bin/sail artisan test --compact` — full suite green (~100+ tests expected).
+- [ ] **9.3** `vendor/bin/sail bin pint --dirty --format agent` clean.
+- [ ] **9.4** Commit. Suggested message: `feat: listing detail + create + cancel (M4)`.
+
+---
+
+## Post-MVP — Listings polish (deferred, not in M4)
+
+Captured so the intent isn't lost. **Don't pull these into M4.** Each is a real user-facing improvement but adds scope (state machine, UX flow, or step-up auth) that doesn't earn its complexity until we see real usage.
+
+- **Step-up auth at listing creation.** Email-verified is already enforced via middleware. *All-listings* 2FA = friction that trains users to dismiss prompts. Better: step-up only for **high-stake** listings (e.g., `stake_amount > $500`) via Fortify's `confirm-password` (already plumbed for settings). Optionally also step-up on suspicious signals (new device fingerprint, rapid-fire creates). Decision deferred until post-launch when actual abuse patterns are visible.
+- **Max active listings cap.** Wallet already caps total *capital exposure* naturally (can't escrow > balance). Explicit count cap is anti-marketplace-spam only. Suggested cap: **5** (not 2 — a player wanting one Blitz + one Rapid + one Classical listing hits 2 immediately). Consider tiered caps later (KYC'd users get higher cap).
+- **Pause / resume listing.** New `paused` status on `ListingStatus` enum; `scopeOpen` excludes it. **Soft pause** (hide from board, keep escrow held) is the right v1 flavor — atomic, no extra wallet ops, no new dispute surface. Hard pause (release escrow, re-hold on resume) adds wallet churn for marginal UX benefit. Owner-only via `ListingPolicy::pause`.
 
 ---
 

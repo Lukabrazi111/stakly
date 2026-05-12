@@ -1,0 +1,262 @@
+import { Head, Link, router, usePage } from '@inertiajs/react';
+import { Clock, Globe, Languages, Trophy } from 'lucide-react';
+import type { ReactNode } from 'react';
+import { useState } from 'react';
+import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { Button } from '@/components/ui/button';
+import {
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogFooter,
+    DialogHeader,
+    DialogTitle,
+    DialogTrigger,
+} from '@/components/ui/dialog';
+import { useInitials } from '@/hooks/use-initials';
+import SiteLayout from '@/layouts/site-layout';
+import {
+    formatSkillRange,
+    formatTimeControls,
+    formatTimeRemaining,
+    isEndingSoon,
+} from '@/lib/listings-format';
+import { cancel as cancelRoute, index as listingsIndex } from '@/routes/listings';
+import type { ListingShowProps, ListingStatus } from '@/types';
+
+const STATUS_LABEL: Record<ListingStatus, string> = {
+    open: 'Open',
+    taken: 'Taken',
+    expired: 'Expired',
+    cancelled: 'Cancelled',
+};
+
+const STATUS_TONE: Record<ListingStatus, string> = {
+    open: 'border-success/40 bg-success/10 text-success',
+    taken: 'border-primary/40 bg-primary/10 text-primary',
+    expired: 'border-border/60 bg-muted text-muted-foreground',
+    cancelled: 'border-destructive/40 bg-destructive/10 text-destructive',
+};
+
+export default function ListingShow({ listing }: ListingShowProps) {
+    const getInitials = useInitials();
+    const { auth } = usePage().props;
+    const [cancelOpen, setCancelOpen] = useState(false);
+
+    const isOwner = auth.user?.id === listing.creator.id;
+    const isOpen = listing.status === 'open';
+    const canCancel = isOwner && isOpen;
+    const endingSoon = isEndingSoon(listing.expires_at);
+
+    const handleCancel = () => {
+        router.delete(cancelRoute(listing.id).url, {
+            preserveScroll: true,
+            onSuccess: () => setCancelOpen(false),
+        });
+    };
+
+    return (
+        <SiteLayout>
+            <Head
+                title={`${listing.creator.name} · $${listing.stake_amount} ${formatTimeControls(listing.time_control)}`}
+            />
+
+            <div className="mx-auto max-w-6xl px-4 py-10 md:px-6 md:py-14">
+                <div className="mb-6">
+                    <Link
+                        href={listingsIndex().url}
+                        className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1.5 text-sm transition-colors"
+                    >
+                        ← Back to listings
+                    </Link>
+                </div>
+
+                <div className="grid gap-8 md:grid-cols-3">
+                    {/* Left: profile + listing details */}
+                    <div className="space-y-6 md:col-span-2">
+                        {/* Creator card */}
+                        <section className="border-border/60 bg-card/60 rounded-2xl border p-6">
+                            <div className="flex items-center gap-4">
+                                <Avatar className="size-16 overflow-hidden rounded-full">
+                                    <AvatarFallback className="bg-gradient-primary text-primary-foreground text-xl font-semibold">
+                                        {getInitials(listing.creator.name)}
+                                    </AvatarFallback>
+                                </Avatar>
+
+                                <div className="min-w-0 flex-1">
+                                    <h1 className="font-display text-foreground truncate text-2xl font-bold tracking-tight">
+                                        {listing.creator.name}
+                                    </h1>
+                                    <div className="text-muted-foreground mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
+                                        {listing.region && (
+                                            <span className="inline-flex items-center gap-1.5">
+                                                <Globe className="size-3.5" />
+                                                {listing.region}
+                                            </span>
+                                        )}
+                                        {listing.language && listing.language.length > 0 && (
+                                            <span className="inline-flex items-center gap-1.5">
+                                                <Languages className="size-3.5" />
+                                                {listing.language.join(', ')}
+                                            </span>
+                                        )}
+                                    </div>
+                                </div>
+
+                                {!isOpen && (
+                                    <span
+                                        className={`inline-flex shrink-0 items-center rounded-full border px-3 py-1 text-xs font-medium ${STATUS_TONE[listing.status]}`}
+                                    >
+                                        {STATUS_LABEL[listing.status]}
+                                    </span>
+                                )}
+                            </div>
+                        </section>
+
+                        {/* Listing details card */}
+                        <section className="border-border/60 bg-card/60 rounded-2xl border p-6">
+                            <h2 className="font-display text-foreground mb-5 text-lg font-semibold">
+                                Match details
+                            </h2>
+                            <dl className="grid gap-5 sm:grid-cols-2">
+                                <Detail
+                                    label="Skill range"
+                                    icon={<Trophy className="size-4" />}
+                                    value={formatSkillRange(
+                                        listing.skill_min,
+                                        listing.skill_max,
+                                    )}
+                                />
+                                <Detail
+                                    label="Time control"
+                                    icon={<Clock className="size-4" />}
+                                    value={formatTimeControls(listing.time_control)}
+                                />
+                                <Detail
+                                    label="Expires"
+                                    icon={<Clock className="size-4" />}
+                                    value={formatTimeRemaining(listing.expires_at)}
+                                    valueClass={endingSoon ? 'text-warning' : undefined}
+                                />
+                                {listing.region && (
+                                    <Detail
+                                        label="Region"
+                                        icon={<Globe className="size-4" />}
+                                        value={listing.region}
+                                    />
+                                )}
+                            </dl>
+                        </section>
+                    </div>
+
+                    {/* Right: booking widget */}
+                    <aside className="md:col-span-1">
+                        <div className="border-border/60 bg-card/60 rounded-2xl border p-6 md:sticky md:top-24">
+                            <div className="text-center">
+                                <div className="text-muted-foreground text-[11px] uppercase tracking-widest">
+                                    Stake
+                                </div>
+                                <div className="font-display text-gradient-primary mt-2 text-5xl font-bold leading-none">
+                                    ${listing.stake_amount}
+                                </div>
+                                <div className="text-muted-foreground mt-1 text-xs">
+                                    USDT
+                                </div>
+                            </div>
+
+                            <div className="mt-6 flex flex-col gap-3">
+                                <Button
+                                    variant="gradient"
+                                    size="pill"
+                                    disabled
+                                    title="Coming in M6"
+                                    className="w-full"
+                                >
+                                    Take
+                                </Button>
+                                <p className="text-muted-foreground text-center text-xs">
+                                    Take flow lands in M6.
+                                </p>
+                            </div>
+
+                            {canCancel && (
+                                <>
+                                    <div className="border-border/60 my-6 border-t" />
+                                    <Dialog
+                                        open={cancelOpen}
+                                        onOpenChange={setCancelOpen}
+                                    >
+                                        <DialogTrigger asChild>
+                                            <Button
+                                                variant="outline"
+                                                size="default"
+                                                className="border-destructive/30 bg-transparent text-destructive hover:bg-destructive/10 hover:text-destructive hover:border-destructive/50 w-full shadow-none rounded-full"
+                                            >
+                                                Cancel listing
+                                            </Button>
+                                        </DialogTrigger>
+                                        <DialogContent>
+                                            <DialogHeader>
+                                                <DialogTitle>
+                                                    Cancel this listing?
+                                                </DialogTitle>
+                                                <DialogDescription>
+                                                    Your{' '}
+                                                    <span className="text-foreground font-semibold">
+                                                        ${listing.stake_amount} USDT
+                                                    </span>{' '}
+                                                    stake will be refunded
+                                                    immediately. This can&apos;t
+                                                    be undone.
+                                                </DialogDescription>
+                                            </DialogHeader>
+                                            <DialogFooter>
+                                                <Button
+                                                    variant="ghost"
+                                                    onClick={() =>
+                                                        setCancelOpen(false)
+                                                    }
+                                                >
+                                                    Keep listing
+                                                </Button>
+                                                <Button
+                                                    variant="destructive"
+                                                    onClick={handleCancel}
+                                                >
+                                                    Cancel &amp; refund
+                                                </Button>
+                                            </DialogFooter>
+                                        </DialogContent>
+                                    </Dialog>
+                                </>
+                            )}
+                        </div>
+                    </aside>
+                </div>
+            </div>
+        </SiteLayout>
+    );
+}
+
+interface DetailProps {
+    label: string;
+    icon: ReactNode;
+    value: string;
+    valueClass?: string;
+}
+
+function Detail({ label, icon, value, valueClass }: DetailProps) {
+    return (
+        <div>
+            <dt className="text-muted-foreground text-xs uppercase tracking-wide">
+                {label}
+            </dt>
+            <dd
+                className={`text-foreground mt-1.5 inline-flex items-center gap-2 text-sm font-medium ${valueClass ?? ''}`}
+            >
+                {icon}
+                {value}
+            </dd>
+        </div>
+    );
+}

@@ -25,7 +25,7 @@ class ListingResource extends JsonResource
             'stake_amount' => (float) $this->stake_amount,
             'skill_min' => $this->skill_min,
             'skill_max' => $this->skill_max,
-            'time_control' => $this->time_control->value,
+            'time_control' => $this->time_control->map(fn ($tc) => $tc->value)->values()->all(),
             'region' => $this->region,
             'language' => $this->language,
             'expires_at' => $this->expires_at->toIso8601String(),

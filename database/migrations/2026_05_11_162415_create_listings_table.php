@@ -36,11 +36,16 @@ return new class extends Migration
             $table->unsignedSmallInteger('skill_min')->nullable();
             $table->unsignedSmallInteger('skill_max')->nullable();
 
-            // blitz | rapid | classical (PHP enum casts in Listing model).
-            $table->string('time_control');
+            // Array of TimeControl enum values (blitz | rapid | classical).
+            // jsonb (not json) so `whereJsonContains` uses the `@>` operator
+            // and can be GIN-indexed if filter volume warrants it later.
+            $table->jsonb('time_control');
 
             $table->string('region')->nullable();
-            $table->string('language')->nullable();
+
+            // Array of language strings (subset of StoreListingRequest::LANGUAGES),
+            // or null = "no language restriction".
+            $table->jsonb('language')->nullable();
 
             $table->timestamp('expires_at');
 
