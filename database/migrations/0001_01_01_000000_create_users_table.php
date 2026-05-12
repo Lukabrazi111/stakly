@@ -4,7 +4,8 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
-return new class extends Migration {
+return new class extends Migration
+{
     /**
      * Run the migrations.
      */
@@ -19,6 +20,17 @@ return new class extends Migration {
             $table->text('two_factor_secret')->nullable();
             $table->text('two_factor_recovery_codes')->nullable();
             $table->timestamp('two_factor_confirmed_at')->nullable();
+
+            // Platform-revenue user flag. One seeded row has is_platform=true
+            // (`platform@stakly.internal`) — destination for `Wallet::fee(...)`
+            // ledger entries. See milestones.md M3.5.
+            $table->boolean('is_platform')->default(false);
+
+            // Spendable USDT balance. NEVER written outside `App\Services\Wallet`.
+            // Invariant (asserted in tests): equals SUM(wallet_transactions.amount)
+            // for this user at all times. decimal(18, 6) matches Tron's USDT precision.
+            $table->decimal('usdt_balance', 18, 6)->default(0);
+
             $table->rememberToken();
             $table->timestamps();
         });

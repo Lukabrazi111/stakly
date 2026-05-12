@@ -60,33 +60,63 @@ Public marketplace `/listings` is live: filterable / sortable / paginated grid o
 
 ### Why this milestone exists
 
-M4 (Create Listing) is inseparable from balance debits + escrow holds — you can't ship "Create listing" without "what does Create listing actually do to money?" Doing the **bookkeeping first**, with the on-chain layer mocked, lets us iterate marketplace mechanics with $0 risk. Once the ledger is correct, the on-chain layer is glue (webhook in → `Wallet::credit()`; user clicks withdraw → `Wallet::debit()` + Tatum API call).
+M4 (Create Listing) is inseparable from balance debits + escrow holds — you can't ship "Create listing" without "what does Create listing actually do to money?" Doing the **bookkeeping first**, with the on-chain layer mocked, lets us iterate marketplace mechanics with $0 risk. Once the ledger is correct, the on-chain layer is glue (watcher detects on-chain deposit → `Wallet::deposit()`; user clicks withdraw → `Wallet::withdraw()` then withdrawal worker signs + broadcasts via TronGrid).
 
 ### Locked decisions
 
 - **Custody model**: balance-based custodial. Users deposit USDT once → the system tracks an internal `usdt_balance` → listing create / take / cancel / payout / fee all draw from balance. **Per-match deposits rejected** (5x operational complexity, no UX win).
 - **Source of truth**: Postgres ledger (`wallet_transactions`). **Append-only, immutable.** Every money state change writes a row. **Never mutate `users.usdt_balance` outside a `Wallet` service method** — direct writes in seeders / migrations / controllers are forbidden, lint-check in tests if useful.
-- **Transactional + idempotent**: every money operation wraps `DB::transaction(...)` with `lockForUpdate()` on the user row. Each accepts a `reference_id` — repeat calls with the same reference return the existing transaction (no-op), never double-debit.
+- **Transactional + idempotent**: every money operation wraps `DB::transaction(...)` with `lockForUpdate()` on the user row. Each accepts a `reference_id` — repeat calls with the same reference return the existing transaction (no-op), never double-debit. Callers may wrap a larger `DB::transaction(...)` around a wallet call when multiple operations must commit atomically (e.g., M4 "create listing row + `Wallet::hold`" — both succeed or both roll back). Laravel nests transactions via savepoints, so `Wallet::hold`'s internal transaction stays safe whether it's called standalone (deposit webhook) or inside a caller-opened transaction (listing create). The rule: if a wallet call belongs to a larger atomic unit of work, the caller opens the outer transaction.
 - **On-chain integration deferred** to post-MVP. M3.5 mocks deposit/withdrawal as ledger entries with no chain interaction.
-- **Vendor-agnostic by design**: M3.5 builds the entire ledger + mock deposit/withdrawal layer without touching any external service. The chain provider (Tatum / Moralis / Alchemy+DIY / other) is **undecided** and the decision is intentionally deferred to the pre-launch gate. Choosing later costs nothing because the ledger is the contract everything else plugs into.
+- **Provider-agnostic via adapter**: all chain calls go through an `App\Services\Chain\ChainGateway` interface. The ledger + `Wallet` service never reference TronGrid, TronWeb, or any specific chain library directly. Swapping the implementation later (GetBlock, NOWNodes, our own Tron node) is changing one binding in `AppServiceProvider`, not touching wallet code. **Chain custody architecture is now committed — DIY + TRC20 + we own the master seed.** See pre-launch gate for full details.
+- **Platform-as-User pattern for fee tracking**: the platform's rake revenue is tracked via a special user row with `is_platform = true` (seeded as `platform@stakly.internal`). `Wallet::fee(...)` is just a positive ledger entry on this user. No nullable `user_id`, no special-casing — ledger invariant "every entry has a user_id" stays clean, and `Wallet::balanceFor($platform)` gives total platform revenue.
+- **Money type discipline**: amounts in PHP are **strings**, arithmetic via **BCMath** (`bcadd`, `bcsub`, `bccomp`). Never use `+` / `-` / `<` on money values. Database column is `decimal(18, 6)` matching Tron's 6-decimal precision. The only place we convert to `(float)` is at the API resource boundary (e.g., `ListingResource`) so the frontend gets a JSON number — but internal PHP work stays in strings end-to-end. This is non-negotiable.
+- **Sign convention**: the `amount` column is signed. Credits (Deposit, EscrowRelease, Payout, Fee) write positive values. Debits (Withdrawal, EscrowHold) write negative values. The invariant `users.usdt_balance == SUM(wallet_transactions.amount WHERE user_id = X)` must hold for every user at all times — and is asserted in tests.
 
-### Scope
+### Scope (step-by-step)
 
-- [ ] **Migration**: add `usdt_balance` (decimal 18,6, default 0) to `users`. New `wallet_transactions` table — `id`, `user_id` FK, `type` enum, `amount` (signed decimal), `balance_after` (snapshot), `related_listing_id` nullable FK, `reference_id` (unique nullable, for idempotency), `description`, `created_at`. **No `updated_at`, no soft deletes.**
-- [ ] **Enum**: `App\Enums\WalletTransactionType` — `Deposit`, `Withdrawal`, `EscrowHold`, `EscrowRelease`, `Payout`, `Fee`.
-- [ ] **Model + factory**: `WalletTransaction` model with `belongsTo(User)` + `belongsTo(Listing)`. Factory states for each `type`.
-- [ ] **Seeder**: dev users start with $1000 via a seeded `deposit` ledger entry — **never set `usdt_balance` directly**, always via the service so ledger + balance stay consistent.
-- [ ] **Service**: `App\Services\Wallet` — methods `hold`, `release`, `payout`, `fee`, `deposit`, `withdraw`. Each wraps `DB::transaction(...)` + `lockForUpdate()`, validates, appends ledger row, updates `users.usdt_balance`. Rejects negative amounts. Reference-id replay is a no-op (return existing row).
-- [ ] **Exceptions**: `InsufficientBalanceException`. Idempotent replay is *not* an exception — returns the prior transaction silently.
-- [ ] **Tests** (Pest): happy paths for each operation, insufficient balance, concurrent hold race (two simultaneous holds on the same balance — only one succeeds), idempotency replay (same `reference_id` twice = no-op), ledger immutability invariant (`balance_after` always matches `users.usdt_balance` after every operation), no `UPDATE` statements on `wallet_transactions`.
-- [ ] **No UI** in M3.5. Wallet UI is M7.
-- [ ] **CLAUDE.md** update — capture the locked decisions above + service-only-write rule.
+> Marked off as we go. Each phase is a logical checkpoint — finishing a phase = good moment to commit.
 
-### Out of scope for M3.5
+**Phase 1 — Data shape (migrations + models)**
+- [x] **1.1** Edit `database/migrations/0001_01_01_000000_create_users_table.php` to add `usdt_balance decimal(18,6) default 0` and `is_platform boolean default false` columns. (Pre-launch convention: edit existing migrations, don't add incrementals.)
+- [x] **1.2** Create `database/migrations/<ts>_create_wallet_transactions_table.php` — `id`, `user_id` FK cascade, `type` string, `amount` signed `decimal(18,6)`, `balance_after` `decimal(18,6)`, `related_listing_id` nullable FK, `reference_id` unique nullable string, `description` nullable text, `created_at` only. No `updated_at`, no soft deletes. Indexes on `user_id`, `type`, `reference_id`, `created_at`.
+- [x] **1.3** Create `App\Enums\WalletTransactionType` with cases `Deposit`, `Withdrawal`, `EscrowHold`, `EscrowRelease`, `Payout`, `Fee`.
+- [x] **1.4** Create `App\Models\WalletTransaction` with `belongsTo(User)` + `belongsTo(Listing, 'related_listing_id')`. Casts: `type` → enum, `amount` + `balance_after` → `decimal:6`, `created_at` → datetime. Fillable matches migration columns.
+- [x] **1.5** Create `database/factories/WalletTransactionFactory.php` with factory states for each enum case (`deposit`, `withdrawal`, `escrowHold`, `escrowRelease`, `payout`, `fee`).
+
+**Phase 2 — Business logic (service + exception)**
+- [x] **2.1** Create `App\Exceptions\InsufficientBalanceException`.
+- [x] **2.2** Create `App\Services\Wallet` with public methods `deposit`, `withdraw`, `hold`, `release`, `payout`, `fee` + a `balanceFor(User)` helper. Each money operation: wraps `DB::transaction(...)` + `lockForUpdate()` on the user row, accepts a string amount + optional `reference_id` + optional `description` + optional `Listing`, validates positive input, computes signed amount per type (debit types negate the input), checks balance won't go negative on debits (throws `InsufficientBalanceException`), appends `WalletTransaction` row with `balance_after` snapshot, updates `users.usdt_balance`. All arithmetic via BCMath. Idempotency: if a row already exists with the given `reference_id`, return it unchanged (no-op).
+
+**Phase 3 — Tests (Pest)** — 17 tests / 59 assertions in `tests/Feature/WalletTest.php`
+- [x] **3.1** Happy-path tests: each of the 6 methods writes the correct ledger row + updates `users.usdt_balance` with the correct sign and value.
+- [x] **3.2** Insufficient balance: `withdraw` and `hold` from a user without enough balance throws `InsufficientBalanceException`; no ledger row written; balance unchanged.
+- [x] **3.3** Idempotency replay: calling any method twice with the same `reference_id` writes only one row; the second call returns the existing row silently; balance unchanged on the second call.
+- [x] **3.4** Concurrent hold race: two simultaneous `hold` calls on the same balance — only one succeeds. (Verifies `lockForUpdate` is wired correctly.)
+- [x] **3.5** Balance ↔ ledger invariant: for any user, `users.usdt_balance == SUM(wallet_transactions.amount)` after every operation. Property-style test running many random ops.
+- [x] **3.6** Immutability: confirm no `UPDATE` statements ever hit `wallet_transactions` (DB query log assertion).
+- [x] **3.7** Conservation of money: a full match-style flow (deposit, deposit, hold, hold, payout, fee) — total balance delta across all 3 users (winner + loser + platform) = 0. No money created or destroyed.
+- [x] **3.8** Negative-input rejection: passing a negative or zero amount throws `InvalidArgumentException` before any DB work.
+
+**Phase 4 — Seeder**
+- [ ] **4.1** Update `DatabaseSeeder` to create the platform user first (`is_platform = true`, `email = 'platform@stakly.internal'`, name `'Stakly Platform'`).
+- [ ] **4.2** Update `DatabaseSeeder` / `ListingSeeder` so every seeded dev user (the test user + the 20 marketplace users) gets $1000 via `Wallet::deposit($user, '1000', reference: "seed:dev-deposit:{$user->id}")`. Never set `usdt_balance` directly. Use the service.
+
+**Phase 5 — Documentation**
+- [ ] **5.1** Update CLAUDE.md "Conventions for AI Assistance" with the M3.5 wallet rules: service-only-write rule, BCMath money type discipline, signed-amount convention, balance-ledger invariant, platform-as-user pattern. Brief and rule-shaped — these are guardrails for every later money-touching milestone.
+
+**Phase 6 — Verify**
+- [ ] **6.1** `vendor/bin/sail artisan migrate:fresh --seed` runs clean. Inspect a dev user's balance + ledger rows manually via `database-query` or tinker to spot-check.
+- [ ] **6.2** `vendor/bin/sail artisan test --compact` — all tests pass (M3's 69 + M3.5 new ones, expect ~85+ tests / ~500+ assertions).
+- [ ] **6.3** `vendor/bin/sail bin pint --dirty --format agent` — formatting clean.
+- [ ] **6.4** Commit. Suggested message: `feat: wallet ledger foundation (M3.5)`.
+
+### Out of M3.5 scope (intentionally)
 
 - Deposit / withdraw UI (M7).
-- Real on-chain integration (pre-launch, gated — see bottom).
-- Match settlement / dispute money flow (M6).
+- Real on-chain integration (pre-launch gate).
+- Match settlement / dispute money flow (M6 uses M3.5's `Wallet::payout` + `Wallet::fee`).
+- `ChainGateway` adapter interface — that's pre-launch work. M3.5 has no chain code at all.
 
 ---
 
@@ -118,7 +148,7 @@ Match-in-progress page, both-players-confirm UI, dispute opening UI. Game-API in
 
 ## M7 — Wallet UI
 
-Deposit address display, withdrawal form, transaction history. Backed by the real M3.5 ledger; on-chain layer still mocked here. Real Tatum wiring lives in the pre-launch gate below.
+Deposit address display, withdrawal form, transaction history. Backed by the real M3.5 ledger; on-chain layer still mocked here. Real TronGrid wiring + watcher + sweeper + withdrawal worker live in the pre-launch gate below.
 
 ---
 
@@ -130,25 +160,44 @@ Profile settings, chess.com / Lichess account linking flow with ownership verifi
 
 ## Pre-launch gate — Custody + Jurisdiction (BLOCKER)
 
-Real on-chain integration (Tatum or similar) is gated by these blockers. **Do not proceed without explicit go-ahead.** Once Stakly accepts a single real deposit, it's operating a regulated money-handling business and the engineering becomes hard to unwind.
+Real on-chain integration is gated by these blockers. **Do not proceed without explicit go-ahead.** Once Stakly accepts a single real deposit, it's operating a regulated money-handling business and the engineering becomes hard to unwind.
 
 Required answers before mainnet wiring:
-1. **Custody committed**: custodial via Stakly hot wallet. Key storage (AWS KMS / HashiCorp Vault / hardware). Multisig threshold for large withdrawals. Cold-wallet sweep policy.
+1. **Custody committed** ✅ — DIY level-3 (we own keys + run watcher/sweeper/withdrawal worker + use TronGrid as node provider). See "Chain custody architecture" below.
 2. **Jurisdiction committed**: where Stakly is registered + license path (e.g., Curaçao sublicense, Malta MGA, US state-by-state map, or testnet-only / fake-money for the foreseeable future).
-3. **Chain-service provider committed** — see shortlist below. **Currently undecided.**
-4. **Incident response plan**: hot-wallet compromise procedure, user notification template, insurance (if any).
-5. **Terms of Service + dispute resolution** policy drafted.
-6. **KYC/AML** required? If yes, integration with which provider, threshold that triggers it.
+3. **Chain + provider committed** ✅ — TRC20 (Tron USDT) only for v1. TronGrid primary, GetBlock pre-configured as drop-in backup. See architecture section below.
+4. **Key storage in production**: AWS KMS or HashiCorp Vault for hot wallet seed. Hardware device (Ledger / Trezor) for cold wallet. Specific KMS choice + access policy still open.
+5. **Incident response plan**: hot-wallet compromise procedure, user notification template, insurance (if any).
+6. **Terms of Service + dispute resolution** policy drafted.
+7. **KYC/AML** required? If yes, integration with which provider, threshold that triggers it.
 
 > No traditional banking / payment processor in scope — Stakly is **crypto-end-to-end** (USDT deposits, USDT withdrawals, USDT-denominated platform revenue). The only fiat touchpoint is the operating company's own expenses (taxes, legal), which is part of the jurisdiction decision (#2), not a user-facing gate.
 
-### Chain-service provider shortlist (decision pending)
+### Chain custody architecture (committed)
 
-Need to pick one before any real-chain code lands. Honest comparison at MVP scale:
+**Path**: DIY custom integration. No managed custody service (no Tatum, no Moralis, no CryptoBot). We own keys, we run the infrastructure, we sign transactions. Eyes-open tradeoff: ~6–10 weeks of integration work vs ~1–2 weeks with a managed service; chosen for maximum self-custody, zero recurring service fees, zero counterparty risk at the custody layer.
 
-- **Tatum** — single API for both deposit-watching (webhooks) and withdrawal-signing. Lowest integration code. Free dev tier covers MVP; ~$50–100/mo production. *Easiest path.*
-- **Moralis** — similar abstraction to Tatum, Web3-app-focused, often cheaper free tier. Verify BEP20 USDT support depth before committing.
-- **Alchemy + DIY signing** — Address Activity webhook is free for monitoring; you write withdrawal signing yourself (Laravel job + `web3.php` + AWS KMS for key storage, ~$1–5/mo). **Cheapest viable option**; ~15 extra hours of engineering upfront, two integrations to maintain.
-- **Rejected**: NOWPayments / Coinbase Commerce / BitPay (transaction-fee model stacks on top of our 10-15% rake — bad unit economics); DIY-everything with raw RPC (200+ hours of crypto-specific bug surface for a solo dev); BitGo / Fireblocks (enterprise, way overkill).
+**Chain (v1)**: TRC20 (Tron USDT) only. Adding other chains is post-v1 work — would just mean adding a second `ChainGateway` implementation alongside the Tron one.
 
-Decision criteria: free-tier limits vs MVP volume, DX of each dashboard, BSC/BEP20 USDT support depth. Action item: sign up for Tatum + Moralis free tiers, spend 30 min in each dashboard, pick the better DX.
+**Node provider**: **TronGrid** (TRON Foundation, official) as primary — most native, best Tron docs. Their free Basic tier is **100k requests/day + 3 API keys** which comfortably covers production at MVP scale (estimated usage ~20–30% of that budget at launch). Paid Developer/Team/Business tiers are listed as "Coming Soon" with no published prices yet; Custom enterprise is contact-only. **GetBlock** pre-configured as drop-in backup behind the `ChainGateway` adapter — swap is a config change, ~30 min. Both providers see only RPC calls, not app context. Long-term endgame: run our own Tron full node (~$200/mo VPS) once volume justifies it; no third party can cut us off then.
+
+**Master seed (custody)**: ours. BIP32/39/44 HD derivation produces unique deposit addresses per user. Master seed never touches a third party. Generated by us, stored by us (env var for dev/testnet, AWS KMS for production hot wallet, hardware-device-derived for production cold wallet).
+
+**Wallet architecture (production target)**:
+- **Cold wallet** — hardware device (Ledger / Trezor), holds bulk of platform reserves, signs only occasional large transfers. Offline-by-default.
+- **Hot wallet** — smaller balance for daily user withdrawals (~1 week of expected payout volume), seed stored in AWS KMS, signing happens server-side.
+- **User deposit addresses** — derived from master xPub, watched by our watcher service, swept into hot wallet on schedule.
+
+**Components to build at pre-launch**:
+- `App\Services\Chain\ChainGateway` interface
+- `App\Services\Chain\TronGridGateway` implementation (using `iexbase/tron-api` or equivalent) + HD derivation library (e.g., `bitwasp/bitcoin-php` for BIP32)
+- `App\Services\Chain\GetBlockGateway` (drop-in backup, same interface)
+- **Watcher**: long-running Artisan command polling TronGrid for new deposits on user addresses. Idempotent (no double-credit), handles reorgs (waits N confirmations, typically 19 blocks on Tron), tracks last-checked block, resumable after crash.
+- **Sweeper**: scheduled command moving USDT from user deposit addresses into hot wallet. Handles Tron's energy/bandwidth model (each address needs TRX to pay for transfer; pre-fund or use fee delegation).
+- **Withdrawal worker**: queued Laravel job that signs + broadcasts USDT transfers from hot wallet. Sequencing on nonce, retry on stuck txs, monitoring for never-mined txs.
+- **Key storage**: AWS KMS (production hot), hardware device (production cold), env var (dev/testnet only).
+- **Cold-wallet sweep policy**: operational runbook for periodic hot → cold sweeps.
+
+**Operational continuity**: provider-block risk is low for Tron specifically (gambling-friendly ecosystem, no known prohibited-use clauses) but the `ChainGateway` adapter makes it an operational annoyance, not existential. If TronGrid ever cuts us off, switching to GetBlock is a binding change; our keys, addresses, and funds are unaffected.
+
+**Recurring cost**: $0/mo TronGrid free tier covers MVP launch + likely well beyond. ~$200/mo if we eventually run our own Tron node.
