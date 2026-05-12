@@ -25,7 +25,9 @@ class DatabaseSeeder extends Seeder
 
         // Seed test user balance through the service (never set
         // `usdt_balance` directly — keeps ledger + balance in sync).
-        Wallet::deposit($test, '1000', reference: "seed:dev-deposit:{$test->id}");
+        // $10k matches the per-user headroom in ListingSeeder so manual UI
+        // testing has comfortable room to create multiple listings.
+        Wallet::deposit($test, '10000', reference: "seed:dev-deposit:{$test->id}");
 
         $this->call(ListingSeeder::class);
     }

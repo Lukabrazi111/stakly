@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Enums\Game;
 use App\Enums\ListingStatus;
+use App\Exceptions\InsufficientBalanceException;
 use App\Http\Requests\Listings\IndexListingsRequest;
 use App\Http\Requests\Listings\StoreListingRequest;
 use App\Http\Resources\ListingResource;
@@ -12,6 +13,9 @@ use App\Services\Wallet;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Gate;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
 use Spatie\QueryBuilder\AllowedFilter;
@@ -101,25 +105,52 @@ class ListingController extends Controller
     }
 
     /**
-     * Phase 1 (M4) skeleton — creates the listing row but does NOT yet hold
-     * the stake. Phase 7 wraps this in `DB::transaction` with `Wallet::hold`
-     * keyed on a deterministic reference. Until then the listing exists but
-     * no money has moved — fine for UI iteration, NOT fine for prod.
+     * Creates a listing AND immediately escrows the stake via `Wallet::hold`,
+     * both inside one DB transaction. If the hold fails (race against another
+     * concurrent debit that drained the balance after our request-level
+     * pre-check), the listing row rolls back too — we never leave an unfunded
+     * listing on the board.
+     *
+     * Idempotency is keyed by `listing-create:{id}`. Since the id is fresh per
+     * insert this isn't strictly needed for `store`, but keeping the convention
+     * here means the cancel/release path always finds its sibling pair.
      */
     public function store(StoreListingRequest $request): RedirectResponse
     {
         $data = $request->validated();
+        $user = $request->user();
 
-        $listing = $request->user()->listings()->create([
-            'game' => $data['game'],
-            'stake_amount' => $data['stake_amount'],
-            'skill_min' => $data['skill_min'] ?? null,
-            'skill_max' => $data['skill_max'] ?? null,
-            'time_control' => $data['time_control'],
-            'region' => $data['region'] ?? null,
-            'language' => $data['language'] ?? null,
-            'expires_at' => now()->addHours((int) $data['duration_hours']),
-        ]);
+        try {
+            $listing = DB::transaction(function () use ($user, $data) {
+                $listing = $user->listings()->create([
+                    'game' => $data['game'],
+                    'stake_amount' => $data['stake_amount'],
+                    'skill_min' => $data['skill_min'] ?? null,
+                    'skill_max' => $data['skill_max'] ?? null,
+                    'time_control' => $data['time_control'],
+                    'region' => $data['region'] ?? null,
+                    'language' => $data['language'] ?? null,
+                    'expires_at' => now()->addHours((int) $data['duration_hours']),
+                ]);
+
+                Wallet::hold(
+                    user: $user,
+                    amount: (string) $data['stake_amount'],
+                    listing: $listing,
+                    reference: "listing-create:{$listing->id}",
+                    description: 'Stake escrowed on listing creation.',
+                );
+
+                return $listing;
+            });
+        } catch (InsufficientBalanceException) {
+            // Race-only path: balance dropped between the form-request pre-check
+            // and the wallet's row-locked re-check. Convert to a validation
+            // error so the form re-renders cleanly with field-level feedback.
+            throw ValidationException::withMessages([
+                'stake_amount' => __('Stake exceeds your available balance.'),
+            ]);
+        }
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Listing created.')]);
 
@@ -127,15 +158,35 @@ class ListingController extends Controller
     }
 
     /**
-     * Phase 1 (M4) skeleton — flips status to Cancelled without refunding.
-     * Phase 7 adds `ListingPolicy::cancel` authorization + a `DB::transaction`
-     * wrapping `Wallet::release` and the status update.
+     * Cancels an Open listing and refunds the escrow in a single transaction.
+     * The release is idempotent on `listing-cancel:{id}` so a double-submit
+     * (network retry, double-click after slow response) doesn't double-credit.
+     *
+     * Authorization is handled by `ListingPolicy::cancel`: creator-only AND
+     * status === Open. Taken / expired / cancelled listings return 403.
      */
     public function cancel(Listing $listing): RedirectResponse
     {
-        $listing->update(['status' => ListingStatus::Cancelled]);
+        Gate::authorize('cancel', $listing);
 
-        Inertia::flash('toast', ['type' => 'success', 'message' => __('Listing cancelled.')]);
+        DB::transaction(function () use ($listing) {
+            Wallet::release(
+                user: $listing->user,
+                amount: (string) $listing->stake_amount,
+                listing: $listing,
+                reference: "listing-cancel:{$listing->id}",
+                description: 'Stake refunded on listing cancellation.',
+            );
+
+            $listing->update(['status' => ListingStatus::Cancelled]);
+        });
+
+        Inertia::flash('toast', [
+            'type' => 'success',
+            'message' => __('Listing cancelled. $:amount USDT refunded.', [
+                'amount' => number_format((float) $listing->stake_amount, 2, '.', ''),
+            ]),
+        ]);
 
         return to_route('listings.show', $listing);
     }

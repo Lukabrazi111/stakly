@@ -1,6 +1,6 @@
 import { Head, Link, useForm } from '@inertiajs/react';
 import { Crown } from 'lucide-react';
-import type { FormEventHandler, ReactNode } from 'react';
+import type { ReactNode } from 'react';
 import InputError from '@/components/input-error';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -60,11 +60,6 @@ export default function ListingsCreate({
         && stakeNumber > 0
         && hasTimeControl;
 
-    const submit: FormEventHandler = (e) => {
-        e.preventDefault();
-        post(storeListing().url);
-    };
-
     return (
         <SiteLayout>
             <Head title="Create a listing" />
@@ -79,7 +74,13 @@ export default function ListingsCreate({
                     </p>
                 </header>
 
-                <form onSubmit={submit} className="space-y-8">
+                <form
+                    onSubmit={(e) => {
+                        e.preventDefault();
+                        post(storeListing().url);
+                    }}
+                    className="space-y-8"
+                >
                     {/* Game (chess only in v1) */}
                     <FormSection title="Game">
                         <div className="border-glow flex items-center gap-3 rounded-xl border p-4">

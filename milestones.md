@@ -73,7 +73,7 @@ Append-only Postgres ledger (`wallet_transactions`) is now the source of truth f
 
 ---
 
-## M4 — Listing Detail + Create Flow **(next)**
+## M4 — Listing Detail + Create Flow ✅
 
 First end-to-end money flow on the platform. Public listing detail page + auth-gated create form + owner-only cancel. Wires `Wallet::hold` on listing create and `Wallet::release` on cancel, both transactional with the listing row.
 
@@ -137,28 +137,38 @@ First end-to-end money flow on the platform. Public listing detail page + auth-g
 - [x] **6.6** Apply polish based on observations — hid logged-out Create-listing CTA (Sign up covers funnel), moved Back-to-listings to top of detail page, full-width form Selects, restyled Cancel button (outline destructive, no text-shadow smudge), success-toast flash on create + cancel via `Inertia::flash`, multi time_control + multi language (jsonb columns + `AsEnumCollection` + form ToggleGroups + `whereJsonContains` overlap filter), `h-full` + `mt-auto` on `ListingCard` to equalize Ending-soon grid heights, capped language chip at 3 + "+N" on `ListingRow`.
 - [x] **6.7** Optional commit checkpoint: `feat: listing detail + create UI (M4 stage 1)`.
 
-**Phase 7 — Backend hardening (real money wiring)**
-- [ ] **7.1** Create `App\Policies\ListingPolicy` with `cancel(User, Listing)` — owner-only AND `status === Open`. Auto-discovery in Laravel 11+ handles registration.
-- [ ] **7.2** Fill in `StoreListingRequest::rules()` — full validation: game enum, `stake_amount` numeric ≥ 1 ≤ user balance, optional skill range with min ≤ max, time_control enum, region/language whitelist, duration enum.
-- [ ] **7.3** Wrap `ListingController::store` in `DB::transaction(...)` — `Listing::create` then `Wallet::hold(user, amount, listing, reference: "listing-create:{$listing->id}")`. Both commit or both roll back.
-- [ ] **7.4** Wrap `ListingController::cancel` in `DB::transaction(...)` — `Gate::authorize('cancel', $listing)`, then `Wallet::release(user, amount, listing, reference: "listing-cancel:{$listing->id}")`, then status update.
-- [ ] **7.5** Catch `InsufficientBalanceException` in `store()` and convert to a validation error (rare, only on race; the request-level pre-validation handles the common case).
+**Phase 7 — Backend hardening (real money wiring) ✅**
+- [x] **7.1** Create `App\Policies\ListingPolicy` with `cancel(User, Listing)` — owner-only AND `status === Open`. Auto-discovery in Laravel 11+ handles registration.
+- [x] **7.2** Fill in `StoreListingRequest::rules()` — full validation incl. `stake_amount ≤ user balance` via a closure rule using `bccomp` at scale 6 (matches Wallet precision so we don't lose sub-cent headroom to float rounding).
+- [x] **7.3** Wrap `ListingController::store` in `DB::transaction(...)` — `Listing::create` then `Wallet::hold(user, amount, listing, reference: "listing-create:{$listing->id}")`. Both commit or both roll back.
+- [x] **7.4** Wrap `ListingController::cancel` in `DB::transaction(...)` — `Gate::authorize('cancel', $listing)`, then `Wallet::release(user, amount, listing, reference: "listing-cancel:{$listing->id}")`, then status update. Cancel toast now reports the refund amount.
+- [x] **7.5** Catch `InsufficientBalanceException` in `store()` and throw `ValidationException` keyed on `stake_amount` so the form re-renders with field-level feedback.
+- [x] **7.5b** **Seeder update (not in original plan):** `ListingSeeder` now calls `Wallet::hold` for every open/taken/ending-soon listing so seeded data satisfies the balance ↔ ledger invariant. Test User + seeded users bumped from $1k → $10k per user for hold headroom (some users own multiple listings; $1k wasn't enough). Verified via tinker: 0 users with broken invariant after `migrate:fresh --seed`.
 
-**Phase 8 — Backend tests (Pest)**
-- [ ] **8.1** Show: public listing renders, props match `ListingResource` shape; 404 on bad ID.
-- [ ] **8.2** Show: taken / expired / cancelled listings still render (with status), no 404.
-- [ ] **8.3** Create form: unauthenticated → redirect to `/?auth=login`. Unverified → blocked.
-- [ ] **8.4** Store: happy path — listing row created + escrow hold ledger entry written + `usdt_balance` decremented.
-- [ ] **8.5** Store: insufficient balance → 422 with form error, no listing created, no ledger row written.
-- [ ] **8.6** Store idempotency: re-submitting with same `reference_id` doesn't double-charge (Wallet's responsibility, but verified end-to-end here).
-- [ ] **8.7** Cancel: non-owner gets 403 (ListingPolicy).
-- [ ] **8.8** Cancel: owner succeeds — listing status → Cancelled, refund ledger entry + balance restored.
-- [ ] **8.9** Cancel: listing already taken/expired/cancelled → 403.
+**Phase 8 — Backend tests (Pest) ✅**
+- [x] **8.1** Show: public listing renders, props match `ListingResource` shape; 404 on bad ID. (`ListingShowTest`)
+- [x] **8.2** Show: taken / expired / cancelled listings still render (with status), no 404. + sensitive-field leak check.
+- [x] **8.3** Create form: unauthenticated → redirect to `route('login')`. Unverified → blocked. Verified → form renders with `balance`, `regions`, `languages`, `durations` props.
+- [x] **8.4** Store: happy path — listing row created + escrow hold ledger entry written (`-stake_amount`) + `usdt_balance` decremented exactly + redirect to `listings.show`.
+- [x] **8.5** Store: insufficient balance (request-level pre-check) → 422 keyed on `stake_amount`, no listing created, no ledger row, balance unchanged.
+- [x] **8.6** Store: validation failures — missing required fields / invalid `time_control` enum / empty `time_control` array / duplicate `time_control` entries → 422.
+- [x] **8.7** Store: mass-assignment safety — posted `user_id` / `status` / `expires_at` in the request body have NO effect.
+- [x] **8.8** Cancel: non-owner → 403 (ListingPolicy), listing untouched. Guests → redirect to login.
+- [x] **8.9** Cancel: owner happy path — status → Cancelled, refund ledger row (`+stake_amount`) + balance restored to pre-listing value.
+- [x] **8.10** Cancel: listing not in Open status (taken / expired / cancelled) → 403, even for owner. (`->with(['taken', 'expired', 'cancelled'])` data provider.)
+- [x] **8.11** BCMath round-trip: stake → cancel → balance restored *exactly* via `bccomp`.
+- [x] **8.x** Toast flash assertions on store + cancel via `assertInertiaFlash` (inertia-laravel's testing macro).
 
-**Phase 9 — Verify + commit**
-- [ ] **9.1** `vendor/bin/sail artisan migrate:fresh --seed` clean.
-- [ ] **9.2** `vendor/bin/sail artisan test --compact` — full suite green (~100+ tests expected).
-- [ ] **9.3** `vendor/bin/sail bin pint --dirty --format agent` clean.
+**Bugs uncovered by Phase 8 + fixed:**
+- **Precision mismatch** between `decimal(12, 2)` listings column and scale-6 wallet ledger. A stake of `100.456` would have held `-100.456000` in the ledger but stored `100.46` on the listing, leaving a 0.004 USDT delta on cancel. Fixed by adding `decimal:0,2` to the `stake_amount` validation rule.
+- **Stale `$user` instance** in `stakeWithinBalance` closure rule. Reading `$user->usdt_balance` directly returned the pre-deposit value when the auth user instance was stale (which happens reliably in tests using `actingAs($user)` after a deposit, and could happen in production with cached user instances). Fixed by using `Wallet::balanceFor($user)` which always does `$user->fresh()->usdt_balance`.
+
+**Test stats:** 110 tests / 655 assertions across the suite (was 88 / 533 before Phase 8). Pint clean, types clean.
+
+**Phase 9 — Verify + commit ✅**
+- [x] **9.1** `vendor/bin/sail artisan migrate:fresh --seed` clean.
+- [x] **9.2** `vendor/bin/sail artisan test --compact` — 110 tests / 655 assertions green.
+- [x] **9.3** `vendor/bin/sail bin pint --dirty --format agent` clean. `npm run types:check` + `lint:check` clean.
 - [ ] **9.4** Commit. Suggested message: `feat: listing detail + create + cancel (M4)`.
 
 ---
