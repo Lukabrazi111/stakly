@@ -99,16 +99,16 @@ M4 (Create Listing) is inseparable from balance debits + escrow holds — you ca
 - [x] **3.8** Negative-input rejection: passing a negative or zero amount throws `InvalidArgumentException` before any DB work.
 
 **Phase 4 — Seeder**
-- [ ] **4.1** Update `DatabaseSeeder` to create the platform user first (`is_platform = true`, `email = 'platform@stakly.internal'`, name `'Stakly Platform'`).
-- [ ] **4.2** Update `DatabaseSeeder` / `ListingSeeder` so every seeded dev user (the test user + the 20 marketplace users) gets $1000 via `Wallet::deposit($user, '1000', reference: "seed:dev-deposit:{$user->id}")`. Never set `usdt_balance` directly. Use the service.
+- [x] **4.1** Update `DatabaseSeeder` to create the platform user first (`is_platform = true`, `email = 'platform@stakly.internal'`, name `'Stakly Platform'`).
+- [x] **4.2** Update `DatabaseSeeder` / `ListingSeeder` so every seeded dev user (the test user + the 20 marketplace users) gets $1000 via `Wallet::deposit($user, '1000', reference: "seed:dev-deposit:{$user->id}")`. Never set `usdt_balance` directly. Use the service.
 
 **Phase 5 — Documentation**
-- [ ] **5.1** Update CLAUDE.md "Conventions for AI Assistance" with the M3.5 wallet rules: service-only-write rule, BCMath money type discipline, signed-amount convention, balance-ledger invariant, platform-as-user pattern. Brief and rule-shaped — these are guardrails for every later money-touching milestone.
+- [x] **5.1** Update CLAUDE.md "Conventions for AI Assistance" with the M3.5 wallet rules: service-only-write rule, BCMath money type discipline, signed-amount convention, balance-ledger invariant, platform-as-user pattern. Brief and rule-shaped — these are guardrails for every later money-touching milestone.
 
 **Phase 6 — Verify**
-- [ ] **6.1** `vendor/bin/sail artisan migrate:fresh --seed` runs clean. Inspect a dev user's balance + ledger rows manually via `database-query` or tinker to spot-check.
-- [ ] **6.2** `vendor/bin/sail artisan test --compact` — all tests pass (M3's 69 + M3.5 new ones, expect ~85+ tests / ~500+ assertions).
-- [ ] **6.3** `vendor/bin/sail bin pint --dirty --format agent` — formatting clean.
+- [x] **6.1** `vendor/bin/sail artisan migrate:fresh --seed` runs clean. Inspect a dev user's balance + ledger rows manually via `database-query` or tinker to spot-check.
+- [x] **6.2** `vendor/bin/sail artisan test --compact` — all tests pass (M3's 69 + M3.5 new ones, expect ~85+ tests / ~500+ assertions).
+- [x] **6.3** `vendor/bin/sail bin pint --dirty --format agent` — formatting clean.
 - [ ] **6.4** Commit. Suggested message: `feat: wallet ledger foundation (M3.5)`.
 
 ### Out of M3.5 scope (intentionally)

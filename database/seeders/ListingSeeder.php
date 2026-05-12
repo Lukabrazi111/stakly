@@ -4,6 +4,7 @@ namespace Database\Seeders;
 
 use App\Models\Listing;
 use App\Models\User;
+use App\Services\Wallet;
 use Illuminate\Database\Seeder;
 
 class ListingSeeder extends Seeder
@@ -19,6 +20,13 @@ class ListingSeeder extends Seeder
     public function run(): void
     {
         $users = User::factory()->count(20)->create();
+
+        // Every marketplace user starts with $1000 — via the service so the
+        // ledger row + `usdt_balance` stay in sync. Never set the column
+        // directly. Idempotent: re-running the seed won't double-credit.
+        foreach ($users as $user) {
+            Wallet::deposit($user, '1000', reference: "seed:dev-deposit:{$user->id}");
+        }
 
         Listing::factory()
             ->count(40)
