@@ -8,8 +8,8 @@ Frontend-first MVP. Build UI against real DB infrastructure + seeded fake data; 
 - **M2** — Auth Flow ✅
 - **M2.5** — Pre-M3 polish ✅
 - **M3** — Listings Index ✅
-- **M3.5** — Wallet / Ledger Foundation **(next)**
-- **M4** — Listing Detail + Create Flow
+- **M3.5** — Wallet / Ledger Foundation ✅
+- **M4** — Listing Detail + Create Flow **(next)**
 - **M5** — User Profile
 - **M6** — Match Flow (mock)
 - **M7** — Wallet UI
@@ -56,71 +56,24 @@ Public marketplace `/listings` is live: filterable / sortable / paginated grid o
 
 ---
 
-## M3.5 — Wallet / Ledger Foundation **(next)**
+## M3.5 — Wallet / Ledger Foundation ✅
 
-### Why this milestone exists
+Append-only Postgres ledger (`wallet_transactions`) is now the source of truth for every USDT balance change. `App\Services\Wallet` exposes 6 static methods (`deposit`, `withdraw`, `hold`, `release`, `payout`, `fee`) plus a `balanceFor` helper, all funnelling through a single private `record()` that wraps `DB::transaction(...)` + `lockForUpdate()` on the user row, enforces idempotency via optional `reference_id`, applies the signed-amount convention per `WalletTransactionType`, throws `InsufficientBalanceException` on overdraft, and writes the immutable ledger row + balance update atomically. BCMath strings throughout (scale 6, matching Tron USDT precision and the `decimal(18, 6)` columns). Platform rake credits the seeded `is_platform = true` user via `Wallet::fee(...)`. Seeders give every dev user $1000 through `Wallet::deposit` (idempotent via `seed:dev-deposit:{id}` references — re-running `migrate:fresh --seed` doesn't double-credit). No UI, no chain code — pure financial infrastructure behind a future `ChainGateway` adapter contract that lets the chain layer plug in at pre-launch. **86 tests / 493 assertions (17 wallet-specific).**
 
-M4 (Create Listing) is inseparable from balance debits + escrow holds — you can't ship "Create listing" without "what does Create listing actually do to money?" Doing the **bookkeeping first**, with the on-chain layer mocked, lets us iterate marketplace mechanics with $0 risk. Once the ledger is correct, the on-chain layer is glue (watcher detects on-chain deposit → `Wallet::deposit()`; user clicks withdraw → `Wallet::withdraw()` then withdrawal worker signs + broadcasts via TronGrid).
-
-### Locked decisions
-
-- **Custody model**: balance-based custodial. Users deposit USDT once → the system tracks an internal `usdt_balance` → listing create / take / cancel / payout / fee all draw from balance. **Per-match deposits rejected** (5x operational complexity, no UX win).
-- **Source of truth**: Postgres ledger (`wallet_transactions`). **Append-only, immutable.** Every money state change writes a row. **Never mutate `users.usdt_balance` outside a `Wallet` service method** — direct writes in seeders / migrations / controllers are forbidden, lint-check in tests if useful.
-- **Transactional + idempotent**: every money operation wraps `DB::transaction(...)` with `lockForUpdate()` on the user row. Each accepts a `reference_id` — repeat calls with the same reference return the existing transaction (no-op), never double-debit. Callers may wrap a larger `DB::transaction(...)` around a wallet call when multiple operations must commit atomically (e.g., M4 "create listing row + `Wallet::hold`" — both succeed or both roll back). Laravel nests transactions via savepoints, so `Wallet::hold`'s internal transaction stays safe whether it's called standalone (deposit webhook) or inside a caller-opened transaction (listing create). The rule: if a wallet call belongs to a larger atomic unit of work, the caller opens the outer transaction.
-- **On-chain integration deferred** to post-MVP. M3.5 mocks deposit/withdrawal as ledger entries with no chain interaction.
-- **Provider-agnostic via adapter**: all chain calls go through an `App\Services\Chain\ChainGateway` interface. The ledger + `Wallet` service never reference TronGrid, TronWeb, or any specific chain library directly. Swapping the implementation later (GetBlock, NOWNodes, our own Tron node) is changing one binding in `AppServiceProvider`, not touching wallet code. **Chain custody architecture is now committed — DIY + TRC20 + we own the master seed.** See pre-launch gate for full details.
-- **Platform-as-User pattern for fee tracking**: the platform's rake revenue is tracked via a special user row with `is_platform = true` (seeded as `platform@stakly.internal`). `Wallet::fee(...)` is just a positive ledger entry on this user. No nullable `user_id`, no special-casing — ledger invariant "every entry has a user_id" stays clean, and `Wallet::balanceFor($platform)` gives total platform revenue.
-- **Money type discipline**: amounts in PHP are **strings**, arithmetic via **BCMath** (`bcadd`, `bcsub`, `bccomp`). Never use `+` / `-` / `<` on money values. Database column is `decimal(18, 6)` matching Tron's 6-decimal precision. The only place we convert to `(float)` is at the API resource boundary (e.g., `ListingResource`) so the frontend gets a JSON number — but internal PHP work stays in strings end-to-end. This is non-negotiable.
-- **Sign convention**: the `amount` column is signed. Credits (Deposit, EscrowRelease, Payout, Fee) write positive values. Debits (Withdrawal, EscrowHold) write negative values. The invariant `users.usdt_balance == SUM(wallet_transactions.amount WHERE user_id = X)` must hold for every user at all times — and is asserted in tests.
-
-### Scope (step-by-step)
-
-> Marked off as we go. Each phase is a logical checkpoint — finishing a phase = good moment to commit.
-
-**Phase 1 — Data shape (migrations + models)**
-- [x] **1.1** Edit `database/migrations/0001_01_01_000000_create_users_table.php` to add `usdt_balance decimal(18,6) default 0` and `is_platform boolean default false` columns. (Pre-launch convention: edit existing migrations, don't add incrementals.)
-- [x] **1.2** Create `database/migrations/<ts>_create_wallet_transactions_table.php` — `id`, `user_id` FK cascade, `type` string, `amount` signed `decimal(18,6)`, `balance_after` `decimal(18,6)`, `related_listing_id` nullable FK, `reference_id` unique nullable string, `description` nullable text, `created_at` only. No `updated_at`, no soft deletes. Indexes on `user_id`, `type`, `reference_id`, `created_at`.
-- [x] **1.3** Create `App\Enums\WalletTransactionType` with cases `Deposit`, `Withdrawal`, `EscrowHold`, `EscrowRelease`, `Payout`, `Fee`.
-- [x] **1.4** Create `App\Models\WalletTransaction` with `belongsTo(User)` + `belongsTo(Listing, 'related_listing_id')`. Casts: `type` → enum, `amount` + `balance_after` → `decimal:6`, `created_at` → datetime. Fillable matches migration columns.
-- [x] **1.5** Create `database/factories/WalletTransactionFactory.php` with factory states for each enum case (`deposit`, `withdrawal`, `escrowHold`, `escrowRelease`, `payout`, `fee`).
-
-**Phase 2 — Business logic (service + exception)**
-- [x] **2.1** Create `App\Exceptions\InsufficientBalanceException`.
-- [x] **2.2** Create `App\Services\Wallet` with public methods `deposit`, `withdraw`, `hold`, `release`, `payout`, `fee` + a `balanceFor(User)` helper. Each money operation: wraps `DB::transaction(...)` + `lockForUpdate()` on the user row, accepts a string amount + optional `reference_id` + optional `description` + optional `Listing`, validates positive input, computes signed amount per type (debit types negate the input), checks balance won't go negative on debits (throws `InsufficientBalanceException`), appends `WalletTransaction` row with `balance_after` snapshot, updates `users.usdt_balance`. All arithmetic via BCMath. Idempotency: if a row already exists with the given `reference_id`, return it unchanged (no-op).
-
-**Phase 3 — Tests (Pest)** — 17 tests / 59 assertions in `tests/Feature/WalletTest.php`
-- [x] **3.1** Happy-path tests: each of the 6 methods writes the correct ledger row + updates `users.usdt_balance` with the correct sign and value.
-- [x] **3.2** Insufficient balance: `withdraw` and `hold` from a user without enough balance throws `InsufficientBalanceException`; no ledger row written; balance unchanged.
-- [x] **3.3** Idempotency replay: calling any method twice with the same `reference_id` writes only one row; the second call returns the existing row silently; balance unchanged on the second call.
-- [x] **3.4** Concurrent hold race: two simultaneous `hold` calls on the same balance — only one succeeds. (Verifies `lockForUpdate` is wired correctly.)
-- [x] **3.5** Balance ↔ ledger invariant: for any user, `users.usdt_balance == SUM(wallet_transactions.amount)` after every operation. Property-style test running many random ops.
-- [x] **3.6** Immutability: confirm no `UPDATE` statements ever hit `wallet_transactions` (DB query log assertion).
-- [x] **3.7** Conservation of money: a full match-style flow (deposit, deposit, hold, hold, payout, fee) — total balance delta across all 3 users (winner + loser + platform) = 0. No money created or destroyed.
-- [x] **3.8** Negative-input rejection: passing a negative or zero amount throws `InvalidArgumentException` before any DB work.
-
-**Phase 4 — Seeder**
-- [x] **4.1** Update `DatabaseSeeder` to create the platform user first (`is_platform = true`, `email = 'platform@stakly.internal'`, name `'Stakly Platform'`).
-- [x] **4.2** Update `DatabaseSeeder` / `ListingSeeder` so every seeded dev user (the test user + the 20 marketplace users) gets $1000 via `Wallet::deposit($user, '1000', reference: "seed:dev-deposit:{$user->id}")`. Never set `usdt_balance` directly. Use the service.
-
-**Phase 5 — Documentation**
-- [x] **5.1** Update CLAUDE.md "Conventions for AI Assistance" with the M3.5 wallet rules: service-only-write rule, BCMath money type discipline, signed-amount convention, balance-ledger invariant, platform-as-user pattern. Brief and rule-shaped — these are guardrails for every later money-touching milestone.
-
-**Phase 6 — Verify**
-- [x] **6.1** `vendor/bin/sail artisan migrate:fresh --seed` runs clean. Inspect a dev user's balance + ledger rows manually via `database-query` or tinker to spot-check.
-- [x] **6.2** `vendor/bin/sail artisan test --compact` — all tests pass (M3's 69 + M3.5 new ones, expect ~85+ tests / ~500+ assertions).
-- [x] **6.3** `vendor/bin/sail bin pint --dirty --format agent` — formatting clean.
-- [ ] **6.4** Commit. Suggested message: `feat: wallet ledger foundation (M3.5)`.
-
-### Out of M3.5 scope (intentionally)
-
-- Deposit / withdraw UI (M7).
-- Real on-chain integration (pre-launch gate).
-- Match settlement / dispute money flow (M6 uses M3.5's `Wallet::payout` + `Wallet::fee`).
-- `ChainGateway` adapter interface — that's pre-launch work. M3.5 has no chain code at all.
+**Locked decisions:**
+- **Service-only-write rule**: `users.usdt_balance` and `wallet_transactions` are written ONLY by `App\Services\Wallet`. Direct writes from controllers, seeders, migrations, factories, or tinker break the invariant `users.usdt_balance == SUM(wallet_transactions.amount)` (asserted in `WalletTest.php`).
+- **Money math is BCMath strings**, never floats. Internal arithmetic at scale 6 via `bcadd` / `bcsub` / `bccomp`. Floats appear only at the API resource boundary (`(float) $this->stake_amount` in `ListingResource`).
+- **Signed-amount convention**: credits (`Deposit`, `EscrowRelease`, `Payout`, `Fee`) write positive amounts; debits (`Withdrawal`, `EscrowHold`) write negative amounts. Balance = `SUM(amount)` for that user.
+- **Platform-as-User pattern**: platform rake credits the seeded `is_platform = true` user — no nullable `user_id` on `wallet_transactions`, no special-casing in the service.
+- **Idempotency contract**: every Wallet call accepts an optional `reference_id`; repeat calls return the existing row silently (no-op, no double-debit). Verified inside the user-row lock so concurrent same-reference calls are serialized.
+- **Append-only enforcement at both layers**: no `updated_at` column, `UPDATED_AT = null` on the `WalletTransaction` model — query log assertions (test 3.6) prove `UPDATE` never hits the ledger.
+- **Conservation of money**: holds + releases + payouts + fees in a complete match flow sum to 0 (test 3.7). Money is redistributed, never created or destroyed inside a match.
+- **Nested-transaction rule**: `Wallet::hold` etc. open their own `DB::transaction` internally, but callers can wrap a larger transaction around them (e.g., M4 "create listing + `Wallet::hold`" must commit or roll back as one unit). Laravel nests via savepoints — safe in either direction.
+- **`ChainGateway` adapter + DIY + TRC20 + TronGrid path** locked in the pre-launch gate; M3.5 contains zero chain code.
 
 ---
 
-## M4 — Listing Detail + Create Flow
+## M4 — Listing Detail + Create Flow **(next)**
 
 Builds on M3.5. Public listing detail page + create form.
 
