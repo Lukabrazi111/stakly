@@ -13,11 +13,7 @@ test('public profile renders for a guest visitor', function () {
 
     $response->assertOk();
     $response->assertInertia(fn ($page) => $page
-        // Second arg `false` skips Inertia's strict file-existence check —
-        // `resources/js/pages/users/show.tsx` lands in Phase 4. Component
-        // name is still asserted; file existence will be naturally re-strict
-        // once Phase 4 creates the page.
-        ->component('users/show', false)
+        ->component('users/show')
         ->where('user.username', 'alice')
         ->where('user.name', 'Alice')
         ->has('user.member_since')

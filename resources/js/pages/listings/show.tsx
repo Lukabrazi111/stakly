@@ -22,6 +22,7 @@ import {
     isEndingSoon,
 } from '@/lib/listings-format';
 import { cancel as cancelRoute, index as listingsIndex } from '@/routes/listings';
+import { show as userShow } from '@/routes/users';
 import type { ListingShowProps, ListingStatus } from '@/types';
 
 const STATUS_LABEL: Record<ListingStatus, string> = {
@@ -74,34 +75,40 @@ export default function ListingShow({ listing }: ListingShowProps) {
                 <div className="grid gap-8 md:grid-cols-3">
                     {/* Left: profile + listing details */}
                     <div className="space-y-6 md:col-span-2">
-                        {/* Creator card */}
+                        {/* Creator card — avatar + name + meta link to user profile;
+                            status badge stays outside the link as informational. */}
                         <section className="border-border/60 bg-card/60 rounded-2xl border p-6">
                             <div className="flex items-center gap-4">
-                                <Avatar className="size-16 overflow-hidden rounded-full">
-                                    <AvatarFallback className="bg-gradient-primary text-primary-foreground text-xl font-semibold">
-                                        {getInitials(listing.creator.name)}
-                                    </AvatarFallback>
-                                </Avatar>
+                                <Link
+                                    href={userShow(listing.creator.username).url}
+                                    className="focus-visible:ring-primary focus-visible:ring-offset-background flex min-w-0 flex-1 items-center gap-4 rounded-lg focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none"
+                                >
+                                    <Avatar className="size-16 overflow-hidden rounded-full">
+                                        <AvatarFallback className="bg-gradient-primary text-primary-foreground text-xl font-semibold">
+                                            {getInitials(listing.creator.name)}
+                                        </AvatarFallback>
+                                    </Avatar>
 
-                                <div className="min-w-0 flex-1">
-                                    <h1 className="font-display text-foreground truncate text-2xl font-bold tracking-tight">
-                                        {listing.creator.name}
-                                    </h1>
-                                    <div className="text-muted-foreground mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
-                                        {listing.region && (
-                                            <span className="inline-flex items-center gap-1.5">
-                                                <Globe className="size-3.5" />
-                                                {listing.region}
-                                            </span>
-                                        )}
-                                        {listing.language && listing.language.length > 0 && (
-                                            <span className="inline-flex items-center gap-1.5">
-                                                <Languages className="size-3.5" />
-                                                {listing.language.join(', ')}
-                                            </span>
-                                        )}
+                                    <div className="min-w-0 flex-1">
+                                        <h1 className="font-display text-foreground hover:text-primary truncate text-2xl font-bold tracking-tight transition-colors">
+                                            {listing.creator.name}
+                                        </h1>
+                                        <div className="text-muted-foreground mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
+                                            {listing.region && (
+                                                <span className="inline-flex items-center gap-1.5">
+                                                    <Globe className="size-3.5" />
+                                                    {listing.region}
+                                                </span>
+                                            )}
+                                            {listing.language && listing.language.length > 0 && (
+                                                <span className="inline-flex items-center gap-1.5">
+                                                    <Languages className="size-3.5" />
+                                                    {listing.language.join(', ')}
+                                                </span>
+                                            )}
+                                        </div>
                                     </div>
-                                </div>
+                                </Link>
 
                                 {!isOpen && (
                                     <span

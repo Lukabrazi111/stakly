@@ -21,7 +21,7 @@ class HomeController extends Controller
     {
         $featured = Listing::query()
             ->open()
-            ->with('user:id,name')
+            ->with('user:id,name,username')
             ->orderBy('expires_at')
             ->orderByDesc('id')
             ->limit(self::FEATURED_COUNT)

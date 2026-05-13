@@ -18,6 +18,7 @@ export type ListingSort =
 export interface ListingCreator {
     id: number;
     name: string;
+    username: string;
 }
 
 export interface Listing {

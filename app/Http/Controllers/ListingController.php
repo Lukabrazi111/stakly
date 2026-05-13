@@ -44,7 +44,7 @@ class ListingController extends Controller
         );
 
         $listings = QueryBuilder::for(
-            Listing::query()->open()->with('user:id,name'),
+            Listing::query()->open()->with('user:id,name,username'),
         )
             ->allowedFilters(
                 AllowedFilter::exact('game')->default(Game::Chess->value),
@@ -81,7 +81,7 @@ class ListingController extends Controller
      */
     public function show(Listing $listing): Response
     {
-        $listing->load('user:id,name');
+        $listing->load('user:id,name,username');
 
         return Inertia::render('listings/show', [
             'listing' => (new ListingResource($listing))->resolve(),

@@ -126,33 +126,33 @@ Public, read-only player profile pages — discoverable via clicking any creator
 ### Scope (step-by-step)
 
 **Phase 1 — Schema + model + factory + seeder**
-- [ ] **1.1** Edit `0001_01_01_000000_create_users_table.php` migration: add `username` (string, unique, indexed) and `bio` (string, nullable, length 280) columns.
-- [ ] **1.2** `User` model: add `username` + `bio` to `$fillable`; override `getRouteKeyName(): string` to return `'username'`.
-- [ ] **1.3** Update Fortify's `CreateNewUser` action — after the user is created, derive `username` from `Str::slug($name)` with a collision-safe suffix loop, then `save()`. Wrap in a small private helper so the logic is testable. Add validation: `username` must match `/^[a-z0-9-]{3,30}$/` after slugifying.
-- [ ] **1.4** `UserFactory`: generate a `username` via `Str::slug(faker->unique->userName)`. ~30% chance to populate `bio` with `faker->realText(120)`.
-- [ ] **1.5** `DatabaseSeeder`: explicitly set Test User's `username = 'testuser'` (known value, easier to test against).
-- [ ] **1.6** `vendor/bin/sail artisan migrate:fresh --seed` — verify every user has a username, no collisions, Test User reachable at `/users/testuser`.
+- [x] **1.1** Edit `0001_01_01_000000_create_users_table.php` migration: add `username` (string, unique, indexed) and `bio` (string, nullable, length 280) columns.
+- [x] **1.2** `User` model: add `username` + `bio` to `$fillable`; override `getRouteKeyName(): string` to return `'username'`.
+- [x] **1.3** Update Fortify's `CreateNewUser` action — after the user is created, derive `username` from `Str::slug($name)` with a collision-safe suffix loop, then `save()`. Wrap in a small private helper so the logic is testable. Add validation: `username` must match `/^[a-z0-9-]{3,30}$/` after slugifying.
+- [x] **1.4** `UserFactory`: generate a `username` via `Str::slug(faker->unique->userName)`. ~30% chance to populate `bio` with `faker->realText(120)`.
+- [x] **1.5** `DatabaseSeeder`: explicitly set Test User's `username = 'testuser'` (known value, easier to test against).
+- [x] **1.6** `vendor/bin/sail artisan migrate:fresh --seed` — verify every user has a username, no collisions, Test User reachable at `/users/testuser`.
 
 **Phase 2 — Backend skeleton (route + controller + resource)**
-- [ ] **2.1** New `App\Http\Controllers\UserController` with `show(User $user): Response`. No auth middleware — public route.
-- [ ] **2.2** Route in `routes/web.php`: `Route::get('/users/{user:username}', [UserController::class, 'show'])->name('users.show')`. Place near the listings routes for grouping.
-- [ ] **2.3** New `App\Http\Resources\UserProfileResource` — whitelisted public fields: `id`, `username`, `name`, `bio`, `member_since` (ISO `created_at`), `avatar` (nullable URL — for v1 always null, frontend falls back to initials). **Never** ship `email`, `usdt_balance`, `is_platform`, or two-factor fields.
-- [ ] **2.4** `UserController::show` returns `Inertia::render('users/show', [...])` with: `user` (resource), `stats` (computed: open listings count, total listings count, member since), `openListings` (collection of `ListingResource` — top 5 most recent open listings; sort by newest).
-- [ ] **2.5** Route model binding handles 404 automatically; no policy needed (public + read-only).
+- [x] **2.1** New `App\Http\Controllers\UserController` with `show(User $user): Response`. No auth middleware — public route.
+- [x] **2.2** Route in `routes/web.php`: `Route::get('/users/{user:username}', [UserController::class, 'show'])->name('users.show')`. Place near the listings routes for grouping.
+- [x] **2.3** New `App\Http\Resources\UserProfileResource` — whitelisted public fields: `id`, `username`, `name`, `bio`, `member_since` (ISO `created_at`), `avatar` (nullable URL — for v1 always null, frontend falls back to initials). **Never** ship `email`, `usdt_balance`, `is_platform`, or two-factor fields.
+- [x] **2.4** `UserController::show` returns `Inertia::render('users/show', [...])` with: `user` (resource), `stats` (computed: open listings count, total listings count, member since), `openListings` (collection of `ListingResource` — top 5 most recent open listings; sort by newest).
+- [x] **2.5** Route model binding handles 404 automatically; no policy needed (public + read-only).
 
 **Phase 3 — Wayfinder + TS types**
-- [ ] **3.1** Regenerate Wayfinder typed routes via `npm run build` (or `artisan wayfinder:generate --with-form` — the latter is mandatory if going via artisan).
-- [ ] **3.2** New `resources/js/types/profile.ts` with `UserProfile`, `ProfileStats`, `ProfileShowProps` interfaces. Backend source of truth: `UserProfileResource`.
-- [ ] **3.3** `npm run types:check` clean.
+- [x] **3.1** Regenerate Wayfinder typed routes via `npm run build` (or `artisan wayfinder:generate --with-form` — the latter is mandatory if going via artisan).
+- [x] **3.2** New `resources/js/types/profile.ts` with `UserProfile`, `ProfileStats`, `ProfileShowProps` interfaces. Backend source of truth: `UserProfileResource`.
+- [x] **3.3** `npm run types:check` clean.
 
 **Phase 4 — Profile page + components**
-- [ ] **4.1** New `resources/js/pages/users/show.tsx` — page-level layout (SiteLayout, Head with `{user.name}'s profile`).
-- [ ] **4.2** `components/profile/profile-header.tsx` — avatar (initials), display name, `@{username}`, member-since (`Joined Mar 2026`), bio card if `bio !== null`. Right-side `Edit profile` button only when `auth.user.id === user.id`.
-- [ ] **4.3** `components/profile/stats-card.tsx` — grid of stat tiles. **Live now**: Open listings, Total listings, Member since. **Empty-state tiles**: Win rate (`No matches yet`), Total earnings (`No matches yet`), Avg opponent rating (`No matches yet`). Visually consistent; empty states use `text-muted-foreground` with a subtle dashed border so they don't read as zero values.
-- [ ] **4.4** `components/profile/listings-section.tsx` — reuses the existing `ListingRow` for open listings. Heading `Active listings · N`. Empty state: `No active listings right now.` with a soft border + muted copy.
-- [ ] **4.5** `components/profile/match-history-section.tsx` — empty-state-only for v1. Heading `Match history`, body `No matches yet — match flow lands in M6.` Internal-facing copy; we can soften before public launch.
-- [ ] **4.6** `components/profile/linked-accounts-section.tsx` — two rows (chess.com, Lichess) each with a `Not linked` muted chip. Heading `Linked game accounts`. Footer copy: `Link your accounts in settings.` (no real link until M8).
-- [ ] **4.7** Compose all four sections in the page below the header.
+- [x] **4.1** New `resources/js/pages/users/show.tsx` — page-level layout (SiteLayout, Head with `{user.name}'s profile`).
+- [x] **4.2** `components/profile/profile-header.tsx` — avatar (initials), display name, `@{username}`, member-since (`Joined Mar 2026`), bio card if `bio !== null`. Right-side `Edit profile` button only when `auth.user.id === user.id`.
+- [x] **4.3** `components/profile/stats-caprd.tsx` — grid of stat tiles. **Live now**: Open listings, Total listings, Member since. **Empty-state tiles**: Win rate (`No matches yet`), Total earnings (`No matches yet`), Avg opponent rating (`No matches yet`). Visually consistent; empty states use `text-muted-foreground` with a subtle dashed border so they don't read as zero values.
+- [x] **4.4** `components/profile/listings-section.tsx` — reuses the existing `ListingRow` for open listings. Heading `Active listings · N`. Empty state: `No active listings right now.` with a soft border + muted copy.
+- [x] **4.5** `components/profile/match-history-section.tsx` — empty-state-only for v1. Heading `Match history`, body `No matches yet — match flow lands in M6.` Internal-facing copy; we can soften before public launch.
+- [x] **4.6** `components/profile/linked-accounts-section.tsx` — two rows (chess.com, Lichess) each with a `Not linked` muted chip. Heading `Linked game accounts`. Footer copy: `Link your accounts in settings.` (no real link until M8).
+- [x] **4.7** Compose all four sections in the page below the header.
 
 **Phase 5 — Profile entry points (restructure ListingRow / ListingCard)**
 - [ ] **5.1** `ListingRow` — currently wrapped in an outer `<Link>`. Restructure to a non-anchor outer element with two interior `<Link>`s: one wrapping the creator avatar + name (→ `users.show`), one wrapping the rest of the row body (→ `listings.show`). Verify keyboard nav (tab order makes sense), right-click → "Open in new tab" works on both targets, no nested-anchor warnings in the console.

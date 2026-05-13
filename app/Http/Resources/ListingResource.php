@@ -34,6 +34,7 @@ class ListingResource extends JsonResource
             'creator' => [
                 'id' => $this->user->id,
                 'name' => $this->user->name,
+                'username' => $this->user->username,
             ],
         ];
     }
