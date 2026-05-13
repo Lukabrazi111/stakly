@@ -35,11 +35,20 @@ class HandleInertiaRequests extends Middleware
      */
     public function share(Request $request): array
     {
+        $user = $request->user();
+
         return [
             ...parent::share($request),
             'name' => config('app.name'),
             'auth' => [
-                'user' => $request->user(),
+                // Override `usdt_balance` to a float at the JSON boundary —
+                // Eloquent's `decimal:6` cast serializes to a string by default.
+                // Same float-at-the-boundary convention as `ListingResource`,
+                // so the frontend never deals with BCMath strings.
+                'user' => $user ? [
+                    ...$user->toArray(),
+                    'usdt_balance' => (float) $user->usdt_balance,
+                ] : null,
             ],
             'status' => fn () => $request->session()->get('status'),
             'sidebarOpen' => ! $request->hasCookie('sidebar_state') || $request->cookie('sidebar_state') === 'true',

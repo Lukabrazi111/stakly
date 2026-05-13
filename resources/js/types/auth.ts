@@ -1,10 +1,15 @@
 export type User = {
     id: number;
     name: string;
+    username: string;
     email: string;
     avatar?: string;
     email_verified_at: string | null;
     two_factor_enabled?: boolean;
+    // Spendable USDT balance. Float, not string — converted at the Inertia
+    // middleware boundary (`HandleInertiaRequests`). Updates after every
+    // navigation since auth.user is re-shared on each request.
+    usdt_balance: number;
     created_at: string;
     updated_at: string;
     [key: string]: unknown;

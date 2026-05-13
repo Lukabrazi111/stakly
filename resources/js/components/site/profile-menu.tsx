@@ -14,6 +14,7 @@ import {
 import { useInitials } from '@/hooks/use-initials';
 import { logout } from '@/routes';
 import { edit as editProfile } from '@/routes/profile';
+import { index as walletIndex } from '@/routes/wallet';
 import type { User } from '@/types/auth';
 
 interface Props {
@@ -83,13 +84,15 @@ export function ProfileMenu({ user }: Props) {
                         <span>My profile</span>
                         <SoonBadge />
                     </DropdownMenuItem>
-                    <DropdownMenuItem
-                        disabled
-                        className={disabledMenuItemClass}
-                    >
-                        <Wallet className="mr-2 size-4" />
-                        <span>Wallet</span>
-                        <SoonBadge />
+                    <DropdownMenuItem asChild>
+                        <Link
+                            href={walletIndex().url}
+                            prefetch
+                            className={menuItemClass}
+                        >
+                            <Wallet className="mr-2 size-4" />
+                            Wallet
+                        </Link>
                     </DropdownMenuItem>
                     <DropdownMenuItem asChild>
                         <Link

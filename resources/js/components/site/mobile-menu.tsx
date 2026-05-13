@@ -14,12 +14,14 @@ import {
     SheetTrigger,
 } from '@/components/ui/sheet';
 import { useInitials } from '@/hooks/use-initials';
+import { formatUsdt } from '@/lib/wallet-format';
 import { home, logout } from '@/routes';
 import {
     create as listingsCreate,
     index as listingsIndex,
 } from '@/routes/listings';
 import { edit as editProfile } from '@/routes/profile';
+import { index as walletIndex } from '@/routes/wallet';
 
 interface NavLink {
     label: string;
@@ -193,6 +195,27 @@ export function MobileMenu() {
                                 </div>
                             )}
 
+                            {/* Inline balance — the mobile equivalent of the
+                                desktop BalanceChip. Tapping it navigates to
+                                /wallet, so it doubles as a wallet entry point. */}
+                            <SheetClose asChild>
+                                <Link
+                                    href={walletIndex().url}
+                                    prefetch
+                                    className="border-border/60 hover:bg-primary/10 active:bg-primary/10 flex items-center justify-between gap-3 border-t px-4 py-3 transition-colors duration-150 ease-out"
+                                >
+                                    <span className="text-muted-foreground text-xs font-medium tracking-wide uppercase">
+                                        Balance
+                                    </span>
+                                    <span className="font-display text-foreground text-base font-semibold">
+                                        ${formatUsdt(user.usdt_balance)}{' '}
+                                        <span className="text-muted-foreground text-xs">
+                                            USDT
+                                        </span>
+                                    </span>
+                                </Link>
+                            </SheetClose>
+
                             <div className="border-border/60 flex flex-col gap-0.5 border-t p-2">
                                 <div
                                     aria-disabled="true"
@@ -202,14 +225,16 @@ export function MobileMenu() {
                                     <span>My profile</span>
                                     <SoonBadge />
                                 </div>
-                                <div
-                                    aria-disabled="true"
-                                    className={mobileDisabledItemClass}
-                                >
-                                    <Wallet className="size-5" />
-                                    <span>Wallet</span>
-                                    <SoonBadge />
-                                </div>
+                                <SheetClose asChild>
+                                    <Link
+                                        href={walletIndex().url}
+                                        prefetch
+                                        className={mobileMenuItemClass}
+                                    >
+                                        <Wallet className="size-5" />
+                                        Wallet
+                                    </Link>
+                                </SheetClose>
                                 <SheetClose asChild>
                                     <Link
                                         href={editProfile()}
