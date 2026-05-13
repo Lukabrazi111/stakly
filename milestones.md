@@ -11,9 +11,10 @@ Frontend-first MVP. Build UI against real DB infrastructure + seeded fake data; 
 - **M3.5** — Wallet / Ledger Foundation ✅
 - **M4** — Listing Detail + Create Flow ✅
 - **M5** — User Profile ✅
-- **M6** — Match Flow (mock)
-- **M7** — Wallet UI **(next)**
-- **M8** — Settings / Linked Accounts (chess.com / Lichess)
+- **M7** — Wallet UI ✅
+- **M9** — Chain Integration (testnet) **(next)**
+- **M6** — Match Flow (mock) [deferred — after M9]
+- **M8** — Settings / Linked Accounts (chess.com / Lichess) [deferred — after M9]
 
 > Only the current milestone keeps a detailed task list. Future milestones expand when started. Completed milestones live at the top as short summaries.
 
@@ -121,104 +122,296 @@ Public read-only player profiles at `/users/{username}`. Schema (`username` + `b
 
 ---
 
+## M9 — Chain Integration (testnet) **(next)**
+
+The first real touch of crypto. Builds the entire deposit / withdrawal / sweep pipeline against **Tron testnet (Nile)** behind a `ChainGateway` adapter. Free, real chain behavior, fake money — we exercise the full flow end-to-end before any mainnet flip. The mainnet migration plan + custody decisions stay in the **Pre-launch gate** section at the bottom.
+
+After M9, the missing pieces before launch are M6 (match settlement) + M8 (linked accounts) + the mainnet flip checklist.
+
+### Why M9 now (strategic)
+
+Locked-in pivot from the original M6 → M8 → pre-launch order. Reasoning: chain integration is the highest-anxiety unknown in the project, and de-risking it on testnet (where mistakes cost nothing) is more valuable now than another UI milestone. M6 and M8 are deferred but not dropped — they still gate launch.
+
+### Locked decisions
+
+- **Tron testnet (Nile)** for all of M9. Mainnet flip is a config change later. Free TRX/USDT from Nile's faucet (`https://nileex.io/join/getJoinPage`).
+- **TronGrid Basic plan (free)** — 100k requests/day, 3 API keys. Comfortably fits MVP load. User signs up + provides API key.
+- **`ChainGateway` adapter pattern**: an interface + two implementations (mock for dev/tests, TronGrid for testnet, swappable to GetBlock or our own node later). Same DI binding selects the right one per environment.
+- **HD derivation (BIP32/39/44)** — one master seed in `.env` (dev only). Every user gets a unique deposit address derived from `(seed, user.derivation_index)`. We never store per-user private keys; they're re-derived on demand. Tron coin type is **195** (BIP44 path `m/44'/195'/0'/0/{userIndex}`).
+- **Confirmation threshold**: **19 blocks** on Tron (~1 minute), matching Tron's finality recommendation.
+- **Master seed in `.env` only for dev**. Production custody (KMS or Ledger-based — see Pre-launch gate) is a separate decision later, not a v1-MVP concern.
+- **Library choices deferred to per-phase discussion** — no `composer require` until you've approved the specific package + alternatives (per the user's "discuss libraries first" rule).
+- **Replaces M7 Phase 1 mock-address logic**. `App\Support\MockTronAddress` gets absorbed into `MockChainGateway` and deleted. The existing `users.tron_address` column stays; addresses are now HD-derived, not random.
+
+### What you (the user) need to provide
+
+| Item | When | Cost | Notes |
+|------|------|------|-------|
+| TronGrid account + 3 API keys | Before Phase 3 | Free | Basic plan. Generate at `https://www.trongrid.io/dashboard`. |
+| Testnet TRX (a few hundred) | Before Phase 3 | Free | Faucet: `https://nileex.io/join/getJoinPage`. Tron txns burn energy/bandwidth; testnet TRX pays for it. |
+| Testnet USDT (a few thousand) | Before Phase 4 | Free | Same faucet flow. Used to simulate user deposits. |
+| Decision on production custody (KMS vs Ledger-based) | Pre-mainnet (months out) | TBD | Not needed for M9. We pick this when we know launch volume + your operational comfort. |
+| Ledger Nano X | Pre-mainnet | Already owned ✅ | Useful for **cold storage** at mainnet launch (see "Custody simply explained" below). Not used during M9. |
+
+### Custody simply explained (one-time read)
+
+The whole crypto setup hinges on **one secret**: the **master seed** — 12 or 24 random words that mathematically derive every Stakly wallet address. Whoever holds the seed controls all the money on the platform. So protecting it on mainnet is the entire game.
+
+**Three real options for protecting the seed on mainnet** (we'll pick one closer to launch — not now):
+
+1. **KMS only** (AWS KMS, Google Cloud KMS, HashiCorp Vault)
+   - Cloud service. Seed lives **inside** the KMS, never on your application server.
+   - Laravel app says "sign this transaction" — KMS signs and returns the result. Key never leaves.
+   - Even if your server is fully compromised, the attacker can only request signatures while connected; they can't extract the key. Rate-limit + audit logs included.
+   - Cost: ~$1–5/month. Good for automated daily withdrawals (instant UX).
+   - Trade-off: depends on a cloud provider being available.
+
+2. **Ledger Nano X for cold + KMS for hot** (industry standard for custodial platforms)
+   - **Hot wallet** (KMS): holds ~1 week of expected payout volume. Automated signing of routine withdrawals.
+   - **Cold wallet** (your Ledger): holds the other 90%+ of platform reserves. Physical button-press required for every signature, so malware can't auto-drain it. Pulled out manually to sweep hot ↔ cold every week or two.
+   - Best security/UX balance. Most real platforms run this setup.
+   - Cost: $0 extra (you already own the Ledger) + KMS fees.
+
+3. **Ledger only with batched withdrawals** (no KMS)
+   - All funds in the Ledger. Withdrawals queued; you sign them in batches once a day (or whenever you're at your computer).
+   - Cheapest and most secure. But user UX is slower — "withdrawal in up to 24h" instead of "instant".
+   - Works if Stakly's volume is low enough that manual ops is realistic.
+
+**For M9 (testnet)**: none of this matters. We use a plain `.env` seed. Even if it leaks, the keys it derives are testnet — worthless. The KMS / Ledger decision happens months from now when we're prepping the mainnet flip.
+
+### Scope (step-by-step, 7 phases)
+
+> Estimates are **focused solo dev time**, not calendar time. Crypto integration has a learning curve — calendar time may be 1.5–2× estimates. Each phase ships something usable before moving on; you commit per phase as before.
+
+**Phase 1 — `ChainGateway` adapter + Mock implementation** (~1–2 days, no new deps)
+
+The foundation. Define the contract that all chain operations flow through; ship a mock implementation that mimics current M7 behavior so nothing breaks while we build the real one.
+
+- [ ] **1.1** New `App\Services\Chain\ChainGateway` interface with methods:
+  - `deriveAddressForUser(int $userIndex): string` — given a derivation index, return the Tron address
+  - `getUsdtBalance(string $address): string` — chain-side USDT balance (BCMath string)
+  - `getNewDeposits(string $address, ?int $sinceBlock): array` — return USDT transfers TO this address since a given block; each item has `{tx_hash, from, amount, block_number, timestamp}`
+  - `sendUsdt(string $fromAddress, string $toAddress, string $amount, string $privateKey): string` — sign + broadcast, return tx hash
+  - `getTransactionStatus(string $txHash): string` — `'pending' | 'confirmed' | 'failed'`
+  - `latestBlockNumber(): int` — current chain head
+- [ ] **1.2** New `App\Services\Chain\MockChainGateway implements ChainGateway`. Mimics M7's mock-address generation, returns 0 balance, empty deposit list, fake tx hashes. Deterministic per user index (same input → same output) so tests are stable.
+- [ ] **1.3** New `config/chain.php` with `driver`, TronGrid endpoint, USDT contract address, confirmations required, master seed env var.
+- [ ] **1.4** Register `ChainGateway` binding in `AppServiceProvider` driven by `config('chain.driver')` — `mock` for dev/test, `tron-grid` for testnet (Phase 3 will add the TronGrid binding).
+- [ ] **1.5** Refactor M7's `App\Support\MockTronAddress` and `CreateNewUser`: instead of calling `MockTronAddress::generate()`, call `app(ChainGateway::class)->deriveAddressForUser($user->id)`. Delete `MockTronAddress.php`.
+- [ ] **1.6** Update `users` migration: add `derivation_index BIGINT UNIQUE` column (auto-assigned at registration = max+1). This is the BIP44 leaf index.
+- [ ] **1.7** Tests:
+  - Interface contract test (every method returns the documented shape)
+  - Mock returns the same address for the same user_index twice (deterministic)
+  - DI binding selects the correct implementation based on `CHAIN_DRIVER` env
+- [ ] **1.8** Update M7's tests where they referenced `MockTronAddress`. Suite stays green.
+
+**Phase 2 — HD derivation (real keys from a seed)** (~3–5 days, 1 new dep)
+
+Real BIP32/39/44 derivation: master seed → unique private key + Tron address per user index. Mock-driver tests stay deterministic; the math underneath is now real.
+
+- [ ] **2.1** **Library discussion** before installing:
+  - **Option A**: `bitwasp/bitcoin-php` — mature, popular PHP library for BIP32/39/44 + ECDSA. ~5MB. Last released ~2024. Recommended.
+  - **Option B**: hand-rolled BIP32 using `simplito/elliptic-php` + `kornrunner/keccak`. Smaller surface, more code we maintain ourselves, more cryptographic risk.
+  - **Option C**: A Tron-specific PHP library (e.g., `iexbase/tron-api`) that bundles HD. Convenient but couples our HD layer to a possibly-stale Tron library.
+  - **My recommendation**: Option A — battle-tested for HD, separate from any Tron-specific code so we can swap Tron libraries independently. Tron's address encoding (keccak + base58check with version byte `0x41`) is small enough to write ourselves.
+- [ ] **2.2** New `App\Services\Chain\HdDerivation` helper class with:
+  - `mnemonicToSeed(string $mnemonic, string $passphrase = ''): string`
+  - `derivePrivateKey(string $seed, int $userIndex, bool $testnet = true): string` — BIP44 path `m/44'/195'/0'/0/{userIndex}`
+  - `privateKeyToTronAddress(string $privateKey): string` — Tron address derivation (keccak256 → last 20 bytes → prepend `0x41` → base58check encode)
+- [ ] **2.3** `MockChainGateway::deriveAddressForUser($userIndex)` now uses real HD derivation. Still "mock" in the sense of no chain RPC calls — but the addresses are real and reproducible from the seed.
+- [ ] **2.4** `.env` additions:
+  - `CHAIN_MASTER_SEED="abandon ability ... (12 words, dev only)"` — generate once via `php artisan chain:generate-seed` (Phase 2.5).
+  - `CHAIN_NETWORK=testnet`
+- [ ] **2.5** New `App\Console\Commands\ChainGenerateSeed` artisan command — generates a random BIP39 mnemonic + prints it for the user to copy into `.env`. **Never** writes to `.env` automatically.
+- [ ] **2.6** Migrate seeded data: drop dev users' `tron_address`, re-derive based on `derivation_index`.
+- [ ] **2.7** Tests:
+  - Same mnemonic + same index → same private key + address (deterministic, every time)
+  - Different indices → different addresses
+  - All generated addresses match the TRC20 regex `^T[1-9A-HJ-NP-Za-km-z]{33}$`
+  - **External test vector**: a specific known BIP39 mnemonic produces a specific known address (sanity check against `iancoleman.io/bip39` or equivalent)
+
+**Phase 3 — TronGrid client (real testnet calls)** (~5–7 days, possibly 1 new dep)
+
+`TronGridGateway` implementation makes actual HTTP calls to TronGrid's Nile testnet endpoint. Read operations first (balances, transactions), then signing + broadcasting.
+
+- [ ] **3.1** **Pre-Phase setup** (USER ACTION):
+  - Sign up at `https://www.trongrid.io/dashboard` (free Basic plan)
+  - Generate 3 API keys
+  - Visit `https://nileex.io/join/getJoinPage` to claim testnet TRX
+  - Send testnet USDT to one of your dev addresses (faucet flow or DEX)
+- [ ] **3.2** **Library discussion**:
+  - **Option A**: Raw HTTP via Laravel's `Http::` facade. Maximum control, zero new deps. We assemble TRC20 transfers ourselves using Phase 2's signing primitives.
+  - **Option B**: `iexbase/tron-api` — bundles everything. Last meaningful update ~2–3 years ago; may have stale dependencies but probably still works.
+  - **My recommendation**: Option A. The TronGrid REST API is documented and stable; the only complex bit (signing) is already covered by Phase 2. Avoids a possibly-unmaintained dependency.
+- [ ] **3.3** New `App\Services\Chain\TronGridGateway implements ChainGateway`. All `ChainGateway` methods routed to TronGrid HTTP endpoints:
+  - `getUsdtBalance` → `triggerconstantcontract` calling USDT contract's `balanceOf(address)`
+  - `getNewDeposits` → `/v1/accounts/{address}/transactions/trc20` filtered by `min_timestamp` or `min_block`
+  - `sendUsdt` → build TRC20 transfer tx → sign locally (Phase 2 primitives) → broadcast via `/wallet/broadcasttransaction`
+  - `getTransactionStatus` → `/wallet/gettransactioninfobyid`
+  - `latestBlockNumber` → `/wallet/getnowblock`
+- [ ] **3.4** TronGrid HTTP client wrapper with API-key header (`TRON-PRO-API-KEY`), retry on 429/5xx, timeout, structured error responses.
+- [ ] **3.5** Config:
+  - `TRON_GRID_API_KEY=...`
+  - `TRON_GRID_ENDPOINT=https://nile.trongrid.io`
+  - `TRON_USDT_CONTRACT=...` (Nile testnet USDT contract address — verified at setup time)
+  - `CHAIN_DRIVER=tron-grid` to flip from mock to real
+- [ ] **3.6** Integration tests against Nile (marked `@group integration`, run separately from CI unit tests). Mock-based tests cover the same paths for CI speed.
+- [ ] **3.7** Manual walkthrough: spin up `php artisan tinker`, instantiate the gateway, query a known testnet address's USDT balance. Sanity check the math.
+
+**Phase 4 — Deposit watcher** (~4–6 days, no new deps)
+
+A background process that polls TronGrid every N seconds, detects new USDT arrivals at user addresses, and credits the ledger via `Wallet::deposit()`. This is the heart of the deposit flow — crypto has no "push" notification when funds arrive, you have to poll.
+
+- [ ] **4.1** New `chain_watch_cursors` migration:
+  ```sql
+  id, address (unique), last_checked_block, last_checked_at, created_at, updated_at
+  ```
+  Tracks how far we've scanned per address so we don't re-scan from genesis every cycle.
+- [ ] **4.2** New `App\Console\Commands\ChainWatchDeposits` artisan command:
+  - Locked: chunk through all users' addresses (e.g., 100 at a time) to respect TronGrid rate limit
+  - For each address: `getNewDeposits($address, $cursor->last_checked_block)` via gateway
+  - For each returned tx: skip if `tx.block > latestBlock - CONFIRMATIONS_REQUIRED` (still pending finality)
+  - For confirmed txs: lookup user by `tron_address` → `Wallet::deposit($user, $amount, reference: "chain-deposit:{$txHash}")` — idempotent via reference, so double-runs never double-credit
+  - Update cursor's `last_checked_block`
+  - Logs every action, alerts on failures
+- [ ] **4.3** Schedule in `routes/console.php` — `->everyMinute()->withoutOverlapping()`. (Or supervisor-managed daemon for sub-minute polling if needed.)
+- [ ] **4.4** Tests with MockChainGateway returning fake deposits:
+  - Single deposit → `Wallet::deposit` called with correct args
+  - Idempotency: re-running the watcher on the same data doesn't double-credit
+  - Confirmation gate: tx in block `latestBlock - 5` is skipped (need 19); tx in `latestBlock - 25` is processed
+  - Cursor advances after each successful run
+  - Multiple users in one batch
+- [ ] **4.5** End-to-end manual test on Nile: send testnet USDT to a dev user's derived address from your testnet wallet → run watcher → verify balance updates + history shows the deposit.
+
+**Phase 5 — Withdrawal worker (real, replaces M7's Option B noop)** (~5–7 days, no new deps; needs Redis queue)
+
+Real withdrawal: user clicks Withdraw → queued job signs + broadcasts → status updates → ledger reflects. Replaces M7's flash-toast noop.
+
+- [ ] **5.1** New `withdrawals` migration:
+  ```sql
+  id, user_id, destination_address, amount, status ('pending'|'broadcast'|'confirmed'|'failed'),
+  tx_hash NULL, wallet_transaction_id NULL FK, failed_reason NULL,
+  requested_at, broadcast_at NULL, confirmed_at NULL, created_at, updated_at
+  ```
+- [ ] **5.2** Replace `WalletController::withdrawStore`:
+  - Validate (already done — `WithdrawRequest`)
+  - Create `withdrawals` row with status `pending`
+  - Dispatch `ProcessWithdrawal` job to the queue
+  - Flash success toast ("Withdrawal received, processing — usually 1–2 minutes")
+- [ ] **5.3** New `App\Jobs\ProcessWithdrawal` queued job:
+  - Lock user row (`lockForUpdate`)
+  - Re-verify balance ≥ amount (defense against TOCTOU race)
+  - `Wallet::withdraw($user, $amount, reference: "withdrawal:{$withdrawalId}")` — debits the ledger; rolled back on later failure
+  - Call `ChainGateway::sendUsdt($from, $to, $amount, $signingKey)` — derive signing key from master seed on-the-fly
+  - On broadcast success: update withdrawal row → status `broadcast`, set `tx_hash`
+  - On broadcast failure: refund via `Wallet::deposit` with `reference: "withdrawal-refund:{$id}"`, set status `failed`
+- [ ] **5.4** New `App\Console\Commands\ChainWatchWithdrawals`:
+  - For each `broadcast` withdrawal: query `getTransactionStatus($txHash)`
+  - If confirmed: status `confirmed`, set `confirmed_at`
+  - If on-chain failure (rare but possible): status `failed`, refund the user
+  - Scheduled every minute
+- [ ] **5.5** Configure Laravel queue: `QUEUE_CONNECTION=redis` in `.env` (Redis already in Sail). Worker started via `php artisan queue:work` (Sail dev) / supervisor (prod).
+- [ ] **5.6** New `/wallet/withdrawals` UI page (small) showing pending/recent withdrawals with status + tx hash link to Tronscan.
+- [ ] **5.7** Tests:
+  - Job processes a valid withdrawal end-to-end (with mock gateway)
+  - Refund on broadcast failure (balance returns, ledger conservation holds)
+  - Race-condition: two concurrent withdrawals can't both spend the same balance
+  - Tx-status worker transitions `broadcast` → `confirmed` correctly
+  - Real Nile testnet test: actually broadcast a withdrawal, watch it confirm
+
+**Phase 6 — Sweeper** (~4–6 days, no new deps)
+
+Move USDT from individual user deposit addresses into a central platform "hot wallet" address. Without this, USDT accumulates on user addresses forever and the platform can't actually fund payouts.
+
+- [ ] **6.1** Decide sweep threshold (e.g., when address balance ≥ 100 USDT, or when address balance > daily expected payout × 0.5).
+- [ ] **6.2** Address platform's "hot wallet" address: derived from the same master seed at a reserved index (e.g., index 0 for hot, user indices start at 1). Stored in config.
+- [ ] **6.3** Pre-fund concern: Tron txns burn TRX (energy/bandwidth). User addresses won't have TRX. Two approaches:
+  - **Approach A**: Pre-fund each user address with ~1 TRX when first created (in `CreateNewUser`). Cheap on testnet, ~$0.30/user on mainnet. Burns a tiny amount of operating capital per user.
+  - **Approach B**: Tron fee delegation (a separate "fee-paying" transaction covers gas for the sweep). More complex, no per-user burn.
+  - **Recommendation**: Approach A for testnet + small launch. Approach B is a post-launch optimization once volume justifies it.
+- [ ] **6.4** New `App\Console\Commands\ChainSweepDeposits` artisan command:
+  - For each user address with on-chain balance ≥ threshold:
+    - Pre-fund TRX if needed (test for energy/bandwidth first)
+    - Sign + broadcast USDT transfer from user address → hot wallet
+    - Log sweep tx hash; don't touch the ledger (the user's balance is already credited from Phase 4 deposit watcher)
+- [ ] **6.5** Schedule daily or weekly (lower freq is fine; sweeping is operational, not user-facing).
+- [ ] **6.6** Tests with MockChainGateway. End-to-end manual test on Nile: deposit USDT to a user → wait for credit → trigger sweep → verify USDT moves to hot wallet on Tronscan.
+
+**Phase 7 — Polish + pre-mainnet checklist** (~3–5 days, no new deps)
+
+Robustness + the documented path from testnet to mainnet.
+
+- [ ] **7.1** Rate-limiting on TronGrid calls (cap to ~80% of free-tier daily budget to leave headroom).
+- [ ] **7.2** Circuit breaker: if TronGrid fails 5+ times in 60 sec, back off + alert via log. Switch to backup gateway if/when GetBlock is wired (post-MVP).
+- [ ] **7.3** Structured logging on every chain operation (`Log::channel('chain')`). Failures emit at `error` level.
+- [ ] **7.4** End-to-end smoke test on Nile: register 3 dev users, fund them via faucet → testnet USDT → derived addresses, watch the deposits land, create + cancel listings (escrow/release flow), withdraw, confirm everything balances. **This is the milestone gate** — if smoke test passes, M9 ships.
+- [ ] **7.5** Documentation: `docs/chain-runbook.md` (or in-code comments) covering:
+  - How to start the watcher / sweeper / queue worker locally
+  - Common failure modes + how to diagnose
+  - The mainnet migration checklist (config swap, hot wallet funding, etc.) — references Pre-launch gate below
+- [ ] **7.6** Final commit. Suggested message: `feat: chain integration on testnet (M9)`.
+
+### Tools and services summary
+
+What's added to the stack by M9:
+
+| Tool | Role | Where |
+|------|------|-------|
+| TronGrid (Basic, free) | Tron RPC node provider | External service |
+| Tron Nile testnet | Pretend Tron network | External |
+| `bitwasp/bitcoin-php` (Phase 2) | BIP32/39/44 HD derivation primitives | `composer require` |
+| Laravel queues (Redis driver) | Async withdrawal processing | Already in Sail |
+| Tron's testnet faucet | Free testnet TRX + USDT | External |
+| `nileex.io/tronscan` | Block explorer for verifying our txns | External |
+
+No paid subscriptions for M9. Mainnet costs (KMS, optional Tron node hosting) are deferred to the Pre-launch gate.
+
+### Out of scope for M9 (explicitly deferred)
+
+- **Mainnet anything** — wallet, broadcasting, real money. Different milestone, different blockers.
+- **KMS / Ledger integration** — only env-based seed for M9. Custody hardening is its own decision.
+- **GetBlock backup** — TronGrid is sole provider during M9. Adapter is ready; second implementation lands when one is actually needed.
+- **Multi-chain** — Tron only. Ethereum / BSC / etc. are post-MVP if ever.
+- **Live balance push (WebSocket / SSE)** — page-load freshness via the existing `auth.user.usdt_balance` Inertia share is sufficient for v1.
+
+---
+
 ## M6 — Match Flow (mock)
+
+**Deferred — after M9.**
 
 Match-in-progress page, both-players-confirm UI, dispute opening UI. Game-API integration mocked. Match settlement = `Wallet::payout(winner)` + `Wallet::fee(platform)`.
 
 ---
 
-## M7 — Wallet UI **(next)**
+## M7 — Wallet UI ✅
 
-User-facing wallet pages on top of the M3.5 ledger. v1 mocks the chain layer (no real Tron addresses, no real withdrawals) — those land in the pre-launch gate. Closes the missing feedback loop today: creating a listing drains balance but nothing in the UI shows it.
+User-facing wallet pages on top of the M3.5 ledger. v1 mocks the chain layer — real Tron integration lands pre-launch. Four pages: `/wallet` overview (hero balance + 3 action cards + recent activity), `/wallet/deposit` (TRC20 mock address + QR + bold network warning + copy button), `/wallet/withdraw` (validating form, short-circuited POST with launch-gated info toast), `/wallet/history` (filter chips + paginated rows + smart-ellipsis pagination + empty states). `BalanceChip` in `SiteHeader` (desktop) + inline balance in `MobileMenu` close the listing-create → balance-changed feedback loop. `WalletController` + `WalletTransactionResource` (whitelist — no `reference_id`/`user_id` leak) + `WithdrawRequest` (TRC20 regex `^T[1-9A-HJ-NP-Za-km-z]{33}$`, min $10, ≤ balance, `decimal:0,2`) + `IndexHistoryRequest` (Spatie pattern). New `users.tron_address` column (varchar 34 unique) generated at registration via `App\Support\MockTronAddress`. `auth.user.usdt_balance` shared via `HandleInertiaRequests` as float. Semantic transaction colors (Deposit/Payout/Refund = success, Hold = warning, Withdrawal = destructive, Fee = muted). **193 tests / 1039 assertions (was 147/822).**
 
-### Locked decisions
+**Locked decisions:**
 
-- **Multi-page**, not tabbed: `/wallet`, `/wallet/deposit`, `/wallet/withdraw`, `/wallet/history`. Matches Stakly's page-per-domain pattern.
-- **Spendable balance only.** No "held in escrow" widget — `usdt_balance` already nets out holds. Held-balance derivable from the ledger if users ask.
-- **Deterministic mock deposit address** stored in a new `tron_address` column on `users`. Generated at registration via `UserFactory` (mock) and via `CreateNewUser` (mock for v1, real HD derivation in the pre-launch gate). Looks like a real TRC20 address (`T...`).
-- **QR code** for the deposit address (client-side `qrcode.react`, ~5KB dependency).
-- **Transaction history**: simple `?page=N` pagination + optional `?type=...` filter. Same Spatie query-builder pattern as M3 listings.
-- **USDT only**, formatted `$1,234.56 USDT` consistent with M3–M5.
-- **Withdrawal flow = Option B** — form built and validates (address regex, min, ≤ balance), but submit shows a flash notice ("Withdrawals enabled at launch — your balance is safe.") and a `back()` redirect. No ledger write. At launch the notice is removed and the worker wires up. UX is fully testable now; no risk of real-money desync if a dev/tester clicks submit.
-- **Balance chip in `SiteHeader`** — compact `$1,234.56` display next to `ProfileMenu` on desktop. Closes the listing-create → balance-changed feedback loop instantly. Mobile menu shows balance inline.
-- **What we borrow from MMR Angels' deposit modal** (visually): QR + copy button + bold "only send TRC20 USDT" network warning. What we don't borrow: per-transaction countdown timer, "I Have Dispatched Payment" button, manager-via-Telegram confirmation — those fit a per-booking model, not Stakly's persistent-wallet model.
+- **Multi-page, not tabbed** — `/wallet`, `/wallet/deposit`, `/wallet/withdraw`, `/wallet/history`. Each sub-page carries a "← Back to wallet" link; no tab strip, no sidebar.
+- **Spendable balance only** in the UI — `usdt_balance` already nets out escrow holds. Held balance is derivable from the ledger if users ask.
+- **Mock TRC20 addresses** (v1) via `App\Support\MockTronAddress` (`T` + 33 base58 chars, no `0`/`O`/`I`/`l`). Real HD derivation replaces this at the pre-launch chain integration gate. UNIQUE constraint at DB level + collision retry in `CreateNewUser` (same `DB::transaction` savepoint pattern as username).
+- **Withdrawal = Option B** — form fully validates today (so all 422 paths are exercisable), but submit short-circuits with a Sonner info toast (`"Withdrawals will be enabled at launch — your balance is safe."`) + `back()`. No ledger write. At launch the notice is removed and the worker wires up. UX testable today, zero risk of real-money desync.
+- **`WalletTransactionResource` deliberate omissions** — `reference_id` (idempotency keys are internal plumbing — leaking exposes our naming convention) and `user_id` (implied by auth context for every endpoint). Tested at resource + HTTP boundary.
+- **`auth.user.usdt_balance` shared via Inertia middleware** as float (same `(float) $value` boundary convention as `ListingResource`). Refreshes every navigation since auth.user is re-shared on each request — `BalanceChip` always reflects current state without polling.
+- **Semantic transaction colors** in `TransactionTypeChip` (not binary credit/debit). Amber for Escrow Hold specifically communicates "paused, not gone" — important for at-a-glance reads.
+- **Pagination 20/page** for history (vs 12 for listings) — transaction rows are denser.
+- **`abort_if($user->is_platform, 403)`** on every wallet controller method — defense in depth on top of `auth + verified` middleware. Platform user holds the rake but should never see a wallet UI.
+- **QR code via `qrcode.react`** (~16kb, lazy-loaded by Inertia code splitting to the deposit page only). Rendered on a forced-white card so phone cameras can read the dark squares against Stakly's dark theme.
 
-### Scope (step-by-step)
+**Bugs caught:**
 
-**Phase 1 — Schema + factory + seeder**
-- [ ] **1.1** Edit `0001_01_01_000000_create_users_table.php` migration: add `tron_address` (varchar 34, nullable) column.
-- [ ] **1.2** `User` model: add `tron_address` to `$fillable`.
-- [ ] **1.3** `UserFactory`: generate mock TRC20-style address (`T` + 33 base58-like chars) via a small helper. Faker uniqueness guards collisions.
-- [ ] **1.4** Update Fortify's `CreateNewUser` to generate + assign an address on registration. Same `DB::transaction` retry pattern as the username — defensive against the (extremely unlikely) collision.
-- [ ] **1.5** `DatabaseSeeder`: Test User + Platform User get factory-generated mock addresses.
-- [ ] **1.6** `vendor/bin/sail artisan migrate:fresh --seed` — verify every user has a unique well-formed address.
-
-**Phase 2 — Backend (controllers + resources + routes + form requests)**
-- [ ] **2.1** New `App\Http\Controllers\WalletController` with `index`, `deposit`, `withdraw`, `withdrawStore`, `history` methods. All `auth` + `verified` middleware.
-- [ ] **2.2** New `App\Http\Resources\WalletTransactionResource` — public ledger shape (`id`, `type`, `amount`, `balance_after`, `related_listing_id`, `description`, `created_at`). **Never expose `reference_id`** (idempotency keys are internal).
-- [ ] **2.3** New `App\Http\Requests\Wallet\WithdrawRequest` — validates `address` (TRC20 regex `^T[1-9A-HJ-NP-Za-km-z]{33}$`), `amount` (≥ 10, ≤ balance, `decimal:0,2`).
-- [ ] **2.4** New `App\Http\Requests\Wallet\IndexHistoryRequest` — validates `?page`, `?type` (Spatie query-builder pattern from `IndexListingsRequest`).
-- [ ] **2.5** 5 routes: `GET /wallet`, `GET /wallet/deposit`, `GET /wallet/withdraw`, `POST /wallet/withdraw`, `GET /wallet/history`. All named `wallet.*`.
-- [ ] **2.6** `WalletController::withdrawStore` — short-circuits with a flash notice ("Withdrawals will be enabled at launch — your balance is safe.") and a `back()` redirect. No ledger write.
-
-**Phase 3 — TS types + Wayfinder regen**
-- [ ] **3.1** `vendor/bin/sail artisan wayfinder:generate --with-form`.
-- [ ] **3.2** New `resources/js/types/wallet.ts` with `WalletTransaction`, `WalletTransactionType`, `WalletIndexProps`, `WalletDepositProps`, `WalletWithdrawProps`, `WalletHistoryProps` interfaces. Update `types/index.ts` barrel.
-- [ ] **3.3** `vendor/bin/sail npm run types:check` clean.
-
-**Phase 4 — Wallet UI**
-- [ ] **4.1** `resources/js/pages/wallet/index.tsx` — overview: big balance + 3 action cards (Deposit / Withdraw / History) + last 5 transactions inline.
-- [ ] **4.2** `resources/js/pages/wallet/deposit.tsx` — address + QR + network warning + copy-to-clipboard + estimated arrival text.
-- [ ] **4.3** `resources/js/pages/wallet/withdraw.tsx` — form with address input, amount input (with "All available" button), balance display, and the v1 launch-notice on submit.
-- [ ] **4.4** `resources/js/pages/wallet/history.tsx` — paginated table with type-filter chips + smart-ellipsis pagination (reuse `ListingPagination` pattern).
-- [ ] **4.5** New shared components in `resources/js/components/wallet/`: `balance-card`, `address-display`, `transaction-row`, `withdraw-form`, `transaction-type-chip`.
-
-**Phase 5 — Entry points**
-- [ ] **5.1** Wire `ProfileMenu` "Wallet" dropdown item to `wallet.index` (currently stubbed at `#`).
-- [ ] **5.2** Wire mobile menu "Wallet" item to `wallet.index`.
-- [ ] **5.3** New `BalanceChip` component in `components/site/`. Compact `$1,234.56` display, links to `wallet.index`. Render in `SiteHeader` between marquee and `ProfileMenu`. Hidden on mobile (mobile menu shows balance inline).
-
-**🛑 Phase 6 — Manual UI walkthrough (user-driven, expect iteration)**
-- [ ] **6.1** Click around: balance updates immediately after creating/cancelling a listing.
-- [ ] **6.2** Deposit page: address visible, QR readable by phone camera, copy-to-clipboard works, network warning is prominent.
-- [ ] **6.3** Withdraw page: form validates (bad address, amount > balance, amount < min), submit shows the launch notice.
-- [ ] **6.4** History page: pagination works, type filter works, escrow holds/releases display correctly with the listing reference.
-- [ ] **6.5** Edge cases: 0 balance, very high balance, empty history, very long transaction list (50+).
-- [ ] **6.6** Apply polish based on observations.
-
-**Phase 7 — Backend hardening**
-- [ ] **7.1** `WalletTransactionResource` never leaks `reference_id` or `user_id` in payload (covered by Phase 8 tests).
-- [ ] **7.2** All wallet routes require `auth` + `verified` middleware (Phase 8 covers).
-- [ ] **7.3** Withdrawal validation: TRC20 address regex matches, min withdrawal $10 (covers gas), max = current balance, `decimal:0,2` precision pinned.
-
-**Phase 8 — Backend tests (Pest)**
-- [ ] **8.1** Auth gating: all wallet routes redirect guests to login; unverified users to verification.notice.
-- [ ] **8.2** Index page: balance prop matches `Wallet::balanceFor($user)`, last 5 transactions sorted desc.
-- [ ] **8.3** Deposit page: address prop matches user's `tron_address`.
-- [ ] **8.4** Withdraw form validation: bad address → 422, amount > balance → 422, amount < min → 422.
-- [ ] **8.5** Withdraw store v1: valid submission returns flash notice, **no ledger row written**, balance unchanged.
-- [ ] **8.6** History page: pagination size correct, `?type` filter scopes correctly, `?page=999` handled gracefully (empty page, not 404).
-- [ ] **8.7** `WalletTransactionResource` never leaks `reference_id` or `user_id` in payload.
-- [ ] **8.8** `tron_address` generated at registration is unique + matches TRC20 regex.
-
-**Phase 9 — Verify + commit**
-- [ ] **9.1** `vendor/bin/sail artisan migrate:fresh --seed` clean.
-- [ ] **9.2** `vendor/bin/sail artisan test --compact` — full suite green.
-- [ ] **9.3** Pint + types:check + lint:check clean.
-- [ ] **9.4** Commit. Suggested message: `feat: wallet UI (M7)`.
-
-### Out-of-scope (post-MVP or pre-launch gate)
-
-- **Real chain integration** (TronGrid + watcher + sweeper + withdrawal worker) → pre-launch gate.
-- **Live balance polling / WebSocket** → post-MVP. Page-load freshness is enough for v1.
-- **"Held in escrow" widget** → post-MVP. Derivable from the ledger if users ask for it.
-- **User-to-user internal transfers** → post-MVP if ever.
-- **Per-listing pay-on-take modal** (MMR-Angels style) → post-MVP. Stakly's persistent-wallet model means users with balance take instantly; out-of-band top-up flow is a future enhancement, not blocking M7.
-- **Fiat onramp** → out of MVP entirely (Stakly is crypto-end-to-end per CLAUDE.md).
+- **`Spatie\QueryBuilder::allowedFilters()` array-vs-variadic** — installed version only accepts variadic args / single value, not arrays. Surfaced manually during Phase 6 walkthrough on `/wallet/history`. Fixed by removing the `[...]` wrap (now consistent with `ListingController`).
+- **JSON int/float drift in Inertia assertions** — `(float) 750` serializes to JSON `750` and decodes back as PHP int. Strict `->where('balance', 750.0)` mismatches. Fixed by asserting the integer literal; documented inline so future tests don't repeat.
+- **Invalid `VALID_TRC20` test constant masked real coverage** — hand-crafted string contained `0` (not in base58 alphabet). FormRequest validation redirected back with errors instead of the controller running. The "valid submission redirects back" test was passing **by accident** (its assertions held true on validation failure too). Fixed constant to a real-shape address; tests now actually exercise the short-circuit path.
 
 ---
 
 ## M8 — Settings / Linked Accounts
+
+**Deferred — after M9.**
 
 Profile settings, chess.com / Lichess account linking flow with ownership verification (UI only).
 
