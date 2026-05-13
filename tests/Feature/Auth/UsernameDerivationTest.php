@@ -2,6 +2,7 @@
 
 use App\Actions\Fortify\CreateNewUser;
 use App\Models\User;
+use Illuminate\Validation\ValidationException;
 
 /**
  * Direct invocations of the registration action. Bypasses the HTTP layer so
@@ -37,33 +38,6 @@ test('duplicate names cycle through -1, -2, ... suffixes', function () {
         ->toBe(['john-smith', 'john-smith-1', 'john-smith-2']);
 });
 
-// ─── Empty-slug fallback ──────────────────────────────────────────────────
-
-test('emoji-only names fall back to the `user` base — first user gets `user-1`', function () {
-    // Str::slug transliterates Cyrillic / Latin-accented chars to ASCII, so
-    // those don't produce empty slugs. Only pure-symbol inputs (emojis,
-    // punctuation) reliably collapse to empty. `user` is reserved, so the
-    // first empty-slug registrant gets `user-1`, not the bare `user`.
-    $user = deriveUsernameVia('🎉🎉🎉', 'emoji@example.com');
-
-    expect($user->username)->toBe('user-1');
-});
-
-test('special-char-only names also fall back to user-1', function () {
-    $user = deriveUsernameVia('!!!', 'specials@example.com');
-
-    expect($user->username)->toBe('user-1');
-});
-
-test('multiple empty-slug registrations cycle through user-1, user-2, ...', function () {
-    $first = deriveUsernameVia('!!!', 'specials1@example.com');
-    $second = deriveUsernameVia('***', 'specials2@example.com');
-    $third = deriveUsernameVia('🎉🎉🎉', 'emoji@example.com');
-
-    expect([$first->username, $second->username, $third->username])
-        ->toBe(['user-1', 'user-2', 'user-3']);
-});
-
 // ─── Length cap: long names truncate cleanly to ≤ 30 chars ────────────────
 
 test('overlong names truncate to MAX_BASE_LENGTH (23 chars)', function () {
@@ -90,13 +64,47 @@ test('reserved-name collisions still increment cleanly', function () {
     expect([$first->username, $second->username])->toBe(['admin-1', 'admin-2']);
 });
 
-// ─── Final shape: every derived username matches the canonical regex ─────
+// ─── Name validation: rejects non-Latin / numeric / symbol-only inputs ────
 
-test('every derived username matches /^[a-z0-9-]+$/ and fits the 30-char cap', function () {
+test('disallowed name characters are rejected at validation', function (string $name) {
+    expect(fn () => deriveUsernameVia($name, 'reject@example.com'))
+        ->toThrow(ValidationException::class);
+
+    // The name was rejected before any user row was written.
+    expect(User::query()->where('email', 'reject@example.com')->exists())->toBeFalse();
+})->with([
+    'pure emojis' => '🎉🎉🎉',
+    'pure punctuation symbols' => '!!!',
+    'pure numbers' => '12345',
+    'pure dots (no letter)' => '...',
+    'pure dashes (no letter)' => '---',
+    'numbers mixed into a name' => 'John2',
+    'accented letters (Latin script but with marks)' => 'François',
+    'cyrillic' => 'Дмитрий',
+    'cjk' => '李明',
+    'arabic' => 'محمد',
+]);
+
+// ─── Name validation: standard name punctuation is accepted ───────────────
+
+test('names with allowed punctuation pass validation and derive cleanly', function (string $name, string $expected, string $email) {
+    $user = deriveUsernameVia($name, $email);
+
+    expect($user->username)->toBe($expected);
+})->with([
+    'apostrophe (O\'Brien)' => ['Mary O\'Brien', 'mary-obrien', 'apo@example.com'],
+    'hyphen (Anne-Marie)' => ['Anne-Marie', 'anne-marie', 'hyp@example.com'],
+    'period (Dr. Smith)' => ['Dr. Smith', 'dr-smith', 'per@example.com'],
+    'mixed punctuation' => ['Dr. O\'Brien-Jones', 'dr-obrien-jones', 'mix@example.com'],
+]);
+
+// ─── Final shape: every accepted username matches the canonical regex ────
+
+test('every accepted username matches /^[a-z0-9-]+$/ and fits the 30-char cap', function () {
     deriveUsernameVia('Mary Jane', 'mary@example.com');
-    deriveUsernameVia('!!!', 'specials@example.com');
     deriveUsernameVia('Aleksander Konstantinovich Vladimirovich', 'long@example.com');
     deriveUsernameVia('Admin', 'admin@example.com');
+    deriveUsernameVia('Mary O\'Brien', 'obrien@example.com');
 
     foreach (User::query()->pluck('username')->all() as $username) {
         expect($username)->toMatch('/^[a-z0-9-]+$/')

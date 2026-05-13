@@ -19,4 +19,16 @@ class ProfileUpdateRequest extends FormRequest
     {
         return $this->profileRules($this->user()->id);
     }
+
+    /**
+     * Custom messages for the rules above. Shared with `CreateNewUser` via
+     * the `ProfileValidationRules` trait so registration and profile update
+     * present the same UX for the same constraint.
+     *
+     * @return array<string, string>
+     */
+    public function messages(): array
+    {
+        return $this->profileMessages();
+    }
 }
