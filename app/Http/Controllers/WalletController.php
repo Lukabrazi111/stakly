@@ -113,9 +113,9 @@ class WalletController extends Controller
                 ->where('user_id', $user->id)
                 ->with('listing:id,game'),
         )
-            ->allowedFilters([
+            ->allowedFilters(
                 AllowedFilter::exact('type'),
-            ])
+            )
             ->orderByDesc('created_at')
             ->orderByDesc('id')
             ->paginate(self::HISTORY_PER_PAGE)
