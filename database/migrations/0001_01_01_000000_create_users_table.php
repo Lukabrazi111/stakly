@@ -43,6 +43,15 @@ return new class extends Migration
             // for this user at all times. decimal(18, 6) matches Tron's USDT precision.
             $table->decimal('usdt_balance', 18, 6)->default(0);
 
+            // Mock TRC20 deposit address (M7). 34 chars matches a real Tron
+            // address ('T' prefix + 33 base58 chars). Generated at registration
+            // via `App\Support\MockTronAddress`; nothing on-chain accepts funds
+            // here in v1. Real HD-derived addresses replace this at the
+            // pre-launch chain integration gate. UNIQUE because real HD
+            // derivation guarantees per-index uniqueness — we enforce it at
+            // the DB level so mock collisions surface immediately.
+            $table->string('tron_address', 34)->unique()->nullable();
+
             $table->rememberToken();
             $table->timestamps();
         });

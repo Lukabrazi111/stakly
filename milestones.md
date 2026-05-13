@@ -10,9 +10,9 @@ Frontend-first MVP. Build UI against real DB infrastructure + seeded fake data; 
 - **M3** — Listings Index ✅
 - **M3.5** — Wallet / Ledger Foundation ✅
 - **M4** — Listing Detail + Create Flow ✅
-- **M5** — User Profile **(next)**
+- **M5** — User Profile ✅
 - **M6** — Match Flow (mock)
-- **M7** — Wallet UI
+- **M7** — Wallet UI **(next)**
 - **M8** — Settings / Linked Accounts (chess.com / Lichess)
 
 > Only the current milestone keeps a detailed task list. Future milestones expand when started. Completed milestones live at the top as short summaries.
@@ -104,90 +104,20 @@ Captured so the intent isn't lost. **Don't pull these into M4.** Each is a real 
 
 ---
 
-## M5 — User Profile **(next)**
+## M5 — User Profile ✅
 
-Public, read-only player profile pages — discoverable via clicking any creator on a listing. Frame for the social/marketplace layer of Stakly: who is this player, what are they offering, how have they done.
+Public read-only player profiles at `/users/{username}`. Schema (`username` + `bio` columns on users), `UserController` + `UserProfileResource` (whitelist-only, no PII), TS types, page with 5 components (header + stats grid + active listings + match history empty state + linked accounts empty state). Auto-generated usernames at registration via `Str::slug($name)` + collision-safe suffix loop in `CreateNewUser`. Reserved-username list. Strict ASCII Latin name validation (Bybit-style) enforced in `ProfileValidationRules`. Profile entry points wired through `ListingRow` / `ListingCard` / listing-detail header — each via two interior `<Link>`s (creator zone → profile, body → listing). **147 tests / 822 assertions (was 110/655).**
 
-### Locked decisions
+**Locked decisions:**
 
-- **URL**: `/users/{username}` via `getRouteKeyName: 'username'` on the User model. `users.show` route name.
-- **Username**: new `username` column on users, unique + indexed. **Auto-generated at registration** from a slugified `name` with collision-safe suffixing (try `john-smith` first; on collision try `-1`, `-2`, …). Immutable in v1 — no rename flow. If we want renaming later it's a separate small feature in /settings/profile.
-- **Bio**: new `bio` column on users, nullable, max 280 chars. Displayed on profile if set. M5 ships *display only*; an edit input in /settings/profile is a post-M5 follow-up (not blocking).
-- **Avatar**: initials only for v1 (matches current state). Upload deferred to post-MVP polish.
-- **Visibility**: profile is fully public, no auth needed to view. Same posture as `/listings`.
-- **Stats**: split into "live now" vs "lights up later":
-    - **Live now**: member-since, total open listings, total listings created (lifetime). Computed at request time.
-    - **Lights up with M6**: win rate, total earnings, average opponent Elo. Cards render with `No matches yet` empty states until M6 produces match data.
-- **Linked game accounts** (chess.com, Lichess): section renders with `Not linked` placeholders. M8 wires up real linking; M5 just frames the slot.
-- **Entry points**: creator's name + avatar are clickable to `/users/{username}` on the ListingRow, ListingCard, and listing detail header. Requires restructuring the row/card to avoid nested `<a>` (HTML-invalid): wrap row in a non-anchor element with two side-by-side `<Link>`s (one for creator, one for listing body).
-- **Layout**: SiteLayout wrapper (so flash toasts work). Two-section page: header card (avatar + name + username + member-since + bio) on top; grid of cards below (stats, open listings, match history, linked accounts).
-- **Own-profile affordance**: if the viewer is signed-in and looking at their own profile, show an `Edit profile` button linking to `/settings/profile`. Otherwise no edit affordance.
-
-### Scope (step-by-step)
-
-**Phase 1 — Schema + model + factory + seeder**
-- [x] **1.1** Edit `0001_01_01_000000_create_users_table.php` migration: add `username` (string, unique, indexed) and `bio` (string, nullable, length 280) columns.
-- [x] **1.2** `User` model: add `username` + `bio` to `$fillable`; override `getRouteKeyName(): string` to return `'username'`.
-- [x] **1.3** Update Fortify's `CreateNewUser` action — after the user is created, derive `username` from `Str::slug($name)` with a collision-safe suffix loop, then `save()`. Wrap in a small private helper so the logic is testable. Add validation: `username` must match `/^[a-z0-9-]{3,30}$/` after slugifying.
-- [x] **1.4** `UserFactory`: generate a `username` via `Str::slug(faker->unique->userName)`. ~30% chance to populate `bio` with `faker->realText(120)`.
-- [x] **1.5** `DatabaseSeeder`: explicitly set Test User's `username = 'testuser'` (known value, easier to test against).
-- [x] **1.6** `vendor/bin/sail artisan migrate:fresh --seed` — verify every user has a username, no collisions, Test User reachable at `/users/testuser`.
-
-**Phase 2 — Backend skeleton (route + controller + resource)**
-- [x] **2.1** New `App\Http\Controllers\UserController` with `show(User $user): Response`. No auth middleware — public route.
-- [x] **2.2** Route in `routes/web.php`: `Route::get('/users/{user:username}', [UserController::class, 'show'])->name('users.show')`. Place near the listings routes for grouping.
-- [x] **2.3** New `App\Http\Resources\UserProfileResource` — whitelisted public fields: `id`, `username`, `name`, `bio`, `member_since` (ISO `created_at`), `avatar` (nullable URL — for v1 always null, frontend falls back to initials). **Never** ship `email`, `usdt_balance`, `is_platform`, or two-factor fields.
-- [x] **2.4** `UserController::show` returns `Inertia::render('users/show', [...])` with: `user` (resource), `stats` (computed: open listings count, total listings count, member since), `openListings` (collection of `ListingResource` — top 5 most recent open listings; sort by newest).
-- [x] **2.5** Route model binding handles 404 automatically; no policy needed (public + read-only).
-
-**Phase 3 — Wayfinder + TS types**
-- [x] **3.1** Regenerate Wayfinder typed routes via `npm run build` (or `artisan wayfinder:generate --with-form` — the latter is mandatory if going via artisan).
-- [x] **3.2** New `resources/js/types/profile.ts` with `UserProfile`, `ProfileStats`, `ProfileShowProps` interfaces. Backend source of truth: `UserProfileResource`.
-- [x] **3.3** `npm run types:check` clean.
-
-**Phase 4 — Profile page + components**
-- [x] **4.1** New `resources/js/pages/users/show.tsx` — page-level layout (SiteLayout, Head with `{user.name}'s profile`).
-- [x] **4.2** `components/profile/profile-header.tsx` — avatar (initials), display name, `@{username}`, member-since (`Joined Mar 2026`), bio card if `bio !== null`. Right-side `Edit profile` button only when `auth.user.id === user.id`.
-- [x] **4.3** `components/profile/stats-caprd.tsx` — grid of stat tiles. **Live now**: Open listings, Total listings, Member since. **Empty-state tiles**: Win rate (`No matches yet`), Total earnings (`No matches yet`), Avg opponent rating (`No matches yet`). Visually consistent; empty states use `text-muted-foreground` with a subtle dashed border so they don't read as zero values.
-- [x] **4.4** `components/profile/listings-section.tsx` — reuses the existing `ListingRow` for open listings. Heading `Active listings · N`. Empty state: `No active listings right now.` with a soft border + muted copy.
-- [x] **4.5** `components/profile/match-history-section.tsx` — empty-state-only for v1. Heading `Match history`, body `No matches yet — match flow lands in M6.` Internal-facing copy; we can soften before public launch.
-- [x] **4.6** `components/profile/linked-accounts-section.tsx` — two rows (chess.com, Lichess) each with a `Not linked` muted chip. Heading `Linked game accounts`. Footer copy: `Link your accounts in settings.` (no real link until M8).
-- [x] **4.7** Compose all four sections in the page below the header.
-
-**Phase 5 — Profile entry points (restructure ListingRow / ListingCard)**
-- [ ] **5.1** `ListingRow` — currently wrapped in an outer `<Link>`. Restructure to a non-anchor outer element with two interior `<Link>`s: one wrapping the creator avatar + name (→ `users.show`), one wrapping the rest of the row body (→ `listings.show`). Verify keyboard nav (tab order makes sense), right-click → "Open in new tab" works on both targets, no nested-anchor warnings in the console.
-- [ ] **5.2** `ListingCard` — same restructuring. Creator chip on top links to user profile; rest of card links to listing detail.
-- [ ] **5.3** `pages/listings/show.tsx` header card — wrap the creator avatar + name in a Link to `users.show`. The status badge stays outside the link.
-
-**🛑 Phase 6 — Manual UI walkthrough (user-driven, expect iteration)**
-- [ ] **6.1** Click around as Test User: own profile (Edit button visible) and other seeded users' profiles (Edit hidden).
-- [ ] **6.2** Verify empty-state sections render gracefully (match history, linked accounts, no-listings empty state).
-- [ ] **6.3** Click creator name/avatar on listings index → lands on profile. Confirm row body click still goes to listing detail.
-- [ ] **6.4** Click creator on listing detail page → lands on profile.
-- [ ] **6.5** Edge cases: long username (30 chars), long bio (280 chars), very long name.
-- [ ] **6.6** Apply polish based on observations.
-
-**Phase 7 — Backend hardening + edge cases**
-- [ ] **7.1** Username validation: enforce `/^[a-z0-9-]{3,30}$/` post-slug, fail registration with a clear error if the slug derivation produces an empty string (e.g., name = "!!!"). Defensive — registration validation already prevents empty/whitespace names, but cover the slug-collapse case.
-- [ ] **7.2** Collision-loop safety: confirm the suffix loop in `CreateNewUser` terminates (bound it to N attempts; if exceeded, append `-{$id}` as a last resort).
-- [ ] **7.3** UserController `show`: query `openListings` with `->with('user:id,name,username')` to avoid N+1 if `ListingRow` derefs creator (it does — username is now part of the link target).
-
-**Phase 8 — Backend tests (Pest)**
-- [ ] **8.1** Show: public profile renders for any visitor (guest, authed, authed-as-self).
-- [ ] **8.2** Show: 404 on unknown username (route model binding miss).
-- [ ] **8.3** Resource never leaks email or `usdt_balance` — hard `assertDontSee` on a seeded sensitive value.
-- [ ] **8.4** `openListings` on the profile only contains the profile owner's *open* listings (filters out other users' listings, filters out taken/expired/cancelled).
-- [ ] **8.5** Stats: open count + total count match the seeded reality for a known user.
-- [ ] **8.6** Bio renders when set; absent in props when `bio === null`.
-- [ ] **8.7** Registration auto-generates a username from the name (`Str::slug`).
-- [ ] **8.8** Registration username collision: when "John Smith" registers twice, second user gets `john-smith-1` (or similar). Third gets `-2`. No duplicate-key DB violation.
-- [ ] **8.9** Edge case: name with no alpha-numeric content → registration still produces a non-empty unique username via fallback.
-
-**Phase 9 — Verify + commit**
-- [ ] **9.1** `vendor/bin/sail artisan migrate:fresh --seed` clean.
-- [ ] **9.2** `vendor/bin/sail artisan test --compact` — full suite green.
-- [ ] **9.3** Pint + types:check + lint:check clean.
-- [ ] **9.4** Commit. Suggested message: `feat: public user profiles (M5)`.
+- **Public URL** `/users/{username}` via `User::getRouteKeyName()` override. Username derived at registration, immutable in v1.
+- **`'user'` is in `RESERVED_USERNAMES`.** Empty-slug fallback names (emojis, pure punctuation) start at `user-1`, never bare `user` — avoids placeholder-looking handles.
+- **`CreateNewUser` wraps each INSERT in `DB::transaction(...)`** so unique-violation retries use a Postgres savepoint, not a full txn abort. Critical inside `RefreshDatabase` outer wrapper in tests; also defensive for any future caller that wraps registration in a transaction.
+- **Platform user hidden via inline `abort_if($user->is_platform, 404)`** in `UserController::show`. Explicit, no User-model global scope; `Wallet::fee()` still finds the platform user normally.
+- **`openListings` on profile uses `setRelation('user', $user)`** to skip a redundant SQL query — the user we just loaded is the same one each listing belongs to.
+- **Strict ASCII Latin names** — `regex:/^(?=.*[a-zA-Z])[a-zA-Z '\-\.]+$/` enforced via `ProfileValidationRules` trait shared by `CreateNewUser` and `ProfileUpdateRequest`. Custom error message in `profileMessages()`. Catches numbers, emojis, accents, non-Latin scripts. (Won't catch keyboard-mash like `dsakl djsa` — content moderation is a separate problem, deferred to KYC at pre-launch.)
+- **Entry points** use two interior `<Link>`s in row/card (creator zone + listing body). Outer `<article>` carries the unified hover glow. Take button moved outside both Links (it's an action, not nav — relevant for M6).
+- **`creator.username` added to `ListingResource`** + all controller eager-loads bumped from `user:id,name` to `user:id,name,username`. Required by the profile-link entry points.
 
 ---
 
@@ -197,9 +127,94 @@ Match-in-progress page, both-players-confirm UI, dispute opening UI. Game-API in
 
 ---
 
-## M7 — Wallet UI
+## M7 — Wallet UI **(next)**
 
-Deposit address display, withdrawal form, transaction history. Backed by the real M3.5 ledger; on-chain layer still mocked here. Real TronGrid wiring + watcher + sweeper + withdrawal worker live in the pre-launch gate below.
+User-facing wallet pages on top of the M3.5 ledger. v1 mocks the chain layer (no real Tron addresses, no real withdrawals) — those land in the pre-launch gate. Closes the missing feedback loop today: creating a listing drains balance but nothing in the UI shows it.
+
+### Locked decisions
+
+- **Multi-page**, not tabbed: `/wallet`, `/wallet/deposit`, `/wallet/withdraw`, `/wallet/history`. Matches Stakly's page-per-domain pattern.
+- **Spendable balance only.** No "held in escrow" widget — `usdt_balance` already nets out holds. Held-balance derivable from the ledger if users ask.
+- **Deterministic mock deposit address** stored in a new `tron_address` column on `users`. Generated at registration via `UserFactory` (mock) and via `CreateNewUser` (mock for v1, real HD derivation in the pre-launch gate). Looks like a real TRC20 address (`T...`).
+- **QR code** for the deposit address (client-side `qrcode.react`, ~5KB dependency).
+- **Transaction history**: simple `?page=N` pagination + optional `?type=...` filter. Same Spatie query-builder pattern as M3 listings.
+- **USDT only**, formatted `$1,234.56 USDT` consistent with M3–M5.
+- **Withdrawal flow = Option B** — form built and validates (address regex, min, ≤ balance), but submit shows a flash notice ("Withdrawals enabled at launch — your balance is safe.") and a `back()` redirect. No ledger write. At launch the notice is removed and the worker wires up. UX is fully testable now; no risk of real-money desync if a dev/tester clicks submit.
+- **Balance chip in `SiteHeader`** — compact `$1,234.56` display next to `ProfileMenu` on desktop. Closes the listing-create → balance-changed feedback loop instantly. Mobile menu shows balance inline.
+- **What we borrow from MMR Angels' deposit modal** (visually): QR + copy button + bold "only send TRC20 USDT" network warning. What we don't borrow: per-transaction countdown timer, "I Have Dispatched Payment" button, manager-via-Telegram confirmation — those fit a per-booking model, not Stakly's persistent-wallet model.
+
+### Scope (step-by-step)
+
+**Phase 1 — Schema + factory + seeder**
+- [ ] **1.1** Edit `0001_01_01_000000_create_users_table.php` migration: add `tron_address` (varchar 34, nullable) column.
+- [ ] **1.2** `User` model: add `tron_address` to `$fillable`.
+- [ ] **1.3** `UserFactory`: generate mock TRC20-style address (`T` + 33 base58-like chars) via a small helper. Faker uniqueness guards collisions.
+- [ ] **1.4** Update Fortify's `CreateNewUser` to generate + assign an address on registration. Same `DB::transaction` retry pattern as the username — defensive against the (extremely unlikely) collision.
+- [ ] **1.5** `DatabaseSeeder`: Test User + Platform User get factory-generated mock addresses.
+- [ ] **1.6** `vendor/bin/sail artisan migrate:fresh --seed` — verify every user has a unique well-formed address.
+
+**Phase 2 — Backend (controllers + resources + routes + form requests)**
+- [ ] **2.1** New `App\Http\Controllers\WalletController` with `index`, `deposit`, `withdraw`, `withdrawStore`, `history` methods. All `auth` + `verified` middleware.
+- [ ] **2.2** New `App\Http\Resources\WalletTransactionResource` — public ledger shape (`id`, `type`, `amount`, `balance_after`, `related_listing_id`, `description`, `created_at`). **Never expose `reference_id`** (idempotency keys are internal).
+- [ ] **2.3** New `App\Http\Requests\Wallet\WithdrawRequest` — validates `address` (TRC20 regex `^T[1-9A-HJ-NP-Za-km-z]{33}$`), `amount` (≥ 10, ≤ balance, `decimal:0,2`).
+- [ ] **2.4** New `App\Http\Requests\Wallet\IndexHistoryRequest` — validates `?page`, `?type` (Spatie query-builder pattern from `IndexListingsRequest`).
+- [ ] **2.5** 5 routes: `GET /wallet`, `GET /wallet/deposit`, `GET /wallet/withdraw`, `POST /wallet/withdraw`, `GET /wallet/history`. All named `wallet.*`.
+- [ ] **2.6** `WalletController::withdrawStore` — short-circuits with a flash notice ("Withdrawals will be enabled at launch — your balance is safe.") and a `back()` redirect. No ledger write.
+
+**Phase 3 — TS types + Wayfinder regen**
+- [ ] **3.1** `vendor/bin/sail artisan wayfinder:generate --with-form`.
+- [ ] **3.2** New `resources/js/types/wallet.ts` with `WalletTransaction`, `WalletTransactionType`, `WalletIndexProps`, `WalletDepositProps`, `WalletWithdrawProps`, `WalletHistoryProps` interfaces. Update `types/index.ts` barrel.
+- [ ] **3.3** `vendor/bin/sail npm run types:check` clean.
+
+**Phase 4 — Wallet UI**
+- [ ] **4.1** `resources/js/pages/wallet/index.tsx` — overview: big balance + 3 action cards (Deposit / Withdraw / History) + last 5 transactions inline.
+- [ ] **4.2** `resources/js/pages/wallet/deposit.tsx` — address + QR + network warning + copy-to-clipboard + estimated arrival text.
+- [ ] **4.3** `resources/js/pages/wallet/withdraw.tsx` — form with address input, amount input (with "All available" button), balance display, and the v1 launch-notice on submit.
+- [ ] **4.4** `resources/js/pages/wallet/history.tsx` — paginated table with type-filter chips + smart-ellipsis pagination (reuse `ListingPagination` pattern).
+- [ ] **4.5** New shared components in `resources/js/components/wallet/`: `balance-card`, `address-display`, `transaction-row`, `withdraw-form`, `transaction-type-chip`.
+
+**Phase 5 — Entry points**
+- [ ] **5.1** Wire `ProfileMenu` "Wallet" dropdown item to `wallet.index` (currently stubbed at `#`).
+- [ ] **5.2** Wire mobile menu "Wallet" item to `wallet.index`.
+- [ ] **5.3** New `BalanceChip` component in `components/site/`. Compact `$1,234.56` display, links to `wallet.index`. Render in `SiteHeader` between marquee and `ProfileMenu`. Hidden on mobile (mobile menu shows balance inline).
+
+**🛑 Phase 6 — Manual UI walkthrough (user-driven, expect iteration)**
+- [ ] **6.1** Click around: balance updates immediately after creating/cancelling a listing.
+- [ ] **6.2** Deposit page: address visible, QR readable by phone camera, copy-to-clipboard works, network warning is prominent.
+- [ ] **6.3** Withdraw page: form validates (bad address, amount > balance, amount < min), submit shows the launch notice.
+- [ ] **6.4** History page: pagination works, type filter works, escrow holds/releases display correctly with the listing reference.
+- [ ] **6.5** Edge cases: 0 balance, very high balance, empty history, very long transaction list (50+).
+- [ ] **6.6** Apply polish based on observations.
+
+**Phase 7 — Backend hardening**
+- [ ] **7.1** `WalletTransactionResource` never leaks `reference_id` or `user_id` in payload (covered by Phase 8 tests).
+- [ ] **7.2** All wallet routes require `auth` + `verified` middleware (Phase 8 covers).
+- [ ] **7.3** Withdrawal validation: TRC20 address regex matches, min withdrawal $10 (covers gas), max = current balance, `decimal:0,2` precision pinned.
+
+**Phase 8 — Backend tests (Pest)**
+- [ ] **8.1** Auth gating: all wallet routes redirect guests to login; unverified users to verification.notice.
+- [ ] **8.2** Index page: balance prop matches `Wallet::balanceFor($user)`, last 5 transactions sorted desc.
+- [ ] **8.3** Deposit page: address prop matches user's `tron_address`.
+- [ ] **8.4** Withdraw form validation: bad address → 422, amount > balance → 422, amount < min → 422.
+- [ ] **8.5** Withdraw store v1: valid submission returns flash notice, **no ledger row written**, balance unchanged.
+- [ ] **8.6** History page: pagination size correct, `?type` filter scopes correctly, `?page=999` handled gracefully (empty page, not 404).
+- [ ] **8.7** `WalletTransactionResource` never leaks `reference_id` or `user_id` in payload.
+- [ ] **8.8** `tron_address` generated at registration is unique + matches TRC20 regex.
+
+**Phase 9 — Verify + commit**
+- [ ] **9.1** `vendor/bin/sail artisan migrate:fresh --seed` clean.
+- [ ] **9.2** `vendor/bin/sail artisan test --compact` — full suite green.
+- [ ] **9.3** Pint + types:check + lint:check clean.
+- [ ] **9.4** Commit. Suggested message: `feat: wallet UI (M7)`.
+
+### Out-of-scope (post-MVP or pre-launch gate)
+
+- **Real chain integration** (TronGrid + watcher + sweeper + withdrawal worker) → pre-launch gate.
+- **Live balance polling / WebSocket** → post-MVP. Page-load freshness is enough for v1.
+- **"Held in escrow" widget** → post-MVP. Derivable from the ledger if users ask for it.
+- **User-to-user internal transfers** → post-MVP if ever.
+- **Per-listing pay-on-take modal** (MMR-Angels style) → post-MVP. Stakly's persistent-wallet model means users with balance take instantly; out-of-band top-up flow is a future enhancement, not blocking M7.
+- **Fiat onramp** → out of MVP entirely (Stakly is crypto-end-to-end per CLAUDE.md).
 
 ---
 

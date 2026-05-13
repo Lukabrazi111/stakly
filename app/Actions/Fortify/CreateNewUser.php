@@ -5,6 +5,7 @@ namespace App\Actions\Fortify;
 use App\Concerns\PasswordValidationRules;
 use App\Concerns\ProfileValidationRules;
 use App\Models\User;
+use App\Support\MockTronAddress;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
@@ -96,6 +97,12 @@ class CreateNewUser implements CreatesNewUsers
      * BEGIN — so a unique-violation rolls back just this attempt, leaving the
      * outer transaction intact for the next retry.
      *
+     * A fresh `tron_address` is generated per attempt. Username collisions are
+     * the real-world driver (similar names exist); tron-address collisions are
+     * statistically near-impossible (~193 bits of entropy) but the outer loop
+     * retries them anyway by bumping the username suffix — a wasted slot, but
+     * harmless and simpler than a nested retry.
+     *
      * @param  array<string, string>  $input
      */
     private function tryInsertUser(array $input, string $username): ?User
@@ -106,13 +113,14 @@ class CreateNewUser implements CreatesNewUsers
                 'username' => $username,
                 'email' => $input['email'],
                 'password' => $input['password'],
+                'tron_address' => MockTronAddress::generate(),
             ]));
         } catch (QueryException $e) {
-            if (! $this->isUsernameCollision($e)) {
-                throw $e;
+            if ($this->isUsernameCollision($e) || $this->isTronAddressCollision($e)) {
+                return null;
             }
 
-            return null;
+            throw $e;
         }
     }
 
@@ -153,5 +161,16 @@ class CreateNewUser implements CreatesNewUsers
         $isUniqueViolation = in_array((string) $e->getCode(), ['23505', '23000'], true);
 
         return $isUniqueViolation && str_contains($e->getMessage(), 'username');
+    }
+
+    /**
+     * Detect a unique-violation specifically on the `tron_address` column.
+     * Same defensive two-layer check as `isUsernameCollision`.
+     */
+    private function isTronAddressCollision(QueryException $e): bool
+    {
+        $isUniqueViolation = in_array((string) $e->getCode(), ['23505', '23000'], true);
+
+        return $isUniqueViolation && str_contains($e->getMessage(), 'tron_address');
     }
 }
