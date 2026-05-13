@@ -1,0 +1,160 @@
+import { useForm } from '@inertiajs/react';
+import { Wallet } from 'lucide-react';
+import InputError from '@/components/input-error';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { formatUsdt } from '@/lib/wallet-format';
+import { store as withdrawStore } from '@/routes/wallet/withdraw';
+
+interface Props {
+    balance: number;
+    minWithdrawal: number;
+}
+
+/**
+ * Withdraw form. The v1 backend short-circuits the POST with a flash notice
+ * ("Withdrawals enabled at launch") so this form is fully exercisable today
+ * — all validation paths fire, just the ledger write doesn't.
+ *
+ * Address is a TRC20 Tron address (34 chars, base58 starting with 'T').
+ * Amount caps: server-side `min:MIN_WITHDRAWAL`, `max:100000`, ≤ balance.
+ */
+export function WithdrawForm({ balance, minWithdrawal }: Props) {
+    const { data, setData, post, processing, errors, transform } = useForm<{
+        address: string;
+        amount: string;
+    }>({
+        address: '',
+        amount: '',
+    });
+
+    // Strip whitespace from the address before submit. Common UX paper-cut:
+    // users paste "T... " with a trailing space and the regex rejects it.
+    transform((d) => ({ ...d, address: d.address.trim() }));
+
+    const amountNumber = data.amount === '' ? 0 : Number(data.amount);
+    const exceedsBalance = amountNumber > balance;
+    const belowMin = amountNumber > 0 && amountNumber < minWithdrawal;
+    const hasAddress = data.address.trim().length > 0;
+    const canSubmit = !processing
+        && hasAddress
+        && data.amount !== ''
+        && amountNumber > 0
+        && !exceedsBalance
+        && !belowMin;
+
+    const handleMax = () => {
+        // toFixed(2) ensures the input matches the server's `decimal:0,2` rule.
+        setData('amount', balance.toFixed(2));
+    };
+
+    const handleSubmit = (e: React.FormEvent) => {
+        e.preventDefault();
+        post(withdrawStore().url);
+    };
+
+    return (
+        <form onSubmit={handleSubmit} className="space-y-6">
+            <div className="space-y-2">
+                <Label htmlFor="address">TRC20 USDT address</Label>
+                <Input
+                    id="address"
+                    name="address"
+                    type="text"
+                    spellCheck={false}
+                    autoComplete="off"
+                    placeholder="T..."
+                    value={data.address}
+                    onChange={(e) => setData('address', e.target.value)}
+                    aria-invalid={errors.address ? true : undefined}
+                    className="font-mono"
+                />
+                <p className="text-muted-foreground text-xs">
+                    Send to a TRC20 (Tron) USDT address only. Other networks lose funds.
+                </p>
+                <InputError message={errors.address} />
+            </div>
+
+            <div className="space-y-2">
+                <Label htmlFor="amount">Amount</Label>
+                <div className="relative flex items-center gap-2">
+                    <div className="relative flex-1">
+                        <Input
+                            id="amount"
+                            name="amount"
+                            type="number"
+                            inputMode="decimal"
+                            min={minWithdrawal}
+                            max={100000}
+                            step="0.01"
+                            placeholder="0.00"
+                            value={data.amount}
+                            onChange={(e) => setData('amount', e.target.value)}
+                            aria-invalid={
+                                exceedsBalance || belowMin || errors.amount
+                                    ? true
+                                    : undefined
+                            }
+                            className="pr-16"
+                        />
+                        <span className="text-muted-foreground pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 text-sm font-medium">
+                            USDT
+                        </span>
+                    </div>
+                    <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={handleMax}
+                        className="shrink-0 rounded-full"
+                    >
+                        Max
+                    </Button>
+                </div>
+                <div className="flex items-center justify-between text-xs">
+                    <span className="text-muted-foreground">
+                        Min:{' '}
+                        <span className="text-foreground font-medium">
+                            {formatUsdt(minWithdrawal)} USDT
+                        </span>
+                    </span>
+                    <span className="text-muted-foreground inline-flex items-center gap-1">
+                        <Wallet className="size-3" />
+                        Available:{' '}
+                        <span
+                            className={
+                                exceedsBalance
+                                    ? 'text-destructive font-medium'
+                                    : 'text-foreground font-medium'
+                            }
+                        >
+                            {formatUsdt(balance)} USDT
+                        </span>
+                    </span>
+                </div>
+                {exceedsBalance && (
+                    <p className="text-destructive text-xs">
+                        Amount exceeds your available balance.
+                    </p>
+                )}
+                {belowMin && (
+                    <p className="text-destructive text-xs">
+                        Minimum withdrawal is {formatUsdt(minWithdrawal)} USDT.
+                    </p>
+                )}
+                <InputError message={errors.amount} />
+            </div>
+
+            <Button
+                type="submit"
+                variant="gradient"
+                size="pill"
+                disabled={!canSubmit}
+                className="w-full"
+            >
+                {processing ? 'Submitting…' : 'Withdraw'}
+            </Button>
+        </form>
+    );
+}
