@@ -9,8 +9,8 @@ Frontend-first MVP. Build UI against real DB infrastructure + seeded fake data; 
 - **M2.5** — Pre-M3 polish ✅
 - **M3** — Listings Index ✅
 - **M3.5** — Wallet / Ledger Foundation ✅
-- **M4** — Listing Detail + Create Flow **(next)**
-- **M5** — User Profile
+- **M4** — Listing Detail + Create Flow ✅
+- **M5** — User Profile **(next)**
 - **M6** — Match Flow (mock)
 - **M7** — Wallet UI
 - **M8** — Settings / Linked Accounts (chess.com / Lichess)
@@ -75,101 +75,22 @@ Append-only Postgres ledger (`wallet_transactions`) is now the source of truth f
 
 ## M4 — Listing Detail + Create Flow ✅
 
-First end-to-end money flow on the platform. Public listing detail page + auth-gated create form + owner-only cancel. Wires `Wallet::hold` on listing create and `Wallet::release` on cancel, both transactional with the listing row.
+First end-to-end money flow on the platform. Public listing detail (`/listings/{id}`), auth-gated create form (`/listings/create`), owner-only cancel — wired to real `Wallet::hold` on create and `Wallet::release` on cancel, both transactional with the listing row, idempotent via `listing-create:{id}` / `listing-cancel:{id}` references. Multi-select `time_control` and `language` (jsonb columns + `AsEnumCollection` + `whereJsonContains` overlap filter). Owner-only `App\Policies\ListingPolicy::cancel`. **110 tests / 655 assertions (was 88/533).**
 
-### Locked decisions
+**Locked decisions:**
+- **Duration dropdown** (`1h..72h`), not datetime picker — kills timezone confusion.
+- **Insufficient balance handled twice**: `StoreListingRequest` validates `stake_amount ≤ balance` upfront (`Wallet::balanceFor($user)` for fresh value) + `Wallet::hold` still throws `InsufficientBalanceException` for concurrent-tab races, caught in the controller as a `stake_amount` `ValidationException`.
+- **Detail page renders for any status** — taken/expired/cancelled show status badge, no 404 (shared links shouldn't break).
+- **Stake precision pinned** at `decimal:0,2` to match the `decimal(12, 2)` column — otherwise `100.456` holds at scale 6 but stores at 2 decimals, drifting on refund.
+- **Cancel via `Dialog`**, not `AlertDialog` (installing a new Radix package would have conflicted with our Stakly-skinned `button.tsx`).
+- **Hybrid build order**: backend skeleton → frontend iteration → backend hardening → tests. Avoids both pure-frontend throwaway code and backend-first delayed visual feedback.
+- **Out of scope**: listing edit (cancel + re-create is the v1 mental model); image uploads; take CTA behavior (M6); pause/resume + max-listings cap + step-up auth (see Post-MVP section).
 
-- **Expires-at UX**: duration dropdown (`1h / 6h / 12h / 24h / 48h / 72h`), not a datetime picker. Removes timezone confusion, matches how chess scheduling actually works.
-- **Insufficient balance handling**: two layers. `StoreListingRequest` validates `stake_amount ≤ current balance` upfront (nice 422 with form error). `Wallet::hold` still throws `InsufficientBalanceException` defensively for concurrent-tab races.
-- **Detail page for non-open listings**: render normally with a status badge (`Taken` / `Expired` / `Cancelled`), Take CTA disabled. No 404 — shared links to expired listings shouldn't error out.
-- **Cancel confirmation**: shadcn `AlertDialog` with copy like "Cancel this listing? Your $X stake will be refunded immediately." Money operations earn an extra click.
-- **Layout for detail page**: two-column desktop (creator info + listing details on left, sticky booking widget on right), single-column mobile. Mirrors mmrangels per CLAUDE.md M1 design reference.
-- **Balance display on create form**: "Available: $X USDT" shown near the stake input, submit button disabled if stake > balance.
-- **Build order: hybrid** — backend skeleton first (routes + minimal controller methods so Wayfinder generates real types), then frontend pages (visual iteration), then backend hardening (validation, policy, Wallet transactions, tests). Avoids both pure-frontend-first throwaway code and backend-first delayed-visual feedback.
-- **Out of scope**: listing edit/update (cancel + re-create is the v1 mental model); image uploads (stick with initials avatars); take CTA real behavior (M6); take race conditions (also M6).
+**Bugs caught by Phase 8 tests:**
+- **Precision mismatch** — `decimal(12, 2)` listings column vs scale-6 wallet ledger. Stake of `100.456` would hold `-100.456000` in the ledger but the listing stored `100.46`, drifting 0.004 USDT on cancel. Fixed: `decimal:0,2` rule on `stake_amount`.
+- **Stale `$user` instance** — `stakeWithinBalance` read `$user->usdt_balance` directly, returning the pre-deposit cached value when the auth instance was stale. Fixed: route through `Wallet::balanceFor($user)` which always does `$user->fresh()`.
 
-### Scope (step-by-step)
-
-> Marked off as we go. Two natural commit points: end of Phase 6 (UI shipped, money flow still mock) and end of Phase 9 (full M4 with real Wallet wiring + tests).
-
-**Phase 1 — Backend skeleton (real routes + types, minimal logic)**
-- [x] **1.1** Add `show(Listing $listing)` to `ListingController` — returns `Inertia::render('listings/show', ['listing' => ListingResource::make($listing)->resolve()])`.
-- [x] **1.2** Add `create()` to `ListingController` — returns `Inertia::render('listings/create', ['balance' => Wallet::balanceFor($request->user())])`. Auth-gated.
-- [x] **1.3** Add `store(StoreListingRequest)` placeholder — basic `Listing::create([...])` returning a redirect to the new listing. No `Wallet::hold` yet (Phase 7).
-- [x] **1.4** Add `cancel(Listing $listing)` placeholder — basic status update to `Cancelled`. No `Wallet::release` yet, no policy yet (Phase 7).
-- [x] **1.5** Routes in `web.php`: `GET /listings/create`, `POST /listings`, `GET /listings/{listing}`, `DELETE /listings/{listing}/cancel`. Auth + verified middleware on create / store / cancel.
-- [x] **1.6** Create `App\Http\Requests\Listings\StoreListingRequest` with rules skeleton (full validation in Phase 7).
-
-**Phase 2 — Wayfinder + TypeScript types**
-- [x] **2.1** Regenerate Wayfinder route functions (`vendor/bin/sail npm run build` or dev server).
-- [x] **2.2** Add `ListingShowProps` + `ListingCreateProps` types to `resources/js/types/listings.ts`.
-
-**Phase 3 — Listing detail page (`pages/listings/show.tsx`)**
-- [x] **3.1** Scaffold the page with `<SiteLayout>`, two-column on desktop / stacked on mobile.
-- [x] **3.2** Creator/profile column: avatar (initials), name, region, language, skill range.
-- [x] **3.3** Listing details column: stake amount (gradient display), time control, expires-at relative time, status badge for non-open.
-- [x] **3.4** Booking widget (sticky-right on desktop): stake repeat, **Take** CTA (disabled, "Coming in M6"), **Cancel** button (only when `auth.user.id === listing.creator.id` AND `status === 'open'`).
-- [x] **3.5** Cancel confirmation `Dialog` (existing shadcn primitive — `AlertDialog` would have required installing a new Radix package and conflicted with our Stakly-skinned `button.tsx`); submits `DELETE /listings/{listing}/cancel` via `router.delete`.
-
-**Phase 4 — Create listing page (`pages/listings/create.tsx`)**
-- [x] **4.1** Scaffold with `<SiteLayout>`, single-column form (max-w-2xl).
-- [x] **4.2** Stake input with USDT suffix + "Available: $X USDT" sublabel. Submit disabled when stake > balance or empty.
-- [x] **4.3** Skill range inputs (`skill_min`, `skill_max`, both optional). Backend enforces min ≤ max via `gte:skill_min`.
-- [x] **4.4** Time control selector (Blitz / Rapid / Classical) — built with our `ToggleGroup` primitive for visual consistency with the index page filters.
-- [x] **4.5** Region select — option list passed from `StoreListingRequest::REGIONS` (single source of truth, no frontend duplication).
-- [x] **4.6** Language select — option list from `StoreListingRequest::LANGUAGES` + "Any language" sentinel mapped to empty string at the boundary (Radix `Select` can't have empty-string values).
-- [x] **4.7** Duration dropdown driven by `StoreListingRequest::DURATION_HOURS`. Backend converts to `expires_at = now()->addHours($duration)`.
-- [x] **4.8** Game display (chess-only header with Crown icon + "More games coming soon" copy). Hidden `game: 'chess'` field. **Deviation from spec**: skipped the full multi-tile `GameSelector` clone in the form — adds 9 visual placeholders that don't serve form completion. Phase 6 can revisit if the user wants the marketing-style tiles in the form.
-- [x] **4.9** Inertia `useForm` submission with per-field error display; backend redirects to `listings.show` on success.
-
-**Phase 5 — Wiring (links + entry points)**
-- [x] **5.1** Add **Create listing** CTA to `SiteHeader` + `MobileMenu` — three-state component: unauthed (opens auth modal), unverified (disabled with tooltip pointing at the verification chip), verified (links to `/listings/create`).
-- [x] **5.2** Wrap `ListingRow` in `<Link>` to `listings.show(listing.id)` with `focus-visible:ring-2` for keyboard nav.
-- [x] **5.3** Wrap `ListingCard` (homepage featured strip) similarly. Also refactored away duplicated formatting helpers — now imports from the shared `lib/listings-format.ts`.
-- [x] **5.4** Updated `UnverifiedChip` title attribute to "Verify your email to create listings — click to resend." Closes the loop with the disabled Create listing CTA's tooltip.
-
-**Phase 6 — Manual UI walkthrough (user-driven, iteration) ✅**
-- [x] **6.1** Click through create-listing flow as a seeded dev user. Note any spacing / copy / animation tweaks.
-- [x] **6.2** Click through listing detail as the creator (Cancel visible) and as another user (Cancel hidden).
-- [x] **6.3** Click through listing detail as a guest (logged out).
-- [x] **6.4** Open a non-open listing — confirm status badge displays correctly, Take CTA disabled, Cancel hidden.
-- [x] **6.5** Cancel a listing — confirm `AlertDialog` works, refund happens, redirect lands correctly. (Used `Dialog` not `AlertDialog` — see Phase 3 deviation.)
-- [x] **6.6** Apply polish based on observations — hid logged-out Create-listing CTA (Sign up covers funnel), moved Back-to-listings to top of detail page, full-width form Selects, restyled Cancel button (outline destructive, no text-shadow smudge), success-toast flash on create + cancel via `Inertia::flash`, multi time_control + multi language (jsonb columns + `AsEnumCollection` + form ToggleGroups + `whereJsonContains` overlap filter), `h-full` + `mt-auto` on `ListingCard` to equalize Ending-soon grid heights, capped language chip at 3 + "+N" on `ListingRow`.
-- [x] **6.7** Optional commit checkpoint: `feat: listing detail + create UI (M4 stage 1)`.
-
-**Phase 7 — Backend hardening (real money wiring) ✅**
-- [x] **7.1** Create `App\Policies\ListingPolicy` with `cancel(User, Listing)` — owner-only AND `status === Open`. Auto-discovery in Laravel 11+ handles registration.
-- [x] **7.2** Fill in `StoreListingRequest::rules()` — full validation incl. `stake_amount ≤ user balance` via a closure rule using `bccomp` at scale 6 (matches Wallet precision so we don't lose sub-cent headroom to float rounding).
-- [x] **7.3** Wrap `ListingController::store` in `DB::transaction(...)` — `Listing::create` then `Wallet::hold(user, amount, listing, reference: "listing-create:{$listing->id}")`. Both commit or both roll back.
-- [x] **7.4** Wrap `ListingController::cancel` in `DB::transaction(...)` — `Gate::authorize('cancel', $listing)`, then `Wallet::release(user, amount, listing, reference: "listing-cancel:{$listing->id}")`, then status update. Cancel toast now reports the refund amount.
-- [x] **7.5** Catch `InsufficientBalanceException` in `store()` and throw `ValidationException` keyed on `stake_amount` so the form re-renders with field-level feedback.
-- [x] **7.5b** **Seeder update (not in original plan):** `ListingSeeder` now calls `Wallet::hold` for every open/taken/ending-soon listing so seeded data satisfies the balance ↔ ledger invariant. Test User + seeded users bumped from $1k → $10k per user for hold headroom (some users own multiple listings; $1k wasn't enough). Verified via tinker: 0 users with broken invariant after `migrate:fresh --seed`.
-
-**Phase 8 — Backend tests (Pest) ✅**
-- [x] **8.1** Show: public listing renders, props match `ListingResource` shape; 404 on bad ID. (`ListingShowTest`)
-- [x] **8.2** Show: taken / expired / cancelled listings still render (with status), no 404. + sensitive-field leak check.
-- [x] **8.3** Create form: unauthenticated → redirect to `route('login')`. Unverified → blocked. Verified → form renders with `balance`, `regions`, `languages`, `durations` props.
-- [x] **8.4** Store: happy path — listing row created + escrow hold ledger entry written (`-stake_amount`) + `usdt_balance` decremented exactly + redirect to `listings.show`.
-- [x] **8.5** Store: insufficient balance (request-level pre-check) → 422 keyed on `stake_amount`, no listing created, no ledger row, balance unchanged.
-- [x] **8.6** Store: validation failures — missing required fields / invalid `time_control` enum / empty `time_control` array / duplicate `time_control` entries → 422.
-- [x] **8.7** Store: mass-assignment safety — posted `user_id` / `status` / `expires_at` in the request body have NO effect.
-- [x] **8.8** Cancel: non-owner → 403 (ListingPolicy), listing untouched. Guests → redirect to login.
-- [x] **8.9** Cancel: owner happy path — status → Cancelled, refund ledger row (`+stake_amount`) + balance restored to pre-listing value.
-- [x] **8.10** Cancel: listing not in Open status (taken / expired / cancelled) → 403, even for owner. (`->with(['taken', 'expired', 'cancelled'])` data provider.)
-- [x] **8.11** BCMath round-trip: stake → cancel → balance restored *exactly* via `bccomp`.
-- [x] **8.x** Toast flash assertions on store + cancel via `assertInertiaFlash` (inertia-laravel's testing macro).
-
-**Bugs uncovered by Phase 8 + fixed:**
-- **Precision mismatch** between `decimal(12, 2)` listings column and scale-6 wallet ledger. A stake of `100.456` would have held `-100.456000` in the ledger but stored `100.46` on the listing, leaving a 0.004 USDT delta on cancel. Fixed by adding `decimal:0,2` to the `stake_amount` validation rule.
-- **Stale `$user` instance** in `stakeWithinBalance` closure rule. Reading `$user->usdt_balance` directly returned the pre-deposit value when the auth user instance was stale (which happens reliably in tests using `actingAs($user)` after a deposit, and could happen in production with cached user instances). Fixed by using `Wallet::balanceFor($user)` which always does `$user->fresh()->usdt_balance`.
-
-**Test stats:** 110 tests / 655 assertions across the suite (was 88 / 533 before Phase 8). Pint clean, types clean.
-
-**Phase 9 — Verify + commit ✅**
-- [x] **9.1** `vendor/bin/sail artisan migrate:fresh --seed` clean.
-- [x] **9.2** `vendor/bin/sail artisan test --compact` — 110 tests / 655 assertions green.
-- [x] **9.3** `vendor/bin/sail bin pint --dirty --format agent` clean. `npm run types:check` + `lint:check` clean.
-- [ ] **9.4** Commit. Suggested message: `feat: listing detail + create + cancel (M4)`.
+**Seeder note:** `ListingSeeder` calls `Wallet::hold` for every open/taken/ending-soon seeded listing so seeded data satisfies the balance ↔ ledger invariant. Test User + seeded users seeded with $10k each (was $1k — some users own multiple listings, holds overflowed). Verified post-seed: 0 users with broken invariant.
 
 ---
 
@@ -183,9 +104,90 @@ Captured so the intent isn't lost. **Don't pull these into M4.** Each is a real 
 
 ---
 
-## M5 — User Profile
+## M5 — User Profile **(next)**
 
-Public player profile — stats, match history, ratings, linked game accounts.
+Public, read-only player profile pages — discoverable via clicking any creator on a listing. Frame for the social/marketplace layer of Stakly: who is this player, what are they offering, how have they done.
+
+### Locked decisions
+
+- **URL**: `/users/{username}` via `getRouteKeyName: 'username'` on the User model. `users.show` route name.
+- **Username**: new `username` column on users, unique + indexed. **Auto-generated at registration** from a slugified `name` with collision-safe suffixing (try `john-smith` first; on collision try `-1`, `-2`, …). Immutable in v1 — no rename flow. If we want renaming later it's a separate small feature in /settings/profile.
+- **Bio**: new `bio` column on users, nullable, max 280 chars. Displayed on profile if set. M5 ships *display only*; an edit input in /settings/profile is a post-M5 follow-up (not blocking).
+- **Avatar**: initials only for v1 (matches current state). Upload deferred to post-MVP polish.
+- **Visibility**: profile is fully public, no auth needed to view. Same posture as `/listings`.
+- **Stats**: split into "live now" vs "lights up later":
+    - **Live now**: member-since, total open listings, total listings created (lifetime). Computed at request time.
+    - **Lights up with M6**: win rate, total earnings, average opponent Elo. Cards render with `No matches yet` empty states until M6 produces match data.
+- **Linked game accounts** (chess.com, Lichess): section renders with `Not linked` placeholders. M8 wires up real linking; M5 just frames the slot.
+- **Entry points**: creator's name + avatar are clickable to `/users/{username}` on the ListingRow, ListingCard, and listing detail header. Requires restructuring the row/card to avoid nested `<a>` (HTML-invalid): wrap row in a non-anchor element with two side-by-side `<Link>`s (one for creator, one for listing body).
+- **Layout**: SiteLayout wrapper (so flash toasts work). Two-section page: header card (avatar + name + username + member-since + bio) on top; grid of cards below (stats, open listings, match history, linked accounts).
+- **Own-profile affordance**: if the viewer is signed-in and looking at their own profile, show an `Edit profile` button linking to `/settings/profile`. Otherwise no edit affordance.
+
+### Scope (step-by-step)
+
+**Phase 1 — Schema + model + factory + seeder**
+- [ ] **1.1** Edit `0001_01_01_000000_create_users_table.php` migration: add `username` (string, unique, indexed) and `bio` (string, nullable, length 280) columns.
+- [ ] **1.2** `User` model: add `username` + `bio` to `$fillable`; override `getRouteKeyName(): string` to return `'username'`.
+- [ ] **1.3** Update Fortify's `CreateNewUser` action — after the user is created, derive `username` from `Str::slug($name)` with a collision-safe suffix loop, then `save()`. Wrap in a small private helper so the logic is testable. Add validation: `username` must match `/^[a-z0-9-]{3,30}$/` after slugifying.
+- [ ] **1.4** `UserFactory`: generate a `username` via `Str::slug(faker->unique->userName)`. ~30% chance to populate `bio` with `faker->realText(120)`.
+- [ ] **1.5** `DatabaseSeeder`: explicitly set Test User's `username = 'testuser'` (known value, easier to test against).
+- [ ] **1.6** `vendor/bin/sail artisan migrate:fresh --seed` — verify every user has a username, no collisions, Test User reachable at `/users/testuser`.
+
+**Phase 2 — Backend skeleton (route + controller + resource)**
+- [ ] **2.1** New `App\Http\Controllers\UserController` with `show(User $user): Response`. No auth middleware — public route.
+- [ ] **2.2** Route in `routes/web.php`: `Route::get('/users/{user:username}', [UserController::class, 'show'])->name('users.show')`. Place near the listings routes for grouping.
+- [ ] **2.3** New `App\Http\Resources\UserProfileResource` — whitelisted public fields: `id`, `username`, `name`, `bio`, `member_since` (ISO `created_at`), `avatar` (nullable URL — for v1 always null, frontend falls back to initials). **Never** ship `email`, `usdt_balance`, `is_platform`, or two-factor fields.
+- [ ] **2.4** `UserController::show` returns `Inertia::render('users/show', [...])` with: `user` (resource), `stats` (computed: open listings count, total listings count, member since), `openListings` (collection of `ListingResource` — top 5 most recent open listings; sort by newest).
+- [ ] **2.5** Route model binding handles 404 automatically; no policy needed (public + read-only).
+
+**Phase 3 — Wayfinder + TS types**
+- [ ] **3.1** Regenerate Wayfinder typed routes via `npm run build` (or `artisan wayfinder:generate --with-form` — the latter is mandatory if going via artisan).
+- [ ] **3.2** New `resources/js/types/profile.ts` with `UserProfile`, `ProfileStats`, `ProfileShowProps` interfaces. Backend source of truth: `UserProfileResource`.
+- [ ] **3.3** `npm run types:check` clean.
+
+**Phase 4 — Profile page + components**
+- [ ] **4.1** New `resources/js/pages/users/show.tsx` — page-level layout (SiteLayout, Head with `{user.name}'s profile`).
+- [ ] **4.2** `components/profile/profile-header.tsx` — avatar (initials), display name, `@{username}`, member-since (`Joined Mar 2026`), bio card if `bio !== null`. Right-side `Edit profile` button only when `auth.user.id === user.id`.
+- [ ] **4.3** `components/profile/stats-card.tsx` — grid of stat tiles. **Live now**: Open listings, Total listings, Member since. **Empty-state tiles**: Win rate (`No matches yet`), Total earnings (`No matches yet`), Avg opponent rating (`No matches yet`). Visually consistent; empty states use `text-muted-foreground` with a subtle dashed border so they don't read as zero values.
+- [ ] **4.4** `components/profile/listings-section.tsx` — reuses the existing `ListingRow` for open listings. Heading `Active listings · N`. Empty state: `No active listings right now.` with a soft border + muted copy.
+- [ ] **4.5** `components/profile/match-history-section.tsx` — empty-state-only for v1. Heading `Match history`, body `No matches yet — match flow lands in M6.` Internal-facing copy; we can soften before public launch.
+- [ ] **4.6** `components/profile/linked-accounts-section.tsx` — two rows (chess.com, Lichess) each with a `Not linked` muted chip. Heading `Linked game accounts`. Footer copy: `Link your accounts in settings.` (no real link until M8).
+- [ ] **4.7** Compose all four sections in the page below the header.
+
+**Phase 5 — Profile entry points (restructure ListingRow / ListingCard)**
+- [ ] **5.1** `ListingRow` — currently wrapped in an outer `<Link>`. Restructure to a non-anchor outer element with two interior `<Link>`s: one wrapping the creator avatar + name (→ `users.show`), one wrapping the rest of the row body (→ `listings.show`). Verify keyboard nav (tab order makes sense), right-click → "Open in new tab" works on both targets, no nested-anchor warnings in the console.
+- [ ] **5.2** `ListingCard` — same restructuring. Creator chip on top links to user profile; rest of card links to listing detail.
+- [ ] **5.3** `pages/listings/show.tsx` header card — wrap the creator avatar + name in a Link to `users.show`. The status badge stays outside the link.
+
+**🛑 Phase 6 — Manual UI walkthrough (user-driven, expect iteration)**
+- [ ] **6.1** Click around as Test User: own profile (Edit button visible) and other seeded users' profiles (Edit hidden).
+- [ ] **6.2** Verify empty-state sections render gracefully (match history, linked accounts, no-listings empty state).
+- [ ] **6.3** Click creator name/avatar on listings index → lands on profile. Confirm row body click still goes to listing detail.
+- [ ] **6.4** Click creator on listing detail page → lands on profile.
+- [ ] **6.5** Edge cases: long username (30 chars), long bio (280 chars), very long name.
+- [ ] **6.6** Apply polish based on observations.
+
+**Phase 7 — Backend hardening + edge cases**
+- [ ] **7.1** Username validation: enforce `/^[a-z0-9-]{3,30}$/` post-slug, fail registration with a clear error if the slug derivation produces an empty string (e.g., name = "!!!"). Defensive — registration validation already prevents empty/whitespace names, but cover the slug-collapse case.
+- [ ] **7.2** Collision-loop safety: confirm the suffix loop in `CreateNewUser` terminates (bound it to N attempts; if exceeded, append `-{$id}` as a last resort).
+- [ ] **7.3** UserController `show`: query `openListings` with `->with('user:id,name,username')` to avoid N+1 if `ListingRow` derefs creator (it does — username is now part of the link target).
+
+**Phase 8 — Backend tests (Pest)**
+- [ ] **8.1** Show: public profile renders for any visitor (guest, authed, authed-as-self).
+- [ ] **8.2** Show: 404 on unknown username (route model binding miss).
+- [ ] **8.3** Resource never leaks email or `usdt_balance` — hard `assertDontSee` on a seeded sensitive value.
+- [ ] **8.4** `openListings` on the profile only contains the profile owner's *open* listings (filters out other users' listings, filters out taken/expired/cancelled).
+- [ ] **8.5** Stats: open count + total count match the seeded reality for a known user.
+- [ ] **8.6** Bio renders when set; absent in props when `bio === null`.
+- [ ] **8.7** Registration auto-generates a username from the name (`Str::slug`).
+- [ ] **8.8** Registration username collision: when "John Smith" registers twice, second user gets `john-smith-1` (or similar). Third gets `-2`. No duplicate-key DB violation.
+- [ ] **8.9** Edge case: name with no alpha-numeric content → registration still produces a non-empty unique username via fallback.
+
+**Phase 9 — Verify + commit**
+- [ ] **9.1** `vendor/bin/sail artisan migrate:fresh --seed` clean.
+- [ ] **9.2** `vendor/bin/sail artisan test --compact` — full suite green.
+- [ ] **9.3** Pint + types:check + lint:check clean.
+- [ ] **9.4** Commit. Suggested message: `feat: public user profiles (M5)`.
 
 ---
 
@@ -250,3 +252,10 @@ Required answers before mainnet wiring:
 **Operational continuity**: provider-block risk is low for Tron specifically (gambling-friendly ecosystem, no known prohibited-use clauses) but the `ChainGateway` adapter makes it an operational annoyance, not existential. If TronGrid ever cuts us off, switching to GetBlock is a binding change; our keys, addresses, and funds are unaffected.
 
 **Recurring cost**: $0/mo TronGrid free tier covers MVP launch + likely well beyond. ~$200/mo if we eventually run our own Tron node.
+
+### App-level hardening (deferred from dev)
+
+Small code-level cleanups noticed during M3–M4 development. Not blocking until we're approaching a real deployment, but they must land before the first non-developer touches the platform.
+
+- **Platform user credentials.** Seeder currently creates `platform@stakly.internal` via the default `UserFactory`, which means `Hash::make('password')` + `email_verified_at = now()`. Pre-launch: override the seeder to use an unguessable random password (e.g. `Hash::make(bin2hex(random_bytes(32)))`) and set `email_verified_at = null`. Add a `Fortify::authenticateUsing(...)` hook in `FortifyServiceProvider` that explicitly rejects any user where `is_platform = true` — defense in depth against future code paths that might re-grant the password. When M5 ships, `UserController::show` also needs to 404 on `is_platform = true` users so the platform account isn't enumerated alongside real players.
+- **Marquee copy.** `resources/js/layouts/site-layout.tsx` `defaultMarqueeItems` currently advertises a `STAKLY30 30% off` promo and other aspirational claims that don't reflect reality. Replace with honest copy (or move to per-page overrides) before any user-facing surface.
