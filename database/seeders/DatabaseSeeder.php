@@ -12,14 +12,19 @@ class DatabaseSeeder extends Seeder
     {
         // Platform user must exist before any Wallet::fee(...) call. Single
         // row, `is_platform = true`. Holds the accumulated platform rake.
+        // Username is pinned so M5's profile route can predictably 404 on it.
         User::factory()->create([
             'name' => 'Stakly Platform',
+            'username' => 'stakly-platform',
             'email' => 'platform@stakly.internal',
             'is_platform' => true,
         ]);
 
+        // Test User gets a known-stable username so feature tests can hit
+        // `/users/testuser` without depending on faker's random output.
         $test = User::factory()->create([
             'name' => 'Test User',
+            'username' => 'testuser',
             'email' => 'test@example.com',
         ]);
 

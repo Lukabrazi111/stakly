@@ -13,12 +13,22 @@ use Illuminate\Notifications\Notifiable;
 use Laravel\Fortify\TwoFactorAuthenticatable;
 use Spatie\Permission\Traits\HasRoles;
 
-#[Fillable(['name', 'email', 'password'])]
+#[Fillable(['name', 'username', 'bio', 'email', 'password'])]
 #[Hidden(['password', 'two_factor_secret', 'two_factor_recovery_codes', 'remember_token'])]
 class User extends Authenticatable implements MustVerifyEmail
 {
     /** @use HasFactory<UserFactory> */
     use HasFactory, HasRoles, Notifiable, TwoFactorAuthenticatable;
+
+    /**
+     * Route model binding uses `username` instead of `id`, so `/users/{user}`
+     * resolves via the public handle. Username is derived at registration and
+     * immutable in v1.
+     */
+    public function getRouteKeyName(): string
+    {
+        return 'username';
+    }
 
     /**
      * Get the attributes that should be cast.

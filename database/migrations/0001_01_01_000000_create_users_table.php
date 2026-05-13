@@ -14,6 +14,18 @@ return new class extends Migration
         Schema::create('users', function (Blueprint $table) {
             $table->id();
             $table->string('name');
+
+            // Public handle derived from `name` at registration via `CreateNewUser`
+            // (slugified, collision-safe). Drives the `/users/{username}` profile
+            // route (M5). Length cap 30 matches the registration regex
+            // `/^[a-z0-9-]{3,30}$/`. UNIQUE constraint is the authority for
+            // collision handling — `CreateNewUser` retries on violation.
+            $table->string('username', 30)->unique();
+
+            // Optional 280-char bio shown on the public profile (M5). Bounded
+            // length, not text — bio is never queried/filtered.
+            $table->string('bio', 280)->nullable();
+
             $table->string('email')->unique();
             $table->timestamp('email_verified_at')->nullable();
             $table->string('password');
