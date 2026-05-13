@@ -3,6 +3,7 @@
 use App\Http\Controllers\HomeController;
 use App\Http\Controllers\ListingController;
 use App\Http\Controllers\UserController;
+use App\Http\Controllers\WalletController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', [HomeController::class, 'index'])->name('home');
@@ -22,5 +23,16 @@ Route::get('/listings/{listing}', [ListingController::class, 'show'])->name('lis
 // Public read-only player profile. Resolved by `username` via User's
 // getRouteKeyName override. The platform user is hidden inside the controller.
 Route::get('/users/{user:username}', [UserController::class, 'show'])->name('users.show');
+
+// Wallet UI (M7). All routes require auth + verified email. The platform user
+// is explicitly 403'd in each controller method — defense in depth on top of
+// the middleware-level gate.
+Route::middleware(['auth', 'verified'])->prefix('wallet')->name('wallet.')->group(function () {
+    Route::get('/', [WalletController::class, 'index'])->name('index');
+    Route::get('/deposit', [WalletController::class, 'deposit'])->name('deposit');
+    Route::get('/withdraw', [WalletController::class, 'withdraw'])->name('withdraw');
+    Route::post('/withdraw', [WalletController::class, 'withdrawStore'])->name('withdraw.store');
+    Route::get('/history', [WalletController::class, 'history'])->name('history');
+});
 
 require __DIR__.'/settings.php';
