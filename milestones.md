@@ -70,7 +70,7 @@ Append-only Postgres ledger (`wallet_transactions`) is now the source of truth f
 - **Append-only enforcement at both layers**: no `updated_at` column, `UPDATED_AT = null` on the `WalletTransaction` model — query log assertions (test 3.6) prove `UPDATE` never hits the ledger.
 - **Conservation of money**: holds + releases + payouts + fees in a complete match flow sum to 0 (test 3.7). Money is redistributed, never created or destroyed inside a match.
 - **Nested-transaction rule**: `Wallet::hold` etc. open their own `DB::transaction` internally, but callers can wrap a larger transaction around them (e.g., M4 "create listing + `Wallet::hold`" must commit or roll back as one unit). Laravel nests via savepoints — safe in either direction.
-- **`ChainGateway` adapter + DIY + TRC20 + TronGrid path** locked in the pre-launch gate; M3.5 contains zero chain code.
+- **`ChainGateway` adapter + Tatum managed-custody + TRC20** locked in M9 / pre-launch gate; M3.5 contains zero chain code.
 
 ---
 
@@ -124,232 +124,150 @@ Public read-only player profiles at `/users/{username}`. Schema (`username` + `b
 
 ## M9 — Chain Integration (testnet) **(next)**
 
-The first real touch of crypto. Builds the entire deposit / withdrawal / sweep pipeline against **Tron testnet (Nile)** behind a `ChainGateway` adapter. Free, real chain behavior, fake money — we exercise the full flow end-to-end before any mainnet flip. The mainnet migration plan + custody decisions stay in the **Pre-launch gate** section at the bottom.
+The first real touch of crypto. Builds the entire deposit / withdrawal pipeline against **Tron testnet (Nile)** via **Tatum's Custodial Managed Wallets API**. Tatum holds the per-user TRC20 keys server-side; we orchestrate via REST. Free testnet money, real chain behavior — we exercise the full flow end-to-end before any mainnet flip. The mainnet migration plan stays in the **Pre-launch gate** section at the bottom.
 
-After M9, the missing pieces before launch are M6 (match settlement) + M8 (linked accounts) + the mainnet flip checklist.
+After M9, the remaining work before launch is M6 (match settlement) + M8 (linked accounts) + the mainnet flip checklist.
 
 ### Why M9 now (strategic)
 
 Locked-in pivot from the original M6 → M8 → pre-launch order. Reasoning: chain integration is the highest-anxiety unknown in the project, and de-risking it on testnet (where mistakes cost nothing) is more valuable now than another UI milestone. M6 and M8 are deferred but not dropped — they still gate launch.
 
+### Architectural decision: managed custody via Tatum
+
+Stakly outsources chain custody to **Tatum's Custodial Managed Wallets API**. Tatum generates and holds the private keys for per-user TRC20 deposit addresses; we never see or manage them. Withdrawals are authorized via API calls — Tatum signs and broadcasts. Deposits arrive at Tatum-managed addresses; we receive webhook notifications when they confirm.
+
+**Tatum handles:**
+- TRC20 deposit address generation (one per user, server-side keys)
+- Address Events webhooks (deposit + outbound notifications, no polling needed)
+- Transaction signing + broadcasting (withdrawals)
+- Balance queries against the chain
+- Multi-chain unified API — BEP20 v2 reuses the same integration shape
+
+**Stakly retains:**
+- The internal Postgres ledger (`wallet_transactions`) — already shipped in M3.5. Tatum's "Virtual Accounts" feature is **not** used; we own the ledger to avoid a double source of truth.
+- User balance authority (`users.usdt_balance` + `App\Services\Wallet`).
+- All match flow / listings / escrow / payouts logic — entirely Tatum-agnostic.
+
+**Eyes-open tradeoffs:**
+- **Vendor dependency**: Tatum's API uptime gates deposits and withdrawals. Mitigated by Tatum's key-export feature — if we ever need to leave, we can export keys and migrate to self-custody or another managed provider.
+- **Recurring cost**: Custodial Managed Wallets API tier pricing — pending support inquiry. Free during dev/testnet.
+- **Less control vs. self-custody**: we depend on Tatum's API surface. Operations they don't expose, we can't do.
+
+### Why not self-DIY
+
+We started M9 as DIY (PHP + Node sibling service + TronGrid + own HD derivation + own deposit watcher) and reached Phase 1 + 2 before backing out. The self-custody path is real ongoing operational burden — hot wallet security, key rotation, multi-chain duplication, polling watchers — and that complexity is the dominant risk for a solo-dev MVP vs. the bounded vendor risk of Tatum.
+
+### Open questions (resolve before Phase 2)
+
+- [ ] Tatum's response to use-case inquiry (P2P skill-staking eligibility under their ToS) — **email sent, awaiting reply**.
+- [ ] Custodial Managed Wallets API pricing tier required for our launch load.
+- [ ] Whether business KYC is gated at signup or only at production-volume threshold.
+- [ ] Tron Nile testnet support for Custodial Managed Wallets (vs. Shasta-only or mainnet-only).
+- [ ] Tatum's stance on internal liquidity / sweep model — do they pool funds automatically, or do we need a Phase 6 sweeper?
+
 ### Locked decisions
 
-- **Tron testnet (Nile)** for all of M9. Mainnet flip is a config change later. Free TRX/USDT from Nile's faucet (`https://nileex.io/join/getJoinPage`).
-- **TronGrid Basic plan (free)** — 100k requests/day, 3 API keys. Comfortably fits MVP load. User signs up + provides API key.
-- **`ChainGateway` adapter pattern**: an interface + two implementations (mock for dev/tests, TronGrid for testnet, swappable to GetBlock or our own node later). Same DI binding selects the right one per environment.
-- **HD derivation (BIP32/39/44)** — one master seed in `.env` (dev only). Every user gets a unique deposit address derived from `(seed, user.derivation_index)`. We never store per-user private keys; they're re-derived on demand. Tron coin type is **195** (BIP44 path `m/44'/195'/0'/0/{userIndex}`).
-- **Confirmation threshold**: **19 blocks** on Tron (~1 minute), matching Tron's finality recommendation.
-- **Master seed in `.env` only for dev**. Production custody (KMS or Ledger-based — see Pre-launch gate) is a separate decision later, not a v1-MVP concern.
-- **Library choices deferred to per-phase discussion** — no `composer require` until you've approved the specific package + alternatives (per the user's "discuss libraries first" rule).
-- **Replaces M7 Phase 1 mock-address logic**. `App\Support\MockTronAddress` gets absorbed into `MockChainGateway` and deleted. The existing `users.tron_address` column stays; addresses are now HD-derived, not random.
+- **Provider**: Tatum — Custodial Managed Wallets API + Address Events webhooks. No alternative provider in v1.
+- **Chain v1**: TRC20 (Tron USDT). M9 builds on **Tron Nile testnet**.
+- **Chain v2**: BEP20 (BSC USDT) committed for post-launch. Reuses Tatum's unified API; adding it is a config + per-chain method-routing change, not a second integration.
+- **Internal ledger stays in `wallet_transactions`** — Tatum's Virtual Accounts unused. Our balance + escrow logic is provider-agnostic.
+- **`ChainGateway` adapter pattern** — interface + `TatumChainGateway` implementation + `MockChainGateway` for tests. DI binding via `config('chain.driver')`. Mock-driver tests don't require Tatum API access — CI stays fast and offline.
+- **Confirmation finality** — Tatum's webhook delivers confirmed events; we trust their finality determination, no per-block counting in our code.
+- **Replaces M7's mock address logic** — `App\Support\MockTronAddress` deleted. `users.tron_address` populated from Tatum's response. New `users.tatum_account_id` column for the managed-wallet reference. No `derivation_index` — we don't derive anymore.
+- **Library policy** — no new PHP composer packages. Tatum is REST over Laravel's `Http::` facade. No Tron-specific PHP libraries.
 
 ### What you (the user) need to provide
 
 | Item | When | Cost | Notes |
 |------|------|------|-------|
-| TronGrid account + 3 API keys | Before Phase 3 | Free | Basic plan. Generate at `https://www.trongrid.io/dashboard`. |
-| Testnet TRX (a few hundred) | Before Phase 3 | Free | Faucet: `https://nileex.io/join/getJoinPage`. Tron txns burn energy/bandwidth; testnet TRX pays for it. |
-| Testnet USDT (a few thousand) | Before Phase 4 | Free | Same faucet flow. Used to simulate user deposits. |
-| Decision on production custody (KMS vs Ledger-based) | Pre-mainnet (months out) | TBD | Not needed for M9. We pick this when we know launch volume + your operational comfort. |
-| Ledger Nano X | Pre-mainnet | Already owned ✅ | Useful for **cold storage** at mainnet launch (see "Custody simply explained" below). Not used during M9. |
+| Tatum account + API keys | Phase 1 | Free | `https://dashboard.tatum.io`. Separate keys for testnet vs. production. |
+| Use-case approval from Tatum support | Before Phase 2 | Free | Inquiry already sent; reply pending. |
+| Tron Nile testnet TRX/USDT | Phase 3 | Free | Faucet: `https://nileex.io/join/getJoinPage` or Tatum's. Used to simulate user deposits + test withdrawals. |
+| Production pricing decision | Pre-launch | Open | Once we know launch load, pick the tier. Not blocking M9. |
 
-### Custody simply explained (one-time read)
+No master mnemonic. No KMS provisioning. No Ledger device required during M9.
 
-The whole crypto setup hinges on **one secret**: the **master seed** — 12 or 24 random words that mathematically derive every Stakly wallet address. Whoever holds the seed controls all the money on the platform. So protecting it on mainnet is the entire game.
+### Scope (step-by-step, 5 phases)
 
-**Three real options for protecting the seed on mainnet** (we'll pick one closer to launch — not now):
+> Estimates are **focused solo dev time**, not calendar time. Each phase ships something usable before moving on; commit per phase as before.
 
-1. **KMS only** (AWS KMS, Google Cloud KMS, HashiCorp Vault)
-   - Cloud service. Seed lives **inside** the KMS, never on your application server.
-   - Laravel app says "sign this transaction" — KMS signs and returns the result. Key never leaves.
-   - Even if your server is fully compromised, the attacker can only request signatures while connected; they can't extract the key. Rate-limit + audit logs included.
-   - Cost: ~$1–5/month. Good for automated daily withdrawals (instant UX).
-   - Trade-off: depends on a cloud provider being available.
+**Phase 1 — Tatum setup + `ChainGateway` interface** (~1–2 days, no new deps)
 
-2. **Ledger Nano X for cold + KMS for hot** (industry standard for custodial platforms)
-   - **Hot wallet** (KMS): holds ~1 week of expected payout volume. Automated signing of routine withdrawals.
-   - **Cold wallet** (your Ledger): holds the other 90%+ of platform reserves. Physical button-press required for every signature, so malware can't auto-drain it. Pulled out manually to sweep hot ↔ cold every week or two.
-   - Best security/UX balance. Most real platforms run this setup.
-   - Cost: $0 extra (you already own the Ledger) + KMS fees.
+The foundation. Define the contract, ship the mock + Tatum implementations, wire the DI binding. No real Tatum API calls beyond a health check.
 
-3. **Ledger only with batched withdrawals** (no KMS)
-   - All funds in the Ledger. Withdrawals queued; you sign them in batches once a day (or whenever you're at your computer).
-   - Cheapest and most secure. But user UX is slower — "withdrawal in up to 24h" instead of "instant".
-   - Works if Stakly's volume is low enough that manual ops is realistic.
-
-**For M9 (testnet)**: none of this matters. We use a plain `.env` seed. Even if it leaks, the keys it derives are testnet — worthless. The KMS / Ledger decision happens months from now when we're prepping the mainnet flip.
-
-### Scope (step-by-step, 7 phases)
-
-> Estimates are **focused solo dev time**, not calendar time. Crypto integration has a learning curve — calendar time may be 1.5–2× estimates. Each phase ships something usable before moving on; you commit per phase as before.
-
-**Phase 1 — `ChainGateway` adapter + Mock implementation** (~1–2 days, no new deps)
-
-The foundation. Define the contract that all chain operations flow through; ship a mock implementation that mimics current M7 behavior so nothing breaks while we build the real one.
-
-- [ ] **1.1** New `App\Services\Chain\ChainGateway` interface with methods:
-  - `deriveAddressForUser(int $userIndex): string` — given a derivation index, return the Tron address
-  - `getUsdtBalance(string $address): string` — chain-side USDT balance (BCMath string)
-  - `getNewDeposits(string $address, ?int $sinceBlock): array` — return USDT transfers TO this address since a given block; each item has `{tx_hash, from, amount, block_number, timestamp}`
-  - `sendUsdt(string $fromAddress, string $toAddress, string $amount, string $privateKey): string` — sign + broadcast, return tx hash
+- [ ] **1.1** Sign up at Tatum, generate sandbox + (later) production API keys. `.env`: `CHAIN_DRIVER=tatum`, `TATUM_API_KEY=...`, `TATUM_API_URL=https://api.tatum.io`, `CHAIN_NETWORK=nile`, `TATUM_WEBHOOK_SECRET=...`.
+- [ ] **1.2** New `App\Services\Chain\ChainGateway` interface with Tatum-shaped methods:
+  - `createCustodialWallet(int $userId): array{address: string, accountId: string}`
+  - `getUsdtBalance(string $accountId): string`
+  - `subscribeToAddress(string $address, string $webhookUrl): string` — returns subscription id
+  - `sendUsdt(string $fromAccountId, string $toAddress, string $amount): string` — returns tx hash
   - `getTransactionStatus(string $txHash): string` — `'pending' | 'confirmed' | 'failed'`
-  - `latestBlockNumber(): int` — current chain head
-- [ ] **1.2** New `App\Services\Chain\MockChainGateway implements ChainGateway`. Mimics M7's mock-address generation, returns 0 balance, empty deposit list, fake tx hashes. Deterministic per user index (same input → same output) so tests are stable.
-- [ ] **1.3** New `config/chain.php` with `driver`, TronGrid endpoint, USDT contract address, confirmations required, master seed env var.
-- [ ] **1.4** Register `ChainGateway` binding in `AppServiceProvider` driven by `config('chain.driver')` — `mock` for dev/test, `tron-grid` for testnet (Phase 3 will add the TronGrid binding).
-- [ ] **1.5** Refactor M7's `App\Support\MockTronAddress` and `CreateNewUser`: instead of calling `MockTronAddress::generate()`, call `app(ChainGateway::class)->deriveAddressForUser($user->id)`. Delete `MockTronAddress.php`.
-- [ ] **1.6** Update `users` migration: add `derivation_index BIGINT UNIQUE` column (auto-assigned at registration = max+1). This is the BIP44 leaf index.
-- [ ] **1.7** Tests:
-  - Interface contract test (every method returns the documented shape)
-  - Mock returns the same address for the same user_index twice (deterministic)
-  - DI binding selects the correct implementation based on `CHAIN_DRIVER` env
-- [ ] **1.8** Update M7's tests where they referenced `MockTronAddress`. Suite stays green.
+- [ ] **1.3** `App\Services\Chain\MockChainGateway` — deterministic outputs for tests (same address per user_id, fake tx hashes, no Tatum API calls). Used by `phpunit.xml` so CI stays offline.
+- [ ] **1.4** `App\Services\Chain\TatumChainGateway` — Laravel `Http::` wrapper. API-key header (`x-api-key`), retry on 429/5xx, timeout, structured error responses, every operation logs to `Log::channel('chain')`.
+- [ ] **1.5** `config/chain.php` — `driver`, `tatum_api_url`, `tatum_api_key`, `webhook_secret`, `tron_network`.
+- [ ] **1.6** `AppServiceProvider` DI binding via `config('chain.driver')` — `mock` for dev/test, `tatum` for prod.
+- [ ] **1.7** Tests: interface contract, mock determinism, `TatumChainGateway` against `Http::fake()` (happy path + 4xx + connection failure), DI binding selection.
 
-**Phase 2 — HD derivation (real keys from a seed)** (~3–5 days, 1 new dep)
+**Phase 2 — Per-user deposit addresses** (~2–3 days, no new deps)
 
-Real BIP32/39/44 derivation: master seed → unique private key + Tron address per user index. Mock-driver tests stay deterministic; the math underneath is now real.
+Real Tatum-managed wallets get created at user registration. The mock-address column is replaced with a real chain address.
 
-- [ ] **2.1** **Library discussion** before installing:
-  - **Option A**: `bitwasp/bitcoin-php` — mature, popular PHP library for BIP32/39/44 + ECDSA. ~5MB. Last released ~2024. Recommended.
-  - **Option B**: hand-rolled BIP32 using `simplito/elliptic-php` + `kornrunner/keccak`. Smaller surface, more code we maintain ourselves, more cryptographic risk.
-  - **Option C**: A Tron-specific PHP library (e.g., `iexbase/tron-api`) that bundles HD. Convenient but couples our HD layer to a possibly-stale Tron library.
-  - **My recommendation**: Option A — battle-tested for HD, separate from any Tron-specific code so we can swap Tron libraries independently. Tron's address encoding (keccak + base58check with version byte `0x41`) is small enough to write ourselves.
-- [ ] **2.2** New `App\Services\Chain\HdDerivation` helper class with:
-  - `mnemonicToSeed(string $mnemonic, string $passphrase = ''): string`
-  - `derivePrivateKey(string $seed, int $userIndex, bool $testnet = true): string` — BIP44 path `m/44'/195'/0'/0/{userIndex}`
-  - `privateKeyToTronAddress(string $privateKey): string` — Tron address derivation (keccak256 → last 20 bytes → prepend `0x41` → base58check encode)
-- [ ] **2.3** `MockChainGateway::deriveAddressForUser($userIndex)` now uses real HD derivation. Still "mock" in the sense of no chain RPC calls — but the addresses are real and reproducible from the seed.
-- [ ] **2.4** `.env` additions:
-  - `CHAIN_MASTER_SEED="abandon ability ... (12 words, dev only)"` — generate once via `php artisan chain:generate-seed` (Phase 2.5).
-  - `CHAIN_NETWORK=testnet`
-- [ ] **2.5** New `App\Console\Commands\ChainGenerateSeed` artisan command — generates a random BIP39 mnemonic + prints it for the user to copy into `.env`. **Never** writes to `.env` automatically.
-- [ ] **2.6** Migrate seeded data: drop dev users' `tron_address`, re-derive based on `derivation_index`.
-- [ ] **2.7** Tests:
-  - Same mnemonic + same index → same private key + address (deterministic, every time)
-  - Different indices → different addresses
-  - All generated addresses match the TRC20 regex `^T[1-9A-HJ-NP-Za-km-z]{33}$`
-  - **External test vector**: a specific known BIP39 mnemonic produces a specific known address (sanity check against `iancoleman.io/bip39` or equivalent)
+- [ ] **2.1** Migrate `users` table: add `tatum_account_id varchar(64) UNIQUE NULL`. Keep `tron_address` (now sourced from Tatum's response). Pre-launch migration — edit the existing `0001_01_01_000000_create_users_table.php` directly.
+- [ ] **2.2** Refactor `App\Actions\Fortify\CreateNewUser`: after the DB insert, call `$gateway->createCustodialWallet($user->id)`, store `address` → `tron_address`, `accountId` → `tatum_account_id`. Wrap in a transaction with rollback on Tatum failure — registration is not committed if the wallet can't be created.
+- [ ] **2.3** Delete `App\Support\MockTronAddress`. Refactor `UserFactory` to route through `app(ChainGateway::class)->createCustodialWallet(...)` — mock driver in tests means deterministic addresses, no Tatum calls.
+- [ ] **2.4** Update M7 tests that referenced `MockTronAddress`. Suite stays green on mock driver.
+- [ ] **2.5** Re-seed dev data: `sail artisan migrate:fresh --seed` — verify every user has a Tatum-generated address + account id. Platform user excluded from wallet creation (platform doesn't need a deposit address).
+- [ ] **2.6** Manual walkthrough: register a new user via the auth modal → check Tatum dashboard shows a new managed wallet → verify the address in our DB matches Tatum's.
 
-**Phase 3 — TronGrid client (real testnet calls)** (~5–7 days, possibly 1 new dep)
+**Phase 3 — Deposit detection via webhooks** (~2–3 days, no new deps)
 
-`TronGridGateway` implementation makes actual HTTP calls to TronGrid's Nile testnet endpoint. Read operations first (balances, transactions), then signing + broadcasting.
+Tatum's Address Events fire a webhook when USDT arrives at a managed wallet. We credit the ledger.
 
-- [ ] **3.1** **Pre-Phase setup** (USER ACTION):
-  - Sign up at `https://www.trongrid.io/dashboard` (free Basic plan)
-  - Generate 3 API keys
-  - Visit `https://nileex.io/join/getJoinPage` to claim testnet TRX
-  - Send testnet USDT to one of your dev addresses (faucet flow or DEX)
-- [ ] **3.2** **Library discussion**:
-  - **Option A**: Raw HTTP via Laravel's `Http::` facade. Maximum control, zero new deps. We assemble TRC20 transfers ourselves using Phase 2's signing primitives.
-  - **Option B**: `iexbase/tron-api` — bundles everything. Last meaningful update ~2–3 years ago; may have stale dependencies but probably still works.
-  - **My recommendation**: Option A. The TronGrid REST API is documented and stable; the only complex bit (signing) is already covered by Phase 2. Avoids a possibly-unmaintained dependency.
-- [ ] **3.3** New `App\Services\Chain\TronGridGateway implements ChainGateway`. All `ChainGateway` methods routed to TronGrid HTTP endpoints:
-  - `getUsdtBalance` → `triggerconstantcontract` calling USDT contract's `balanceOf(address)`
-  - `getNewDeposits` → `/v1/accounts/{address}/transactions/trc20` filtered by `min_timestamp` or `min_block`
-  - `sendUsdt` → build TRC20 transfer tx → sign locally (Phase 2 primitives) → broadcast via `/wallet/broadcasttransaction`
-  - `getTransactionStatus` → `/wallet/gettransactioninfobyid`
-  - `latestBlockNumber` → `/wallet/getnowblock`
-- [ ] **3.4** TronGrid HTTP client wrapper with API-key header (`TRON-PRO-API-KEY`), retry on 429/5xx, timeout, structured error responses.
-- [ ] **3.5** Config:
-  - `TRON_GRID_API_KEY=...`
-  - `TRON_GRID_ENDPOINT=https://nile.trongrid.io`
-  - `TRON_USDT_CONTRACT=...` (Nile testnet USDT contract address — verified at setup time)
-  - `CHAIN_DRIVER=tron-grid` to flip from mock to real
-- [ ] **3.6** Integration tests against Nile (marked `@group integration`, run separately from CI unit tests). Mock-based tests cover the same paths for CI speed.
-- [ ] **3.7** Manual walkthrough: spin up `php artisan tinker`, instantiate the gateway, query a known testnet address's USDT balance. Sanity check the math.
+- [ ] **3.1** Extend `CreateNewUser` (or a follow-up queued job): after wallet creation, call `$gateway->subscribeToAddress($user->tron_address, route('webhooks.tatum.deposit'))`. Store subscription id on the user.
+- [ ] **3.2** New `POST /webhooks/tatum/deposit` route — public (no `auth` middleware), CSRF-exempt, signature-verified.
+- [ ] **3.3** `TatumWebhookController`:
+  - Verify HMAC signature against `config('chain.webhook_secret')` using `hash_equals`.
+  - Parse payload: `{address, amount, asset, blockNumber, txId, type, chain}`.
+  - Look up user by `tron_address`. Unknown address → 200 + log warning (don't leak which addresses are ours via 404).
+  - Asset filter: only credit USDT events; skip native TRX, fee notifications, other tokens.
+  - Idempotency: `Wallet::deposit($user, $amount, reference: "tatum-deposit:{txId}")` — duplicate webhook deliveries are no-ops.
+  - Return 200 on success, 401 on signature mismatch (Tatum retries on non-2xx).
+- [ ] **3.4** `App\Console\Commands\ChainReconcile` — manual reconciliation command in case webhooks miss an event. Iterates users, queries `$gateway->getUsdtBalance($accountId)`, compares to `Wallet::balanceFor($user)`, surfaces gaps. Idempotent — re-running doesn't double-credit (uses the same `tatum-deposit:{txId}` references).
+- [ ] **3.5** Tests with mocked webhook payloads: valid signature credits, invalid signature 401, replay is no-op, unknown address 200+log, non-USDT asset 200+ignore, fee notifications ignored.
+- [ ] **3.6** End-to-end manual test on Nile: send testnet USDT from your wallet to one of our user's addresses → confirm webhook fires → ledger credited → `BalanceChip` updates on next nav.
 
-**Phase 4 — Deposit watcher** (~4–6 days, no new deps)
+**Phase 4 — Withdrawal worker (replaces M7's noop)** (~2–3 days, no new deps; Redis queue used)
 
-A background process that polls TronGrid every N seconds, detects new USDT arrivals at user addresses, and credits the ledger via `Wallet::deposit()`. This is the heart of the deposit flow — crypto has no "push" notification when funds arrive, you have to poll.
+Real withdrawal: user clicks Withdraw → queued job authorizes Tatum to sign + broadcast → webhook confirms → ledger and UI reflect the final state.
 
-- [ ] **4.1** New `chain_watch_cursors` migration:
-  ```sql
-  id, address (unique), last_checked_block, last_checked_at, created_at, updated_at
-  ```
-  Tracks how far we've scanned per address so we don't re-scan from genesis every cycle.
-- [ ] **4.2** New `App\Console\Commands\ChainWatchDeposits` artisan command:
-  - Locked: chunk through all users' addresses (e.g., 100 at a time) to respect TronGrid rate limit
-  - For each address: `getNewDeposits($address, $cursor->last_checked_block)` via gateway
-  - For each returned tx: skip if `tx.block > latestBlock - CONFIRMATIONS_REQUIRED` (still pending finality)
-  - For confirmed txs: lookup user by `tron_address` → `Wallet::deposit($user, $amount, reference: "chain-deposit:{$txHash}")` — idempotent via reference, so double-runs never double-credit
-  - Update cursor's `last_checked_block`
-  - Logs every action, alerts on failures
-- [ ] **4.3** Schedule in `routes/console.php` — `->everyMinute()->withoutOverlapping()`. (Or supervisor-managed daemon for sub-minute polling if needed.)
-- [ ] **4.4** Tests with MockChainGateway returning fake deposits:
-  - Single deposit → `Wallet::deposit` called with correct args
-  - Idempotency: re-running the watcher on the same data doesn't double-credit
-  - Confirmation gate: tx in block `latestBlock - 5` is skipped (need 19); tx in `latestBlock - 25` is processed
-  - Cursor advances after each successful run
-  - Multiple users in one batch
-- [ ] **4.5** End-to-end manual test on Nile: send testnet USDT to a dev user's derived address from your testnet wallet → run watcher → verify balance updates + history shows the deposit.
+- [ ] **4.1** New `withdrawals` migration: `id, user_id, destination_address, amount, status enum('pending'|'broadcast'|'confirmed'|'failed'), tx_hash NULL, wallet_transaction_id NULL FK, failed_reason NULL, requested_at, broadcast_at NULL, confirmed_at NULL, timestamps`.
+- [ ] **4.2** Replace `WalletController::withdrawStore` (currently M7's `Inertia::flash` noop):
+  - `WithdrawRequest` already validates (regex, min $10, ≤ balance, `decimal:0,2`) — keep as-is.
+  - Create `withdrawals` row with status `pending`.
+  - Dispatch `ProcessWithdrawal` job.
+  - Flash success toast ("Withdrawal received — usually completes in 1–2 minutes").
+- [ ] **4.3** `App\Jobs\ProcessWithdrawal` queued job:
+  - `User::lockForUpdate()`, re-verify balance ≥ amount (TOCTOU defense).
+  - `Wallet::withdraw($user, $amount, reference: "withdrawal:{$id}")` — debits the ledger; the withdrawals row stores the resulting `wallet_transaction_id`.
+  - Call `$gateway->sendUsdt($user->tatum_account_id, $destination, $amount)`.
+  - On broadcast success: update withdrawal → status `broadcast`, store `tx_hash`.
+  - On Tatum API failure: refund via `Wallet::deposit($user, $amount, reference: "withdrawal-refund:{$id}")`, set status `failed`, store reason.
+- [ ] **4.4** Webhook handler extension: also process **outbound** address events from our managed wallets. When a `broadcast` withdrawal's tx_hash appears in an event, transition to `confirmed` + set `confirmed_at`.
+- [ ] **4.5** New `/wallet/withdrawals` UI page — paginated list of recent withdrawals with status pill + Tronscan link for `broadcast`/`confirmed` ones. Reuses existing transaction-color conventions.
+- [ ] **4.6** Configure queue: `QUEUE_CONNECTION=redis` in `.env` (Redis already in Sail). Dev workflow: `sail artisan queue:work` in a second terminal. Production: supervisor or Horizon.
+- [ ] **4.7** Tests with `MockChainGateway`: happy path, refund on broadcast failure (conservation-of-money still holds), concurrent withdrawals can't double-spend, status transitions via webhook.
+- [ ] **4.8** Manual end-to-end on Nile: trigger a withdrawal in the UI → watch the job process → check Tatum dashboard for the outbound tx → verify Tronscan confirmation → UI updates to `confirmed`.
 
-**Phase 5 — Withdrawal worker (real, replaces M7's Option B noop)** (~5–7 days, no new deps; needs Redis queue)
+**Phase 5 — Polish + Nile smoke test** (~1–2 days, no new deps)
 
-Real withdrawal: user clicks Withdraw → queued job signs + broadcasts → status updates → ledger reflects. Replaces M7's flash-toast noop.
+Robustness + the documented path to mainnet.
 
-- [ ] **5.1** New `withdrawals` migration:
-  ```sql
-  id, user_id, destination_address, amount, status ('pending'|'broadcast'|'confirmed'|'failed'),
-  tx_hash NULL, wallet_transaction_id NULL FK, failed_reason NULL,
-  requested_at, broadcast_at NULL, confirmed_at NULL, created_at, updated_at
-  ```
-- [ ] **5.2** Replace `WalletController::withdrawStore`:
-  - Validate (already done — `WithdrawRequest`)
-  - Create `withdrawals` row with status `pending`
-  - Dispatch `ProcessWithdrawal` job to the queue
-  - Flash success toast ("Withdrawal received, processing — usually 1–2 minutes")
-- [ ] **5.3** New `App\Jobs\ProcessWithdrawal` queued job:
-  - Lock user row (`lockForUpdate`)
-  - Re-verify balance ≥ amount (defense against TOCTOU race)
-  - `Wallet::withdraw($user, $amount, reference: "withdrawal:{$withdrawalId}")` — debits the ledger; rolled back on later failure
-  - Call `ChainGateway::sendUsdt($from, $to, $amount, $signingKey)` — derive signing key from master seed on-the-fly
-  - On broadcast success: update withdrawal row → status `broadcast`, set `tx_hash`
-  - On broadcast failure: refund via `Wallet::deposit` with `reference: "withdrawal-refund:{$id}"`, set status `failed`
-- [ ] **5.4** New `App\Console\Commands\ChainWatchWithdrawals`:
-  - For each `broadcast` withdrawal: query `getTransactionStatus($txHash)`
-  - If confirmed: status `confirmed`, set `confirmed_at`
-  - If on-chain failure (rare but possible): status `failed`, refund the user
-  - Scheduled every minute
-- [ ] **5.5** Configure Laravel queue: `QUEUE_CONNECTION=redis` in `.env` (Redis already in Sail). Worker started via `php artisan queue:work` (Sail dev) / supervisor (prod).
-- [ ] **5.6** New `/wallet/withdrawals` UI page (small) showing pending/recent withdrawals with status + tx hash link to Tronscan.
-- [ ] **5.7** Tests:
-  - Job processes a valid withdrawal end-to-end (with mock gateway)
-  - Refund on broadcast failure (balance returns, ledger conservation holds)
-  - Race-condition: two concurrent withdrawals can't both spend the same balance
-  - Tx-status worker transitions `broadcast` → `confirmed` correctly
-  - Real Nile testnet test: actually broadcast a withdrawal, watch it confirm
-
-**Phase 6 — Sweeper** (~4–6 days, no new deps)
-
-Move USDT from individual user deposit addresses into a central platform "hot wallet" address. Without this, USDT accumulates on user addresses forever and the platform can't actually fund payouts.
-
-- [ ] **6.1** Decide sweep threshold (e.g., when address balance ≥ 100 USDT, or when address balance > daily expected payout × 0.5).
-- [ ] **6.2** Address platform's "hot wallet" address: derived from the same master seed at a reserved index (e.g., index 0 for hot, user indices start at 1). Stored in config.
-- [ ] **6.3** Pre-fund concern: Tron txns burn TRX (energy/bandwidth). User addresses won't have TRX. Two approaches:
-  - **Approach A**: Pre-fund each user address with ~1 TRX when first created (in `CreateNewUser`). Cheap on testnet, ~$0.30/user on mainnet. Burns a tiny amount of operating capital per user.
-  - **Approach B**: Tron fee delegation (a separate "fee-paying" transaction covers gas for the sweep). More complex, no per-user burn.
-  - **Recommendation**: Approach A for testnet + small launch. Approach B is a post-launch optimization once volume justifies it.
-- [ ] **6.4** New `App\Console\Commands\ChainSweepDeposits` artisan command:
-  - For each user address with on-chain balance ≥ threshold:
-    - Pre-fund TRX if needed (test for energy/bandwidth first)
-    - Sign + broadcast USDT transfer from user address → hot wallet
-    - Log sweep tx hash; don't touch the ledger (the user's balance is already credited from Phase 4 deposit watcher)
-- [ ] **6.5** Schedule daily or weekly (lower freq is fine; sweeping is operational, not user-facing).
-- [ ] **6.6** Tests with MockChainGateway. End-to-end manual test on Nile: deposit USDT to a user → wait for credit → trigger sweep → verify USDT moves to hot wallet on Tronscan.
-
-**Phase 7 — Polish + pre-mainnet checklist** (~3–5 days, no new deps)
-
-Robustness + the documented path from testnet to mainnet.
-
-- [ ] **7.1** Rate-limiting on TronGrid calls (cap to ~80% of free-tier daily budget to leave headroom).
-- [ ] **7.2** Circuit breaker: if TronGrid fails 5+ times in 60 sec, back off + alert via log. Switch to backup gateway if/when GetBlock is wired (post-MVP).
-- [ ] **7.3** Structured logging on every chain operation (`Log::channel('chain')`). Failures emit at `error` level.
-- [ ] **7.4** End-to-end smoke test on Nile: register 3 dev users, fund them via faucet → testnet USDT → derived addresses, watch the deposits land, create + cancel listings (escrow/release flow), withdraw, confirm everything balances. **This is the milestone gate** — if smoke test passes, M9 ships.
-- [ ] **7.5** Documentation: `docs/chain-runbook.md` (or in-code comments) covering:
-  - How to start the watcher / sweeper / queue worker locally
-  - Common failure modes + how to diagnose
-  - The mainnet migration checklist (config swap, hot wallet funding, etc.) — references Pre-launch gate below
-- [ ] **7.6** Final commit. Suggested message: `feat: chain integration on testnet (M9)`.
+- [ ] **5.1** Rate-limit Tatum API calls (cap to ~80% of the relevant tier budget — exact numbers locked once we have the support response).
+- [ ] **5.2** Circuit breaker: if Tatum fails 5+ times in 60s, back off + alert via `chain` log channel.
+- [ ] **5.3** Structured logging on every chain operation — request/response shape, latency, status, user id. PII-conscious (don't log full withdrawal destinations forever).
+- [ ] **5.4** Full smoke test on Nile: register 3 dev users → fund their addresses from the faucet → deposits land via webhook → create + cancel listings (escrow flow) → withdraw to a faucet wallet → confirm everything balances on-chain (Tronscan) and in the ledger (`SUM(wallet_transactions.amount)` per user = `users.usdt_balance`). **This is the milestone gate** — if smoke passes, M9 ships.
+- [ ] **5.5** Documentation: `docs/chain-runbook.md` — Tatum dashboard tour, webhook debugging, common failure modes, mainnet flip checklist (swap API key + chain config, fund the platform account, etc.). References the Pre-launch gate.
+- [ ] **5.6** Final commit. Suggested message: `feat: chain integration on testnet via Tatum (M9)`.
 
 ### Tools and services summary
 
@@ -357,22 +275,23 @@ What's added to the stack by M9:
 
 | Tool | Role | Where |
 |------|------|-------|
-| TronGrid (Basic, free) | Tron RPC node provider | External service |
-| Tron Nile testnet | Pretend Tron network | External |
-| `bitwasp/bitcoin-php` (Phase 2) | BIP32/39/44 HD derivation primitives | `composer require` |
+| Tatum — Custodial Managed Wallets API | Key management, signing, balance queries | External SaaS |
+| Tatum — Address Events / Webhooks | Deposit + outbound transaction notifications | External SaaS |
+| Tron Nile testnet | Testnet chain for M9 dev | External |
 | Laravel queues (Redis driver) | Async withdrawal processing | Already in Sail |
-| Tron's testnet faucet | Free testnet TRX + USDT | External |
-| `nileex.io/tronscan` | Block explorer for verifying our txns | External |
+| Tron testnet faucet | Free testnet TRX + USDT | External |
+| `nileex.io/tronscan` | Block explorer for verification | External |
 
-No paid subscriptions for M9. Mainnet costs (KMS, optional Tron node hosting) are deferred to the Pre-launch gate.
+No new composer packages. Tatum integration is HTTP calls via Laravel's `Http::` facade. Mainnet pricing decision deferred to the Pre-launch gate.
 
 ### Out of scope for M9 (explicitly deferred)
 
-- **Mainnet anything** — wallet, broadcasting, real money. Different milestone, different blockers.
-- **KMS / Ledger integration** — only env-based seed for M9. Custody hardening is its own decision.
-- **GetBlock backup** — TronGrid is sole provider during M9. Adapter is ready; second implementation lands when one is actually needed.
-- **Multi-chain** — Tron only. Ethereum / BSC / etc. are post-MVP if ever.
-- **Live balance push (WebSocket / SSE)** — page-load freshness via the existing `auth.user.usdt_balance` Inertia share is sufficient for v1.
+- **Mainnet anything** — different milestone, different blockers.
+- **Sweep / hot-wallet consolidation** — with Tatum's managed wallets, sweeps may not be needed (Tatum likely handles internal liquidity within their custody). Confirm in their docs before launch; if needed, add a Phase 6.
+- **GetBlock or any backup chain RPC** — Tatum is sole provider. The `ChainGateway` adapter makes a backup a future config change, not a v1 commitment.
+- **Multi-chain (BEP20)** — committed for v2, not in M9.
+- **Live balance push (WebSocket / SSE)** — page-load freshness via `auth.user.usdt_balance` Inertia share is sufficient for v1.
+- **Tatum's Virtual Accounts (off-chain ledger)** — `wallet_transactions` is already our ledger; using Tatum's would be a double source of truth.
 
 ---
 
@@ -392,7 +311,7 @@ User-facing wallet pages on top of the M3.5 ledger. v1 mocks the chain layer —
 
 - **Multi-page, not tabbed** — `/wallet`, `/wallet/deposit`, `/wallet/withdraw`, `/wallet/history`. Each sub-page carries a "← Back to wallet" link; no tab strip, no sidebar.
 - **Spendable balance only** in the UI — `usdt_balance` already nets out escrow holds. Held balance is derivable from the ledger if users ask.
-- **Mock TRC20 addresses** (v1) via `App\Support\MockTronAddress` (`T` + 33 base58 chars, no `0`/`O`/`I`/`l`). Real HD derivation replaces this at the pre-launch chain integration gate. UNIQUE constraint at DB level + collision retry in `CreateNewUser` (same `DB::transaction` savepoint pattern as username).
+- **Mock TRC20 addresses** (v1) via `App\Support\MockTronAddress` (`T` + 33 base58 chars, no `0`/`O`/`I`/`l`). Real Tatum-generated managed-custody addresses replace this in M9. UNIQUE constraint at DB level + collision retry in `CreateNewUser` (same `DB::transaction` savepoint pattern as username).
 - **Withdrawal = Option B** — form fully validates today (so all 422 paths are exercisable), but submit short-circuits with a Sonner info toast (`"Withdrawals will be enabled at launch — your balance is safe."`) + `back()`. No ledger write. At launch the notice is removed and the worker wires up. UX testable today, zero risk of real-money desync.
 - **`WalletTransactionResource` deliberate omissions** — `reference_id` (idempotency keys are internal plumbing — leaking exposes our naming convention) and `user_id` (implied by auth context for every endpoint). Tested at resource + HTTP boundary.
 - **`auth.user.usdt_balance` shared via Inertia middleware** as float (same `(float) $value` boundary convention as `ListingResource`). Refreshes every navigation since auth.user is re-shared on each request — `BalanceChip` always reflects current state without polling.
@@ -434,32 +353,33 @@ Required answers before mainnet wiring:
 
 ### Chain custody architecture (committed)
 
-**Path**: DIY custom integration. No managed custody service (no Tatum, no Moralis, no CryptoBot). We own keys, we run the infrastructure, we sign transactions. Eyes-open tradeoff: ~6–10 weeks of integration work vs ~1–2 weeks with a managed service; chosen for maximum self-custody, zero recurring service fees, zero counterparty risk at the custody layer.
+**Path**: Managed custody via **Tatum's Custodial Managed Wallets API**. Tatum holds per-user TRC20 private keys server-side; we orchestrate via REST + receive deposit notifications via webhooks. Eyes-open tradeoff: ~1–2 weeks of integration work vs ~6–10 weeks for the DIY path — chosen for solo-dev viability, bounded vendor risk (Tatum's key-export endpoint is our migration escape hatch), and multi-chain readiness (Tatum's unified API covers BEP20 v2 without a second integration).
 
-**Chain (v1)**: TRC20 (Tron USDT) only. Adding other chains is post-v1 work — would just mean adding a second `ChainGateway` implementation alongside the Tron one.
+**Chain (v1)**: TRC20 (Tron USDT) only. **Chain (v2)**: BEP20 (BSC USDT) committed for post-launch. Adding the second chain is a config + per-chain method-routing change at the gateway level — Tatum exposes the same API surface across chains.
 
-**Node provider**: **TronGrid** (TRON Foundation, official) as primary — most native, best Tron docs. Their free Basic tier is **100k requests/day + 3 API keys** which comfortably covers production at MVP scale (estimated usage ~20–30% of that budget at launch). Paid Developer/Team/Business tiers are listed as "Coming Soon" with no published prices yet; Custom enterprise is contact-only. **GetBlock** pre-configured as drop-in backup behind the `ChainGateway` adapter — swap is a config change, ~30 min. Both providers see only RPC calls, not app context. Long-term endgame: run our own Tron full node (~$200/mo VPS) once volume justifies it; no third party can cut us off then.
+**Custody model**: Tatum holds the keys; we hold the right to export them. The escape hatch makes "what if Tatum goes down or freezes us" a recovery question, not an existential one. Worst-case migration: export keys via Tatum's API → import into our own KMS or hardware wallet → swap `ChainGateway` implementation → operations resume with a different chain provider. ~1 day of work in a worst case, not weeks.
 
-**Master seed (custody)**: ours. BIP32/39/44 HD derivation produces unique deposit addresses per user. Master seed never touches a third party. Generated by us, stored by us (env var for dev/testnet, AWS KMS for production hot wallet, hardware-device-derived for production cold wallet).
+**Internal ledger**: Stays in our Postgres `wallet_transactions` table — same as M3.5. Tatum's "Virtual Accounts" feature is **not used**; we keep a single source of truth for balances and avoid two ledgers that could disagree.
 
-**Wallet architecture (production target)**:
-- **Cold wallet** — hardware device (Ledger / Trezor), holds bulk of platform reserves, signs only occasional large transfers. Offline-by-default.
-- **Hot wallet** — smaller balance for daily user withdrawals (~1 week of expected payout volume), seed stored in AWS KMS, signing happens server-side.
-- **User deposit addresses** — derived from master xPub, watched by our watcher service, swept into hot wallet on schedule.
-
-**Components to build at pre-launch**:
+**Components to build at M9 (pre-launch testnet phase)**:
 - `App\Services\Chain\ChainGateway` interface
-- `App\Services\Chain\TronGridGateway` implementation (using `iexbase/tron-api` or equivalent) + HD derivation library (e.g., `bitwasp/bitcoin-php` for BIP32)
-- `App\Services\Chain\GetBlockGateway` (drop-in backup, same interface)
-- **Watcher**: long-running Artisan command polling TronGrid for new deposits on user addresses. Idempotent (no double-credit), handles reorgs (waits N confirmations, typically 19 blocks on Tron), tracks last-checked block, resumable after crash.
-- **Sweeper**: scheduled command moving USDT from user deposit addresses into hot wallet. Handles Tron's energy/bandwidth model (each address needs TRX to pay for transfer; pre-fund or use fee delegation).
-- **Withdrawal worker**: queued Laravel job that signs + broadcasts USDT transfers from hot wallet. Sequencing on nonce, retry on stuck txs, monitoring for never-mined txs.
-- **Key storage**: AWS KMS (production hot), hardware device (production cold), env var (dev/testnet only).
-- **Cold-wallet sweep policy**: operational runbook for periodic hot → cold sweeps.
+- `App\Services\Chain\TatumChainGateway` implementation (Laravel `Http::` facade — no Tatum SDK, no Tron-specific PHP libraries)
+- `App\Services\Chain\MockChainGateway` for tests
+- `TatumWebhookController` — receives Tatum's Address Events for deposits + outbound confirmations
+- `App\Jobs\ProcessWithdrawal` — queued withdrawal worker authorizing Tatum to sign + broadcast
+- `App\Console\Commands\ChainReconcile` — periodic reconciliation in case webhooks miss events
 
-**Operational continuity**: provider-block risk is low for Tron specifically (gambling-friendly ecosystem, no known prohibited-use clauses) but the `ChainGateway` adapter makes it an operational annoyance, not existential. If TronGrid ever cuts us off, switching to GetBlock is a binding change; our keys, addresses, and funds are unaffected.
+**Components NOT needed (vs. the DIY path)**:
+- HD derivation library (Tatum derives)
+- Master seed in env / KMS (Tatum stores)
+- Tron-specific signing primitives — tronweb, `iexbase/tron-api`, BIP32/39/44 libraries (Tatum signs)
+- Polling deposit watcher (webhooks instead)
+- Sweeper / hot-wallet consolidation (Tatum likely handles internal liquidity — confirm pre-launch)
+- Hot/cold wallet split (single Tatum-managed pool)
 
-**Recurring cost**: $0/mo TronGrid free tier covers MVP launch + likely well beyond. ~$200/mo if we eventually run our own Tron node.
+**Operational continuity**: provider-block risk is the main concern. Mitigated by (a) the use-case inquiry filed in M9's open questions — written yes/no before we commit production volume, (b) key-export escape hatch, (c) the `ChainGateway` adapter that makes a provider swap a code-change, not a re-architecture. If Tatum ever cuts us off: export keys → migrate to self-custody or another managed provider → resume operations.
+
+**Recurring cost**: Custodial Managed Wallets API tier pricing — locked in pre-launch when load is known. Free during M9 testnet phase.
 
 ### App-level hardening (deferred from dev)
 
