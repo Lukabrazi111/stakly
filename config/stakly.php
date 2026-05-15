@@ -18,4 +18,23 @@ return [
 
     'platform_fee_rate' => env('STAKLY_PLATFORM_FEE_RATE', '0.10'),
 
+    /*
+    |--------------------------------------------------------------------------
+    | Game-API driver
+    |--------------------------------------------------------------------------
+    |
+    | Which `App\Services\GameApi\GameApi` implementation to bind. Used by
+    | `MatchSettlement::resolveDispute` to verify outcomes when players
+    | disagree (or when the 4h timeout fires with no agreement).
+    |
+    | v1: 'mock' only — `MockGameApi` returns deterministic results from
+    | match.id, with test helpers for the ManualReview branch. Real
+    | chess.com / Lichess adapters land in M8.
+    |
+    | Supported: 'mock'
+    |
+    */
+
+    'game_api_driver' => env('STAKLY_GAME_API_DRIVER', 'mock'),
+
 ];

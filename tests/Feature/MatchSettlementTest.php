@@ -138,3 +138,111 @@ test('settle flips match status to Settled and sets winner_user_id + settled_at'
         ->and($fresh->winner_user_id)->toBe($creator->id)
         ->and($fresh->settled_at)->not->toBeNull();
 });
+
+// ─── resolveDispute: confirmed branch ──────────────────────────────────────
+
+test('resolveDispute calls API and settles when confidence is Confirmed', function () {
+    [$creator, , , $match] = pendingMatchForSettlement();
+    $match->update(['status' => MatchStatus::Disputed, 'dispute_opened_at' => now()]);
+    mockGameApi()->forceWinner($creator->id);
+
+    MatchSettlement::resolveDispute($match);
+
+    $fresh = $match->fresh();
+
+    expect($fresh->status)->toBe(MatchStatus::Settled)
+        ->and($fresh->winner_user_id)->toBe($creator->id)
+        ->and($fresh->settled_at)->not->toBeNull()
+        ->and($fresh->api_resolved_at)->not->toBeNull()
+        ->and($fresh->api_response)->toBeArray()
+        ->and($fresh->api_response['driver'])->toBe('mock')
+        ->and($fresh->api_response['mode'])->toBe('forced');
+});
+
+// ─── resolveDispute: unknown branch ────────────────────────────────────────
+
+test('resolveDispute moves to ManualReview when confidence is Unknown', function () {
+    [$creator, $taker, , $match] = pendingMatchForSettlement();
+    $match->update(['status' => MatchStatus::Disputed, 'dispute_opened_at' => now()]);
+    mockGameApi()->forceUnknown();
+
+    MatchSettlement::resolveDispute($match);
+
+    $fresh = $match->fresh();
+
+    expect($fresh->status)->toBe(MatchStatus::ManualReview)
+        ->and($fresh->winner_user_id)->toBeNull()
+        ->and($fresh->settled_at)->toBeNull()
+        ->and($fresh->api_resolved_at)->not->toBeNull()
+        ->and($fresh->api_response)->toBeArray();
+
+    // Money stays escrowed.
+    expect((string) $creator->fresh()->usdt_balance)->toBe('400.000000');
+    expect((string) $taker->fresh()->usdt_balance)->toBe('400.000000');
+
+    expect(WalletTransaction::query()->where('reference_id', "match-payout:{$match->id}")->exists())->toBeFalse()
+        ->and(WalletTransaction::query()->where('reference_id', "match-fee:{$match->id}")->exists())->toBeFalse();
+});
+
+// ─── resolveDispute: idempotency on terminal states ────────────────────────
+
+test('resolveDispute is a no-op on already-Settled match', function () {
+    [$creator, , , $match] = pendingMatchForSettlement();
+    $match->update(['status' => MatchStatus::Disputed, 'dispute_opened_at' => now()]);
+    mockGameApi()->forceWinner($creator->id);
+
+    MatchSettlement::resolveDispute($match);
+    $balanceAfterFirst = $creator->fresh()->usdt_balance;
+
+    // Repeat — should short-circuit on the Settled status guard.
+    MatchSettlement::resolveDispute($match->fresh());
+    $balanceAfterSecond = $creator->fresh()->usdt_balance;
+
+    expect((string) $balanceAfterSecond)->toBe((string) $balanceAfterFirst);
+
+    // Still only one payout / fee row.
+    expect(WalletTransaction::query()->where('reference_id', "match-payout:{$match->id}")->count())->toBe(1)
+        ->and(WalletTransaction::query()->where('reference_id', "match-fee:{$match->id}")->count())->toBe(1);
+});
+
+test('resolveDispute is a no-op on already-ManualReview match', function () {
+    [, , , $match] = pendingMatchForSettlement();
+    $match->update(['status' => MatchStatus::ManualReview, 'dispute_opened_at' => now()]);
+    mockGameApi()->forceWinner($match->listing->user_id);
+
+    MatchSettlement::resolveDispute($match);
+
+    // ManualReview is terminal — no transition to Settled even though API
+    // would have returned a Confirmed winner. Admin tooling owns this state.
+    expect($match->fresh()->status)->toBe(MatchStatus::ManualReview)
+        ->and($match->fresh()->winner_user_id)->toBeNull();
+});
+
+// ─── resolveDispute: sanity guards ─────────────────────────────────────────
+
+test('resolveDispute throws on a Pending match (caller must transition to Disputed first)', function () {
+    [, , , $match] = pendingMatchForSettlement();
+    // Status is Pending by default — never transitioned to Disputed.
+
+    expect(fn () => MatchSettlement::resolveDispute($match))
+        ->toThrow(InvalidArgumentException::class);
+});
+
+// ─── resolveDispute: BCMath precision through API path ─────────────────────
+
+test('resolveDispute preserves BCMath precision on awkward stake values', function () {
+    [$creator, , , $match] = pendingMatchForSettlement(stake: '123.45');
+    $match->update(['status' => MatchStatus::Disputed, 'dispute_opened_at' => now()]);
+    mockGameApi()->forceWinner($creator->id);
+
+    MatchSettlement::resolveDispute($match);
+
+    // Pot = 246.90, fee = 24.69, payout = 222.21.
+    // Creator: $500 - $123.45 (held) + $222.21 (payout) = $598.76.
+    expect(bccomp((string) $creator->fresh()->usdt_balance, '598.760000', 6))->toBe(0);
+
+    $payout = WalletTransaction::query()
+        ->where('reference_id', "match-payout:{$match->id}")
+        ->firstOrFail();
+    expect(bccomp($payout->amount, '222.210000', 6))->toBe(0);
+});

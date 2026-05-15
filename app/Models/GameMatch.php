@@ -32,6 +32,8 @@ class GameMatch extends Model
         'dispute_opened_at',
         'dispute_opened_by',
         'settled_at',
+        'api_response',
+        'api_resolved_at',
     ];
 
     protected function casts(): array
@@ -42,6 +44,8 @@ class GameMatch extends Model
             'taker_confirmed_outcome' => MatchOutcome::class,
             'dispute_opened_at' => 'datetime',
             'settled_at' => 'datetime',
+            'api_response' => 'array',
+            'api_resolved_at' => 'datetime',
         ];
     }
 

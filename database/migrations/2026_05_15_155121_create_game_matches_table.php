@@ -68,6 +68,13 @@ return new class extends Migration
             // on Eloquent's update timestamp semantics.
             $table->timestamp('settled_at')->nullable();
 
+            // Audit trail for game-API resolution (Phase 4 onwards). Stores
+            // the raw response from the GameApi driver — mock today, real
+            // chess.com / Lichess in M8. Useful for admin review of
+            // ManualReview matches and for debugging disputed settlements.
+            $table->jsonb('api_response')->nullable();
+            $table->timestamp('api_resolved_at')->nullable();
+
             $table->timestamps();
 
             // Postgres doesn't auto-index FK referencing columns; index manually.

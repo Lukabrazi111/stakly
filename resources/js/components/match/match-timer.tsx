@@ -28,6 +28,7 @@ export function MatchTimer({ deadline }: MatchTimerProps) {
 
     useEffect(() => {
         const id = window.setInterval(() => setNow(Date.now()), 1000);
+
         return () => window.clearInterval(id);
     }, []);
 

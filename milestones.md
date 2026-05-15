@@ -165,6 +165,47 @@ When the specialist joins, the live questions to resolve are: **provider** (Tatu
 
 ---
 
+## M11 — Controller Refactor to Actions Pattern
+
+**Scheduled after M6 ships, before M8 (real chess.com / Lichess) lands.** Pure Actions pattern — no package (`lorisleiva/laravel-actions` not adopted), no Repositories. Just plain PHP classes organized by domain under `app/Actions/<Domain>/`.
+
+### Motivation
+
+Controllers (`GameMatchController`, `WalletController`, `ListingController`) have grown into business-logic-holders rather than thin dispatchers. `GameMatchController::confirm` alone owns: route binding, FormRequest validation, policy gate, transaction, race-check, sentinel mapping, post-commit dispute resolution, toast flashing. That's five concerns in one method. The split is overdue and gets worse with M8 — when chess.com / Lichess calls become queued jobs, we'd otherwise duplicate the dispute-resolution logic across controller and job. One Action class callable from both surfaces fixes this.
+
+### Locked design decisions (2026-05-16)
+
+- **No package.** Plain PHP classes. The package's main value-add (use-as-controller / use-as-job / use-as-command via traits) isn't load-bearing for Stakly until M8 introduces queued jobs — and even then, calling `app(SomeAction::class)->handle(...)` from both contexts is one line either way.
+- **No Repositories.** Eloquent IS the repository in this codebase (queries live on models / scopes / `with(...)` calls). Adding a Repository layer would just be indirection without payoff.
+- **Method name: `handle()`** — matches Laravel queue job convention, least cognitive load.
+- **Invocation: container-resolved via constructor injection.** Controllers method-inject the action: `public function take(TakeRequest $request, Listing $listing, TakeListingAction $action) { return $action->handle($request->user(), $listing); }`. Makes deps explicit and tests can swap via `app()->bind(TakeListingAction::class, ...)`.
+- **Wallet stays as a primitive at `App\Services\Wallet`.** It's not an Action — it's the ledger writer that Actions compose. Splitting it into N tiny `DepositAction` / `HoldAction` / `PayoutAction` classes would lose the "single source of money writes" invariant enforced by `WalletTest.php` (`balance == SUM(transactions)`). Same reasoning keeps `App\Services\GameApi\*` as primitives — they're external-API adapters, not use-case actions.
+- **`MatchSettlement` becomes Actions.** Its two static methods (`settle`, `resolveDispute`) are use-case-shaped — they compose Wallet primitives into business operations. Becomes `SettleMatchAction` and `ResolveDisputeAction` under `app/Actions/GameMatch/`.
+
+### Scope
+
+- [ ] **11.1** Create `app/Actions/<Domain>/` directories: `Listing/`, `GameMatch/`, `Wallet/` (the Wallet/ folder is for wallet-flow actions like `RecordDepositAction` once M9 chain integration lands — not for the existing `Wallet` primitive).
+- [ ] **11.2** Extract from `ListingController`: `CreateListingAction`, `CancelListingAction`. Leave `index` / `create` / `show` in the controller (they're read-only thin wrappers).
+- [ ] **11.3** Extract from `GameMatchController`: `TakeListingAction`, `ConfirmOutcomeAction`, `OpenDisputeAction`. Each owns the transaction + race-check + sentinel resolution that currently lives in the controller. Controller methods shrink to 3-5 lines.
+- [ ] **11.4** Convert `MatchSettlement::settle` → `SettleMatchAction::handle`, `MatchSettlement::resolveDispute` → `ResolveDisputeAction::handle`. Delete the old `MatchSettlement` shell.
+- [ ] **11.5** Extract from `App\Console\Commands\ListingsExpire`: `ExpireListingsAction` (the artisan command's body becomes a single Action call). Same refactor for any other current artisan commands.
+- [ ] **11.6** Wallet UI controllers (`WalletController`) — most methods are read-only or short. Only `withdrawStore` has logic worth extracting (and it's currently a no-op short-circuit). Defer this controller's refactor to whenever the withdraw flow becomes real (post-M9).
+- [ ] **11.7** Update existing tests — most should keep working unchanged (they hit the controller routes). Add a few service-level tests directly on Action classes for the more complex ones (`ConfirmOutcomeAction`, `ResolveDisputeAction`).
+- [ ] **11.8** Update CLAUDE.md "Application Structure & Architecture" section to document the convention, so future-me / future-AI doesn't re-introduce business logic in controllers.
+
+### Why "after M6, before M8" specifically
+
+- **After M6** because refactoring code we're still actively writing means re-doing the same extract twice. M6 Phase 6 (match list + integrations) and Phase 7 (timeouts + polish) are still adding controller methods — let those settle first.
+- **Before M8** because M8 introduces real chess.com / Lichess API calls that will be queued jobs. With Actions in place, the same `ResolveDisputeAction` runs from both the controller (manual `openDispute`) and the queued job — no duplication. Doing M11 after M8 means writing the duplication first then deleting it.
+
+### Out of scope for M11 (defer)
+
+- DTOs / Value Objects per Action input. Current pattern (typed positional arguments) is fine.
+- `Repository` layer. Eloquent is the repository.
+- Adopting `lorisleiva/laravel-actions` package. If the manual pattern proves insufficient (e.g. we end up writing the same controller-to-action plumbing 10 times), revisit.
+
+---
+
 ## M6 — Match Flow (mock) **(next)**
 
 The missing core loop: take listing → match created → both players play off-platform → return to confirm outcome → money settles. Real chess.com / Lichess outcome verification is M8; M6 uses a mocked game-API for the dispute tiebreaker so the milestone is self-contained.
@@ -261,20 +302,31 @@ Phase 5 (settlement service) folded in here so the agree-path moves real money e
 
 **Test count: 259 / 1273 (was 236 / 1209 end of Phase 2 — +23 tests / +64 assertions in Phase 3).**
 
-**Phase 4 — Dispute path + mock game-API** **(next)** (~2–3 days, no new deps)
+**Phase 4 — Dispute path + mock game-API** ✅ **shipped 2026-05-16** (~half day, no new deps)
 
-- [ ] **4.1** `App\Services\GameApi\GameApi` interface — `getMatchResult(GameMatch $match): GameApiResult`.
-- [ ] **4.2** `App\Services\GameApi\GameApiResult` value object — `winner_user_id`, `confidence` (`'confirmed'` | `'unknown'`), `raw_response` (array, for audit).
-- [ ] **4.3** `App\Services\GameApi\MockGameApi` — returns a winner deterministically based on `Match::id` (so tests are reproducible). Configurable via test helpers to force "unknown" for the ManualReview branch.
-- [ ] **4.4** `config/match.php` — `game_api_driver` (`'mock'` for v1). DI binding in `AppServiceProvider`.
-- [ ] **4.5** `App\Services\MatchSettlement::resolveDispute(GameMatch $match)` — calls `GameApi`, settles if `confirmed`, else moves to `ManualReview`.
-- [ ] **4.6** "Open dispute" button on match page (visible during `Pending` status).
-- [ ] **4.7** `GameMatchController::openDispute` (POST `/matches/{match}/dispute`) — transitions match to `Disputed`, dispatches resolution synchronously (queue job in M8 when real APIs land).
-- [ ] **4.8** Tests: dispute opens, mock API queried, settlement happens with API winner, ManualReview branch (UI placeholder, money stays locked, deferred resolution flow).
+- [x] **4.1** `App\Services\GameApi\GameApi` interface — `getMatchResult(GameMatch $match): GameApiResult`.
+- [x] **4.2** `App\Services\GameApi\GameApiResult` readonly value object — `winner_user_id`, `confidence` (`App\Enums\GameApiConfidence` enum: `Confirmed` | `Unknown`), `raw_response` (array, persisted to `game_matches.api_response` for audit).
+- [x] **4.3** `App\Services\GameApi\MockGameApi` — winner picked deterministically by `match.id` parity (even=creator, odd=taker). Test helpers `forceWinner(int)`, `forceUnknown()`, `reset()` for targeted scenarios. Singleton-bound so forced state persists across the request.
+- [x] **4.4** Config goes in `config/stakly.php` under `game_api_driver` (not a separate `config/match.php` — less file proliferation, matches existing `platform_fee_rate` location). DI binding in `AppServiceProvider::register` resolves the driver via `match` expression and throws on unknown values.
+- [x] **4.5** `MatchSettlement::resolveDispute(GameMatch $match)` — re-fetches under lock, idempotent on terminal states (Settled, ManualReview), throws if not Disputed. Persists `api_response` + `api_resolved_at` before branching so audit survives even if settlement throws. Confirmed → delegates to `settle()` (savepoints handle nesting). Unknown → flips to ManualReview, money stays locked.
+- [x] **4.6** "Open dispute" inline link on match page (`OpenDisputeButton` component) — gated on `myConfirmedOutcome !== null`, so the player must make their own claim first. Subordinate styling (small text + alert icon) keeps the cooperative path primary. Confirmation Dialog warns that API result is final and money moves immediately.
+- [x] **4.7** `GameMatchController::openDispute` (POST `/matches/{match}/dispute`, named `matches.openDispute`) — auth-gated, lockForUpdate transition Pending → Disputed (records `dispute_opened_by`), then calls `resolveDispute` outside the transaction. Same `postDisputeResolutionSentinel` helper as the auto-dispute path so toasts stay consistent.
+- [x] **4.8** Auto-dispute path also wired to immediate API resolution — when both players make conflicting claims via `confirm()`, controller flips to Disputed inside the transaction, then calls `resolveDispute` after commit. Same flat structure as openDispute (no nested transactions).
+- [x] **4.9** Migration: added `api_response` jsonb + `api_resolved_at` timestamptz to `game_matches`. Edited the existing migration in place (pre-launch rule).
+- [x] **4.10** Tests: 18 new (5 in `MatchSettlementTest` for `resolveDispute`, 10 in `GameMatchOpenDisputeTest` for the manual route, 3 updated + new in `GameMatchConfirmTest` for the auto-dispute flow). Covers Confirmed/Unknown branches, idempotency on terminal states, sanity guard (Pending throws), BCMath precision through API path, race-safety, toast assertions.
+- [x] **4.11** `mockGameApi()` global helper in `tests/Pest.php` — resolves the singleton, asserts driver type, calls `reset()` to clear forced state from prior tests in the same process.
 
-**Phase 5 — Settlement service** ✅ folded into Phase 3 (above) so the agree-path is end-to-end testable in one commit.
+**Bonus additions:**
+- Updated dispute placeholder banner copy on match page (was "ships in next phase" — now describes async resolution for the M8 case).
+- Added two new toast sentinels (`settled-by-api`, `manual-review`) to `confirmRedirect` so the confirm-then-disagree flow can flash the right post-resolution message.
 
-**Phase 6 — Match list page + profile + listing integration** (~1–2 days, no new deps)
+**ManualReview placeholder tracker.** With the mock driver, no production match will ever land in ManualReview (the mock only returns `Unknown` when forced in tests). When real chess.com / Lichess adapters land in M8 and the first ManualReview match hits prod (game not found, ambiguous, abandoned), the next deliverable is **admin resolution UI**: list ManualReview matches, let admin pick a winner or refund, write through `MatchSettlement::settle` or a new `refundDispute` method. Tracked here rather than as a separate milestone since it's tightly coupled to M8 going live with a real API.
+
+**277 tests / 1345 assertions (was 259 / 1273 end of Phase 3 — +18 tests / +72 assertions).**
+
+**Phase 5 — Settlement service** ✅ folded into Phase 3 so the agree-path is end-to-end testable in one commit.
+
+**Phase 6 — Match list page + profile + listing integration** **(next)** (~1–2 days, no new deps)
 
 - [ ] **6.1** `/matches` page — your active + past matches, status filter chips, pagination 12/page (Spatie query-builder pattern from `/listings`).
 - [ ] **6.2** Profile page (`/users/{username}`): "Match history" section — replace empty state with paginated last-N matches (winner, opponent, stake, date). Public, no PII beyond what's already exposed.
@@ -338,6 +390,24 @@ User-facing wallet pages on top of the M3.5 ledger. v1 mocks the chain layer —
 **Deferred — after M9.**
 
 Profile settings, chess.com / Lichess account linking flow with ownership verification (UI only).
+
+### Prerequisite: `Drawn` outcome support
+
+**Must land before M8 swaps in real chess.com / Lichess adapters.** Surfaced 2026-05-16 while reviewing M6 Phase 4 with the user — the current `MatchOutcome` enum is `Won | Lost` only, but real chess games end in draws (stalemate, threefold repetition, 50-move rule, agreement, time-out vs insufficient material). Without a `Drawn` branch, the real API will return draw results that our settlement code has no handler for.
+
+**Locked design (2026-05-16):**
+
+- Add `MatchOutcome::Drawn` to the enum.
+- Settlement on draw: **refund both stakes via `Wallet::release`** (not `Wallet::payout` — no winner). No platform fee on draws — refund-only flows shouldn't be revenue events. This stays consistent with the M6 conservation invariant: `-A_stake + -B_stake + +A_release + +B_release = 0`.
+- Frontend: add a third "Draw" button alongside "I won" / "I lost" in `ConfirmButtons`. Mirror agreement (both Drawn) → settle as draw. Disagreement (one Drawn vs one Won/Lost) → auto-dispute, API arbitrates.
+- `GameApi` driver returns `Drawn` as a third confidence-or-status value. Either:
+  - (a) extend `GameApiConfidence` enum with `Drawn` case, OR
+  - (b) add a `is_draw: bool` flag to `GameApiResult` and keep `confidence` as `Confirmed | Unknown`.
+  - **Pick (a)** — simpler, single source of truth. Three cases instead of two.
+- `MockGameApi`: add `forceDraw()` test helper alongside `forceWinner()` / `forceUnknown()`.
+- New tests: agree-on-draw settles as refund; disagree-with-draw goes to API; API returns Drawn → both refund.
+
+**Out of scope for the prereq:** rake on draws (stays at zero), draw-by-agreement before the game is played (separate "mutual cancel" feature), per-game-type draw rules (Lichess draw conditions slightly differ from chess.com — handle when adapter lands).
 
 ---
 

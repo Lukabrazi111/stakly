@@ -4,6 +4,7 @@ import type { ReactNode } from 'react';
 import { useEffect } from 'react';
 import { ConfirmButtons } from '@/components/match/confirm-buttons';
 import { MatchTimer } from '@/components/match/match-timer';
+import { OpenDisputeButton } from '@/components/match/open-dispute-button';
 import { SettlementSummary } from '@/components/match/settlement-summary';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { useInitials } from '@/hooks/use-initials';
@@ -54,14 +55,17 @@ export default function MatchShow({ match }: MatchShowProps) {
 
     // Polling: refresh the match resource every 8s while Pending so the
     // "waiting for opponent" view updates without manual refresh. Stops
-    // automatically when status flips to a terminal state. Only reloads
-    // the `match` prop — cheap, doesn't reset the rest of the page.
-    // WebSocket layer (Reverb / Pusher) deferred to M10 — see milestones.md.
+    // automatically when status flips to a terminal state. `only: ['match']`
+    // is a partial reload — no navigation, scroll position is preserved
+    // implicitly (Inertia v3 dropped the explicit `preserveScroll` option
+    // for reload calls). WebSocket layer (Reverb / Pusher) deferred to M10.
     useEffect(() => {
-        if (match.status !== 'pending') return;
+        if (match.status !== 'pending') {
+            return;
+        }
 
         const id = window.setInterval(() => {
-            router.reload({ only: ['match'], preserveScroll: true });
+            router.reload({ only: ['match'] });
         }, 8000);
 
         return () => window.clearInterval(id);
@@ -116,6 +120,15 @@ export default function MatchShow({ match }: MatchShowProps) {
                             myConfirmedOutcome={myConfirmedOutcome}
                             opponentConfirmedOutcome={opponentConfirmedOutcome}
                         />
+                        {/* Escape hatch — only shown after the player has
+                            made their own claim. Disputing without claiming
+                            first is structurally weird and would clutter the
+                            initial decision. */}
+                        {myConfirmedOutcome !== null && (
+                            <div className="border-border/60 mt-5 flex justify-center border-t pt-5">
+                                <OpenDisputeButton matchId={match.id} />
+                            </div>
+                        )}
                     </section>
                 )}
 
@@ -136,12 +149,12 @@ export default function MatchShow({ match }: MatchShowProps) {
                     <section className="border-destructive/40 bg-destructive/5 mb-6 rounded-2xl border p-6">
                         <h2 className="font-display text-foreground mb-2 text-lg font-semibold">
                             {match.status === 'disputed'
-                                ? 'Match under review'
+                                ? 'Resolving via game API'
                                 : 'Manual review pending'}
                         </h2>
                         <p className="text-muted-foreground text-sm">
                             {match.status === 'disputed'
-                                ? 'You and your opponent disagree on the outcome. The full game-API resolution flow ships in the next phase — your stakes remain safely escrowed in the meantime.'
+                                ? 'This match is being resolved via the official game API. It usually completes in seconds — refresh the page if it doesn’t update shortly.'
                                 : 'The game API could not determine a winner. An admin will review this match manually. Your stake stays in escrow until then.'}
                         </p>
                     </section>

@@ -29,6 +29,10 @@ Route::middleware(['auth', 'verified'])->group(function () {
     // their claim freely while match is Pending; once both confirm, the match
     // resolves (Settled or Disputed) and further confirms are blocked.
     Route::post('/matches/{match}/confirm', [GameMatchController::class, 'confirm'])->name('matches.confirm');
+
+    // M6 Phase 4 — escalate to game-API resolution. Either participant can
+    // open a dispute during Pending; the API winner is authoritative.
+    Route::post('/matches/{match}/dispute', [GameMatchController::class, 'openDispute'])->name('matches.openDispute');
 });
 
 Route::get('/listings/{listing}', [ListingController::class, 'show'])->name('listings.show');

@@ -216,38 +216,65 @@ test('both confirm with taker winning settles correctly', function () {
     expect((string) $taker->fresh()->usdt_balance)->toBe('580.000000');
 });
 
-// ─── Both confirm + disagree → dispute ──────────────────────────────────────
+// ─── Both confirm + disagree → auto-dispute → API resolves ──────────────────
 
-test('both confirm Won → dispute (no settlement, no money moves)', function () {
+test('both confirm Won → auto-dispute → API resolves to creator', function () {
     [$creator, $taker, , $match] = pendingMatch();
+    mockGameApi()->forceWinner($creator->id);
 
     $this->actingAs($creator)->postJson(route('matches.confirm', $match), ['outcome' => 'won']);
     $this->actingAs($taker)->postJson(route('matches.confirm', $match), ['outcome' => 'won']);
 
     $fresh = $match->fresh();
 
-    expect($fresh->status)->toBe(MatchStatus::Disputed)
-        ->and($fresh->winner_user_id)->toBeNull()
-        ->and($fresh->settled_at)->toBeNull()
-        ->and($fresh->dispute_opened_at)->not->toBeNull();
+    // Match auto-disputed (dispute_opened_at set), then API resolved to
+    // Settled in the same request.
+    expect($fresh->status)->toBe(MatchStatus::Settled)
+        ->and($fresh->winner_user_id)->toBe($creator->id)
+        ->and($fresh->settled_at)->not->toBeNull()
+        ->and($fresh->dispute_opened_at)->not->toBeNull()
+        ->and($fresh->api_resolved_at)->not->toBeNull()
+        ->and($fresh->api_response)->toBeArray();
 
-    // Balances unchanged from post-hold state.
-    expect((string) $creator->fresh()->usdt_balance)->toBe('400.000000');
+    // Pot = $200, fee = $20 (10%), winner payout = $180.
+    expect((string) $creator->fresh()->usdt_balance)->toBe('580.000000');
     expect((string) $taker->fresh()->usdt_balance)->toBe('400.000000');
-
-    // No payout / fee ledger rows.
-    expect(WalletTransaction::query()->where('reference_id', "match-payout:{$match->id}")->exists())->toBeFalse()
-        ->and(WalletTransaction::query()->where('reference_id', "match-fee:{$match->id}")->exists())->toBeFalse();
 });
 
-test('both confirm Lost → dispute', function () {
+test('both confirm Lost → auto-dispute → API resolves to taker', function () {
     [, , , $match] = pendingMatch();
     [$creator, $taker] = [$match->listing->user, $match->taker];
+    mockGameApi()->forceWinner($taker->id);
 
     $this->actingAs($creator)->postJson(route('matches.confirm', $match), ['outcome' => 'lost']);
     $this->actingAs($taker)->postJson(route('matches.confirm', $match), ['outcome' => 'lost']);
 
-    expect($match->fresh()->status)->toBe(MatchStatus::Disputed);
+    expect($match->fresh()->status)->toBe(MatchStatus::Settled)
+        ->and($match->fresh()->winner_user_id)->toBe($taker->id);
+});
+
+test('both confirm + API unknown → ManualReview, money stays locked', function () {
+    [$creator, $taker, , $match] = pendingMatch();
+    mockGameApi()->forceUnknown();
+
+    $this->actingAs($creator)->postJson(route('matches.confirm', $match), ['outcome' => 'won']);
+    $this->actingAs($taker)->postJson(route('matches.confirm', $match), ['outcome' => 'won']);
+
+    $fresh = $match->fresh();
+
+    expect($fresh->status)->toBe(MatchStatus::ManualReview)
+        ->and($fresh->winner_user_id)->toBeNull()
+        ->and($fresh->settled_at)->toBeNull()
+        ->and($fresh->dispute_opened_at)->not->toBeNull()
+        ->and($fresh->api_resolved_at)->not->toBeNull();
+
+    // Both stakes still escrowed — no payout, no fee, balances unchanged
+    // from post-hold state.
+    expect((string) $creator->fresh()->usdt_balance)->toBe('400.000000');
+    expect((string) $taker->fresh()->usdt_balance)->toBe('400.000000');
+
+    expect(WalletTransaction::query()->where('reference_id', "match-payout:{$match->id}")->exists())->toBeFalse()
+        ->and(WalletTransaction::query()->where('reference_id', "match-fee:{$match->id}")->exists())->toBeFalse();
 });
 
 // ─── Late-confirm change flips the agreement ────────────────────────────────
@@ -292,8 +319,23 @@ test('settlement flashes a settled toast', function () {
         ]);
 });
 
-test('disagreement flashes a disputed toast', function () {
+test('disagreement → API confirmed → settled-by-api toast', function () {
     [$creator, $taker, , $match] = pendingMatch();
+    mockGameApi()->forceWinner($creator->id);
+
+    $this->actingAs($creator)->postJson(route('matches.confirm', $match), ['outcome' => 'won']);
+
+    $this->actingAs($taker)
+        ->postJson(route('matches.confirm', $match), ['outcome' => 'won'])
+        ->assertInertiaFlash('toast', [
+            'type' => 'success',
+            'message' => 'Players disagreed — game API resolved the match.',
+        ]);
+});
+
+test('disagreement → API unknown → manual-review toast', function () {
+    [$creator, $taker, , $match] = pendingMatch();
+    mockGameApi()->forceUnknown();
 
     $this->actingAs($creator)->postJson(route('matches.confirm', $match), ['outcome' => 'won']);
 
@@ -301,6 +343,6 @@ test('disagreement flashes a disputed toast', function () {
         ->postJson(route('matches.confirm', $match), ['outcome' => 'won'])
         ->assertInertiaFlash('toast', [
             'type' => 'warning',
-            'message' => 'Both players disagree — match flagged for review.',
+            'message' => 'Game API could not determine a winner — match flagged for admin review.',
         ]);
 });

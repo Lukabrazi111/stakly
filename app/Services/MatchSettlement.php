@@ -2,9 +2,11 @@
 
 namespace App\Services;
 
+use App\Enums\GameApiConfidence;
 use App\Enums\MatchStatus;
 use App\Models\GameMatch;
 use App\Models\User;
+use App\Services\GameApi\GameApi;
 use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
 
@@ -90,6 +92,94 @@ class MatchSettlement
                 'winner_user_id' => $winner->id,
                 'settled_at' => now(),
             ]);
+        });
+    }
+
+    /**
+     * Resolve a Disputed match via the configured `GameApi` driver.
+     *
+     * Confidence === Confirmed → settle in favour of the API winner (delegates
+     * to `settle()` so payout / fee logic isn't duplicated). The API winner
+     * is authoritative — it overrides whatever players self-reported.
+     *
+     * Confidence === Unknown → flip status to ManualReview and leave money
+     * locked. v1 has no admin tooling; ManualReview matches sit until an
+     * admin tools milestone lands. The placeholder is tracked in milestones.md.
+     *
+     * Idempotent: terminal states (Settled, ManualReview) short-circuit. The
+     * row lock + status guard serialise concurrent dispute-resolution
+     * attempts (e.g. both players hit "Open dispute" simultaneously, or the
+     * timeout job fires while a manual dispute is already in flight).
+     *
+     * Audit: the driver's raw response is persisted to `game_matches.api_response`
+     * along with `api_resolved_at`, written before settlement so we have a
+     * record even if settlement throws.
+     *
+     * Throws InvalidArgumentException if called on a non-Disputed match (sanity
+     * check — callers must transition to Disputed before invoking) or if the
+     * driver returns a winner who isn't a participant (defense in depth).
+     */
+    public static function resolveDispute(GameMatch $match): void
+    {
+        DB::transaction(function () use ($match) {
+            $locked = GameMatch::query()->lockForUpdate()->findOrFail($match->id);
+
+            // Idempotency: terminal states are no-ops. Covers double-clicks,
+            // a manual dispute racing the timeout job, etc.
+            if ($locked->status === MatchStatus::Settled
+                || $locked->status === MatchStatus::ManualReview) {
+                return;
+            }
+
+            // Sanity guard. Callers must flip status to Disputed before
+            // invoking this — keeping that contract explicit prevents a future
+            // caller from accidentally short-circuiting the player-confirm
+            // window by jumping straight to API resolution from Pending.
+            if ($locked->status !== MatchStatus::Disputed) {
+                throw new InvalidArgumentException(
+                    "resolveDispute called on match {$locked->id} with status {$locked->status->value}; expected Disputed."
+                );
+            }
+
+            $locked->load(['listing.user', 'taker']);
+
+            $result = app(GameApi::class)->getMatchResult($locked);
+
+            // Persist audit trail before branching so it's saved even if
+            // settlement throws (rolls back inside the transaction, but the
+            // shape of failures is observable in logs / re-attempts).
+            $locked->update([
+                'api_response' => $result->raw_response,
+                'api_resolved_at' => now(),
+            ]);
+
+            if ($result->confidence === GameApiConfidence::Unknown) {
+                $locked->update(['status' => MatchStatus::ManualReview]);
+
+                return;
+            }
+
+            $winnerId = $result->winner_user_id;
+            $creatorId = $locked->listing->user_id;
+            $takerId = $locked->taker_user_id;
+
+            // Defense in depth: the driver shouldn't return a non-participant,
+            // but if it does we'd rather throw than pay a stranger.
+            if ($winnerId !== $creatorId && $winnerId !== $takerId) {
+                throw new InvalidArgumentException(
+                    "GameApi returned winner_user_id {$winnerId} which is not a participant of match {$locked->id}."
+                );
+            }
+
+            $winner = $winnerId === $creatorId
+                ? $locked->listing->user
+                : $locked->taker;
+
+            // Delegate to settle(). Nested transaction is handled by Laravel
+            // savepoints. settle() will see status=Disputed (not Settled),
+            // post the payout + fee, and flip to Settled — atomically with
+            // our outer audit-trail update.
+            self::settle($locked, $winner);
         });
     }
 }

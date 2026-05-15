@@ -14,6 +14,7 @@ use App\Models\Listing;
 use App\Services\MatchSettlement;
 use App\Services\Wallet;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
@@ -190,6 +191,19 @@ class GameMatchController extends Controller
             return 'recorded';
         });
 
+        // Auto-dispute path → trigger API resolution OUTSIDE the confirm
+        // transaction. Keeps the call structure flat (no nested savepoints)
+        // and lets `resolveDispute` run its own row lock cleanly.
+        //
+        // With the mock driver this is synchronous and fast. When real
+        // chess.com / Lichess adapters land in M8, this becomes a queued
+        // job and the user sees a "Dispute opened — awaiting resolution"
+        // toast immediately, with the page polling for the final state.
+        if ($resolution === 'disputed') {
+            MatchSettlement::resolveDispute($match->fresh());
+            $resolution = $this->postDisputeResolutionSentinel($match->fresh());
+        }
+
         return $this->confirmRedirect($match, $resolution);
     }
 
@@ -227,6 +241,86 @@ class GameMatchController extends Controller
     }
 
     /**
+     * Manual escalation to game-API resolution during the player-confirm
+     * window. Either participant can open a dispute — the API winner is
+     * authoritative and overrides player self-reports.
+     *
+     * Note on the abuse vector: opening a dispute before the opponent has
+     * had a chance to confirm IS allowed (the 4h timeout would otherwise
+     * be the only path forward). The mitigation is that the API is the
+     * source of truth — escalating early doesn't bias the outcome.
+     * Spammy / malicious dispute behaviour falls under future anti-abuse
+     * tooling (deferred per CLAUDE.md).
+     *
+     * Race-safety:
+     *   - Opponent's confirm landing first → match flips to Settled or
+     *     Disputed before our row lock; we return 'too-late' toast.
+     *   - Two players opening dispute simultaneously → second caller's
+     *     row lock waits, sees status=Disputed, returns 'too-late'.
+     *   - Race with the timeout job (Phase 7) → same lockForUpdate +
+     *     status guard; whichever runs second is a no-op.
+     */
+    public function openDispute(Request $request, GameMatch $match): RedirectResponse
+    {
+        $user = $request->user();
+
+        abort_if($user->cannot('openDispute', $match), 403);
+
+        $opened = DB::transaction(function () use ($match, $user) {
+            $locked = GameMatch::query()->lockForUpdate()->findOrFail($match->id);
+
+            if ($locked->status !== MatchStatus::Pending) {
+                return false;
+            }
+
+            $locked->update([
+                'status' => MatchStatus::Disputed,
+                'dispute_opened_at' => now(),
+                'dispute_opened_by' => $user->id,
+            ]);
+
+            return true;
+        });
+
+        if (! $opened) {
+            Inertia::flash('toast', [
+                'type' => 'info',
+                'message' => __('This match has already been resolved.'),
+            ]);
+
+            return back();
+        }
+
+        // Resolve via API outside the dispute-flip transaction. Mock is sync;
+        // M8 swaps in queued jobs for real chess.com / Lichess calls.
+        MatchSettlement::resolveDispute($match->fresh());
+        $resolution = $this->postDisputeResolutionSentinel($match->fresh());
+
+        Inertia::flash('toast', match ($resolution) {
+            'settled-by-api' => ['type' => 'success', 'message' => __('Dispute resolved — game API determined the winner.')],
+            'manual-review' => ['type' => 'warning', 'message' => __('Dispute opened — game API could not determine a winner. Match flagged for admin review.')],
+            default => ['type' => 'warning', 'message' => __('Dispute opened — awaiting resolution.')],
+        });
+
+        return back();
+    }
+
+    /**
+     * Translate a post-`resolveDispute` match status into the toast sentinel
+     * the controller will flash. Mock driver always returns Confirmed (so we
+     * land on `settled-by-api`); the `manual-review` and fallback `disputed`
+     * branches will start firing once real adapters are in (M8).
+     */
+    private function postDisputeResolutionSentinel(GameMatch $match): string
+    {
+        return match ($match->status) {
+            MatchStatus::Settled => 'settled-by-api',
+            MatchStatus::ManualReview => 'manual-review',
+            default => 'disputed',
+        };
+    }
+
+    /**
      * Map a transaction-resolution sentinel to a flash toast + redirect.
      */
     private function confirmRedirect(GameMatch $match, string $resolution): RedirectResponse
@@ -242,6 +336,8 @@ class GameMatchController extends Controller
 
         Inertia::flash('toast', match ($resolution) {
             'settled' => ['type' => 'success', 'message' => __('Both players agreed — match settled.')],
+            'settled-by-api' => ['type' => 'success', 'message' => __('Players disagreed — game API resolved the match.')],
+            'manual-review' => ['type' => 'warning', 'message' => __('Game API could not determine a winner — match flagged for admin review.')],
             'disputed' => ['type' => 'warning', 'message' => __('Both players disagree — match flagged for review.')],
             'no-change' => ['type' => 'info', 'message' => __("You've already chosen that outcome.")],
             default => ['type' => 'success', 'message' => __('Confirmation recorded.')],
