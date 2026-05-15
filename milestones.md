@@ -15,6 +15,7 @@ Frontend-first MVP. Build UI against real DB infrastructure + seeded fake data; 
 - **M6** — Match Flow (mock) **(next)**
 - **M8** — Settings / Linked Accounts (chess.com / Lichess) [deferred]
 - **M9** — Chain Integration [deferred — pending crypto-payment-gateway specialist]
+- **M10** — Match Chat [deferred — post-launch v1.1]
 
 > Only the current milestone keeps a detailed task list. Future milestones expand when started. Completed milestones live at the top as short summaries.
 
@@ -101,7 +102,7 @@ Captured so the intent isn't lost. **Don't pull these into M4.** Each is a real 
 
 - **Step-up auth at listing creation.** Email-verified is already enforced via middleware. *All-listings* 2FA = friction that trains users to dismiss prompts. Better: step-up only for **high-stake** listings (e.g., `stake_amount > $500`) via Fortify's `confirm-password` (already plumbed for settings). Optionally also step-up on suspicious signals (new device fingerprint, rapid-fire creates). Decision deferred until post-launch when actual abuse patterns are visible.
 - **Max active listings cap.** Wallet already caps total *capital exposure* naturally (can't escrow > balance). Explicit count cap is anti-marketplace-spam only. Suggested cap: **5** (not 2 — a player wanting one Blitz + one Rapid + one Classical listing hits 2 immediately). Consider tiered caps later (KYC'd users get higher cap).
-- **Pause / resume listing.** New `paused` status on `ListingStatus` enum; `scopeOpen` excludes it. **Soft pause** (hide from board, keep escrow held) is the right v1 flavor — atomic, no extra wallet ops, no new dispute surface. Hard pause (release escrow, re-hold on resume) adds wallet churn for marginal UX benefit. Owner-only via `ListingPolicy::pause`.
+- **Pause / resume listing.** New `paused` status on `ListingStatus` enum; `scopeOpen` excludes it. **Soft pause** (hide from board, keep escrow held) is the chosen flavor (locked 2026-05-15) — atomic, no extra wallet ops, no new dispute surface. Hard pause (release escrow, re-hold on resume) was considered and rejected (wallet churn for marginal UX benefit). Owner-only via `ListingPolicy::pause`.
 
 ---
 
@@ -135,6 +136,32 @@ The platform layers below are deliberately provider-agnostic and won't change wh
 - **`App\Support\MockTronAddress`** — continues to generate placeholder addresses for `users.tron_address` until the integration lands.
 
 When the specialist joins, the live questions to resolve are: **provider** (Tatum / Fireblocks / BitGo / Coinbase Developer Platform / DIY) → **custody model** (BYO-key vs vendor-managed) → **key storage** (env / AWS Secrets Manager / KMS / vendor-held) → **TRC20 gas strategy** (sweep-on-deposit + staked TRX vs alternatives) → **testnet shakedown plan** → **mainnet flip checklist**. Background research and prior planning iterations live in git history if useful as a starting point.
+
+---
+
+## M10 — Match Chat (post-launch v1.1)
+
+**Deferred — post-launch v1.1.** Chat between matched players so they can coordinate (start time, time control, rematch suggestions, dispute discussion).
+
+### Why deferred (not built in M6)
+
+- Real scope: real-time messaging needs WebSockets, persistence, moderation tooling — easily a 1–2 week milestone on its own.
+- Abuse surface: free-form chat enables off-platform deal-making (evades the 10% rake), harassment, easier sandbagging coordination, and money-laundering negotiation. Stakly needs real abuse data before designing the right anti-abuse mechanisms.
+- Support burden: every dispute then requires reading chat logs.
+
+### Locked design intent (when M10 lands)
+
+- **Structured messages first, free-form text later.** Quick-action buttons like *"Suggest start time"* / *"Request rematch"* / *"Disconnected — restart?"* before letting users type freely. Massively reduces abuse surface vs. open chat.
+- **Anti-abuse instrumentation from day one:**
+  - Off-platform deal-detection (regex for crypto wallet addresses, payment-method names, Telegram handles in messages → flag for review).
+  - Per-user rate limits.
+  - Report-user button → dispute pipeline.
+  - All chat logs auditable by support.
+- **Cancel fee discussion** — the user raised this during M6 planning. Current architecture already prevents bait-listings (cancel releases escrow with no game played, no harm). A cancel fee would discourage *frequent* cancellation but isn't anti-collusion. Worth revisiting if abuse data shows churning patterns.
+
+### Deferred infrastructure (related)
+
+- **Real-time push layer** (Laravel Reverb or Pusher) — decided 2026-05-15 to defer until 2+ live features need it. M6 Phase 3 uses Inertia v3 polling for live match-page updates, which is sufficient for one-page-at-a-time use cases. M10 would be the natural trigger for introducing Reverb.
 
 ---
 
@@ -199,18 +226,22 @@ Match.Disputed --[game-API can't determine]--> Match.ManualReview (shell only)
 - [ ] **2.4** Route: `POST /listings/{listing}/take` (auth + verified middleware).
 - [ ] **2.5** Tests: happy path, can't take own listing, can't take taken listing, insufficient balance, idempotency on retried POST, concurrent take request loses cleanly with a `ValidationException`.
 
-**Phase 3 — Match page + confirmation UI** (~2–3 days, no new deps)
+**Phase 3 — Confirm UI + change-once logic + polling** (~2–3 days, no new deps)
 
-- [ ] **3.1** Route: `GET /matches/{match}` (auth + verified, `GameMatchPolicy::view`).
-- [ ] **3.2** `GameMatchController::show` — `Inertia::render('match/show', ...)` with both players' usernames + avatars, stakes, status, current confirmations, action buttons. PII-safe via a new `GameMatchResource`.
-- [ ] **3.3** React page `resources/js/pages/match/show.tsx` — opponent card, your stake, status pill, two big buttons ("I won" / "I lost") for the current user, opponent's confirmation status shown as text. Deferred polish: live status updates (manual refresh fine for v1).
-- [ ] **3.4** `GameMatchController::confirm` (POST `/matches/{match}/confirm`):
-  - Records the player's claim into `creator_confirmed_outcome` / `taker_confirmed_outcome`.
-  - If both confirmed and agree → trigger Phase 5 settlement.
-  - If both confirmed and disagree → set status to `Disputed`, trigger Phase 4 game-API.
-  - Otherwise → wait, flash a toast.
-- [ ] **3.5** New `components/match/` folder for sub-components.
-- [ ] **3.6** Tests: confirm flow, both-agree triggers settlement, mismatch triggers dispute, can't confirm twice, can't confirm someone else's match.
+Phase 1 + 2 already shipped 3.1 (route), 3.2 (controller `show` method), and a basic 3.3 (match page renders opponent + stakes + status pill). Phase 3 adds the interactive confirm layer + live updates.
+
+- [ ] **3.1** Edit existing `game_matches` migration (pre-launch convention): add `creator_confirmation_locked` boolean (default false) + `taker_confirmation_locked` boolean (default false). `migrate:fresh --seed`.
+- [ ] **3.2** `App\Http\Requests\GameMatch\ConfirmRequest` — body: `outcome` (Won|Lost). Authorization via `GameMatchPolicy::confirm` (Pending only, participant only).
+- [ ] **3.3** `GameMatchController::confirm` (POST `/matches/{match}/confirm`):
+  - Records the player's claim. If new outcome differs from existing AND `*_confirmation_locked` is false → set new outcome + flip lock to true. If already locked → 422 with "You've already used your one allowed change."
+  - Both confirmed + agree → triggers Phase 5 settlement.
+  - Both confirmed + disagree → status → `Disputed`, triggers Phase 4 game-API resolution.
+  - Otherwise → flash a toast, stays in `Pending`.
+- [ ] **3.4** Confirm Dialog on match page — "I won" / "I lost" buttons each open a Dialog (same pattern as Take). First-confirmation copy: *"You can change your mind once after this — pick carefully."* Change-confirmation copy: *"This is your one allowed change."*
+- [ ] **3.5** Disable confirm buttons + show "You've used your one change" caption when `*_confirmation_locked` is true.
+- [ ] **3.6** Inertia v3 polling on match page while in `Pending` status — every 8s, refresh the match resource. Stops on terminal state (`Settled` / `Disputed` / `ManualReview`). Replaces the "manual refresh" placeholder noted in Phase 2. **WebSocket layer (Reverb / Pusher) deferred** until 2+ live features need it — see M10 deferred infrastructure note.
+- [ ] **3.7** New `components/match/` folder for sub-components (confirm-buttons, status-banner, opponent-confirmation-state, etc.).
+- [ ] **3.8** Tests: confirm flow happy path, change-once flow (allowed, then locked), agree → settlement triggered, disagree → dispute triggered, can't change after lock (422), repeat-same-outcome is a no-op (doesn't lock), can't confirm someone else's match, polling refresh returns fresh match state.
 
 **Phase 4 — Dispute path + mock game-API** (~2–3 days, no new deps)
 
