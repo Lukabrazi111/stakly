@@ -1,0 +1,167 @@
+<?php
+
+use App\Enums\MatchOutcome;
+use App\Enums\MatchStatus;
+use App\Models\GameMatch;
+use App\Models\Listing;
+use App\Models\User;
+use Carbon\CarbonInterface;
+use Illuminate\Database\QueryException;
+
+// ─── Model casts ────────────────────────────────────────────────────────────
+
+test('status casts to the MatchStatus enum', function () {
+    $match = GameMatch::factory()->create();
+
+    expect($match->status)->toBe(MatchStatus::Pending);
+});
+
+test('confirmed-outcome columns cast to MatchOutcome enum (when set)', function () {
+    $match = GameMatch::factory()->create([
+        'creator_confirmed_outcome' => MatchOutcome::Won,
+        'taker_confirmed_outcome' => MatchOutcome::Lost,
+    ]);
+
+    expect($match->creator_confirmed_outcome)->toBe(MatchOutcome::Won)
+        ->and($match->taker_confirmed_outcome)->toBe(MatchOutcome::Lost);
+});
+
+test('confirmed-outcome columns are null by default', function () {
+    $match = GameMatch::factory()->create();
+
+    expect($match->creator_confirmed_outcome)->toBeNull()
+        ->and($match->taker_confirmed_outcome)->toBeNull();
+});
+
+test('datetime columns cast to Carbon instances', function () {
+    $match = GameMatch::factory()->disputed()->settled()->create();
+
+    expect($match->dispute_opened_at)->toBeInstanceOf(CarbonInterface::class)
+        ->and($match->settled_at)->toBeInstanceOf(CarbonInterface::class);
+});
+
+// ─── Relations ──────────────────────────────────────────────────────────────
+
+test('listing relation resolves', function () {
+    $match = GameMatch::factory()->create();
+
+    expect($match->listing)->toBeInstanceOf(Listing::class);
+});
+
+test('taker relation resolves to the right user', function () {
+    $taker = User::factory()->create();
+    $match = GameMatch::factory()->create(['taker_user_id' => $taker->id]);
+
+    expect($match->taker)->toBeInstanceOf(User::class)
+        ->and($match->taker->id)->toBe($taker->id);
+});
+
+test('winner relation resolves when set, null when unset', function () {
+    $winner = User::factory()->create();
+    $settled = GameMatch::factory()->settled($winner)->create();
+    $pending = GameMatch::factory()->create();
+
+    expect($settled->winner->id)->toBe($winner->id)
+        ->and($pending->winner)->toBeNull();
+});
+
+test('disputeOpener relation resolves when set', function () {
+    $opener = User::factory()->create();
+    $match = GameMatch::factory()->disputed($opener)->create();
+
+    expect($match->disputeOpener->id)->toBe($opener->id);
+});
+
+test('listing has a gameMatch reverse relation (1:1)', function () {
+    $match = GameMatch::factory()->create();
+
+    expect($match->listing->gameMatch->id)->toBe($match->id);
+});
+
+test('user has a gameMatchesAsTaker relation', function () {
+    $taker = User::factory()->create();
+    $match1 = GameMatch::factory()->create(['taker_user_id' => $taker->id]);
+    $match2 = GameMatch::factory()->create(['taker_user_id' => $taker->id]);
+    GameMatch::factory()->create();  // unrelated, different taker
+
+    expect($taker->gameMatchesAsTaker)->toHaveCount(2)
+        ->and($taker->gameMatchesAsTaker->pluck('id')->all())
+        ->toEqualCanonicalizing([$match1->id, $match2->id]);
+});
+
+// ─── Schema invariants ──────────────────────────────────────────────────────
+
+test('listing_id is unique on game_matches (1:1 enforced at DB)', function () {
+    $listing = Listing::factory()->taken()->create();
+    GameMatch::factory()->create(['listing_id' => $listing->id]);
+
+    expect(fn () => GameMatch::factory()->create(['listing_id' => $listing->id]))
+        ->toThrow(QueryException::class);
+});
+
+// ─── Policy: view ───────────────────────────────────────────────────────────
+
+test('listing creator can view the match', function () {
+    $match = GameMatch::factory()->create();
+
+    expect($match->listing->user->can('view', $match))->toBeTrue();
+});
+
+test('match taker can view the match', function () {
+    $match = GameMatch::factory()->create();
+
+    expect($match->taker->can('view', $match))->toBeTrue();
+});
+
+test('non-participant cannot view the match', function () {
+    $match = GameMatch::factory()->create();
+    $stranger = User::factory()->create();
+
+    expect($stranger->can('view', $match))->toBeFalse();
+});
+
+// ─── Policy: confirm (Pending only) ─────────────────────────────────────────
+
+test('participant can confirm a Pending match', function () {
+    $match = GameMatch::factory()->create();
+
+    expect($match->taker->can('confirm', $match))->toBeTrue()
+        ->and($match->listing->user->can('confirm', $match))->toBeTrue();
+});
+
+test('participant cannot confirm a non-Pending match', function (string $factoryState) {
+    $match = GameMatch::factory()->{$factoryState}()->create();
+
+    expect($match->taker->can('confirm', $match))->toBeFalse()
+        ->and($match->listing->user->can('confirm', $match))->toBeFalse();
+})->with(['disputed', 'settled', 'manualReview']);
+
+test('non-participant cannot confirm even on Pending', function () {
+    $match = GameMatch::factory()->create();
+    $stranger = User::factory()->create();
+
+    expect($stranger->can('confirm', $match))->toBeFalse();
+});
+
+// ─── Policy: openDispute (Pending only) ─────────────────────────────────────
+
+test('participant can open dispute on Pending', function () {
+    $match = GameMatch::factory()->create();
+
+    expect($match->taker->can('openDispute', $match))->toBeTrue()
+        ->and($match->listing->user->can('openDispute', $match))->toBeTrue();
+});
+
+test('participant cannot open dispute on non-Pending', function (string $factoryState) {
+    $match = GameMatch::factory()->{$factoryState}()->create();
+
+    expect($match->taker->can('openDispute', $match))->toBeFalse()
+        ->and($match->listing->user->can('openDispute', $match))->toBeFalse();
+})->with(['disputed', 'settled', 'manualReview']);
+
+test('non-participant cannot open dispute even on Pending', function () {
+    $match = GameMatch::factory()->create();
+    $stranger = User::factory()->create();
+
+    expect($stranger->can('openDispute', $match))->toBeFalse();
+});

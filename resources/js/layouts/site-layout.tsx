@@ -8,20 +8,20 @@ import { useFlashToast } from '@/hooks/use-flash-toast';
 
 const defaultMarqueeItems: MarqueeItem[] = [
     {
-        label: 'Grand Opening',
-        value: 'Use code STAKLY30 for 30% off your first match',
+        label: 'Skill staking',
+        value: 'Stake USDT on your own results',
     },
     {
-        label: 'Verified Results',
-        value: 'Every match resolved via official game API',
+        label: 'USDT escrow',
+        value: 'Stakes locked the moment a listing is created',
     },
     {
-        label: 'Instant Payouts',
-        value: 'Win and get paid in seconds, not days',
+        label: 'Auto-refund',
+        value: 'Unmatched listings refund on expiry',
     },
     {
-        label: 'Global',
-        value: 'Available across EU, CIS, and worldwide',
+        label: '1v1 chess',
+        value: 'Find an opponent at your skill level',
     },
 ];
 

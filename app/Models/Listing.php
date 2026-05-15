@@ -11,6 +11,7 @@ use Illuminate\Database\Eloquent\Casts\AsEnumCollection;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class Listing extends Model
 {
@@ -47,6 +48,16 @@ class Listing extends Model
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
+    }
+
+    /**
+     * 1:1 with the match created when this listing is taken. Null while
+     * the listing is still Open / Cancelled / Expired. UNIQUE FK at the DB
+     * level enforces the 1:1 relationship.
+     */
+    public function gameMatch(): HasOne
+    {
+        return $this->hasOne(GameMatch::class);
     }
 
     /**

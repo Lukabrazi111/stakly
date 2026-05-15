@@ -315,6 +315,10 @@ Required answers before mainnet wiring:
 
 > No traditional banking / payment processor in scope — Stakly is **crypto-end-to-end** (USDT deposits, USDT withdrawals, USDT-denominated platform revenue). The only fiat touchpoint is the operating company's own expenses (taxes, legal), which is part of the jurisdiction decision (#2), not a user-facing gate.
 
+### Admin tooling (planned for pre-launch)
+
+- **Filament for the admin panel.** Install when admin needs become real (first ManualReview match requiring human resolution, first dispute needing a manual refund, first moderation case) — likely one milestone before launch. First-class Spatie roles + permissions integration; Spatie is already installed. Trade-off accepted: admin lives at `/admin/*` on Livewire + Alpine + Filament's Tailwind config, separate from the Inertia + React user app. Admin uses Filament's defaults — does not share Stakly's pink/purple design system.
+
 ### App-level hardening (deferred from dev)
 
 Small code-level cleanups noticed during M3–M4 development. Not blocking until we're approaching a real deployment, but they must land before the first non-developer touches the platform.
