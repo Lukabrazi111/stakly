@@ -12,9 +12,9 @@ Frontend-first MVP. Build UI against real DB infrastructure + seeded fake data; 
 - **M4** — Listing Detail + Create Flow ✅
 - **M5** — User Profile ✅
 - **M7** — Wallet UI ✅
-- **M9** — Chain Integration (testnet) **(next)**
-- **M6** — Match Flow (mock) [deferred — after M9]
-- **M8** — Settings / Linked Accounts (chess.com / Lichess) [deferred — after M9]
+- **M6** — Match Flow (mock) **(next)**
+- **M8** — Settings / Linked Accounts (chess.com / Lichess) [deferred]
+- **M9** — Chain Integration [deferred — pending crypto-payment-gateway specialist]
 
 > Only the current milestone keeps a detailed task list. Future milestones expand when started. Completed milestones live at the top as short summaries.
 
@@ -70,7 +70,7 @@ Append-only Postgres ledger (`wallet_transactions`) is now the source of truth f
 - **Append-only enforcement at both layers**: no `updated_at` column, `UPDATED_AT = null` on the `WalletTransaction` model — query log assertions (test 3.6) prove `UPDATE` never hits the ledger.
 - **Conservation of money**: holds + releases + payouts + fees in a complete match flow sum to 0 (test 3.7). Money is redistributed, never created or destroyed inside a match.
 - **Nested-transaction rule**: `Wallet::hold` etc. open their own `DB::transaction` internally, but callers can wrap a larger transaction around them (e.g., M4 "create listing + `Wallet::hold`" must commit or roll back as one unit). Laravel nests via savepoints — safe in either direction.
-- **`ChainGateway` adapter + Tatum managed-custody + TRC20** locked in M9 / pre-launch gate; M3.5 contains zero chain code.
+- **Chain integration deferred to M9; provider TBD with a specialist developer.** M3.5 contains zero chain code regardless of which provider lands.
 
 ---
 
@@ -122,184 +122,148 @@ Public read-only player profiles at `/users/{username}`. Schema (`username` + `b
 
 ---
 
-## M9 — Chain Integration (testnet) **(next)**
+## M9 — Chain Integration
 
-The first real touch of crypto. Builds the entire deposit / withdrawal pipeline against **Tron testnet (Nile)** via **Tatum's Custodial Managed Wallets API**. Tatum holds the per-user TRC20 keys server-side; we orchestrate via REST. Free testnet money, real chain behavior — we exercise the full flow end-to-end before any mainnet flip. The mainnet migration plan stays in the **Pre-launch gate** section at the bottom.
+**Deferred — pending crypto-payment-gateway specialist.**
 
-After M9, the remaining work before launch is M6 (match settlement) + M8 (linked accounts) + the mainnet flip checklist.
+Real on-chain TRC20 USDT deposits and withdrawals. Provider, custody model, key management, gas strategy, and architecture all TBD — to be designed with a specialist developer joining the project later.
 
-### Why M9 now (strategic)
+The platform layers below are deliberately provider-agnostic and won't change when chain integration lands:
 
-Locked-in pivot from the original M6 → M8 → pre-launch order. Reasoning: chain integration is the highest-anxiety unknown in the project, and de-risking it on testnet (where mistakes cost nothing) is more valuable now than another UI milestone. M6 and M8 are deferred but not dropped — they still gate launch.
+- **Internal ledger** (`wallet_transactions`, M3.5) — append-only, idempotent via `reference_id`, source of truth for `users.usdt_balance`. Whatever provider is picked, it will call `Wallet::deposit` on confirmed deposits and `Wallet::withdraw` from a queued withdrawal worker.
+- **Wallet UI** (M7) — overview, deposit page (currently shows a `MockTronAddress`), withdraw form (validates fully, short-circuits on submit). Real per-user addresses replace the mocks; the withdraw POST handler swaps the short-circuit for a real worker dispatch.
+- **`App\Support\MockTronAddress`** — continues to generate placeholder addresses for `users.tron_address` until the integration lands.
 
-### Architectural decision: managed custody via Tatum
-
-Stakly outsources chain custody to **Tatum's Custodial Managed Wallets API**. Tatum generates and holds the private keys for per-user TRC20 deposit addresses; we never see or manage them. Withdrawals are authorized via API calls — Tatum signs and broadcasts. Deposits arrive at Tatum-managed addresses; we receive webhook notifications when they confirm.
-
-**Tatum handles:**
-- TRC20 deposit address generation (one per user, server-side keys)
-- Address Events webhooks (deposit + outbound notifications, no polling needed)
-- Transaction signing + broadcasting (withdrawals)
-- Balance queries against the chain
-- Multi-chain unified API — BEP20 v2 reuses the same integration shape
-
-**Stakly retains:**
-- The internal Postgres ledger (`wallet_transactions`) — already shipped in M3.5. Tatum's "Virtual Accounts" feature is **not** used; we own the ledger to avoid a double source of truth.
-- User balance authority (`users.usdt_balance` + `App\Services\Wallet`).
-- All match flow / listings / escrow / payouts logic — entirely Tatum-agnostic.
-
-**Eyes-open tradeoffs:**
-- **Vendor dependency**: Tatum's API uptime gates deposits and withdrawals. Mitigated by Tatum's key-export feature — if we ever need to leave, we can export keys and migrate to self-custody or another managed provider.
-- **Recurring cost**: Custodial Managed Wallets API tier pricing — pending support inquiry. Free during dev/testnet.
-- **Less control vs. self-custody**: we depend on Tatum's API surface. Operations they don't expose, we can't do.
-
-### Why not self-DIY
-
-We started M9 as DIY (PHP + Node sibling service + TronGrid + own HD derivation + own deposit watcher) and reached Phase 1 + 2 before backing out. The self-custody path is real ongoing operational burden — hot wallet security, key rotation, multi-chain duplication, polling watchers — and that complexity is the dominant risk for a solo-dev MVP vs. the bounded vendor risk of Tatum.
-
-### Open questions (resolve before Phase 2)
-
-- [ ] Tatum's response to use-case inquiry (P2P skill-staking eligibility under their ToS) — **email sent, awaiting reply**.
-- [ ] Custodial Managed Wallets API pricing tier required for our launch load.
-- [ ] Whether business KYC is gated at signup or only at production-volume threshold.
-- [ ] Tron Nile testnet support for Custodial Managed Wallets (vs. Shasta-only or mainnet-only).
-- [ ] Tatum's stance on internal liquidity / sweep model — do they pool funds automatically, or do we need a Phase 6 sweeper?
-
-### Locked decisions
-
-- **Provider**: Tatum — Custodial Managed Wallets API + Address Events webhooks. No alternative provider in v1.
-- **Chain v1**: TRC20 (Tron USDT). M9 builds on **Tron Nile testnet**.
-- **Chain v2**: BEP20 (BSC USDT) committed for post-launch. Reuses Tatum's unified API; adding it is a config + per-chain method-routing change, not a second integration.
-- **Internal ledger stays in `wallet_transactions`** — Tatum's Virtual Accounts unused. Our balance + escrow logic is provider-agnostic.
-- **`ChainGateway` adapter pattern** — interface + `TatumChainGateway` implementation + `MockChainGateway` for tests. DI binding via `config('chain.driver')`. Mock-driver tests don't require Tatum API access — CI stays fast and offline.
-- **Confirmation finality** — Tatum's webhook delivers confirmed events; we trust their finality determination, no per-block counting in our code.
-- **Replaces M7's mock address logic** — `App\Support\MockTronAddress` deleted. `users.tron_address` populated from Tatum's response. New `users.tatum_account_id` column for the managed-wallet reference. No `derivation_index` — we don't derive anymore.
-- **Library policy** — no new PHP composer packages. Tatum is REST over Laravel's `Http::` facade. No Tron-specific PHP libraries.
-
-### What you (the user) need to provide
-
-| Item | When | Cost | Notes |
-|------|------|------|-------|
-| Tatum account + API keys | Phase 1 | Free | `https://dashboard.tatum.io`. Separate keys for testnet vs. production. |
-| Use-case approval from Tatum support | Before Phase 2 | Free | Inquiry already sent; reply pending. |
-| Tron Nile testnet TRX/USDT | Phase 3 | Free | Faucet: `https://nileex.io/join/getJoinPage` or Tatum's. Used to simulate user deposits + test withdrawals. |
-| Production pricing decision | Pre-launch | Open | Once we know launch load, pick the tier. Not blocking M9. |
-
-No master mnemonic. No KMS provisioning. No Ledger device required during M9.
-
-### Scope (step-by-step, 5 phases)
-
-> Estimates are **focused solo dev time**, not calendar time. Each phase ships something usable before moving on; commit per phase as before.
-
-**Phase 1 — Tatum setup + `ChainGateway` interface** (~1–2 days, no new deps)
-
-The foundation. Define the contract, ship the mock + Tatum implementations, wire the DI binding. No real Tatum API calls beyond a health check.
-
-- [ ] **1.1** Sign up at Tatum, generate sandbox + (later) production API keys. `.env`: `CHAIN_DRIVER=tatum`, `TATUM_API_KEY=...`, `TATUM_API_URL=https://api.tatum.io`, `CHAIN_NETWORK=nile`, `TATUM_WEBHOOK_SECRET=...`.
-- [ ] **1.2** New `App\Services\Chain\ChainGateway` interface with Tatum-shaped methods:
-  - `createCustodialWallet(int $userId): array{address: string, accountId: string}`
-  - `getUsdtBalance(string $accountId): string`
-  - `subscribeToAddress(string $address, string $webhookUrl): string` — returns subscription id
-  - `sendUsdt(string $fromAccountId, string $toAddress, string $amount): string` — returns tx hash
-  - `getTransactionStatus(string $txHash): string` — `'pending' | 'confirmed' | 'failed'`
-- [ ] **1.3** `App\Services\Chain\MockChainGateway` — deterministic outputs for tests (same address per user_id, fake tx hashes, no Tatum API calls). Used by `phpunit.xml` so CI stays offline.
-- [ ] **1.4** `App\Services\Chain\TatumChainGateway` — Laravel `Http::` wrapper. API-key header (`x-api-key`), retry on 429/5xx, timeout, structured error responses, every operation logs to `Log::channel('chain')`.
-- [ ] **1.5** `config/chain.php` — `driver`, `tatum_api_url`, `tatum_api_key`, `webhook_secret`, `tron_network`.
-- [ ] **1.6** `AppServiceProvider` DI binding via `config('chain.driver')` — `mock` for dev/test, `tatum` for prod.
-- [ ] **1.7** Tests: interface contract, mock determinism, `TatumChainGateway` against `Http::fake()` (happy path + 4xx + connection failure), DI binding selection.
-
-**Phase 2 — Per-user deposit addresses** (~2–3 days, no new deps)
-
-Real Tatum-managed wallets get created at user registration. The mock-address column is replaced with a real chain address.
-
-- [ ] **2.1** Migrate `users` table: add `tatum_account_id varchar(64) UNIQUE NULL`. Keep `tron_address` (now sourced from Tatum's response). Pre-launch migration — edit the existing `0001_01_01_000000_create_users_table.php` directly.
-- [ ] **2.2** Refactor `App\Actions\Fortify\CreateNewUser`: after the DB insert, call `$gateway->createCustodialWallet($user->id)`, store `address` → `tron_address`, `accountId` → `tatum_account_id`. Wrap in a transaction with rollback on Tatum failure — registration is not committed if the wallet can't be created.
-- [ ] **2.3** Delete `App\Support\MockTronAddress`. Refactor `UserFactory` to route through `app(ChainGateway::class)->createCustodialWallet(...)` — mock driver in tests means deterministic addresses, no Tatum calls.
-- [ ] **2.4** Update M7 tests that referenced `MockTronAddress`. Suite stays green on mock driver.
-- [ ] **2.5** Re-seed dev data: `sail artisan migrate:fresh --seed` — verify every user has a Tatum-generated address + account id. Platform user excluded from wallet creation (platform doesn't need a deposit address).
-- [ ] **2.6** Manual walkthrough: register a new user via the auth modal → check Tatum dashboard shows a new managed wallet → verify the address in our DB matches Tatum's.
-
-**Phase 3 — Deposit detection via webhooks** (~2–3 days, no new deps)
-
-Tatum's Address Events fire a webhook when USDT arrives at a managed wallet. We credit the ledger.
-
-- [ ] **3.1** Extend `CreateNewUser` (or a follow-up queued job): after wallet creation, call `$gateway->subscribeToAddress($user->tron_address, route('webhooks.tatum.deposit'))`. Store subscription id on the user.
-- [ ] **3.2** New `POST /webhooks/tatum/deposit` route — public (no `auth` middleware), CSRF-exempt, signature-verified.
-- [ ] **3.3** `TatumWebhookController`:
-  - Verify HMAC signature against `config('chain.webhook_secret')` using `hash_equals`.
-  - Parse payload: `{address, amount, asset, blockNumber, txId, type, chain}`.
-  - Look up user by `tron_address`. Unknown address → 200 + log warning (don't leak which addresses are ours via 404).
-  - Asset filter: only credit USDT events; skip native TRX, fee notifications, other tokens.
-  - Idempotency: `Wallet::deposit($user, $amount, reference: "tatum-deposit:{txId}")` — duplicate webhook deliveries are no-ops.
-  - Return 200 on success, 401 on signature mismatch (Tatum retries on non-2xx).
-- [ ] **3.4** `App\Console\Commands\ChainReconcile` — manual reconciliation command in case webhooks miss an event. Iterates users, queries `$gateway->getUsdtBalance($accountId)`, compares to `Wallet::balanceFor($user)`, surfaces gaps. Idempotent — re-running doesn't double-credit (uses the same `tatum-deposit:{txId}` references).
-- [ ] **3.5** Tests with mocked webhook payloads: valid signature credits, invalid signature 401, replay is no-op, unknown address 200+log, non-USDT asset 200+ignore, fee notifications ignored.
-- [ ] **3.6** End-to-end manual test on Nile: send testnet USDT from your wallet to one of our user's addresses → confirm webhook fires → ledger credited → `BalanceChip` updates on next nav.
-
-**Phase 4 — Withdrawal worker (replaces M7's noop)** (~2–3 days, no new deps; Redis queue used)
-
-Real withdrawal: user clicks Withdraw → queued job authorizes Tatum to sign + broadcast → webhook confirms → ledger and UI reflect the final state.
-
-- [ ] **4.1** New `withdrawals` migration: `id, user_id, destination_address, amount, status enum('pending'|'broadcast'|'confirmed'|'failed'), tx_hash NULL, wallet_transaction_id NULL FK, failed_reason NULL, requested_at, broadcast_at NULL, confirmed_at NULL, timestamps`.
-- [ ] **4.2** Replace `WalletController::withdrawStore` (currently M7's `Inertia::flash` noop):
-  - `WithdrawRequest` already validates (regex, min $10, ≤ balance, `decimal:0,2`) — keep as-is.
-  - Create `withdrawals` row with status `pending`.
-  - Dispatch `ProcessWithdrawal` job.
-  - Flash success toast ("Withdrawal received — usually completes in 1–2 minutes").
-- [ ] **4.3** `App\Jobs\ProcessWithdrawal` queued job:
-  - `User::lockForUpdate()`, re-verify balance ≥ amount (TOCTOU defense).
-  - `Wallet::withdraw($user, $amount, reference: "withdrawal:{$id}")` — debits the ledger; the withdrawals row stores the resulting `wallet_transaction_id`.
-  - Call `$gateway->sendUsdt($user->tatum_account_id, $destination, $amount)`.
-  - On broadcast success: update withdrawal → status `broadcast`, store `tx_hash`.
-  - On Tatum API failure: refund via `Wallet::deposit($user, $amount, reference: "withdrawal-refund:{$id}")`, set status `failed`, store reason.
-- [ ] **4.4** Webhook handler extension: also process **outbound** address events from our managed wallets. When a `broadcast` withdrawal's tx_hash appears in an event, transition to `confirmed` + set `confirmed_at`.
-- [ ] **4.5** New `/wallet/withdrawals` UI page — paginated list of recent withdrawals with status pill + Tronscan link for `broadcast`/`confirmed` ones. Reuses existing transaction-color conventions.
-- [ ] **4.6** Configure queue: `QUEUE_CONNECTION=redis` in `.env` (Redis already in Sail). Dev workflow: `sail artisan queue:work` in a second terminal. Production: supervisor or Horizon.
-- [ ] **4.7** Tests with `MockChainGateway`: happy path, refund on broadcast failure (conservation-of-money still holds), concurrent withdrawals can't double-spend, status transitions via webhook.
-- [ ] **4.8** Manual end-to-end on Nile: trigger a withdrawal in the UI → watch the job process → check Tatum dashboard for the outbound tx → verify Tronscan confirmation → UI updates to `confirmed`.
-
-**Phase 5 — Polish + Nile smoke test** (~1–2 days, no new deps)
-
-Robustness + the documented path to mainnet.
-
-- [ ] **5.1** Rate-limit Tatum API calls (cap to ~80% of the relevant tier budget — exact numbers locked once we have the support response).
-- [ ] **5.2** Circuit breaker: if Tatum fails 5+ times in 60s, back off + alert via `chain` log channel.
-- [ ] **5.3** Structured logging on every chain operation — request/response shape, latency, status, user id. PII-conscious (don't log full withdrawal destinations forever).
-- [ ] **5.4** Full smoke test on Nile: register 3 dev users → fund their addresses from the faucet → deposits land via webhook → create + cancel listings (escrow flow) → withdraw to a faucet wallet → confirm everything balances on-chain (Tronscan) and in the ledger (`SUM(wallet_transactions.amount)` per user = `users.usdt_balance`). **This is the milestone gate** — if smoke passes, M9 ships.
-- [ ] **5.5** Documentation: `docs/chain-runbook.md` — Tatum dashboard tour, webhook debugging, common failure modes, mainnet flip checklist (swap API key + chain config, fund the platform account, etc.). References the Pre-launch gate.
-- [ ] **5.6** Final commit. Suggested message: `feat: chain integration on testnet via Tatum (M9)`.
-
-### Tools and services summary
-
-What's added to the stack by M9:
-
-| Tool | Role | Where |
-|------|------|-------|
-| Tatum — Custodial Managed Wallets API | Key management, signing, balance queries | External SaaS |
-| Tatum — Address Events / Webhooks | Deposit + outbound transaction notifications | External SaaS |
-| Tron Nile testnet | Testnet chain for M9 dev | External |
-| Laravel queues (Redis driver) | Async withdrawal processing | Already in Sail |
-| Tron testnet faucet | Free testnet TRX + USDT | External |
-| `nileex.io/tronscan` | Block explorer for verification | External |
-
-No new composer packages. Tatum integration is HTTP calls via Laravel's `Http::` facade. Mainnet pricing decision deferred to the Pre-launch gate.
-
-### Out of scope for M9 (explicitly deferred)
-
-- **Mainnet anything** — different milestone, different blockers.
-- **Sweep / hot-wallet consolidation** — with Tatum's managed wallets, sweeps may not be needed (Tatum likely handles internal liquidity within their custody). Confirm in their docs before launch; if needed, add a Phase 6.
-- **GetBlock or any backup chain RPC** — Tatum is sole provider. The `ChainGateway` adapter makes a backup a future config change, not a v1 commitment.
-- **Multi-chain (BEP20)** — committed for v2, not in M9.
-- **Live balance push (WebSocket / SSE)** — page-load freshness via `auth.user.usdt_balance` Inertia share is sufficient for v1.
-- **Tatum's Virtual Accounts (off-chain ledger)** — `wallet_transactions` is already our ledger; using Tatum's would be a double source of truth.
+When the specialist joins, the live questions to resolve are: **provider** (Tatum / Fireblocks / BitGo / Coinbase Developer Platform / DIY) → **custody model** (BYO-key vs vendor-managed) → **key storage** (env / AWS Secrets Manager / KMS / vendor-held) → **TRC20 gas strategy** (sweep-on-deposit + staked TRX vs alternatives) → **testnet shakedown plan** → **mainnet flip checklist**. Background research and prior planning iterations live in git history if useful as a starting point.
 
 ---
 
-## M6 — Match Flow (mock)
+## M6 — Match Flow (mock) **(next)**
 
-**Deferred — after M9.**
+The missing core loop: take listing → match created → both players play off-platform → return to confirm outcome → money settles. Real chess.com / Lichess outcome verification is M8; M6 uses a mocked game-API for the dispute tiebreaker so the milestone is self-contained.
 
-Match-in-progress page, both-players-confirm UI, dispute opening UI. Game-API integration mocked. Match settlement = `Wallet::payout(winner)` + `Wallet::fee(platform)`.
+### Key parameters (defaults — confirm or override before Phase 1)
+
+- **Platform fee**: 10% of pot, configurable via `config/stakly.php`. Stored as a string (`'0.10'`) for BCMath.
+- **Confirmation timeout**: 4h after match creation (clock starts the moment Take is confirmed and both stakes are escrowed — NOT at listing creation, which has its own `expires_at`). If only one player confirms by then, that player wins by default. If neither confirms, auto-dispute → game-API.
+- **Listing → match relationship**: 1:1. A taken listing creates exactly one match; once settled, the listing stays `Taken` forever (no re-listing).
+- **Match visibility**: only the two players (creator + taker) can view a match page. Non-participants get 404.
+- **Confirmation options**: per-player "I won" / "I lost" buttons. Both saying the same player won = settle. Both saying the same player lost (impossible in good faith but a real edge) = dispute.
+
+### Money flow at settlement
+
+Each player has a `Wallet::hold` of $stake from listing-create / take. At settlement (`pot = creator_stake + taker_stake`, `fee = pot * fee_rate`):
+- **Winner**: `Wallet::payout(pot - fee, listing, ref: "match-payout:{$match->id}")`.
+- **Platform**: `Wallet::fee(fee, listing, ref: "match-fee:{$match->id}")`.
+- **Loser**: no further wallet op — their original `EscrowHold` is the loss (permanent debit).
+
+Conservation check across all parties: `-creator_stake + -taker_stake + (pot - fee) + fee = 0` ✓
+
+### State machine
+
+```
+Listing.Open --[take]--> Match.Pending, Listing.Taken (taker's Wallet::hold)
+Match.Pending --[both confirm same winner]--> Match.Settled (settlement)
+Match.Pending --[both confirm different]--> Match.Disputed (game-API)
+Match.Pending --[one confirms, 4h passes]--> Match.Settled (default-win for confirmer)
+Match.Pending --[neither confirms, 4h passes]--> Match.Disputed (game-API)
+Match.Pending --[either opens dispute]--> Match.Disputed (game-API)
+Match.Disputed --[game-API returns winner]--> Match.Settled
+Match.Disputed --[game-API can't determine]--> Match.ManualReview (shell only)
+```
+
+**`ManualReview` is a terminal state for v1.** Money stays locked in escrow; an admin resolves the case manually post-launch (admin tools deferred to a later milestone). Auto-refund-on-API-failure was rejected: a losing player could trigger `ManualReview` to recover their stake (e.g. deliberately not playing the game when their chess.com account is linked).
+
+### Phases
+
+> Estimates are **focused solo dev time**, not calendar time. Each phase ships something usable; commit per phase.
+
+**Phase 1 — Schema + state machine + policies** (~2–3 days, no new deps)
+
+- [ ] **1.1** Migration: `matches` table — `id, listing_id (UNIQUE FK), taker_user_id (FK), status (string), creator_confirmed_outcome (string nullable), taker_confirmed_outcome (string nullable), winner_user_id (nullable FK), dispute_opened_at (nullable), dispute_opened_by (nullable FK), settled_at (nullable), timestamps`. Pre-launch — new migration file (existing tables not affected).
+- [ ] **1.2** `App\Enums\MatchStatus` — `Pending`, `Disputed`, `Settled`, `ManualReview`, `Cancelled`.
+- [ ] **1.3** `App\Enums\MatchOutcome` — `Won`, `Lost` (per-player confirmation columns).
+- [ ] **1.4** `App\Models\GameMatch` model + factory — relations to `listing`, `taker`, `creator` (via listing), `winner`. Avoid the name `Match` (PHP reserved keyword).
+- [ ] **1.5** `Listing` model: add `match()` HasOne relation; `User` model: add `matchesAsTaker()` and a `matches()` accessor that unions creator + taker matches.
+- [ ] **1.6** `App\Policies\GameMatchPolicy`: `view` + `confirm` + `openDispute` — only creator or taker pass. Registered in `AppServiceProvider`.
+- [ ] **1.7** Tests: state-machine-transition rules, policy enforcement (non-participant 404, participant 200), enum casting.
+
+**Phase 2 — Take listing → create match** (~2 days, no new deps)
+
+- [ ] **2.1** Wire the existing "Take" CTA on `/listings/{id}` (currently UI-only).
+- [ ] **2.2** `App\Http\Controllers\GameMatchController::take($listing)`:
+  - Validates: listing is `Open`, user ≠ creator, user has balance ≥ stake.
+  - Atomic `DB::transaction`: listing → `Taken`, `GameMatch` created with status `Pending`, `Wallet::hold($taker, $stake, $listing, ref: "match-take:{$listing->id}")`.
+  - Redirect to match page.
+- [ ] **2.3** `App\Http\Requests\GameMatch\TakeRequest` — same `stakeWithinBalance` rule used in `StoreListingRequest` (route through `Wallet::balanceFor` for fresh value).
+- [ ] **2.4** Route: `POST /listings/{listing}/take` (auth + verified middleware).
+- [ ] **2.5** Tests: happy path, can't take own listing, can't take taken listing, insufficient balance, idempotency on retried POST, concurrent take request loses cleanly with a `ValidationException`.
+
+**Phase 3 — Match page + confirmation UI** (~2–3 days, no new deps)
+
+- [ ] **3.1** Route: `GET /matches/{match}` (auth + verified, `GameMatchPolicy::view`).
+- [ ] **3.2** `GameMatchController::show` — `Inertia::render('match/show', ...)` with both players' usernames + avatars, stakes, status, current confirmations, action buttons. PII-safe via a new `GameMatchResource`.
+- [ ] **3.3** React page `resources/js/pages/match/show.tsx` — opponent card, your stake, status pill, two big buttons ("I won" / "I lost") for the current user, opponent's confirmation status shown as text. Deferred polish: live status updates (manual refresh fine for v1).
+- [ ] **3.4** `GameMatchController::confirm` (POST `/matches/{match}/confirm`):
+  - Records the player's claim into `creator_confirmed_outcome` / `taker_confirmed_outcome`.
+  - If both confirmed and agree → trigger Phase 5 settlement.
+  - If both confirmed and disagree → set status to `Disputed`, trigger Phase 4 game-API.
+  - Otherwise → wait, flash a toast.
+- [ ] **3.5** New `components/match/` folder for sub-components.
+- [ ] **3.6** Tests: confirm flow, both-agree triggers settlement, mismatch triggers dispute, can't confirm twice, can't confirm someone else's match.
+
+**Phase 4 — Dispute path + mock game-API** (~2–3 days, no new deps)
+
+- [ ] **4.1** `App\Services\GameApi\GameApi` interface — `getMatchResult(GameMatch $match): GameApiResult`.
+- [ ] **4.2** `App\Services\GameApi\GameApiResult` value object — `winner_user_id`, `confidence` (`'confirmed'` | `'unknown'`), `raw_response` (array, for audit).
+- [ ] **4.3** `App\Services\GameApi\MockGameApi` — returns a winner deterministically based on `Match::id` (so tests are reproducible). Configurable via test helpers to force "unknown" for the ManualReview branch.
+- [ ] **4.4** `config/match.php` — `game_api_driver` (`'mock'` for v1). DI binding in `AppServiceProvider`.
+- [ ] **4.5** `App\Services\MatchSettlement::resolveDispute(GameMatch $match)` — calls `GameApi`, settles if `confirmed`, else moves to `ManualReview`.
+- [ ] **4.6** "Open dispute" button on match page (visible during `Pending` status).
+- [ ] **4.7** `GameMatchController::openDispute` (POST `/matches/{match}/dispute`) — transitions match to `Disputed`, dispatches resolution synchronously (queue job in M8 when real APIs land).
+- [ ] **4.8** Tests: dispute opens, mock API queried, settlement happens with API winner, ManualReview branch (UI placeholder, money stays locked, deferred resolution flow).
+
+**Phase 5 — Settlement service** (~2 days, no new deps)
+
+- [ ] **5.1** `App\Services\MatchSettlement::settle(GameMatch $match, User $winner)`:
+  - Wraps in `DB::transaction`.
+  - Calculates `pot`, `fee`, `winner_payout` via BCMath (scale 6).
+  - `Wallet::payout($winner, $winnerPayout, $match->listing, ref: "match-payout:{$match->id}")`.
+  - `Wallet::fee($fee, $match->listing, ref: "match-fee:{$match->id}")`.
+  - Updates match → `Settled`, sets `winner_user_id`, `settled_at`.
+- [ ] **5.2** `config/stakly.php` — `platform_fee_rate` (string `'0.10'` default).
+- [ ] **5.3** Idempotency via match-payout / match-fee references — repeat calls are no-ops at the `Wallet` layer; `MatchSettlement` short-circuits if status is already `Settled`.
+- [ ] **5.4** Tests: conservation of money (full match: holds + payout + fee = 0), idempotency, atomic rollback on Wallet failure, fee-rate config plumbing.
+
+**Phase 6 — Match list page + profile + listing integration** (~1–2 days, no new deps)
+
+- [ ] **6.1** `/matches` page — your active + past matches, status filter chips, pagination 12/page (Spatie query-builder pattern from `/listings`).
+- [ ] **6.2** Profile page (`/users/{username}`): "Match history" section — replace empty state with paginated last-N matches (winner, opponent, stake, date). Public, no PII beyond what's already exposed.
+- [ ] **6.3** Listing detail: when status `Taken`, show a "View match →" link visible only to participants.
+- [ ] **6.4** Wallet history: payout / fee transactions render with match context (clickable listing → match navigation).
+- [ ] **6.5** `BalanceChip` continues to refresh on navigation post-settlement (already works via Inertia share).
+- [ ] **6.6** Tests: page renders, only your matches visible (not others'), filters work, profile match history loads.
+
+**Phase 7 — Timeouts + edge cases + polish** (~1–2 days, no new deps)
+
+- [ ] **7.1** `App\Console\Commands\MatchesResolveTimeouts` Artisan command + scheduled task (`->everyTenMinutes()->withoutOverlapping()` in `routes/console.php`):
+  - For each `Pending` match older than 4h: if exactly one player confirmed → settle in their favor; if neither → trigger dispute (game-API).
+  - Idempotent via `match-timeout:{$match->id}` reference.
+- [ ] **7.2** Inertia flash toasts: "Listing taken — match started", "Match settled — you won/lost $X", "Dispute opened, awaiting resolution".
+- [ ] **7.3** Final test sweep + manual end-to-end run: create listing, take it from another account, confirm both ways (agree, disagree, timeout, dispute).
+- [ ] **7.4** Suggested commit: `feat: match flow with mock game-API (M6)`.
+
+### Out of scope for M6 (deferred)
+
+- **Real chess.com / Lichess outcome verification** — that's M8. `MockGameApi` is the v1 implementation.
+- **Manual review of disputes** — the `ManualReview` status exists but the resolution flow is shell only (admin tools deferred).
+- **In-app notifications** (bell icon, inbox) — M6 uses Inertia flash toasts only.
+- **Email notifications** beyond the auth flow.
+- **Re-matching after a settled listing** — listings stay `Taken` forever; players can create new listings.
+- **Three-way / team matches** — v2.
+- **Mid-match cancellation** — once taken, the only out is settlement, dispute, or timeout.
+- **Live status push (WebSocket / SSE)** — manual refresh + Inertia partial reload is fine for v1.
+- **Anti-collusion / anti-cheat measures** — sandbagging (strong player on a low-rated alt account farming weaker opponents), multi-accounting, money laundering via stake rotation. Commission rake disincentivizes pure 1v1 friend collusion but doesn't cover these. Designed in a separate post-launch milestone.
 
 ---
 
@@ -341,45 +305,15 @@ Profile settings, chess.com / Lichess account linking flow with ownership verifi
 Real on-chain integration is gated by these blockers. **Do not proceed without explicit go-ahead.** Once Stakly accepts a single real deposit, it's operating a regulated money-handling business and the engineering becomes hard to unwind.
 
 Required answers before mainnet wiring:
-1. **Custody committed** ✅ — DIY level-3 (we own keys + run watcher/sweeper/withdrawal worker + use TronGrid as node provider). See "Chain custody architecture" below.
+1. **Custody model committed**: TBD — to be decided with the crypto-payment-gateway specialist who will own M9. Internal ledger architecture (M3.5) is provider-agnostic and supports any custody model.
 2. **Jurisdiction committed**: where Stakly is registered + license path (e.g., Curaçao sublicense, Malta MGA, US state-by-state map, or testnet-only / fake-money for the foreseeable future).
-3. **Chain + provider committed** ✅ — TRC20 (Tron USDT) only for v1. TronGrid primary, GetBlock pre-configured as drop-in backup. See architecture section below.
-4. **Key storage in production**: AWS KMS or HashiCorp Vault for hot wallet seed. Hardware device (Ledger / Trezor) for cold wallet. Specific KMS choice + access policy still open.
+3. **Chain + provider committed**: TRC20 (Tron USDT) chain remains the v1 commitment. Provider (Tatum / Fireblocks / BitGo / Coinbase Developer Platform / DIY) and node strategy TBD with the specialist.
+4. **Key storage in production**: TBD — depends on the custody model decision (#1). Likely candidates: AWS Secrets Manager, AWS KMS, HashiCorp Vault, vendor-held, or a hardware device (Ledger / Trezor) for any cold-wallet portion.
 5. **Incident response plan**: hot-wallet compromise procedure, user notification template, insurance (if any).
 6. **Terms of Service + dispute resolution** policy drafted.
 7. **KYC/AML** required? If yes, integration with which provider, threshold that triggers it.
 
 > No traditional banking / payment processor in scope — Stakly is **crypto-end-to-end** (USDT deposits, USDT withdrawals, USDT-denominated platform revenue). The only fiat touchpoint is the operating company's own expenses (taxes, legal), which is part of the jurisdiction decision (#2), not a user-facing gate.
-
-### Chain custody architecture (committed)
-
-**Path**: Managed custody via **Tatum's Custodial Managed Wallets API**. Tatum holds per-user TRC20 private keys server-side; we orchestrate via REST + receive deposit notifications via webhooks. Eyes-open tradeoff: ~1–2 weeks of integration work vs ~6–10 weeks for the DIY path — chosen for solo-dev viability, bounded vendor risk (Tatum's key-export endpoint is our migration escape hatch), and multi-chain readiness (Tatum's unified API covers BEP20 v2 without a second integration).
-
-**Chain (v1)**: TRC20 (Tron USDT) only. **Chain (v2)**: BEP20 (BSC USDT) committed for post-launch. Adding the second chain is a config + per-chain method-routing change at the gateway level — Tatum exposes the same API surface across chains.
-
-**Custody model**: Tatum holds the keys; we hold the right to export them. The escape hatch makes "what if Tatum goes down or freezes us" a recovery question, not an existential one. Worst-case migration: export keys via Tatum's API → import into our own KMS or hardware wallet → swap `ChainGateway` implementation → operations resume with a different chain provider. ~1 day of work in a worst case, not weeks.
-
-**Internal ledger**: Stays in our Postgres `wallet_transactions` table — same as M3.5. Tatum's "Virtual Accounts" feature is **not used**; we keep a single source of truth for balances and avoid two ledgers that could disagree.
-
-**Components to build at M9 (pre-launch testnet phase)**:
-- `App\Services\Chain\ChainGateway` interface
-- `App\Services\Chain\TatumChainGateway` implementation (Laravel `Http::` facade — no Tatum SDK, no Tron-specific PHP libraries)
-- `App\Services\Chain\MockChainGateway` for tests
-- `TatumWebhookController` — receives Tatum's Address Events for deposits + outbound confirmations
-- `App\Jobs\ProcessWithdrawal` — queued withdrawal worker authorizing Tatum to sign + broadcast
-- `App\Console\Commands\ChainReconcile` — periodic reconciliation in case webhooks miss events
-
-**Components NOT needed (vs. the DIY path)**:
-- HD derivation library (Tatum derives)
-- Master seed in env / KMS (Tatum stores)
-- Tron-specific signing primitives — tronweb, `iexbase/tron-api`, BIP32/39/44 libraries (Tatum signs)
-- Polling deposit watcher (webhooks instead)
-- Sweeper / hot-wallet consolidation (Tatum likely handles internal liquidity — confirm pre-launch)
-- Hot/cold wallet split (single Tatum-managed pool)
-
-**Operational continuity**: provider-block risk is the main concern. Mitigated by (a) the use-case inquiry filed in M9's open questions — written yes/no before we commit production volume, (b) key-export escape hatch, (c) the `ChainGateway` adapter that makes a provider swap a code-change, not a re-architecture. If Tatum ever cuts us off: export keys → migrate to self-custody or another managed provider → resume operations.
-
-**Recurring cost**: Custodial Managed Wallets API tier pricing — locked in pre-launch when load is known. Free during M9 testnet phase.
 
 ### App-level hardening (deferred from dev)
 
