@@ -205,45 +205,63 @@ Match.Disputed --[game-API can't determine]--> Match.ManualReview (shell only)
 
 > Estimates are **focused solo dev time**, not calendar time. Each phase ships something usable; commit per phase.
 
-**Phase 1 — Schema + state machine + policies** (~2–3 days, no new deps)
+**Phase 1 — Schema + state machine + policies** ✅ shipped
 
-- [ ] **1.1** Migration: `matches` table — `id, listing_id (UNIQUE FK), taker_user_id (FK), status (string), creator_confirmed_outcome (string nullable), taker_confirmed_outcome (string nullable), winner_user_id (nullable FK), dispute_opened_at (nullable), dispute_opened_by (nullable FK), settled_at (nullable), timestamps`. Pre-launch — new migration file (existing tables not affected).
-- [ ] **1.2** `App\Enums\MatchStatus` — `Pending`, `Disputed`, `Settled`, `ManualReview`, `Cancelled`.
-- [ ] **1.3** `App\Enums\MatchOutcome` — `Won`, `Lost` (per-player confirmation columns).
-- [ ] **1.4** `App\Models\GameMatch` model + factory — relations to `listing`, `taker`, `creator` (via listing), `winner`. Avoid the name `Match` (PHP reserved keyword).
-- [ ] **1.5** `Listing` model: add `match()` HasOne relation; `User` model: add `matchesAsTaker()` and a `matches()` accessor that unions creator + taker matches.
-- [ ] **1.6** `App\Policies\GameMatchPolicy`: `view` + `confirm` + `openDispute` — only creator or taker pass. Registered in `AppServiceProvider`.
-- [ ] **1.7** Tests: state-machine-transition rules, policy enforcement (non-participant 404, participant 200), enum casting.
+- [x] **1.1** Migration: `game_matches` table — `id, listing_id (UNIQUE FK), taker_user_id (FK), status (string), creator_confirmed_outcome (string nullable), taker_confirmed_outcome (string nullable), winner_user_id (nullable FK), dispute_opened_at (nullable), dispute_opened_by (nullable FK), settled_at (nullable), timestamps`.
+- [x] **1.2** `App\Enums\MatchStatus` — `Pending`, `Disputed`, `Settled`, `ManualReview` (Cancelled dropped per YAGNI; add only if a both-agree-to-cancel feature ships later).
+- [x] **1.3** `App\Enums\MatchOutcome` — `Won`, `Lost`.
+- [x] **1.4** `App\Models\GameMatch` model + factory — relations: `listing`, `taker`, `winner`, `disputeOpener`. Creator reached via `$match->listing->user`. Avoided the name `Match` (PHP reserved keyword post-8.0).
+- [x] **1.5** `Listing` model: added `gameMatch()` HasOne; `User` model: added `gameMatchesAsTaker()` HasMany. Combined "all my matches" query (creator + taker union) deferred to Phase 6 when `/matches` list page needs it.
+- [x] **1.6** `App\Policies\GameMatchPolicy`: `view` + `confirm` + `openDispute` — only creator or taker pass. Auto-discovered by Laravel 11+ (no manual `Gate::policy(...)` registration needed).
+- [x] **1.7** Tests: 24 tests / 38 assertions covering casts, relations, schema invariants (1:1 enforced at DB), all 3 policy methods including non-Pending blocks.
 
-**Phase 2 — Take listing → create match** (~2 days, no new deps)
+**Phase 2 — Take listing → create match** ✅ shipped
 
-- [ ] **2.1** Wire the existing "Take" CTA on `/listings/{id}` (currently UI-only).
-- [ ] **2.2** `App\Http\Controllers\GameMatchController::take($listing)`:
-  - Validates: listing is `Open`, user ≠ creator, user has balance ≥ stake.
-  - Atomic `DB::transaction`: listing → `Taken`, `GameMatch` created with status `Pending`, `Wallet::hold($taker, $stake, $listing, ref: "match-take:{$listing->id}")`.
-  - Redirect to match page.
-- [ ] **2.3** `App\Http\Requests\GameMatch\TakeRequest` — same `stakeWithinBalance` rule used in `StoreListingRequest` (route through `Wallet::balanceFor` for fresh value).
-- [ ] **2.4** Route: `POST /listings/{listing}/take` (auth + verified middleware).
-- [ ] **2.5** Tests: happy path, can't take own listing, can't take taken listing, insufficient balance, idempotency on retried POST, concurrent take request loses cleanly with a `ValidationException`.
+- [x] **2.1** Wired the existing "Take" CTA on `/listings/{id}` with a Dialog confirmation. Branches: authed-with-balance (Take + Dialog), authed-no-balance (disabled + "Deposit USDT to take this match" link), guest (Log in to take), non-Open status (disabled status label), owner (hidden — cancel area handles their case).
+- [x] **2.2** `GameMatchController::take`: row-locked transaction with three distinct failure modes documented inline — self-take 403, race-lost (state changed between page load and submit) 302 + info toast, insufficient-balance race 422 keyed on `amount`.
+- [x] **2.3** `App\Http\Requests\GameMatch\TakeRequest` — empty body rules + balance pre-check via `withValidator` (sourced from route-bound listing). Same shape as `StoreListingRequest::stakeWithinBalance`.
+- [x] **2.4** Route: `POST /listings/{listing}/take` (auth + verified middleware).
+- [x] **2.5** Tests: 10 tests / ~70 assertions — happy path, self-take 403, guest/unverified redirect, race-lost branch (Taken/Expired/Cancelled/past-expiry → 302 + info toast — chose redirect over `ValidationException` so user gets friendlier UX when listing disappears), insufficient balance 422, double-submit safety, BCMath round-trip.
 
-**Phase 3 — Confirm UI + change-once logic + polling** (~2–3 days, no new deps)
+**Phase 2 also lifted Phase 3.1, 3.2, and basic 3.3 from the original plan** (the route `GET /matches/{match}`, `GameMatchController::show` with 404-not-403 for non-participants, `GameMatchResource` PII whitelist, `resources/js/pages/match/show.tsx` with opponent card + stake/pot/time-control stats + status pill). Phase 3 now builds the interactive confirm + polling layer on top — those route/controller/page foundations are reused, not rebuilt. **9 additional tests / ~60 assertions for the show flow + PII-safety assertions.**
 
-Phase 1 + 2 already shipped 3.1 (route), 3.2 (controller `show` method), and a basic 3.3 (match page renders opponent + stakes + status pill). Phase 3 adds the interactive confirm layer + live updates.
+**Phase 3 — Confirm UI + settlement + polling** ✅ shipped
 
-- [ ] **3.1** Edit existing `game_matches` migration (pre-launch convention): add `creator_confirmation_locked` boolean (default false) + `taker_confirmation_locked` boolean (default false). `migrate:fresh --seed`.
-- [ ] **3.2** `App\Http\Requests\GameMatch\ConfirmRequest` — body: `outcome` (Won|Lost). Authorization via `GameMatchPolicy::confirm` (Pending only, participant only).
-- [ ] **3.3** `GameMatchController::confirm` (POST `/matches/{match}/confirm`):
-  - Records the player's claim. If new outcome differs from existing AND `*_confirmation_locked` is false → set new outcome + flip lock to true. If already locked → 422 with "You've already used your one allowed change."
-  - Both confirmed + agree → triggers Phase 5 settlement.
-  - Both confirmed + disagree → status → `Disputed`, triggers Phase 4 game-API resolution.
-  - Otherwise → flash a toast, stays in `Pending`.
-- [ ] **3.4** Confirm Dialog on match page — "I won" / "I lost" buttons each open a Dialog (same pattern as Take). First-confirmation copy: *"You can change your mind once after this — pick carefully."* Change-confirmation copy: *"This is your one allowed change."*
-- [ ] **3.5** Disable confirm buttons + show "You've used your one change" caption when `*_confirmation_locked` is true.
-- [ ] **3.6** Inertia v3 polling on match page while in `Pending` status — every 8s, refresh the match resource. Stops on terminal state (`Settled` / `Disputed` / `ManualReview`). Replaces the "manual refresh" placeholder noted in Phase 2. **WebSocket layer (Reverb / Pusher) deferred** until 2+ live features need it — see M10 deferred infrastructure note.
-- [ ] **3.7** New `components/match/` folder for sub-components (confirm-buttons, status-banner, opponent-confirmation-state, etc.).
-- [ ] **3.8** Tests: confirm flow happy path, change-once flow (allowed, then locked), agree → settlement triggered, disagree → dispute triggered, can't change after lock (422), repeat-same-outcome is a no-op (doesn't lock), can't confirm someone else's match, polling refresh returns fresh match state.
+Phase 5 (settlement service) folded in here so the agree-path moves real money end-to-end in one commit. Phase 4 (dispute resolution + game-API) stays separate — disputed matches sit in `Disputed` status with "Under review" UI until Phase 4 lands.
 
-**Phase 4 — Dispute path + mock game-API** (~2–3 days, no new deps)
+**"Change freely until opponent confirms" rule** (locked 2026-05-15, replaces an earlier "one allowed change" design): a player can change their confirmation any number of times while the match is still `Pending`. Once both players have confirmed, the match resolves (Settled or Disputed), status flips to non-Pending, and `GameMatchPolicy::confirm` blocks any further changes. **The lock is implicit via match status — no `confirmation_locked` columns needed.** Misclicks are recoverable until your opponent commits.
+
+**Data + services:**
+
+- [x] **3.1** `config/stakly.php` — `platform_fee_rate` (`'0.10'` default, BCMath string).
+- [x] **3.2** `App\Services\MatchSettlement::settle($match, $winner)` — atomic settlement under a row lock; calls `Wallet::payout(winner, pot - fee)` + `Wallet::fee(fee)`; idempotent on `match-payout:{id}` / `match-fee:{id}` references; flips status → `Settled` + sets `winner_user_id` + `settled_at`. Throws `InvalidArgumentException` on non-participant winner (defense in depth).
+
+**Controller + request:**
+
+- [x] **3.3** `App\Http\Requests\GameMatch\ConfirmRequest` — outcome enum validation.
+- [x] **3.4** `GameMatchController::confirm` with private `resolveBothConfirmed` + `confirmRedirect` helpers. Race-safe via `lockForUpdate`. Distinguishes 4 resolution sentinels: `recorded` / `no-change` / `settled` / `disputed` / `too-late` — each maps to its own flash toast.
+
+**Frontend:**
+
+- [x] **3.5** Confirm Dialog (`components/match/confirm-buttons.tsx`) with first-confirmation vs change-confirmation copy. Selected outcome's button is gradient + disabled; the other stays clickable.
+- [x] **3.6** Disabled state once status != Pending — confirm UI hidden entirely, settlement summary or dispute banner takes the slot.
+- [x] **3.7** `SettlementSummary` (`components/match/settlement-summary.tsx`) — winner badge + pot/fee/payout breakdown, success accent for the winner's view, muted for the loser's view. Disputed/ManualReview "under review" banner inline in `match/show.tsx`.
+- [x] **3.8** Inertia v3 polling every 8s while Pending — `useEffect` + `setInterval` calling `router.reload({ only: ['match'] })`. Stops automatically on terminal status (interval cleared in cleanup when status changes).
+- [x] **3.9** `components/match/` folder with `confirm-buttons.tsx`, `settlement-summary.tsx`, and `match-timer.tsx`.
+
+**Tests:**
+
+- [x] **3.10** `GameMatchConfirmTest` — 16 tests covering auth (non-participant 403, guest redirect, Settled/Disputed 403), body validation, first confirmation by creator + taker, change-confirmation-multiple-times-while-Pending, both-agree → settle (creator-wins + taker-wins paths), both-disagree (Won/Won + Lost/Lost) → dispute, mid-match change flips final winner, toast-content assertions.
+- [x] **3.11** `MatchSettlementTest` — 7 tests covering conservation of money (sum of all listing-related ledger entries = 0), idempotency on repeat `settle()` calls, non-participant winner rejection, BCMath precision on awkward stakes (`123.45` round-trips exactly), fee-rate config plumbing (changing `stakly.platform_fee_rate` changes the fee), status transition to `Settled` + `winner_user_id` + `settled_at`.
+
+**Bonus additions (not in the original plan):**
+
+- [x] **`MatchTimer` component** (`resources/js/components/match/match-timer.tsx`) — 4-hour countdown visible only while Pending. Tone shifts: neutral > 1h, warning 30m–1h, destructive < 30m (Clock icon pulses via `motion-safe:animate-pulse`), muted on expiry. Tabular-nums for steady width; `role="timer"` + dynamic `aria-label`. Frontend display only — backend Phase 7 enforces the same `match.created_at + 4h` deadline.
+- [x] **`platformUser()` global helper in `tests/Pest.php`** — idempotently creates the `is_platform = true` user. Any test that exercises `Wallet::fee` (settlement here, dispute resolution in Phase 4, timeout in Phase 7) can call it without duplicating seed code. Required because `RefreshDatabase` doesn't run the production seeders.
+
+**Test count: 259 / 1273 (was 236 / 1209 end of Phase 2 — +23 tests / +64 assertions in Phase 3).**
+
+**Phase 4 — Dispute path + mock game-API** **(next)** (~2–3 days, no new deps)
 
 - [ ] **4.1** `App\Services\GameApi\GameApi` interface — `getMatchResult(GameMatch $match): GameApiResult`.
 - [ ] **4.2** `App\Services\GameApi\GameApiResult` value object — `winner_user_id`, `confidence` (`'confirmed'` | `'unknown'`), `raw_response` (array, for audit).
@@ -254,17 +272,7 @@ Phase 1 + 2 already shipped 3.1 (route), 3.2 (controller `show` method), and a b
 - [ ] **4.7** `GameMatchController::openDispute` (POST `/matches/{match}/dispute`) — transitions match to `Disputed`, dispatches resolution synchronously (queue job in M8 when real APIs land).
 - [ ] **4.8** Tests: dispute opens, mock API queried, settlement happens with API winner, ManualReview branch (UI placeholder, money stays locked, deferred resolution flow).
 
-**Phase 5 — Settlement service** (~2 days, no new deps)
-
-- [ ] **5.1** `App\Services\MatchSettlement::settle(GameMatch $match, User $winner)`:
-  - Wraps in `DB::transaction`.
-  - Calculates `pot`, `fee`, `winner_payout` via BCMath (scale 6).
-  - `Wallet::payout($winner, $winnerPayout, $match->listing, ref: "match-payout:{$match->id}")`.
-  - `Wallet::fee($fee, $match->listing, ref: "match-fee:{$match->id}")`.
-  - Updates match → `Settled`, sets `winner_user_id`, `settled_at`.
-- [ ] **5.2** `config/stakly.php` — `platform_fee_rate` (string `'0.10'` default).
-- [ ] **5.3** Idempotency via match-payout / match-fee references — repeat calls are no-ops at the `Wallet` layer; `MatchSettlement` short-circuits if status is already `Settled`.
-- [ ] **5.4** Tests: conservation of money (full match: holds + payout + fee = 0), idempotency, atomic rollback on Wallet failure, fee-rate config plumbing.
+**Phase 5 — Settlement service** ✅ folded into Phase 3 (above) so the agree-path is end-to-end testable in one commit.
 
 **Phase 6 — Match list page + profile + listing integration** (~1–2 days, no new deps)
 
@@ -280,6 +288,7 @@ Phase 1 + 2 already shipped 3.1 (route), 3.2 (controller `show` method), and a b
 - [ ] **7.1** `App\Console\Commands\MatchesResolveTimeouts` Artisan command + scheduled task (`->everyTenMinutes()->withoutOverlapping()` in `routes/console.php`):
   - For each `Pending` match older than 4h: if exactly one player confirmed → settle in their favor; if neither → trigger dispute (game-API).
   - Idempotent via `match-timeout:{$match->id}` reference.
+  - **Deadline contract shared with frontend.** `MatchTimer` (shipped in Phase 3) already shows the 4h countdown using `match.created_at + 4h` and flips to "Expired" state when the deadline passes. Phase 7's job uses the SAME deadline calculation — its role is to actually flip the match status server-side. Until Phase 7 lands, the timer hits "Expired" but the match stays `Pending` indefinitely (no auto-resolution).
 - [ ] **7.2** Inertia flash toasts: "Listing taken — match started", "Match settled — you won/lost $X", "Dispute opened, awaiting resolution".
 - [ ] **7.3** Final test sweep + manual end-to-end run: create listing, take it from another account, confirm both ways (agree, disagree, timeout, dispute).
 - [ ] **7.4** Suggested commit: `feat: match flow with mock game-API (M6)`.

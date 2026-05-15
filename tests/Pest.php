@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -44,7 +45,20 @@ expect()->extend('toBeOne', function () {
 |
 */
 
-function something()
+/**
+ * Ensure the platform user exists in the test DB. Required by any test that
+ * exercises `Wallet::fee(...)` — the platform rake credit recipient is looked
+ * up via `User::query()->where('is_platform', true)->firstOrFail()`. The
+ * production seeder creates this user, but `RefreshDatabase` doesn't run
+ * seeders, so tests must seed it explicitly.
+ *
+ * Idempotent — safe to call multiple times within the same test (returns
+ * the existing user on repeat calls).
+ */
+function platformUser(): User
 {
-    // ..
+    return User::query()
+        ->where('is_platform', true)
+        ->first()
+        ?? User::factory()->create(['is_platform' => true]);
 }

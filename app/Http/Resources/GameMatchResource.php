@@ -25,6 +25,11 @@ class GameMatchResource extends JsonResource
         return [
             'id' => $this->id,
             'status' => $this->status->value,
+            // Platform fee rate as a float at the JSON boundary (BCMath
+            // string internally). Frontend computes pot / fee / payout
+            // from stake_amount + fee_rate so we don't duplicate the
+            // settlement math in two places.
+            'fee_rate' => (float) config('stakly.platform_fee_rate'),
             'listing' => [
                 'id' => $this->listing->id,
                 'game' => $this->listing->game->value,

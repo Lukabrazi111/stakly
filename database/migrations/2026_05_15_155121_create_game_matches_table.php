@@ -41,7 +41,10 @@ return new class extends Migration
             $table->string('status');
 
             // App\Enums\MatchOutcome — each player's self-reported claim.
-            // Nullable until the player confirms.
+            // Nullable until the player confirms. Players can change their
+            // claim freely while match is Pending (the "lock" is implicit
+            // via status — once both confirm, the match resolves and the
+            // status guard in GameMatchPolicy::confirm blocks further changes).
             $table->string('creator_confirmed_outcome')->nullable();
             $table->string('taker_confirmed_outcome')->nullable();
 

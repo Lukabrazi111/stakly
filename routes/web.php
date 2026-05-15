@@ -24,6 +24,11 @@ Route::middleware(['auth', 'verified'])->group(function () {
     // M6 — match detail page. Participant-only, enforced inside the controller
     // (404 for non-participants, not 403, to avoid leaking match existence).
     Route::get('/matches/{match}', [GameMatchController::class, 'show'])->name('matches.show');
+
+    // M6 Phase 3 — record a player's outcome confirmation. Players can change
+    // their claim freely while match is Pending; once both confirm, the match
+    // resolves (Settled or Disputed) and further confirms are blocked.
+    Route::post('/matches/{match}/confirm', [GameMatchController::class, 'confirm'])->name('matches.confirm');
 });
 
 Route::get('/listings/{listing}', [ListingController::class, 'show'])->name('listings.show');

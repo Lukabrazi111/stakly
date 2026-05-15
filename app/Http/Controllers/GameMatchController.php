@@ -3,12 +3,15 @@
 namespace App\Http\Controllers;
 
 use App\Enums\ListingStatus;
+use App\Enums\MatchOutcome;
 use App\Enums\MatchStatus;
 use App\Exceptions\InsufficientBalanceException;
+use App\Http\Requests\GameMatch\ConfirmRequest;
 use App\Http\Requests\GameMatch\TakeRequest;
 use App\Http\Resources\GameMatchResource;
 use App\Models\GameMatch;
 use App\Models\Listing;
+use App\Services\MatchSettlement;
 use App\Services\Wallet;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Facades\DB;
@@ -103,8 +106,8 @@ class GameMatchController extends Controller
     }
 
     /**
-     * Match detail page. Phase 2 renders a minimal view (opponent, stakes,
-     * status) — Phase 3 adds the confirm / dispute action UI on top.
+     * Match detail page. Renders confirm UI (Pending), settlement summary
+     * (Settled), or dispute banner (Disputed / ManualReview) based on status.
      *
      * Non-participants get 404 (not 403) to avoid leaking match existence.
      */
@@ -125,5 +128,125 @@ class GameMatchController extends Controller
         return Inertia::render('match/show', [
             'match' => (new GameMatchResource($match))->resolve(),
         ]);
+    }
+
+    /**
+     * Record a player's outcome confirmation. Players can change their
+     * confirmation freely while the match is `Pending` — the "lock" is
+     * implicit via match status (once both confirm, the match resolves
+     * to Settled / Disputed and the policy blocks further changes).
+     *
+     * Resolution paths once both players have confirmed:
+     *   - Mirror images (one Won + one Lost) → agreement → settle, real money
+     *     moves via `MatchSettlement::settle($winner)`.
+     *   - Both Won (or both Lost) → disagreement → status flips to Disputed,
+     *     full game-API resolution lands in Phase 4.
+     *
+     * Same-outcome submissions (clicking the already-selected button) are
+     * silent no-ops — no DB write, friendly toast.
+     */
+    public function confirm(ConfirmRequest $request, GameMatch $match): RedirectResponse
+    {
+        $user = $request->user();
+        $newOutcome = MatchOutcome::from($request->validated('outcome'));
+
+        // 403 for non-participants OR if match is no longer Pending. The
+        // in-transaction status re-check handles the race where status
+        // flipped between this gate and the row lock.
+        abort_if($user->cannot('confirm', $match), 403);
+
+        $resolution = DB::transaction(function () use ($match, $user, $newOutcome) {
+            $locked = GameMatch::query()
+                ->with(['listing.user', 'taker'])
+                ->lockForUpdate()
+                ->findOrFail($match->id);
+
+            // Race-check: opponent may have just confirmed and resolved the
+            // match between our policy gate above and this lock.
+            if ($locked->status !== MatchStatus::Pending) {
+                return 'too-late';
+            }
+
+            $isCreator = $locked->listing->user_id === $user->id;
+            $outcomeColumn = $isCreator
+                ? 'creator_confirmed_outcome'
+                : 'taker_confirmed_outcome';
+            $currentOutcome = $locked->{$outcomeColumn};
+
+            // Same outcome → no-op (no DB write, friendly toast).
+            if ($currentOutcome === $newOutcome) {
+                return 'no-change';
+            }
+
+            $locked->{$outcomeColumn} = $newOutcome;
+            $locked->save();
+
+            // Both confirmed? Resolve.
+            if ($locked->creator_confirmed_outcome !== null
+                && $locked->taker_confirmed_outcome !== null) {
+                return $this->resolveBothConfirmed($locked);
+            }
+
+            return 'recorded';
+        });
+
+        return $this->confirmRedirect($match, $resolution);
+    }
+
+    /**
+     * Both players have confirmed. If their claims are mirror images
+     * (one Won + one Lost), agreement → settle. If they're the same
+     * (both Won or both Lost), disagreement → flip to Disputed for
+     * Phase 4 game-API resolution.
+     *
+     * Returns a sentinel string the controller maps to a flash toast.
+     */
+    private function resolveBothConfirmed(GameMatch $match): string
+    {
+        $creatorOutcome = $match->creator_confirmed_outcome;
+        $takerOutcome = $match->taker_confirmed_outcome;
+
+        if ($creatorOutcome === $takerOutcome) {
+            // Same outcome (both Won or both Lost) → disagreement → dispute.
+            $match->update([
+                'status' => MatchStatus::Disputed,
+                'dispute_opened_at' => now(),
+            ]);
+
+            return 'disputed';
+        }
+
+        // Mirror images → agreement → settle.
+        $winner = $creatorOutcome === MatchOutcome::Won
+            ? $match->listing->user
+            : $match->taker;
+
+        MatchSettlement::settle($match, $winner);
+
+        return 'settled';
+    }
+
+    /**
+     * Map a transaction-resolution sentinel to a flash toast + redirect.
+     */
+    private function confirmRedirect(GameMatch $match, string $resolution): RedirectResponse
+    {
+        if ($resolution === 'too-late') {
+            Inertia::flash('toast', [
+                'type' => 'info',
+                'message' => __('This match has already been resolved.'),
+            ]);
+
+            return back();
+        }
+
+        Inertia::flash('toast', match ($resolution) {
+            'settled' => ['type' => 'success', 'message' => __('Both players agreed — match settled.')],
+            'disputed' => ['type' => 'warning', 'message' => __('Both players disagree — match flagged for review.')],
+            'no-change' => ['type' => 'info', 'message' => __("You've already chosen that outcome.")],
+            default => ['type' => 'success', 'message' => __('Confirmation recorded.')],
+        });
+
+        return back();
     }
 }

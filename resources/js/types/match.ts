@@ -26,6 +26,10 @@ export interface MatchListing {
 export interface Match {
     id: number;
     status: MatchStatus;
+    // Platform fee rate as float (BCMath string in backend, JSONified to
+    // float at the resource boundary). Frontend uses this to compute
+    // pot / fee / payout for the settlement summary.
+    fee_rate: number;
     listing: MatchListing;
     creator: MatchPlayer;
     taker: MatchPlayer;
