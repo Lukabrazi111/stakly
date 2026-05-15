@@ -89,21 +89,20 @@ export default function MatchShow({ match }: MatchShowProps) {
                             You are the {youAre.toLowerCase()}.
                         </p>
                     </div>
-                    <span
-                        className={`inline-flex w-fit shrink-0 items-center rounded-full border px-3 py-1.5 text-xs font-medium ${STATUS_TONE[match.status]}`}
-                    >
-                        {STATUS_LABEL[match.status]}
-                    </span>
-                </div>
-
-                {/* Countdown timer — only visible while the confirmation
-                    window is open. Tone shifts as time runs down (neutral
-                    → warning → destructive → muted-on-expiry). */}
-                {match.status === 'pending' && matchDeadline && (
-                    <div className="mb-4">
-                        <MatchTimer deadline={matchDeadline} />
+                    {/* Status + countdown live together on the right side
+                        of the header. Wraps to a new line on narrow widths
+                        so neither chip truncates. */}
+                    <div className="flex flex-wrap items-center gap-2">
+                        <span
+                            className={`inline-flex w-fit shrink-0 items-center rounded-full border px-3 py-1.5 text-xs font-medium ${STATUS_TONE[match.status]}`}
+                        >
+                            {STATUS_LABEL[match.status]}
+                        </span>
+                        {match.status === 'pending' && matchDeadline && (
+                            <MatchTimer deadline={matchDeadline} />
+                        )}
                     </div>
-                )}
+                </div>
 
                 {/* Action area — varies by status. Confirm UI / settlement
                     summary / dispute banner take the prominent slot. */}
