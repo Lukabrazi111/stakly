@@ -264,6 +264,7 @@ Match.Disputed --[game-API can't determine]--> Match.ManualReview (shell only)
 - **Mid-match cancellation** — once taken, the only out is settlement, dispute, or timeout.
 - **Live status push (WebSocket / SSE)** — manual refresh + Inertia partial reload is fine for v1.
 - **Anti-collusion / anti-cheat measures** — sandbagging (strong player on a low-rated alt account farming weaker opponents), multi-accounting, money laundering via stake rotation. Commission rake disincentivizes pure 1v1 friend collusion but doesn't cover these. Designed in a separate post-launch milestone.
+- **Step-up auth on Take** (2FA / email code / Fortify `confirm-password`) for high-stake takes. Same shape as the deferred listing-creation step-up auth (M4 Post-MVP). Decision deferred — design when post-launch abuse patterns are visible.
 
 ---
 

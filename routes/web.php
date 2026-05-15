@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\GameMatchController;
 use App\Http\Controllers\HomeController;
 use App\Http\Controllers\ListingController;
 use App\Http\Controllers\UserController;
@@ -16,6 +17,13 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('/listings/create', [ListingController::class, 'create'])->name('listings.create');
     Route::post('/listings', [ListingController::class, 'store'])->name('listings.store');
     Route::delete('/listings/{listing}/cancel', [ListingController::class, 'cancel'])->name('listings.cancel');
+
+    // M6 — take a listing creates a match + escrows the taker's stake.
+    Route::post('/listings/{listing}/take', [GameMatchController::class, 'take'])->name('listings.take');
+
+    // M6 — match detail page. Participant-only, enforced inside the controller
+    // (404 for non-participants, not 403, to avoid leaking match existence).
+    Route::get('/matches/{match}', [GameMatchController::class, 'show'])->name('matches.show');
 });
 
 Route::get('/listings/{listing}', [ListingController::class, 'show'])->name('listings.show');

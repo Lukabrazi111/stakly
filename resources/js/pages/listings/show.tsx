@@ -21,8 +21,9 @@ import {
     formatTimeRemaining,
     isEndingSoon,
 } from '@/lib/listings-format';
-import { cancel as cancelRoute, index as listingsIndex } from '@/routes/listings';
+import { cancel as cancelRoute, index as listingsIndex, take as takeRoute } from '@/routes/listings';
 import { show as userShow } from '@/routes/users';
+import { deposit as walletDeposit } from '@/routes/wallet';
 import type { ListingShowProps, ListingStatus } from '@/types';
 
 const STATUS_LABEL: Record<ListingStatus, string> = {
@@ -48,12 +49,31 @@ export default function ListingShow({ listing }: ListingShowProps) {
     const isOpen = listing.status === 'open';
     const canCancel = isOwner && isOpen;
     const endingSoon = isEndingSoon(listing.expires_at);
+    const hasEnoughBalance = (auth.user?.usdt_balance ?? 0) >= listing.stake_amount;
+
+    const [takeOpen, setTakeOpen] = useState(false);
+    const [takeProcessing, setTakeProcessing] = useState(false);
 
     const handleCancel = () => {
         router.delete(cancelRoute(listing.id).url, {
             preserveScroll: true,
             onSuccess: () => setCancelOpen(false),
         });
+    };
+
+    const handleTake = () => {
+        setTakeProcessing(true);
+        router.post(
+            takeRoute(listing.id).url,
+            {},
+            {
+                preserveScroll: true,
+                onFinish: () => {
+                    setTakeProcessing(false);
+                    setTakeOpen(false);
+                },
+            },
+        );
     };
 
     return (
@@ -171,20 +191,111 @@ export default function ListingShow({ listing }: ListingShowProps) {
                                 </div>
                             </div>
 
-                            <div className="mt-6 flex flex-col gap-3">
-                                <Button
-                                    variant="gradient"
-                                    size="pill"
-                                    disabled
-                                    title="Coming in M6"
-                                    className="w-full"
-                                >
-                                    Take
-                                </Button>
-                                <p className="text-muted-foreground text-center text-xs">
-                                    Take flow lands in M6.
-                                </p>
-                            </div>
+                            {/* Take area — hidden for owners (cancel area below
+                                handles their case). Branches by auth + balance + status. */}
+                            {!isOwner && (
+                                <div className="mt-6 flex flex-col gap-3">
+                                    {isOpen && auth.user && hasEnoughBalance && (
+                                        <Dialog
+                                            open={takeOpen}
+                                            onOpenChange={setTakeOpen}
+                                        >
+                                            <DialogTrigger asChild>
+                                                <Button
+                                                    variant="gradient"
+                                                    size="pill"
+                                                    className="w-full"
+                                                >
+                                                    Take
+                                                </Button>
+                                            </DialogTrigger>
+                                            <DialogContent>
+                                                <DialogHeader>
+                                                    <DialogTitle>
+                                                        Take this match?
+                                                    </DialogTitle>
+                                                    <DialogDescription>
+                                                        You&apos;re about to stake{' '}
+                                                        <span className="text-foreground font-semibold">
+                                                            ${listing.stake_amount} USDT
+                                                        </span>{' '}
+                                                        on this match. Once it
+                                                        starts, your stake is locked
+                                                        until the match settles, you
+                                                        and your opponent open a
+                                                        dispute, or the 4-hour
+                                                        confirmation window expires.
+                                                    </DialogDescription>
+                                                </DialogHeader>
+                                                <DialogFooter>
+                                                    <Button
+                                                        variant="ghost"
+                                                        onClick={() =>
+                                                            setTakeOpen(false)
+                                                        }
+                                                    >
+                                                        Cancel
+                                                    </Button>
+                                                    <Button
+                                                        variant="gradient"
+                                                        onClick={handleTake}
+                                                        disabled={takeProcessing}
+                                                    >
+                                                        {takeProcessing
+                                                            ? 'Processing…'
+                                                            : 'Confirm & take'}
+                                                    </Button>
+                                                </DialogFooter>
+                                            </DialogContent>
+                                        </Dialog>
+                                    )}
+
+                                    {isOpen &&
+                                        auth.user &&
+                                        !hasEnoughBalance && (
+                                            <>
+                                                <Button
+                                                    variant="gradient"
+                                                    size="pill"
+                                                    disabled
+                                                    className="w-full"
+                                                >
+                                                    Insufficient balance
+                                                </Button>
+                                                <Link
+                                                    href={walletDeposit().url}
+                                                    className="text-muted-foreground hover:text-foreground text-center text-xs transition-colors"
+                                                >
+                                                    Deposit USDT to take this match →
+                                                </Link>
+                                            </>
+                                        )}
+
+                                    {isOpen && !auth.user && (
+                                        <Button
+                                            variant="gradient"
+                                            size="pill"
+                                            className="w-full"
+                                            asChild
+                                        >
+                                            <Link href="/?auth=login">
+                                                Log in to take
+                                            </Link>
+                                        </Button>
+                                    )}
+
+                                    {!isOpen && (
+                                        <Button
+                                            variant="gradient"
+                                            size="pill"
+                                            disabled
+                                            className="w-full"
+                                        >
+                                            {STATUS_LABEL[listing.status]}
+                                        </Button>
+                                    )}
+                                </div>
+                            )}
 
                             {canCancel && (
                                 <>
