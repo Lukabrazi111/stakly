@@ -61,7 +61,7 @@ test('store creates the listing AND writes the escrow hold ledger row', function
 
     $listing = Listing::query()->where('user_id', $user->id)->firstOrFail();
 
-    $response->assertRedirect(route('listings.show', $listing));
+    $response->assertRedirect(route('listings.mine'));
 
     expect($listing->status)->toBe(ListingStatus::Open)
         ->and($listing->user_id)->toBe($user->id)

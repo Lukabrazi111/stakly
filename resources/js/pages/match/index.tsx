@@ -14,8 +14,6 @@ const SKELETON_ROW_COUNT = 4;
 export default function MatchesIndex({ matches, filters }: MatchesIndexProps) {
     const [isLoading, setIsLoading] = useState(false);
 
-    // Mirror the listings index pattern — show skeleton rows during filter /
-    // pagination visits so the layout stays steady even on slow connections.
     useEffect(() => {
         const matchesPath = matchesIndex().url;
 
@@ -73,20 +71,33 @@ export default function MatchesIndex({ matches, filters }: MatchesIndexProps) {
                     <MatchesFilterChips filters={filters} />
                 </div>
 
-                {isLoading ? (
-                    <div className="flex flex-col gap-3">
-                        {Array.from({ length: SKELETON_ROW_COUNT }).map((_, i) => (
-                            <MatchListRowSkeleton key={i} />
-                        ))}
+                {!isEmpty || isLoading ? (
+                    <div className="border-border/60 bg-card/40 overflow-hidden rounded-2xl border">
+                        {/* Column header — desktop only. Mobile rows stack
+                            vertically so labeled columns don't apply. */}
+                        <div className="border-border/40 text-muted-foreground hidden border-b px-5 py-3 text-xs uppercase tracking-wide md:flex md:items-center md:gap-6">
+                            <div className="md:w-52">Opponent</div>
+                            <div className="flex flex-1 items-center gap-6">
+                                <div className="flex-1">Status</div>
+                                <div className="md:w-20 md:text-right">
+                                    Date
+                                </div>
+                                <div className="md:w-28 md:text-right">
+                                    Stake
+                                </div>
+                            </div>
+                        </div>
+
+                        {isLoading
+                            ? Array.from({ length: SKELETON_ROW_COUNT }).map(
+                                (_, i) => <MatchListRowSkeleton key={i} />,
+                            )
+                            : matches.data.map((match) => (
+                                <MatchListRow key={match.id} match={match} />
+                            ))}
                     </div>
-                ) : isEmpty ? (
-                    <EmptyState filtering={isFiltering} />
                 ) : (
-                    <div className="flex flex-col gap-3">
-                        {matches.data.map((match) => (
-                            <MatchListRow key={match.id} match={match} />
-                        ))}
-                    </div>
+                    <EmptyState filtering={isFiltering} />
                 )}
 
                 <MatchesPagination

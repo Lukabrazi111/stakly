@@ -13,7 +13,7 @@ use Illuminate\Notifications\Notifiable;
 use Laravel\Fortify\TwoFactorAuthenticatable;
 use Spatie\Permission\Traits\HasRoles;
 
-#[Fillable(['name', 'username', 'bio', 'email', 'password', 'tron_address'])]
+#[Fillable(['name', 'username', 'bio', 'email', 'password', 'tron_address', 'is_active_mode'])]
 #[Hidden(['password', 'two_factor_secret', 'two_factor_recovery_codes', 'remember_token'])]
 class User extends Authenticatable implements MustVerifyEmail
 {
@@ -43,6 +43,7 @@ class User extends Authenticatable implements MustVerifyEmail
             'two_factor_confirmed_at' => 'datetime',
             'usdt_balance' => 'decimal:6',
             'is_platform' => 'boolean',
+            'is_active_mode' => 'boolean',
         ];
     }
 

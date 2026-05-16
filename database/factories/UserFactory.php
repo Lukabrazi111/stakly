@@ -37,7 +37,25 @@ class UserFactory extends Factory
             'two_factor_recovery_codes' => null,
             'two_factor_confirmed_at' => null,
             'tron_address' => MockTronAddress::generate(),
+            // Default factory users to ACTIVE so existing tests + seeded data
+            // continue to render listings on public surfaces without explicit
+            // overrides. Production new-user default is `false` (column-level)
+            // — the explicit-state override lives at the factory boundary so
+            // tests don't have to opt in everywhere.
+            'is_active_mode' => true,
         ];
+    }
+
+    /**
+     * Indicate that the user is in Inactive Mode — their Open listings
+     * are hidden from public surfaces. Used in tests that exercise the
+     * active-mode-visibility behaviour.
+     */
+    public function inactive(): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'is_active_mode' => false,
+        ]);
     }
 
     /**

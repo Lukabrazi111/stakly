@@ -62,8 +62,9 @@ class Listing extends Model
 
     /**
      * Listings that are open AND not yet past their expiry. Used by the
-     * public marketplace board and anywhere "what's takeable right now"
-     * is the question. Paused listings are explicitly excluded.
+     * owner's view of their own listings (profile, /listings/mine) and as
+     * the foundation for `scopeOnPublicMarketplace`. Doesn't filter by the
+     * owner's `is_active_mode` — owners always see their own listings.
      */
     public function scopeOpen(Builder $query): Builder
     {
@@ -73,15 +74,21 @@ class Listing extends Model
     }
 
     /**
-     * Listings the owner is still actively managing — Open OR Paused, not
-     * yet expired. Used in the owner's view of their own profile so they
-     * can see (and resume) listings they've paused. Public marketplace and
-     * other people's profile views stay on `scopeOpen`.
+     * Listings that are publicly takeable RIGHT NOW. Extends `scopeOpen`
+     * with a check that the owner's global Active Mode is on. When the
+     * owner toggles Inactive on `/listings/mine`, none of their listings
+     * appear here — they're hidden from both the public marketplace and
+     * visitor views of their profile.
+     *
+     * Used by `ListingController::index`, `HomeController::index`, and
+     * `UserController::show` (visitor branch). `/listings/mine` and the
+     * profile owner-view bypass this scope since the owner should always
+     * see their own listings regardless of their active mode.
      */
-    public function scopeOpenOrPaused(Builder $query): Builder
+    public function scopeOnPublicMarketplace(Builder $query): Builder
     {
         return $query
-            ->whereIn('status', [ListingStatus::Open, ListingStatus::Paused])
-            ->where('expires_at', '>', now());
+            ->open()
+            ->whereHas('user', fn (Builder $q) => $q->where('is_active_mode', true));
     }
 }

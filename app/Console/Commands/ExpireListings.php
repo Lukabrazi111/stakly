@@ -29,13 +29,8 @@ class ExpireListings extends Command
     {
         $limit = (int) $this->option('limit');
 
-        // Paused listings still hit their expiry deadline — pause is
-        // visibility-only, not a time freeze. Locked decision in
-        // milestones.md M6 Phase 6 "Pause/resume locked decisions".
-        $expirable = [ListingStatus::Open, ListingStatus::Paused];
-
         $ids = Listing::query()
-            ->whereIn('status', $expirable)
+            ->where('status', ListingStatus::Open)
             ->where('expires_at', '<=', now())
             ->orderBy('id')
             ->limit($limit)
@@ -47,14 +42,13 @@ class ExpireListings extends Command
 
         foreach ($ids as $id) {
             try {
-                $didExpire = DB::transaction(function () use ($id, $expirable) {
+                $didExpire = DB::transaction(function () use ($id) {
                     $listing = Listing::query()->lockForUpdate()->find($id);
 
-                    // Re-check inside the lock: a concurrent take, cancel, or
-                    // pause/resume may have flipped status between our SELECT
-                    // and the lock.
+                    // Re-check inside the lock: a concurrent take or cancel
+                    // may have flipped status between our SELECT and the lock.
                     if (! $listing
-                        || ! in_array($listing->status, $expirable, true)
+                        || $listing->status !== ListingStatus::Open
                         || $listing->expires_at->gt(now())
                     ) {
                         return false;

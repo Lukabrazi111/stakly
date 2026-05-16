@@ -7,7 +7,6 @@ import type { GameId } from '@/config/games';
 
 export type ListingStatus =
     | 'open'
-    | 'paused'
     | 'taken'
     | 'expired'
     | 'cancelled';
@@ -104,9 +103,29 @@ export interface ListingShowProps {
 // durations) are passed from the backend so `StoreListingRequest`'s constants
 // stay the single source of truth — frontend never duplicates them.
 // `balance` is the user's current `usdt_balance` as a BCMath-safe string.
+//
+// `activeListingsCount` + `maxActiveListings` (M6 Phase 6.5) gate the form
+// when the user is at the cap — submit button disables and a banner explains
+// why. Backend re-validates via StoreListingRequest::withValidator.
 export interface ListingCreateProps {
     balance: string;
     regions: string[];
     languages: string[];
     durations: number[];
+    activeListingsCount: number;
+    maxActiveListings: number;
+}
+
+// Tab values for the /listings/mine page (M6 Phase 6.5).
+export type ListingsMineTab = 'listed' | 'all';
+
+// Page-level props for /listings/mine. `listings` is paginated via Spatie
+// query-builder; `tab` reflects the current ?tab= value (defaults to listed);
+// `activeCount` + `maxActive` drive the header count chip + Post listing
+// button's at-cap disabled state.
+export interface ListingsMineProps {
+    listings: Paginator<Listing>;
+    tab: ListingsMineTab;
+    activeCount: number;
+    maxActive: number;
 }

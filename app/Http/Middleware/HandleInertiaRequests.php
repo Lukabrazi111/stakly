@@ -45,9 +45,14 @@ class HandleInertiaRequests extends Middleware
                 // Eloquent's `decimal:6` cast serializes to a string by default.
                 // Same float-at-the-boundary convention as `ListingResource`,
                 // so the frontend never deals with BCMath strings.
+                //
+                // `is_active_mode` is also explicitly shared so the Active
+                // Mode toggle on `/listings/mine` and the marketplace banner
+                // always read the current state without an extra fetch.
                 'user' => $user ? [
                     ...$user->toArray(),
                     'usdt_balance' => (float) $user->usdt_balance,
+                    'is_active_mode' => (bool) $user->is_active_mode,
                 ] : null,
             ],
             'status' => fn () => $request->session()->get('status'),

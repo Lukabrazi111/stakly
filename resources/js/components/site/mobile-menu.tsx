@@ -1,5 +1,6 @@
 import { Link, router, usePage } from '@inertiajs/react';
 import {
+    ListChecks,
     LogOut,
     Search,
     Settings,
@@ -26,6 +27,7 @@ import { home, logout } from '@/routes';
 import {
     create as listingsCreate,
     index as listingsIndex,
+    mine as listingsMine,
 } from '@/routes/listings';
 import { index as matchesIndex } from '@/routes/matches';
 import { edit as editProfile } from '@/routes/profile';
@@ -233,6 +235,16 @@ export function MobileMenu() {
                                     <span>My profile</span>
                                     <SoonBadge />
                                 </div>
+                                <SheetClose asChild>
+                                    <Link
+                                        href={listingsMine().url}
+                                        prefetch
+                                        className={mobileMenuItemClass}
+                                    >
+                                        <ListChecks className="size-5" />
+                                        My listings
+                                    </Link>
+                                </SheetClose>
                                 <SheetClose asChild>
                                     <Link
                                         href={matchesIndex().url}

@@ -1,0 +1,41 @@
+import { usePage } from '@inertiajs/react';
+import { AlertCircle } from 'lucide-react';
+
+/**
+ * Reminder banner shown inside the /listings/mine page when the user's
+ * global Active Mode is off. Reinforces the toggle's state at a glance so
+ * a user who comes to manage listings notices they're hidden.
+ *
+ * Returns null when the user is active — the banner only exists to fix the
+ * inactive state, not to celebrate the active one.
+ */
+export function InactiveModeBanner() {
+    const { auth } = usePage().props;
+
+    if (!auth.user || auth.user.is_active_mode) {
+        return null;
+    }
+
+    return (
+        <div
+            role="status"
+            className="border-warning/40 bg-warning/10 text-warning mb-6 flex items-start gap-3 rounded-xl border p-4"
+        >
+            <AlertCircle
+                className="size-5 shrink-0"
+                aria-hidden="true"
+            />
+            <div className="flex-1">
+                <p className="text-foreground text-sm font-medium">
+                    You&apos;re in Inactive Mode
+                </p>
+                <p className="text-muted-foreground mt-0.5 text-sm">
+                    Your listings are hidden from the public marketplace and
+                    your profile. Toggle Active Mode (top-right) to make them
+                    visible again — any individually-paused listings will
+                    resume too.
+                </p>
+            </div>
+        </div>
+    );
+}

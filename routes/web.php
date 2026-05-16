@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\ActiveModeController;
 use App\Http\Controllers\GameMatchController;
 use App\Http\Controllers\HomeController;
 use App\Http\Controllers\ListingController;
@@ -16,12 +17,19 @@ Route::get('/listings', [ListingController::class, 'index'])->name('listings.ind
 Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('/listings/create', [ListingController::class, 'create'])->name('listings.create');
     Route::post('/listings', [ListingController::class, 'store'])->name('listings.store');
+
+    // M6 Phase 6.5 — owner's management dashboard. Listed / All Ads tabs,
+    // table layout, per-row pause / resume / cancel actions. Registered
+    // before the wildcard `/listings/{listing}` for clarity.
+    Route::get('/listings/mine', [ListingController::class, 'mine'])->name('listings.mine');
+
     Route::delete('/listings/{listing}/cancel', [ListingController::class, 'cancel'])->name('listings.cancel');
 
-    // M6 Phase 6 — soft pause / resume. Visibility-only; no wallet ops. Both
-    // creator-only via policy. POST (not PATCH) for consistency with `take`.
-    Route::post('/listings/{listing}/pause', [ListingController::class, 'pause'])->name('listings.pause');
-    Route::post('/listings/{listing}/resume', [ListingController::class, 'resume'])->name('listings.resume');
+    // M6 Phase 6.5 — global Active Mode toggle. Bybit-style "online status."
+    // Hides every Open listing of the user when off; reactivating brings
+    // them all back instantly. Replaces the per-listing pause/resume model
+    // that was originally shipped in Phase 6 (removed in 6.5).
+    Route::post('/active-mode', [ActiveModeController::class, 'update'])->name('active-mode.update');
 
     // M6 — take a listing creates a match + escrows the taker's stake.
     Route::post('/listings/{listing}/take', [GameMatchController::class, 'take'])->name('listings.take');

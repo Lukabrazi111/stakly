@@ -24,8 +24,6 @@ import {
 import {
     cancel as cancelRoute,
     index as listingsIndex,
-    pause as pauseRoute,
-    resume as resumeRoute,
     take as takeRoute,
 } from '@/routes/listings';
 import { show as matchShow } from '@/routes/matches';
@@ -35,7 +33,6 @@ import type { ListingShowProps, ListingStatus } from '@/types';
 
 const STATUS_LABEL: Record<ListingStatus, string> = {
     open: 'Open',
-    paused: 'Paused',
     taken: 'Taken',
     expired: 'Expired',
     cancelled: 'Cancelled',
@@ -43,7 +40,6 @@ const STATUS_LABEL: Record<ListingStatus, string> = {
 
 const STATUS_TONE: Record<ListingStatus, string> = {
     open: 'border-success/40 bg-success/10 text-success',
-    paused: 'border-warning/40 bg-warning/10 text-warning',
     taken: 'border-primary/40 bg-primary/10 text-primary',
     expired: 'border-border/60 bg-muted text-muted-foreground',
     cancelled: 'border-destructive/40 bg-destructive/10 text-destructive',
@@ -56,49 +52,18 @@ export default function ListingShow({ listing, match }: ListingShowProps) {
 
     const isOwner = auth.user?.id === listing.creator.id;
     const isOpen = listing.status === 'open';
-    const isPaused = listing.status === 'paused';
-    const canPause = isOwner && isOpen;
-    const canResume = isOwner && isPaused;
-    // Cancel reaches Paused too — both states still have escrow held and the
-    // refund path is identical. Locked decision (milestones.md M6 Phase 6).
-    const canCancel = isOwner && (isOpen || isPaused);
+    const canCancel = isOwner && isOpen;
     const endingSoon = isEndingSoon(listing.expires_at);
     const hasEnoughBalance = (auth.user?.usdt_balance ?? 0) >= listing.stake_amount;
 
     const [takeOpen, setTakeOpen] = useState(false);
     const [takeProcessing, setTakeProcessing] = useState(false);
-    const [pauseProcessing, setPauseProcessing] = useState(false);
-    const [resumeProcessing, setResumeProcessing] = useState(false);
 
     const handleCancel = () => {
         router.delete(cancelRoute(listing.id).url, {
             preserveScroll: true,
             onSuccess: () => setCancelOpen(false),
         });
-    };
-
-    const handlePause = () => {
-        setPauseProcessing(true);
-        router.post(
-            pauseRoute(listing.id).url,
-            {},
-            {
-                preserveScroll: true,
-                onFinish: () => setPauseProcessing(false),
-            },
-        );
-    };
-
-    const handleResume = () => {
-        setResumeProcessing(true);
-        router.post(
-            resumeRoute(listing.id).url,
-            {},
-            {
-                preserveScroll: true,
-                onFinish: () => setResumeProcessing(false),
-            },
-        );
     };
 
     const handleTake = () => {
@@ -359,38 +324,10 @@ export default function ListingShow({ listing, match }: ListingShowProps) {
                                 </div>
                             )}
 
-                            {(canPause || canResume || canCancel) && (
+                            {canCancel && (
                                 <>
                                     <div className="border-border/60 my-6 border-t" />
-                                    <div className="space-y-3">
-                                        {canPause && (
-                                            <Button
-                                                variant="outline"
-                                                size="default"
-                                                onClick={handlePause}
-                                                disabled={pauseProcessing}
-                                                className="w-full rounded-full shadow-none"
-                                            >
-                                                {pauseProcessing
-                                                    ? 'Pausing…'
-                                                    : 'Pause listing'}
-                                            </Button>
-                                        )}
-                                        {canResume && (
-                                            <Button
-                                                variant="gradient"
-                                                size="default"
-                                                onClick={handleResume}
-                                                disabled={resumeProcessing}
-                                                className="w-full rounded-full"
-                                            >
-                                                {resumeProcessing
-                                                    ? 'Resuming…'
-                                                    : 'Resume listing'}
-                                            </Button>
-                                        )}
-                                        {canCancel && (
-                                            <Dialog
+                                    <Dialog
                                                 open={cancelOpen}
                                                 onOpenChange={setCancelOpen}
                                             >
@@ -441,8 +378,6 @@ export default function ListingShow({ listing, match }: ListingShowProps) {
                                                     </DialogFooter>
                                                 </DialogContent>
                                             </Dialog>
-                                        )}
-                                    </div>
                                 </>
                             )}
                         </div>

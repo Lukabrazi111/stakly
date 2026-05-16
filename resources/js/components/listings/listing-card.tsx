@@ -21,21 +21,29 @@ interface Props {
  * Compact vertical card for marketing surfaces (homepage featured strip).
  * Sibling to `ListingRow` (dense/horizontal for the index page).
  *
- * Same two-interior-Links pattern as ListingRow:
- *   - Creator avatar + name → `users.show`
- *   - Stake + badges body → `listings.show`
- *
- * Time remaining and the Take button sit outside both Links — time is just
- * informational text, Take is an action (M6).
+ * Clickability uses the absolute-overlay-Link pattern (same as the wallet's
+ * `ActionCard` and `MineListingRow`): the article is `relative`, an
+ * `absolute inset-0` Link covers the entire card to navigate to the listing
+ * detail page, and the creator zone is a *sibling* Link with `relative`
+ * positioning so it paints above the overlay and intercepts its own clicks
+ * (→ user profile). The Take pill is visual-only with `pointer-events-none`
+ * so its click bubbles to the overlay — entire card is clickable.
  */
 export function ListingCard({ listing }: Props) {
     const getInitials = useInitials();
     const endingSoon = isEndingSoon(listing.expires_at);
 
     return (
-        <article className="border-border/60 bg-card/60 hover:border-primary/30 hover:bg-card hover:shadow-glow-sm group flex h-full flex-col gap-4 rounded-2xl border p-5 transition-all duration-200 ease-out hover:-translate-y-0.5">
-            {/* Header: creator Link + plain time remaining */}
-            <header className="flex items-start justify-between gap-3">
+        <article className="border-border/60 bg-card/60 hover:border-primary/30 hover:bg-card hover:shadow-glow-sm group relative flex h-full flex-col gap-4 rounded-2xl border p-5 transition-all duration-200 ease-out hover:-translate-y-0.5">
+            {/* Overlay: entire card → listing detail */}
+            <Link
+                href={showListing(listing.id).url}
+                aria-label={`View listing from ${listing.creator.name}`}
+                className="focus-visible:ring-primary focus-visible:ring-offset-background absolute inset-0 rounded-2xl focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none"
+            />
+
+            {/* Header: creator Link (sits above overlay) + time remaining text */}
+            <header className="relative flex items-start justify-between gap-3">
                 <Link
                     href={userShow(listing.creator.username).url}
                     className="focus-visible:ring-primary focus-visible:ring-offset-background flex min-w-0 items-center gap-2.5 rounded-lg focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none"
@@ -51,7 +59,7 @@ export function ListingCard({ listing }: Props) {
                 </Link>
 
                 <span
-                    className={`inline-flex shrink-0 items-center gap-1 text-xs font-medium ${
+                    className={`pointer-events-none inline-flex shrink-0 items-center gap-1 text-xs font-medium ${
                         endingSoon ? 'text-warning' : 'text-muted-foreground'
                     }`}
                 >
@@ -60,11 +68,8 @@ export function ListingCard({ listing }: Props) {
                 </span>
             </header>
 
-            {/* Body — stake + badges → listing detail */}
-            <Link
-                href={showListing(listing.id).url}
-                className="focus-visible:ring-primary focus-visible:ring-offset-background flex flex-col gap-4 rounded-lg focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none"
-            >
+            {/* Body — stake + badges. No Link; clicks bubble to the overlay. */}
+            <div className="pointer-events-none relative flex flex-col gap-4">
                 <div className="flex items-baseline gap-1.5">
                     <span className="font-display text-gradient-primary text-3xl leading-none font-bold">
                         ${listing.stake_amount}
@@ -87,17 +92,20 @@ export function ListingCard({ listing }: Props) {
                         </span>
                     ))}
                 </div>
-            </Link>
+            </div>
 
-            {/* Take CTA — outside both Links (its own action, lands in M6) */}
+            {/* Take CTA — its own Link with `relative` so it sits above the
+                overlay and captures hover + click. Same destination as the
+                overlay (listing detail), but having its own pointer events
+                means cursor + hover-glow boost work naturally like any
+                other gradient button. */}
             <Button
                 variant="gradient"
                 size="pill"
-                disabled
-                title="Coming in M6"
-                className="mt-auto w-full"
+                asChild
+                className="relative mt-auto w-full"
             >
-                Take
+                <Link href={showListing(listing.id).url}>Take</Link>
             </Button>
         </article>
     );

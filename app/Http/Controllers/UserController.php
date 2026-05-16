@@ -45,7 +45,16 @@ class UserController extends Controller
         $isOwnProfile = $request->user()?->id === $user->id;
 
         $openListings = $user->listings()
-            ->when($isOwnProfile, fn ($q) => $q->openOrPaused(), fn ($q) => $q->open())
+            ->when(
+                $isOwnProfile,
+                // Owner sees their own Open listings regardless of their
+                // active mode — they need to see what's hidden so they can
+                // cancel from the profile or flip Active Mode back on.
+                fn ($q) => $q->open(),
+                // Visitors only see listings that are actually takeable —
+                // status=Open AND owner.is_active_mode=true.
+                fn ($q) => $q->onPublicMarketplace(),
+            )
             ->orderByDesc('created_at')
             ->orderByDesc('id')
             ->limit(self::OPEN_LISTINGS_LIMIT)

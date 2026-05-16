@@ -1,5 +1,6 @@
 import { Link, router } from '@inertiajs/react';
 import {
+    ListChecks,
     LogOut,
     Settings,
     Swords,
@@ -19,6 +20,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { useInitials } from '@/hooks/use-initials';
 import { logout } from '@/routes';
+import { mine as listingsMine } from '@/routes/listings';
 import { index as matchesIndex } from '@/routes/matches';
 import { edit as editProfile } from '@/routes/profile';
 import { index as walletIndex } from '@/routes/wallet';
@@ -55,10 +57,20 @@ export function ProfileMenu({ user }: Props) {
                 <Button
                     variant="ghost"
                     size="icon"
-                    className="hover:shadow-glow-sm focus-visible:shadow-glow-sm size-10 rounded-full p-0 transition-shadow duration-200 ease-out"
+                    // Trigger acts as `group` so the inner Avatar can react to
+                    // hover/open states from the parent. The Button itself
+                    // carries a soft pink halo (`shadow-glow`); the Avatar gets
+                    // a 2px pink ring inside the button bounds — no layout shift
+                    // since size-9 inside size-10 leaves 2px of breathing room.
+                    // No `focus-visible:` on the Avatar ring on purpose: after
+                    // closing the dropdown Radix returns focus to the trigger,
+                    // and focus-visible would keep the ring stuck around. The
+                    // Button source already carries a focus-visible ring at the
+                    // wrapper level for keyboard a11y.
+                    className="group hover:shadow-glow data-[state=open]:shadow-glow size-10 rounded-full p-0 transition-shadow duration-200 ease-out"
                     aria-label="Open account menu"
                 >
-                    <Avatar className="size-9 overflow-hidden rounded-full">
+                    <Avatar className="ring-0 group-hover:ring-primary/50 group-data-[state=open]:ring-primary/50 group-hover:ring-2 group-data-[state=open]:ring-2 size-9 overflow-hidden rounded-full transition-all duration-200 ease-out">
                         <AvatarImage src={user.avatar} alt={user.name} />
                         <AvatarFallback className="bg-gradient-primary text-primary-foreground text-sm font-semibold">
                             {getInitials(user.name)}
@@ -67,10 +79,36 @@ export function ProfileMenu({ user }: Props) {
                 </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent
-                className="border-border/60 bg-card/95 w-60 rounded-xl p-1.5 shadow-[0_8px_32px_-12px_rgba(0,0,0,0.7),0_0_36px_-16px_var(--gradient-glow)] backdrop-blur-md"
+                // DropdownMenuContent acts as a transparent positioning wrapper
+                // here (Radix handles its placement). The ACTUAL styled menu
+                // box is the inner div below; the ambient layer sits as a
+                // sibling BEFORE the styled box so painting order matches the
+                // auth modal: ambient paints first, then the bg-card menu box
+                // covers it where they overlap. Only the outer halo (beyond
+                // the menu's bounds) is visible — true "behind" glow.
+                className="relative !w-auto !overflow-visible !rounded-none !border-0 !bg-transparent !p-0 !shadow-none !backdrop-blur-none"
                 align="end"
                 sideOffset={8}
             >
+                {/* Ambient pink atmosphere — same radial-gradient + blur
+                    pattern as the auth modal, scaled down for a dropdown.
+                    Centered on the menu, 460px wide (same as the modal),
+                    100px blur. Painted before the menu box → only the halo
+                    OUTSIDE the menu's edges is visible. */}
+                <div
+                    aria-hidden
+                    className="pointer-events-none absolute top-1/2 left-1/2 size-[460px] -translate-x-1/2 -translate-y-1/2 rounded-full blur-[100px]"
+                    style={{
+                        background:
+                            'radial-gradient(circle, color-mix(in srgb, var(--gradient-glow) 22%, transparent) 0%, transparent 65%)',
+                    }}
+                />
+
+                {/* Actual styled menu box — sits on top of the ambient layer,
+                    its bg-card covers the inner part of the glow, leaving only
+                    the outer halo visible. Border-glow gives the pink border +
+                    tight inner ring, same as the auth modal. */}
+                <div className="border-glow bg-card relative w-60 rounded-xl border p-1.5 backdrop-blur-md">
                 <DropdownMenuLabel className="p-0 font-normal">
                     <div className="flex flex-col gap-0.5 px-2.5 py-2">
                         <span className="text-foreground truncate text-sm font-medium">
@@ -90,6 +128,16 @@ export function ProfileMenu({ user }: Props) {
                         <UserIcon className="mr-2 size-4" />
                         <span>My profile</span>
                         <SoonBadge />
+                    </DropdownMenuItem>
+                    <DropdownMenuItem asChild>
+                        <Link
+                            href={listingsMine().url}
+                            prefetch
+                            className={menuItemClass}
+                        >
+                            <ListChecks className="mr-2 size-4" />
+                            My listings
+                        </Link>
                     </DropdownMenuItem>
                     <DropdownMenuItem asChild>
                         <Link
@@ -135,6 +183,7 @@ export function ProfileMenu({ user }: Props) {
                         Log out
                     </Link>
                 </DropdownMenuItem>
+                </div>
             </DropdownMenuContent>
         </DropdownMenu>
     );

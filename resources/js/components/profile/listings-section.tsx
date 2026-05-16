@@ -3,11 +3,9 @@ import type { Listing } from '@/types';
 
 interface Props {
     listings: Listing[];
-    /** True only when the auth user is viewing their own profile. Drives whether the inline pause/resume icon renders. */
-    isOwnProfile: boolean;
 }
 
-export function ListingsSection({ listings, isOwnProfile }: Props) {
+export function ListingsSection({ listings }: Props) {
     return (
         <section>
             <h2 className="font-display text-foreground mb-3 text-lg font-semibold">
@@ -26,7 +24,6 @@ export function ListingsSection({ listings, isOwnProfile }: Props) {
                         <ProfileListingRow
                             key={listing.id}
                             listing={listing}
-                            isOwnProfile={isOwnProfile}
                         />
                     ))}
                 </div>

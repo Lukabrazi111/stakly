@@ -2,6 +2,7 @@ import { router } from '@inertiajs/react';
 import { ChevronDown, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { ListingFilters } from '@/components/listings/listing-filters';
+import { ListingsMoreMenu } from '@/components/listings/listings-more-menu';
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -188,7 +189,8 @@ export function ListingFiltersBar({ filters, sorts }: Props) {
                     </>
                 )}
 
-                <div className="ml-auto">
+                <div className="ml-auto flex items-center gap-2">
+                    <ListingsMoreMenu />
                     <ListingFilters filters={filters} activeCount={count} />
                 </div>
             </div>

@@ -1,5 +1,5 @@
 import { Head, Link, useForm } from '@inertiajs/react';
-import { Crown } from 'lucide-react';
+import { AlertCircle, Crown } from 'lucide-react';
 import type { ReactNode } from 'react';
 import InputError from '@/components/input-error';
 import { Button } from '@/components/ui/button';
@@ -14,7 +14,11 @@ import {
 } from '@/components/ui/select';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import SiteLayout from '@/layouts/site-layout';
-import { index as listingsIndex, store as storeListing } from '@/routes/listings';
+import {
+    index as listingsIndex,
+    mine as listingsMine,
+    store as storeListing,
+} from '@/routes/listings';
 import type { ListingCreateProps, TimeControl } from '@/types';
 
 const TIME_CONTROL_OPTIONS: ReadonlyArray<[TimeControl, string]> = [
@@ -28,7 +32,10 @@ export default function ListingsCreate({
     regions,
     languages,
     durations,
+    activeListingsCount,
+    maxActiveListings,
 }: ListingCreateProps) {
+    const atCap = activeListingsCount >= maxActiveListings;
     const { data, setData, post, processing, errors } = useForm<{
         game: string;
         stake_amount: string;
@@ -55,6 +62,7 @@ export default function ListingsCreate({
     const hasTimeControl = data.time_control.length > 0;
     const canSubmit
         = !processing
+        && !atCap
         && !exceedsBalance
         && data.stake_amount !== ''
         && stakeNumber > 0
@@ -73,6 +81,34 @@ export default function ListingsCreate({
                         Set your terms — opponents will pick yours from the marketplace.
                     </p>
                 </header>
+
+                {atCap && (
+                    <div
+                        role="status"
+                        className="border-warning/40 bg-warning/10 text-warning mb-8 flex items-start gap-3 rounded-xl border p-4"
+                    >
+                        <AlertCircle
+                            className="size-5 shrink-0"
+                            aria-hidden="true"
+                        />
+                        <div className="flex-1">
+                            <p className="text-foreground text-sm font-medium">
+                                You&apos;re at the {maxActiveListings}-listing cap
+                            </p>
+                            <p className="text-muted-foreground mt-0.5 text-sm">
+                                Cancel one of your active listings (Open or
+                                Paused) before creating another, or wait for
+                                one to settle.{' '}
+                                <Link
+                                    href={listingsMine().url}
+                                    className="text-primary hover:text-primary/80 font-medium underline-offset-2 transition-colors hover:underline"
+                                >
+                                    Go to My listings →
+                                </Link>
+                            </p>
+                        </div>
+                    </div>
+                )}
 
                 <form
                     onSubmit={(e) => {

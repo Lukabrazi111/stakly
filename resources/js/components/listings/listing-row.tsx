@@ -18,14 +18,17 @@ interface Props {
 }
 
 /**
- * Two interior Links per row:
- *   - Creator avatar + name + region → `users.show` (profile)
- *   - Badges + time + stake → `listings.show` (listing detail)
- *
- * The Take button is a sibling of both Links — it's an action (M6) not
- * navigation. Hover lift/glow lives on the outer `<article>` so it triggers
- * regardless of which interior zone is hovered (CSS `:hover` propagates from
- * descendants to ancestor).
+ * Marketplace row on `/listings`. Whole row clickable via the absolute-overlay
+ * Link pattern (matches `MineListingRow` + the wallet's `ActionCard`):
+ *   - Outer `<article relative>` carries hover lift/glow.
+ *   - Absolute `inset-0` Link covers the entire row → listing detail.
+ *   - Creator zone is a *sibling* Link with `relative` positioning so it
+ *     paints above the overlay and intercepts its own clicks → user profile.
+ *   - Body content (badges, time, stake) is `pointer-events-none` so clicks
+ *     fall through to the overlay.
+ *   - Take pill is a visual CTA only, also `pointer-events-none` — the
+ *     entire row already navigates to the detail page where the real Take
+ *     dialog + balance check live.
  */
 export function ListingRow({ listing }: Props) {
     const getInitials = useInitials();
@@ -33,11 +36,18 @@ export function ListingRow({ listing }: Props) {
     const endingSoon = isEndingSoon(listing.expires_at);
 
     return (
-        <article className="border-border/60 bg-card/60 hover:border-primary/30 hover:bg-card hover:shadow-glow-sm group flex flex-col gap-4 rounded-2xl border p-4 transition-all duration-200 ease-out hover:-translate-y-0.5 md:flex-row md:items-center md:gap-6 md:p-5">
-            {/* Creator zone → user profile */}
+        <article className="border-border/60 bg-card/60 hover:border-primary/30 hover:bg-card hover:shadow-glow-sm group relative flex flex-col gap-4 rounded-2xl border p-4 transition-all duration-200 ease-out hover:-translate-y-0.5 md:flex-row md:items-center md:gap-6 md:p-5">
+            {/* Overlay: entire row → listing detail */}
+            <Link
+                href={showListing(listing.id).url}
+                aria-label={`View listing from ${listing.creator.name}`}
+                className="focus-visible:ring-primary focus-visible:ring-offset-background absolute inset-0 rounded-2xl focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none"
+            />
+
+            {/* Creator zone — relative, sits above the overlay → user profile */}
             <Link
                 href={userShow(listing.creator.username).url}
-                className="focus-visible:ring-primary focus-visible:ring-offset-background flex min-w-0 items-center gap-3 rounded-lg focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none md:w-48 md:shrink-0"
+                className="focus-visible:ring-primary focus-visible:ring-offset-background relative flex min-w-0 items-center gap-3 rounded-lg focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none md:w-48 md:shrink-0"
             >
                 <Avatar className="size-11 shrink-0 overflow-hidden rounded-full">
                     <AvatarFallback className="bg-gradient-primary text-primary-foreground text-sm font-semibold">
@@ -58,11 +68,8 @@ export function ListingRow({ listing }: Props) {
                 </div>
             </Link>
 
-            {/* Listing body → listing detail */}
-            <Link
-                href={showListing(listing.id).url}
-                className="focus-visible:ring-primary focus-visible:ring-offset-background flex flex-1 flex-wrap items-center gap-3 rounded-lg focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none md:flex-nowrap md:gap-6"
-            >
+            {/* Listing body — no Link wrapper; clicks bubble to overlay */}
+            <div className="pointer-events-none relative flex flex-1 flex-wrap items-center gap-3 md:flex-nowrap md:gap-6">
                 <div className="flex flex-wrap items-center gap-2 md:flex-1">
                     <span className="border-border/60 bg-background/60 text-muted-foreground inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium">
                         <Trophy className="size-3" />
@@ -104,22 +111,22 @@ export function ListingRow({ listing }: Props) {
                     </span>
                     <span className="text-muted-foreground text-xs">USDT</span>
                 </div>
-            </Link>
+            </div>
 
-            {/* Take CTA — its own action (M6), outside both Links */}
-            <div className="flex items-center gap-2 md:shrink-0">
+            {/* Take CTA — its own Link with `relative` so it sits above the
+                overlay and captures hover + click. Same destination as the
+                row overlay (listing detail), but having its own pointer
+                events means cursor + hover-glow boost work naturally like
+                any other gradient button. */}
+            <div className="relative flex items-center gap-2 md:shrink-0">
                 <Button
                     variant="gradient"
                     size="pill"
-                    disabled
-                    title="Coming in M6"
+                    asChild
                     className="w-full md:w-auto"
                 >
-                    Take
+                    <Link href={showListing(listing.id).url}>Take</Link>
                 </Button>
-                <span className="bg-background/80 text-muted-foreground hidden rounded-full px-2 py-0.5 text-[10px] tracking-wide uppercase backdrop-blur lg:inline-block">
-                    Soon
-                </span>
             </div>
         </article>
     );

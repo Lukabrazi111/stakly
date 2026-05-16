@@ -17,12 +17,15 @@ interface Props {
 }
 
 /**
- * One match in the /matches list. Mirrors `ListingRow`'s two-interior-Links
- * pattern (opponent zone → opponent profile; body → match detail) so the
- * marketplace and the matches list feel visually consistent.
+ * One row inside the `/matches` table container (`pages/match/index.tsx`).
  *
- * The current user's perspective drives which player is "opponent" and
- * whether a settled match was a win or loss for them.
+ * Designed to live inside a single wrapping card with siblings — uses
+ * `border-t border-border/40 first:border-t-0` for separation instead of
+ * its own rounded border. Hover is a flat `bg-primary/5` row-tint rather
+ * than the lift+glow you'd expect on a floating card.
+ *
+ * Two interior `<Link>`s remain: opponent zone → user profile,
+ * body → match detail. The outer `<article>` carries the row hover state.
  */
 export function MatchListRow({ match }: Props) {
     const getInitials = useInitials();
@@ -32,8 +35,7 @@ export function MatchListRow({ match }: Props) {
     const isCreator = match.creator.id === userId;
     const opponent = isCreator ? match.taker : match.creator;
 
-    // Result chip only appears on settled matches. Pending/Disputed/ManualReview
-    // matches don't have a winner yet, and the status pill carries the meaning.
+    // Result chip only on settled matches.
     const youWon = match.winner !== null && userId === match.winner.id;
     const youLost
         = match.status === 'settled'
@@ -41,13 +43,13 @@ export function MatchListRow({ match }: Props) {
             && !youWon;
 
     return (
-        <article className="border-border/60 bg-card/60 hover:border-primary/30 hover:bg-card hover:shadow-glow-sm group flex flex-col gap-4 rounded-2xl border p-4 transition-all duration-200 ease-out hover:-translate-y-0.5 md:flex-row md:items-center md:gap-6 md:p-5">
+        <article className="hover:bg-primary/5 border-border/40 group flex flex-col gap-4 border-t px-4 py-4 transition-colors duration-200 ease-out first:border-t-0 md:flex-row md:items-center md:gap-6 md:px-5">
             {/* Opponent zone → opponent profile */}
             <Link
                 href={userShow(opponent.username).url}
                 className="focus-visible:ring-primary focus-visible:ring-offset-background flex min-w-0 items-center gap-3 rounded-lg focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none md:w-52 md:shrink-0"
             >
-                <Avatar className="size-11 shrink-0 overflow-hidden rounded-full">
+                <Avatar className="size-10 shrink-0 overflow-hidden rounded-full">
                     <AvatarFallback className="bg-gradient-primary text-primary-foreground text-sm font-semibold">
                         {getInitials(opponent.name)}
                     </AvatarFallback>
@@ -104,7 +106,7 @@ export function MatchListRow({ match }: Props) {
                 </div>
 
                 <div className="flex items-baseline gap-1 md:w-28 md:shrink-0 md:justify-end">
-                    <span className="font-display text-gradient-primary text-2xl font-bold leading-none">
+                    <span className="font-display text-gradient-primary text-xl font-bold leading-none md:text-2xl">
                         ${match.listing.stake_amount}
                     </span>
                     <span className="text-muted-foreground text-xs">USDT</span>

@@ -1,4 +1,4 @@
-import { Head, usePage } from '@inertiajs/react';
+import { Head } from '@inertiajs/react';
 import { LinkedAccountsSection } from '@/components/profile/linked-accounts-section';
 import { ListingsSection } from '@/components/profile/listings-section';
 import { MatchHistorySection } from '@/components/profile/match-history-section';
@@ -13,9 +13,6 @@ export default function UserShow({
     openListings,
     matchHistory,
 }: ProfileShowProps) {
-    const { auth } = usePage().props;
-    const isOwnProfile = auth.user?.id === user.id;
-
     return (
         <SiteLayout>
             <Head title={`${user.name}'s profile`} />
@@ -25,10 +22,7 @@ export default function UserShow({
 
                 <div className="mt-10 flex flex-col gap-10">
                     <StatsCard stats={stats} />
-                    <ListingsSection
-                        listings={openListings.data}
-                        isOwnProfile={isOwnProfile}
-                    />
+                    <ListingsSection listings={openListings.data} />
                     <MatchHistorySection
                         matches={matchHistory.data}
                         profileUserId={user.id}

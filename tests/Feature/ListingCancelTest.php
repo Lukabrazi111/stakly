@@ -64,7 +64,7 @@ test('owner can cancel an open listing — status flips, refund row written, bal
 
     $response = $this->actingAs($user)->deleteJson("/listings/{$listing->id}/cancel");
 
-    $response->assertRedirect(route('listings.show', $listing));
+    $response->assertRedirect(route('listings.mine'));
 
     expect($listing->fresh()->status)->toBe(ListingStatus::Cancelled);
 

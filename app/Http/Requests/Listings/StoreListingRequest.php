@@ -3,11 +3,13 @@
 namespace App\Http\Requests\Listings;
 
 use App\Enums\Game;
+use App\Enums\ListingStatus;
 use App\Enums\TimeControl;
 use App\Services\Wallet;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\Validator;
 
 /**
  * Validates input for creating a new listing.
@@ -27,6 +29,17 @@ class StoreListingRequest extends FormRequest
     public const REGIONS = ['Global', 'EU', 'NA', 'Asia', 'CIS', 'LATAM'];
 
     public const LANGUAGES = ['English', 'Russian', 'Spanish', 'German', 'Portuguese'];
+
+    /**
+     * Maximum number of active (Open) listings a single user can hold at
+     * once. Locked at 2 for the v1 launch per Phase 6.5; bump later if
+     * friction shows up (chess has 3 time controls — Blitz / Rapid /
+     * Classical — and a player wanting one of each hits the cap fast).
+     * Taken / Expired / Cancelled don't count toward the cap. Global Active
+     * Mode (also Phase 6.5) is an orthogonal visibility toggle, not a count
+     * modifier — Inactive listings still count.
+     */
+    public const MAX_ACTIVE_LISTINGS = 2;
 
     public function authorize(): bool
     {
@@ -71,6 +84,38 @@ class StoreListingRequest extends FormRequest
             'language.*' => ['string', Rule::in(self::LANGUAGES), 'distinct'],
             'duration_hours' => ['required', 'integer', Rule::in(self::DURATION_HOURS)],
         ];
+    }
+
+    /**
+     * Defense-in-depth check for the max-active-listings cap. The frontend
+     * disables the submit button when the user is at cap (see
+     * `ListingController::create`), but a concurrent submit from a stale
+     * tab still needs to be rejected server-side. Error attaches to a
+     * non-field key so the React form can surface it as a banner rather
+     * than inline on `stake_amount`.
+     */
+    public function withValidator(Validator $validator): void
+    {
+        $validator->after(function (Validator $validator): void {
+            $user = $this->user();
+
+            if ($user === null) {
+                return;
+            }
+
+            $activeCount = $user->listings()
+                ->where('status', ListingStatus::Open)
+                ->count();
+
+            if ($activeCount >= self::MAX_ACTIVE_LISTINGS) {
+                $validator->errors()->add(
+                    'active_listings_cap',
+                    __('You already have :count active listings — the maximum allowed. Cancel one (or wait for it to settle / expire) before creating another.', [
+                        'count' => $activeCount,
+                    ]),
+                );
+            }
+        });
     }
 
     /**

@@ -81,7 +81,12 @@ export function ListingFilters({ filters, activeCount }: Props) {
         <Button
             variant="ghost"
             size="pill"
-            className="border-border/60 hover:bg-primary/10 border"
+            // Bordered-ghost pattern: pink wash + border highlight on hover.
+            // Overrides the ghost variant's white text-shadow glow which
+            // looks busy layered on top of a background + border.
+            // `data-[state=open]` keeps the highlight on while the popover
+            // is open so users see which trigger owns it.
+            className="border-border/60 hover:bg-primary/10 hover:border-primary/40 hover:[text-shadow:none] data-[state=open]:bg-primary/10 data-[state=open]:border-primary/40 border"
         >
             <SlidersHorizontal className="size-4" />
             Filters
@@ -124,7 +129,7 @@ export function ListingFilters({ filters, activeCount }: Props) {
             <PopoverContent
                 align="end"
                 sideOffset={8}
-                className="bg-card/95 border-border/60 shadow-glow-sm w-[420px] rounded-xl border p-0 backdrop-blur-md"
+                className="bg-card/95 border-border/60 w-[420px] rounded-xl border p-0 backdrop-blur-md"
             >
                 {form}
             </PopoverContent>

@@ -20,7 +20,7 @@ class HomeController extends Controller
     public function index(): Response
     {
         $featured = Listing::query()
-            ->open()
+            ->onPublicMarketplace()
             ->with('user:id,name,username')
             ->orderBy('expires_at')
             ->orderByDesc('id')

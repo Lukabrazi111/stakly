@@ -38,6 +38,15 @@ return new class extends Migration
             // ledger entries. See milestones.md M3.5.
             $table->boolean('is_platform')->default(false);
 
+            // Global "Active Mode" toggle (M6 Phase 6.5). When false, ALL the
+            // user's Open listings are hidden from the public marketplace AND
+            // public profile views. Default `false` — new users are inactive
+            // until they explicitly opt in on /listings/mine. Matches Bybit's
+            // "you're currently offline" first-visit experience and prevents
+            // a freshly-registered (but unverified-feeling) user from being
+            // immediately takeable while they're still exploring.
+            $table->boolean('is_active_mode')->default(false);
+
             // Spendable USDT balance. NEVER written outside `App\Services\Wallet`.
             // Invariant (asserted in tests): equals SUM(wallet_transactions.amount)
             // for this user at all times. decimal(18, 6) matches Tron's USDT precision.

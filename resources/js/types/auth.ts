@@ -10,6 +10,10 @@ export type User = {
     // middleware boundary (`HandleInertiaRequests`). Updates after every
     // navigation since auth.user is re-shared on each request.
     usdt_balance: number;
+    // Global "Active Mode" flag (M6 Phase 6.5). When false, ALL the user's
+    // Open listings are hidden from the marketplace + public profile views.
+    // Toggled via /listings/mine page. Default true.
+    is_active_mode: boolean;
     created_at: string;
     updated_at: string;
     [key: string]: unknown;

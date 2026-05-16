@@ -44,7 +44,7 @@ class ListingController extends Controller
         );
 
         $listings = QueryBuilder::for(
-            Listing::query()->open()->with('user:id,name,username'),
+            Listing::query()->onPublicMarketplace()->with('user:id,name,username'),
         )
             ->allowedFilters(
                 AllowedFilter::exact('game')->default(Game::Chess->value),
@@ -104,17 +104,73 @@ class ListingController extends Controller
 
     /**
      * Create-listing form. Auth + email-verified gates are at the route
-     * layer; we also pass the user's current USDT balance so the form can
-     * disable submit when stake > balance (the request also validates this
-     * authoritatively in Phase 7).
+     * layer; we also pass the user's current USDT balance + active-listings
+     * count so the form can disable submit when stake > balance OR the cap
+     * is hit. `StoreListingRequest` re-validates both server-side.
      */
     public function create(Request $request): Response
     {
+        $user = $request->user();
+
+        $activeCount = $user->listings()
+            ->where('status', ListingStatus::Open)
+            ->count();
+
         return Inertia::render('listings/create', [
-            'balance' => Wallet::balanceFor($request->user()),
+            'balance' => Wallet::balanceFor($user),
             'regions' => StoreListingRequest::REGIONS,
             'languages' => StoreListingRequest::LANGUAGES,
             'durations' => StoreListingRequest::DURATION_HOURS,
+            'activeListingsCount' => $activeCount,
+            'maxActiveListings' => StoreListingRequest::MAX_ACTIVE_LISTINGS,
+        ]);
+    }
+
+    /**
+     * Owner's listings management dashboard (M6 Phase 6.5). Tabs:
+     *   - `listed` (default): only Open listings, what's currently on the
+     *     public board (assuming Active Mode is on).
+     *   - `all`: every status the user has ever held — full history.
+     *
+     * Both tabs scope to `user_id = auth user` so a user can never see
+     * another user's listings here. Pagination 12/page; bad `tab` values
+     * silently fall back to `listed` (consistent with other URL-driven
+     * filters that prefer graceful degradation over 422 walls).
+     */
+    public function mine(Request $request): Response
+    {
+        $user = $request->user();
+        abort_if($user->is_platform, 403);
+
+        $tab = in_array($request->input('tab'), ['listed', 'all'], true)
+            ? $request->input('tab')
+            : 'listed';
+
+        $query = $user->listings()
+            ->with('user:id,name,username')
+            ->orderByDesc('created_at')
+            ->orderByDesc('id');
+
+        if ($tab === 'listed') {
+            // "Listed" = on-the-board. Open only. Paused listings live in
+            // "All Ads" until the user resumes them.
+            $query->where('status', ListingStatus::Open);
+        }
+
+        $listings = $query->paginate(self::PER_PAGE)->withQueryString();
+
+        // Counts both Open and Paused — the cap is about "listings holding
+        // your capital that aren't yet concluded." Mirrors the rule in
+        // `StoreListingRequest::withValidator`.
+        $activeCount = $user->listings()
+            ->where('status', ListingStatus::Open)
+            ->count();
+
+        return Inertia::render('listings/mine', [
+            'listings' => ListingResource::collection($listings),
+            'tab' => $tab,
+            'activeCount' => $activeCount,
+            'maxActive' => StoreListingRequest::MAX_ACTIVE_LISTINGS,
         ]);
     }
 
@@ -168,17 +224,26 @@ class ListingController extends Controller
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Listing created.')]);
 
-        return to_route('listings.show', $listing);
+        // Redirect to the owner's management dashboard rather than the detail
+        // page — gives users a single home where they can see all their
+        // listings, toggle Active Mode, and post another.
+        return to_route('listings.mine');
     }
 
     /**
-     * Cancels an Open or Paused listing and refunds the escrow in a single
-     * transaction. The release is idempotent on `listing-cancel:{id}` so a
-     * double-submit (network retry, double-click after slow response) doesn't
-     * double-credit.
+     * Cancels an Open listing and refunds the escrow in a single transaction.
+     * The release is idempotent on `listing-cancel:{id}` so a double-submit
+     * (network retry, double-click after slow response) doesn't double-credit.
      *
      * Authorization is handled by `ListingPolicy::cancel`: creator-only AND
-     * status in {Open, Paused}. Taken / expired / cancelled listings return 403.
+     * status === Open. Taken / expired / cancelled listings return 403. The
+     * global Active Mode toggle (M6 Phase 6.5) handles hiding listings
+     * without losing escrow — pausing per-listing was removed in 6.5.
+     *
+     * Redirects to `/listings/mine` rather than the now-cancelled detail page
+     * — cancel is a management action, the user is most likely on (or coming
+     * from) the management dashboard, and the cancelled detail view has no
+     * actions left to take anyway.
      */
     public function cancel(Listing $listing): RedirectResponse
     {
@@ -203,87 +268,7 @@ class ListingController extends Controller
             ]),
         ]);
 
-        return to_route('listings.show', $listing);
-    }
-
-    /**
-     * Soft pause — hides the listing from the public board without releasing
-     * the escrow. Single atomic status flip under a row lock; no wallet ops.
-     * Race-safe: re-checks status inside the lock so a concurrent take or
-     * expire can't slip in between the policy gate and the write.
-     *
-     * Redirects back() so pausing from the profile listings card stays on
-     * the profile, and pausing from the listing detail stays on the detail.
-     */
-    public function pause(Listing $listing): RedirectResponse
-    {
-        Gate::authorize('pause', $listing);
-
-        $paused = DB::transaction(function () use ($listing) {
-            $locked = Listing::query()->lockForUpdate()->findOrFail($listing->id);
-
-            if ($locked->status !== ListingStatus::Open) {
-                return false;
-            }
-
-            $locked->update(['status' => ListingStatus::Paused]);
-
-            return true;
-        });
-
-        if (! $paused) {
-            Inertia::flash('toast', [
-                'type' => 'info',
-                'message' => __('This listing can no longer be paused.'),
-            ]);
-
-            return back();
-        }
-
-        Inertia::flash('toast', [
-            'type' => 'success',
-            'message' => __('Listing paused. Hidden from the board until you resume it.'),
-        ]);
-
-        return back();
-    }
-
-    /**
-     * Inverse of pause. Flips Paused → Open under a row lock so the listing
-     * reappears on the public board. No wallet ops — escrow was held the
-     * entire time.
-     */
-    public function resume(Listing $listing): RedirectResponse
-    {
-        Gate::authorize('resume', $listing);
-
-        $resumed = DB::transaction(function () use ($listing) {
-            $locked = Listing::query()->lockForUpdate()->findOrFail($listing->id);
-
-            if ($locked->status !== ListingStatus::Paused) {
-                return false;
-            }
-
-            $locked->update(['status' => ListingStatus::Open]);
-
-            return true;
-        });
-
-        if (! $resumed) {
-            Inertia::flash('toast', [
-                'type' => 'info',
-                'message' => __('This listing can no longer be resumed.'),
-            ]);
-
-            return back();
-        }
-
-        Inertia::flash('toast', [
-            'type' => 'success',
-            'message' => __('Listing resumed. It’s back on the board.'),
-        ]);
-
-        return back();
+        return to_route('listings.mine');
     }
 
     /**
