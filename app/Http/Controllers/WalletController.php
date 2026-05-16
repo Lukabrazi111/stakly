@@ -32,7 +32,7 @@ class WalletController extends Controller
         abort_if($user->is_platform, 403);
 
         $recent = $user->walletTransactions()
-            ->with('listing:id,game')
+            ->with(['listing:id,game', 'listing.gameMatch:id,listing_id'])
             ->orderByDesc('created_at')
             ->orderByDesc('id')
             ->limit(self::INDEX_RECENT_LIMIT)
@@ -111,7 +111,7 @@ class WalletController extends Controller
         $transactions = QueryBuilder::for(
             WalletTransaction::query()
                 ->where('user_id', $user->id)
-                ->with('listing:id,game'),
+                ->with(['listing:id,game', 'listing.gameMatch:id,listing_id']),
         )
             ->allowedFilters(
                 AllowedFilter::exact('type'),

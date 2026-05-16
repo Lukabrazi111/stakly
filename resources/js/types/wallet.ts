@@ -26,6 +26,13 @@ export interface RelatedListingSummary {
     game: GameId;
 }
 
+// Embedded match summary for transactions whose listing has a 1:1 match
+// (Payout / Fee, and any Hold posted at match-take). The frontend uses this
+// to deep-link Payout / Fee rows directly to the match.
+export interface RelatedMatchSummary {
+    id: number;
+}
+
 export interface WalletTransaction {
     id: number;
     type: WalletTransactionType;
@@ -38,6 +45,10 @@ export interface WalletTransaction {
     // Eager-loaded summary. Always present on index + history pages; `null`
     // when the transaction has no related listing.
     related_listing: RelatedListingSummary | null;
+    // Eager-loaded summary of the listing's match, when one exists. `null`
+    // for transactions on listings that were cancelled / expired before
+    // anyone took them.
+    related_match: RelatedMatchSummary | null;
     description: string | null;
     created_at: string | null;
 }

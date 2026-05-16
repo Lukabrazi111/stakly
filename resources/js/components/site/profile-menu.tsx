@@ -1,5 +1,11 @@
 import { Link, router } from '@inertiajs/react';
-import { LogOut, Settings, User as UserIcon, Wallet } from 'lucide-react';
+import {
+    LogOut,
+    Settings,
+    Swords,
+    User as UserIcon,
+    Wallet,
+} from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import {
@@ -13,6 +19,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { useInitials } from '@/hooks/use-initials';
 import { logout } from '@/routes';
+import { index as matchesIndex } from '@/routes/matches';
 import { edit as editProfile } from '@/routes/profile';
 import { index as walletIndex } from '@/routes/wallet';
 import type { User } from '@/types/auth';
@@ -83,6 +90,16 @@ export function ProfileMenu({ user }: Props) {
                         <UserIcon className="mr-2 size-4" />
                         <span>My profile</span>
                         <SoonBadge />
+                    </DropdownMenuItem>
+                    <DropdownMenuItem asChild>
+                        <Link
+                            href={matchesIndex().url}
+                            prefetch
+                            className={menuItemClass}
+                        >
+                            <Swords className="mr-2 size-4" />
+                            Matches
+                        </Link>
                     </DropdownMenuItem>
                     <DropdownMenuItem asChild>
                         <Link

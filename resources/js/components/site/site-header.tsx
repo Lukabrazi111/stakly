@@ -16,6 +16,7 @@ import {
     create as listingsCreate,
     index as listingsIndex,
 } from '@/routes/listings';
+import { index as matchesIndex } from '@/routes/matches';
 
 export function SiteHeader() {
     const { openLogin, openRegister } = useAuthModal();
@@ -53,6 +54,14 @@ export function SiteHeader() {
                     >
                         Listings
                     </Link>
+                    {user && (
+                        <Link
+                            href={matchesIndex().url}
+                            className="text-foreground hover:text-primary px-3 py-2 text-sm transition-colors"
+                        >
+                            Matches
+                        </Link>
+                    )}
                     <Link
                         href="#"
                         className="text-foreground hover:text-primary px-3 py-2 text-sm transition-colors"

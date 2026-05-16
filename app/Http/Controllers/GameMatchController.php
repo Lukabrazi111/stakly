@@ -7,6 +7,7 @@ use App\Enums\MatchOutcome;
 use App\Enums\MatchStatus;
 use App\Exceptions\InsufficientBalanceException;
 use App\Http\Requests\GameMatch\ConfirmRequest;
+use App\Http\Requests\GameMatch\IndexMatchesRequest;
 use App\Http\Requests\GameMatch\TakeRequest;
 use App\Http\Resources\GameMatchResource;
 use App\Models\GameMatch;
@@ -19,9 +20,56 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
+use Spatie\QueryBuilder\AllowedFilter;
+use Spatie\QueryBuilder\QueryBuilder;
 
 class GameMatchController extends Controller
 {
+    private const MATCHES_PER_PAGE = 12;
+
+    /**
+     * Authenticated player's own matches — both as creator (via the related
+     * listing's user_id) and as taker. Same Spatie query-builder URL contract
+     * as the listings index:
+     *
+     *   /matches?filter[status]=pending&page=2
+     *
+     * Newest first by created_at — Pending matches naturally surface at the
+     * top because they're recent, no separate "active vs past" grouping
+     * needed in v1. Status filter chips on the frontend cover the
+     * cross-section a user actually wants to slice ("show me only Pending").
+     *
+     * Each match's resource shape is exactly what `match/show.tsx` already
+     * consumes, so list rows + detail page share types and components.
+     */
+    public function index(IndexMatchesRequest $request): Response
+    {
+        $user = $request->user();
+
+        $matches = QueryBuilder::for(
+            GameMatch::query()
+                ->forParticipant($user->id)
+                ->with([
+                    'listing:id,user_id,game,stake_amount,time_control,status',
+                    'listing.user:id,name,username',
+                    'taker:id,name,username',
+                    'winner:id,name,username',
+                ]),
+        )
+            ->allowedFilters(
+                AllowedFilter::exact('status'),
+            )
+            ->orderByDesc('created_at')
+            ->orderByDesc('id')
+            ->paginate(self::MATCHES_PER_PAGE)
+            ->withQueryString();
+
+        return Inertia::render('match/index', [
+            'matches' => GameMatchResource::collection($matches),
+            'filters' => $request->filters(),
+        ]);
+    }
+
     /**
      * Take an open listing — escrows the taker's stake and creates the match
      * row, all inside one DB transaction with a row lock on the listing.

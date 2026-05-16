@@ -7,6 +7,7 @@
 // visible on `/users/{username}` — no email, no balance, no PII.
 
 import type { Listing } from './listings';
+import type { Match } from './match';
 
 export interface UserProfile {
     id: number;
@@ -32,10 +33,12 @@ export interface ProfileStats {
 // Page-level props for `pages/users/show.tsx` (built in Phase 4).
 // `user` is the resolved/unwrapped resource (no `data` envelope), since the
 // controller calls `(new UserProfileResource($user))->resolve()`.
-// `openListings` is a `ListingResource::collection(...)` — wrapped in a `data`
-// envelope but without pagination meta (limit 5, no paginate call).
+// `openListings` and `matchHistory` are Resource::collection(...) results —
+// wrapped in a `data` envelope but without pagination meta (no `paginate()`
+// call, fixed limit on the backend).
 export interface ProfileShowProps {
     user: UserProfile;
     stats: ProfileStats;
     openListings: { data: Listing[] };
+    matchHistory: { data: Match[] };
 }

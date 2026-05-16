@@ -1,5 +1,12 @@
 import { Link, router, usePage } from '@inertiajs/react';
-import { LogOut, Search, Settings, User as UserIcon, Wallet } from 'lucide-react';
+import {
+    LogOut,
+    Search,
+    Settings,
+    Swords,
+    User as UserIcon,
+    Wallet,
+} from 'lucide-react';
 import { useState } from 'react';
 import { useAuthModal } from '@/components/auth/auth-modal-provider';
 import { UnverifiedChip } from '@/components/site/unverified-chip';
@@ -20,6 +27,7 @@ import {
     create as listingsCreate,
     index as listingsIndex,
 } from '@/routes/listings';
+import { index as matchesIndex } from '@/routes/matches';
 import { edit as editProfile } from '@/routes/profile';
 import { index as walletIndex } from '@/routes/wallet';
 
@@ -225,6 +233,16 @@ export function MobileMenu() {
                                     <span>My profile</span>
                                     <SoonBadge />
                                 </div>
+                                <SheetClose asChild>
+                                    <Link
+                                        href={matchesIndex().url}
+                                        prefetch
+                                        className={mobileMenuItemClass}
+                                    >
+                                        <Swords className="size-5" />
+                                        Matches
+                                    </Link>
+                                </SheetClose>
                                 <SheetClose asChild>
                                     <Link
                                         href={walletIndex().url}

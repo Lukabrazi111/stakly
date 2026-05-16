@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Enums\MatchOutcome;
 use App\Enums\MatchStatus;
 use Database\Factories\GameMatchFactory;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -67,5 +68,18 @@ class GameMatch extends Model
     public function disputeOpener(): BelongsTo
     {
         return $this->belongsTo(User::class, 'dispute_opened_by');
+    }
+
+    /**
+     * Matches where $userId is either the creator (via listing.user_id) or
+     * the taker. Used by the /matches index page so a player sees both sides
+     * of their participation in one list.
+     */
+    public function scopeForParticipant(Builder $query, int $userId): Builder
+    {
+        return $query->where(function (Builder $q) use ($userId) {
+            $q->where('taker_user_id', $userId)
+                ->orWhereHas('listing', fn (Builder $inner) => $inner->where('user_id', $userId));
+        });
     }
 }

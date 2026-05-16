@@ -1,5 +1,7 @@
 <?php
 
+use App\Enums\MatchStatus;
+use App\Models\GameMatch;
 use App\Models\Listing;
 use App\Models\User;
 use App\Services\Wallet;
@@ -169,4 +171,77 @@ test('bio is null when unset', function () {
     $response = $this->get('/users/kate');
 
     $response->assertInertia(fn ($page) => $page->where('user.bio', null));
+});
+
+// ─── matchHistory (M6 Phase 6.2) ─────────────────────────────────────────
+
+test('matchHistory includes settled matches where the profile user was a participant', function () {
+    $alice = User::factory()->create(['username' => 'alice']);
+    $bob = User::factory()->create();
+
+    $listing = Listing::factory()->taken()->for($alice)->create();
+    $match = GameMatch::factory()
+        ->for($listing)
+        ->for($bob, 'taker')
+        ->settled($alice)
+        ->create();
+
+    $response = $this->get('/users/alice');
+
+    $response->assertInertia(fn ($page) => $page
+        ->has('matchHistory.data', 1)
+        ->where('matchHistory.data.0.id', $match->id)
+        ->where('matchHistory.data.0.status', MatchStatus::Settled->value)
+    );
+});
+
+test('matchHistory excludes pending / disputed / manual_review matches', function () {
+    $alice = User::factory()->create(['username' => 'alice']);
+    $bob = User::factory()->create();
+
+    foreach ([MatchStatus::Pending, MatchStatus::Disputed, MatchStatus::ManualReview] as $status) {
+        $listing = Listing::factory()->taken()->for($alice)->create();
+        GameMatch::factory()
+            ->for($listing)
+            ->for($bob, 'taker')
+            ->state(['status' => $status])
+            ->create();
+    }
+
+    $this->get('/users/alice')
+        ->assertInertia(fn ($page) => $page->has('matchHistory.data', 0));
+});
+
+test('matchHistory excludes matches the profile user was NOT in', function () {
+    $alice = User::factory()->create(['username' => 'alice']);
+    $bob = User::factory()->create();
+    $carol = User::factory()->create();
+
+    // Match between Bob (creator) and Carol (taker) — Alice unrelated
+    $listing = Listing::factory()->taken()->for($bob)->create();
+    GameMatch::factory()
+        ->for($listing)
+        ->for($carol, 'taker')
+        ->settled($bob)
+        ->create();
+
+    $this->get('/users/alice')
+        ->assertInertia(fn ($page) => $page->has('matchHistory.data', 0));
+});
+
+test('matchHistory caps at 10, newest settled first', function () {
+    $alice = User::factory()->create(['username' => 'alice']);
+    $bob = User::factory()->create();
+
+    foreach (range(1, 12) as $i) {
+        $listing = Listing::factory()->taken()->for($alice)->create();
+        GameMatch::factory()
+            ->for($listing)
+            ->for($bob, 'taker')
+            ->settled($alice)
+            ->create(['settled_at' => now()->subHours(12 - $i)]);
+    }
+
+    $this->get('/users/alice')
+        ->assertInertia(fn ($page) => $page->has('matchHistory.data', 10));
 });

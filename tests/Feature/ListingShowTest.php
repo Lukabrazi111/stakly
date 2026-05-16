@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\GameMatch;
 use App\Models\Listing;
 use App\Models\User;
 
@@ -50,4 +51,62 @@ test('show resource never leaks the creator email or other sensitive fields', fu
     $response = $this->get("/listings/{$listing->id}");
 
     $response->assertDontSee('leak-check@example.com');
+});
+
+// ─── "View match →" link (M6 Phase 6.3) ──────────────────────────────────
+
+test('match prop is null on Open listings (no match exists yet)', function () {
+    $listing = Listing::factory()->open()->create();
+
+    $this->get("/listings/{$listing->id}")
+        ->assertInertia(fn ($page) => $page->where('match', null));
+});
+
+test('match prop is null for unauthenticated guests on Taken listings', function () {
+    $listing = Listing::factory()->taken()->create();
+    GameMatch::factory()->for($listing)->create();
+
+    $this->get("/listings/{$listing->id}")
+        ->assertInertia(fn ($page) => $page->where('match', null));
+});
+
+test('match prop is null for non-participants on Taken listings', function () {
+    $creator = User::factory()->create();
+    $taker = User::factory()->create();
+    $randomViewer = User::factory()->create();
+
+    $listing = Listing::factory()->taken()->for($creator)->create();
+    GameMatch::factory()->for($listing)->for($taker, 'taker')->create();
+
+    $this->actingAs($randomViewer)
+        ->get("/listings/{$listing->id}")
+        ->assertInertia(fn ($page) => $page->where('match', null));
+});
+
+test('match prop is populated for the creator on a Taken listing', function () {
+    $creator = User::factory()->create();
+    $taker = User::factory()->create();
+
+    $listing = Listing::factory()->taken()->for($creator)->create();
+    $match = GameMatch::factory()->for($listing)->for($taker, 'taker')->create();
+
+    $this->actingAs($creator)
+        ->get("/listings/{$listing->id}")
+        ->assertInertia(fn ($page) => $page
+            ->where('match.id', $match->id)
+        );
+});
+
+test('match prop is populated for the taker on a Taken listing', function () {
+    $creator = User::factory()->create();
+    $taker = User::factory()->create();
+
+    $listing = Listing::factory()->taken()->for($creator)->create();
+    $match = GameMatch::factory()->for($listing)->for($taker, 'taker')->create();
+
+    $this->actingAs($taker)
+        ->get("/listings/{$listing->id}")
+        ->assertInertia(fn ($page) => $page
+            ->where('match.id', $match->id)
+        );
 });

@@ -21,13 +21,21 @@ import {
     formatTimeRemaining,
     isEndingSoon,
 } from '@/lib/listings-format';
-import { cancel as cancelRoute, index as listingsIndex, take as takeRoute } from '@/routes/listings';
+import {
+    cancel as cancelRoute,
+    index as listingsIndex,
+    pause as pauseRoute,
+    resume as resumeRoute,
+    take as takeRoute,
+} from '@/routes/listings';
+import { show as matchShow } from '@/routes/matches';
 import { show as userShow } from '@/routes/users';
 import { deposit as walletDeposit } from '@/routes/wallet';
 import type { ListingShowProps, ListingStatus } from '@/types';
 
 const STATUS_LABEL: Record<ListingStatus, string> = {
     open: 'Open',
+    paused: 'Paused',
     taken: 'Taken',
     expired: 'Expired',
     cancelled: 'Cancelled',
@@ -35,30 +43,62 @@ const STATUS_LABEL: Record<ListingStatus, string> = {
 
 const STATUS_TONE: Record<ListingStatus, string> = {
     open: 'border-success/40 bg-success/10 text-success',
+    paused: 'border-warning/40 bg-warning/10 text-warning',
     taken: 'border-primary/40 bg-primary/10 text-primary',
     expired: 'border-border/60 bg-muted text-muted-foreground',
     cancelled: 'border-destructive/40 bg-destructive/10 text-destructive',
 };
 
-export default function ListingShow({ listing }: ListingShowProps) {
+export default function ListingShow({ listing, match }: ListingShowProps) {
     const getInitials = useInitials();
     const { auth } = usePage().props;
     const [cancelOpen, setCancelOpen] = useState(false);
 
     const isOwner = auth.user?.id === listing.creator.id;
     const isOpen = listing.status === 'open';
-    const canCancel = isOwner && isOpen;
+    const isPaused = listing.status === 'paused';
+    const canPause = isOwner && isOpen;
+    const canResume = isOwner && isPaused;
+    // Cancel reaches Paused too — both states still have escrow held and the
+    // refund path is identical. Locked decision (milestones.md M6 Phase 6).
+    const canCancel = isOwner && (isOpen || isPaused);
     const endingSoon = isEndingSoon(listing.expires_at);
     const hasEnoughBalance = (auth.user?.usdt_balance ?? 0) >= listing.stake_amount;
 
     const [takeOpen, setTakeOpen] = useState(false);
     const [takeProcessing, setTakeProcessing] = useState(false);
+    const [pauseProcessing, setPauseProcessing] = useState(false);
+    const [resumeProcessing, setResumeProcessing] = useState(false);
 
     const handleCancel = () => {
         router.delete(cancelRoute(listing.id).url, {
             preserveScroll: true,
             onSuccess: () => setCancelOpen(false),
         });
+    };
+
+    const handlePause = () => {
+        setPauseProcessing(true);
+        router.post(
+            pauseRoute(listing.id).url,
+            {},
+            {
+                preserveScroll: true,
+                onFinish: () => setPauseProcessing(false),
+            },
+        );
+    };
+
+    const handleResume = () => {
+        setResumeProcessing(true);
+        router.post(
+            resumeRoute(listing.id).url,
+            {},
+            {
+                preserveScroll: true,
+                onFinish: () => setResumeProcessing(false),
+            },
+        );
     };
 
     const handleTake = () => {
@@ -191,9 +231,31 @@ export default function ListingShow({ listing }: ListingShowProps) {
                                 </div>
                             </div>
 
+                            {/* Participant CTA — replaces Take/status block for the
+                                two players (creator + taker) once the listing is
+                                Taken and a match exists. `match` is only sent to
+                                participants by the backend, so its presence is
+                                the sole gate. */}
+                            {match && (
+                                <div className="mt-6">
+                                    <Button
+                                        variant="gradient"
+                                        size="pill"
+                                        className="w-full"
+                                        asChild
+                                    >
+                                        <Link href={matchShow(match.id).url}>
+                                            View match →
+                                        </Link>
+                                    </Button>
+                                </div>
+                            )}
+
                             {/* Take area — hidden for owners (cancel area below
-                                handles their case). Branches by auth + balance + status. */}
-                            {!isOwner && (
+                                handles their case) and for participants (View
+                                match above replaces it). Branches by auth +
+                                balance + status. */}
+                            {!isOwner && !match && (
                                 <div className="mt-6 flex flex-col gap-3">
                                     {isOpen && auth.user && hasEnoughBalance && (
                                         <Dialog
@@ -297,55 +359,90 @@ export default function ListingShow({ listing }: ListingShowProps) {
                                 </div>
                             )}
 
-                            {canCancel && (
+                            {(canPause || canResume || canCancel) && (
                                 <>
                                     <div className="border-border/60 my-6 border-t" />
-                                    <Dialog
-                                        open={cancelOpen}
-                                        onOpenChange={setCancelOpen}
-                                    >
-                                        <DialogTrigger asChild>
+                                    <div className="space-y-3">
+                                        {canPause && (
                                             <Button
                                                 variant="outline"
                                                 size="default"
-                                                className="border-destructive/30 bg-transparent text-destructive hover:bg-destructive/10 hover:text-destructive hover:border-destructive/50 w-full shadow-none rounded-full"
+                                                onClick={handlePause}
+                                                disabled={pauseProcessing}
+                                                className="w-full rounded-full shadow-none"
                                             >
-                                                Cancel listing
+                                                {pauseProcessing
+                                                    ? 'Pausing…'
+                                                    : 'Pause listing'}
                                             </Button>
-                                        </DialogTrigger>
-                                        <DialogContent>
-                                            <DialogHeader>
-                                                <DialogTitle>
-                                                    Cancel this listing?
-                                                </DialogTitle>
-                                                <DialogDescription>
-                                                    Your{' '}
-                                                    <span className="text-foreground font-semibold">
-                                                        ${listing.stake_amount} USDT
-                                                    </span>{' '}
-                                                    stake will be refunded
-                                                    immediately. This can&apos;t
-                                                    be undone.
-                                                </DialogDescription>
-                                            </DialogHeader>
-                                            <DialogFooter>
-                                                <Button
-                                                    variant="ghost"
-                                                    onClick={() =>
-                                                        setCancelOpen(false)
-                                                    }
-                                                >
-                                                    Keep listing
-                                                </Button>
-                                                <Button
-                                                    variant="destructive"
-                                                    onClick={handleCancel}
-                                                >
-                                                    Cancel &amp; refund
-                                                </Button>
-                                            </DialogFooter>
-                                        </DialogContent>
-                                    </Dialog>
+                                        )}
+                                        {canResume && (
+                                            <Button
+                                                variant="gradient"
+                                                size="default"
+                                                onClick={handleResume}
+                                                disabled={resumeProcessing}
+                                                className="w-full rounded-full"
+                                            >
+                                                {resumeProcessing
+                                                    ? 'Resuming…'
+                                                    : 'Resume listing'}
+                                            </Button>
+                                        )}
+                                        {canCancel && (
+                                            <Dialog
+                                                open={cancelOpen}
+                                                onOpenChange={setCancelOpen}
+                                            >
+                                                <DialogTrigger asChild>
+                                                    <Button
+                                                        variant="outline"
+                                                        size="default"
+                                                        className="border-destructive/30 bg-transparent text-destructive hover:bg-destructive/10 hover:text-destructive hover:border-destructive/50 w-full shadow-none rounded-full"
+                                                    >
+                                                        Cancel listing
+                                                    </Button>
+                                                </DialogTrigger>
+                                                <DialogContent>
+                                                    <DialogHeader>
+                                                        <DialogTitle>
+                                                            Cancel this listing?
+                                                        </DialogTitle>
+                                                        <DialogDescription>
+                                                            Your{' '}
+                                                            <span className="text-foreground font-semibold">
+                                                                $
+                                                                {listing.stake_amount}{' '}
+                                                                USDT
+                                                            </span>{' '}
+                                                            stake will be
+                                                            refunded immediately.
+                                                            This can&apos;t be
+                                                            undone.
+                                                        </DialogDescription>
+                                                    </DialogHeader>
+                                                    <DialogFooter>
+                                                        <Button
+                                                            variant="ghost"
+                                                            onClick={() =>
+                                                                setCancelOpen(
+                                                                    false,
+                                                                )
+                                                            }
+                                                        >
+                                                            Keep listing
+                                                        </Button>
+                                                        <Button
+                                                            variant="destructive"
+                                                            onClick={handleCancel}
+                                                        >
+                                                            Cancel &amp; refund
+                                                        </Button>
+                                                    </DialogFooter>
+                                                </DialogContent>
+                                            </Dialog>
+                                        )}
+                                    </div>
                                 </>
                             )}
                         </div>

@@ -1,11 +1,13 @@
-import { ListingRow } from '@/components/listings/listing-row';
+import { ProfileListingRow } from '@/components/profile/profile-listing-row';
 import type { Listing } from '@/types';
 
 interface Props {
     listings: Listing[];
+    /** True only when the auth user is viewing their own profile. Drives whether the inline pause/resume icon renders. */
+    isOwnProfile: boolean;
 }
 
-export function ListingsSection({ listings }: Props) {
+export function ListingsSection({ listings, isOwnProfile }: Props) {
     return (
         <section>
             <h2 className="font-display text-foreground mb-3 text-lg font-semibold">
@@ -21,7 +23,11 @@ export function ListingsSection({ listings }: Props) {
             ) : (
                 <div className="flex flex-col gap-3">
                     {listings.map((listing) => (
-                        <ListingRow key={listing.id} listing={listing} />
+                        <ProfileListingRow
+                            key={listing.id}
+                            listing={listing}
+                            isOwnProfile={isOwnProfile}
+                        />
                     ))}
                 </div>
             )}

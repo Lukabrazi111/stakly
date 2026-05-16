@@ -4,7 +4,7 @@
 // - App\Enums\MatchStatus / MatchOutcome
 
 import type { GameId } from '@/config/games';
-import type { TimeControl } from '@/types/listings';
+import type { Paginator, TimeControl } from '@/types/listings';
 
 export type MatchStatus = 'pending' | 'disputed' | 'settled' | 'manual_review';
 
@@ -42,4 +42,15 @@ export interface Match {
 
 export interface MatchShowProps {
     match: Match;
+}
+
+// Filters echoed from the backend (IndexMatchesRequest::filters()) so the
+// chip row can hydrate from the URL.
+export interface MatchFilters {
+    status: MatchStatus | null;
+}
+
+export interface MatchesIndexProps {
+    matches: Paginator<Match>;
+    filters: MatchFilters;
 }

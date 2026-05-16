@@ -61,12 +61,27 @@ class Listing extends Model
     }
 
     /**
-     * Listings that are open AND not yet past their expiry.
+     * Listings that are open AND not yet past their expiry. Used by the
+     * public marketplace board and anywhere "what's takeable right now"
+     * is the question. Paused listings are explicitly excluded.
      */
     public function scopeOpen(Builder $query): Builder
     {
         return $query
             ->where('status', ListingStatus::Open)
+            ->where('expires_at', '>', now());
+    }
+
+    /**
+     * Listings the owner is still actively managing — Open OR Paused, not
+     * yet expired. Used in the owner's view of their own profile so they
+     * can see (and resume) listings they've paused. Public marketplace and
+     * other people's profile views stay on `scopeOpen`.
+     */
+    public function scopeOpenOrPaused(Builder $query): Builder
+    {
+        return $query
+            ->whereIn('status', [ListingStatus::Open, ListingStatus::Paused])
             ->where('expires_at', '>', now());
     }
 }

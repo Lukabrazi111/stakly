@@ -1,6 +1,8 @@
 <?php
 
 use App\Enums\WalletTransactionType;
+use App\Models\GameMatch;
+use App\Models\Listing;
 use App\Models\User;
 use App\Models\WalletTransaction;
 use App\Services\Wallet;
@@ -114,5 +116,102 @@ test('types prop carries all enum cases for filter-chip rendering', function () 
         ->get('/wallet/history')
         ->assertInertia(fn ($page) => $page
             ->has('types', 6)
+        );
+});
+
+// ─── related_match for match-context navigation (M6 Phase 6.4) ───────────
+
+test('payout row has related_match populated', function () {
+    $alice = User::factory()->create();
+    $bob = User::factory()->create();
+
+    Wallet::deposit($alice, '1000', reference: "test:deposit:{$alice->id}");
+    Wallet::deposit($bob, '1000', reference: "test:deposit:{$bob->id}");
+
+    $listing = Listing::factory()
+        ->taken()
+        ->for($alice)
+        ->state(['stake_amount' => '100'])
+        ->create();
+
+    Wallet::hold(user: $alice, amount: '100', listing: $listing, reference: "listing-create:{$listing->id}");
+    Wallet::hold(user: $bob, amount: '100', listing: $listing, reference: "match-take:{$listing->id}");
+
+    $match = GameMatch::factory()
+        ->for($listing)
+        ->for($bob, 'taker')
+        ->settled($alice)
+        ->create();
+
+    // Real payout — same code path as MatchSettlement uses.
+    Wallet::payout(winner: $alice, amount: '180', listing: $listing, reference: "match-payout:{$match->id}");
+
+    $this->actingAs($alice)
+        ->get('/wallet/history?filter[type]=payout')
+        ->assertInertia(fn ($page) => $page
+            ->has('transactions.data', 1)
+            ->where('transactions.data.0.type', WalletTransactionType::Payout->value)
+            ->where('transactions.data.0.related_match.id', $match->id)
+            ->where('transactions.data.0.related_listing.id', $listing->id)
+        );
+});
+
+test('hold row on a Taken listing has related_match populated', function () {
+    $alice = User::factory()->create();
+    $bob = User::factory()->create();
+
+    Wallet::deposit($alice, '1000', reference: "test:deposit:{$alice->id}");
+
+    $listing = Listing::factory()
+        ->taken()
+        ->for($alice)
+        ->state(['stake_amount' => '100'])
+        ->create();
+
+    Wallet::hold(user: $alice, amount: '100', listing: $listing, reference: "listing-create:{$listing->id}");
+
+    $match = GameMatch::factory()
+        ->for($listing)
+        ->for($bob, 'taker')
+        ->create();
+
+    $this->actingAs($alice)
+        ->get('/wallet/history?filter[type]=escrow_hold')
+        ->assertInertia(fn ($page) => $page
+            ->has('transactions.data', 1)
+            ->where('transactions.data.0.related_match.id', $match->id)
+        );
+});
+
+test('hold row on a Cancelled listing has related_match null (no match was ever created)', function () {
+    $alice = User::factory()->create();
+    Wallet::deposit($alice, '1000', reference: "test:deposit:{$alice->id}");
+
+    $listing = Listing::factory()
+        ->cancelled()
+        ->for($alice)
+        ->state(['stake_amount' => '100'])
+        ->create();
+
+    Wallet::hold(user: $alice, amount: '100', listing: $listing, reference: "listing-create:{$listing->id}");
+
+    $this->actingAs($alice)
+        ->get('/wallet/history?filter[type]=escrow_hold')
+        ->assertInertia(fn ($page) => $page
+            ->has('transactions.data', 1)
+            ->where('transactions.data.0.related_match', null)
+        );
+});
+
+test('deposit row has related_match null and related_listing null', function () {
+    $user = User::factory()->create();
+    Wallet::deposit($user, '500', reference: "test:deposit:{$user->id}");
+
+    $this->actingAs($user)
+        ->get('/wallet/history?filter[type]=deposit')
+        ->assertInertia(fn ($page) => $page
+            ->has('transactions.data', 1)
+            ->where('transactions.data.0.related_match', null)
+            ->where('transactions.data.0.related_listing', null)
         );
 });

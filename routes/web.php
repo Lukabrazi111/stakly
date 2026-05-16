@@ -18,8 +18,18 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::post('/listings', [ListingController::class, 'store'])->name('listings.store');
     Route::delete('/listings/{listing}/cancel', [ListingController::class, 'cancel'])->name('listings.cancel');
 
+    // M6 Phase 6 — soft pause / resume. Visibility-only; no wallet ops. Both
+    // creator-only via policy. POST (not PATCH) for consistency with `take`.
+    Route::post('/listings/{listing}/pause', [ListingController::class, 'pause'])->name('listings.pause');
+    Route::post('/listings/{listing}/resume', [ListingController::class, 'resume'])->name('listings.resume');
+
     // M6 — take a listing creates a match + escrows the taker's stake.
     Route::post('/listings/{listing}/take', [GameMatchController::class, 'take'])->name('listings.take');
+
+    // M6 Phase 6 — authenticated player's own matches (creator + taker sides
+    // combined). Registered before the wildcard `/matches/{match}` for clarity;
+    // Laravel would resolve the static segment first anyway.
+    Route::get('/matches', [GameMatchController::class, 'index'])->name('matches.index');
 
     // M6 — match detail page. Participant-only, enforced inside the controller
     // (404 for non-participants, not 403, to avoid leaking match existence).

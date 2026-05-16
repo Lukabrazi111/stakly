@@ -5,7 +5,12 @@
 
 import type { GameId } from '@/config/games';
 
-export type ListingStatus = 'open' | 'taken' | 'expired' | 'cancelled';
+export type ListingStatus =
+    | 'open'
+    | 'paused'
+    | 'taken'
+    | 'expired'
+    | 'cancelled';
 
 export type TimeControl = 'blitz' | 'rapid' | 'classical';
 
@@ -85,8 +90,14 @@ export interface ListingsIndexProps {
 // Phase 1 (M4) — props for the listing detail page. `listing` is the resource
 // resolved/unwrapped (no `data` wrapper), since the controller calls
 // `(new ListingResource($listing))->resolve()`.
+//
+// `match` is populated (M6 Phase 6) only when the listing is `taken` AND the
+// viewer is a participant (creator or taker). For non-participants and
+// non-taken listings the controller sends `null` — the frontend uses its
+// presence as the sole gate for the "View match →" link.
 export interface ListingShowProps {
     listing: Listing;
+    match: { id: number } | null;
 }
 
 // Props for the create-listing form. Option lists (regions / languages /

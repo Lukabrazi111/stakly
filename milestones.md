@@ -102,7 +102,6 @@ Captured so the intent isn't lost. **Don't pull these into M4.** Each is a real 
 
 - **Step-up auth at listing creation.** Email-verified is already enforced via middleware. *All-listings* 2FA = friction that trains users to dismiss prompts. Better: step-up only for **high-stake** listings (e.g., `stake_amount > $500`) via Fortify's `confirm-password` (already plumbed for settings). Optionally also step-up on suspicious signals (new device fingerprint, rapid-fire creates). Decision deferred until post-launch when actual abuse patterns are visible.
 - **Max active listings cap.** Wallet already caps total *capital exposure* naturally (can't escrow > balance). Explicit count cap is anti-marketplace-spam only. Suggested cap: **5** (not 2 — a player wanting one Blitz + one Rapid + one Classical listing hits 2 immediately). Consider tiered caps later (KYC'd users get higher cap).
-- **Pause / resume listing.** New `paused` status on `ListingStatus` enum; `scopeOpen` excludes it. **Soft pause** (hide from board, keep escrow held) is the chosen flavor (locked 2026-05-15) — atomic, no extra wallet ops, no new dispute surface. Hard pause (release escrow, re-hold on resume) was considered and rejected (wallet churn for marginal UX benefit). Owner-only via `ListingPolicy::pause`.
 
 ---
 
@@ -326,14 +325,72 @@ Phase 5 (settlement service) folded in here so the agree-path moves real money e
 
 **Phase 5 — Settlement service** ✅ folded into Phase 3 so the agree-path is end-to-end testable in one commit.
 
-**Phase 6 — Match list page + profile + listing integration** **(next)** (~1–2 days, no new deps)
+**Phase 6 — Match list + profile + listing integration + pause/resume** ✅ **shipped 2026-05-16**
 
-- [ ] **6.1** `/matches` page — your active + past matches, status filter chips, pagination 12/page (Spatie query-builder pattern from `/listings`).
-- [ ] **6.2** Profile page (`/users/{username}`): "Match history" section — replace empty state with paginated last-N matches (winner, opponent, stake, date). Public, no PII beyond what's already exposed.
-- [ ] **6.3** Listing detail: when status `Taken`, show a "View match →" link visible only to participants.
-- [ ] **6.4** Wallet history: payout / fee transactions render with match context (clickable listing → match navigation).
-- [ ] **6.5** `BalanceChip` continues to refresh on navigation post-settlement (already works via Inertia share).
-- [ ] **6.6** Tests: page renders, only your matches visible (not others'), filters work, profile match history loads.
+- [x] **6.1** `/matches` page — your active + past matches, status filter chips, pagination 12/page (Spatie query-builder pattern from `/listings`).
+- [x] **6.2** Profile page (`/users/{username}`): "Match history" section — replace empty state with paginated last-N matches (winner, opponent, stake, date). Public, no PII beyond what's already exposed.
+- [x] **6.3** Listing detail: when status `Taken`, show a "View match →" link visible only to participants.
+- [x] **6.4** Wallet history: payout / fee transactions render with match context (clickable listing → match navigation).
+- [x] **6.5** `BalanceChip` continues to refresh on navigation post-settlement (already works via Inertia share).
+- [x] **6.6** Tests: page renders, only your matches visible (not others'), filters work, profile match history loads.
+
+**Pause/resume listings (added 2026-05-16, pulled from Post-MVP "Listings polish"):**
+
+- [x] **6.7** Backend: `ListingStatus::Paused` enum case, `scopeOpen` excludes it. `ListingPolicy::pause` / `resume` (creator-only, status-gated). `ListingPolicy::cancel` extends to allow Paused. `POST /listings/{listing}/pause` + `resume` controller methods — row-locked atomic status flip, NO wallet ops (soft pause = escrow stays held). `ExpireListings` artisan handles Paused → Expired the same as Open → Expired.
+- [x] **6.8** Frontend: Pause / Resume button next to Cancel on listing detail (owner view; outline when Open, gradient when Paused). Status badge gains amber "Paused" tone. Inline pause / resume icon on own-profile listing cards. Toast on success, no dialog (reversible action). Loading state during async (`Pausing…` / `Resuming…`).
+- [x] **6.9** Tests: pause / resume happy paths, owner-only enforcement, can't-pause-Taken/Expired/Cancelled, paused listings hidden from `/listings` index, can't-take-paused-via-direct-link, cancel-from-paused refunds correctly, `ExpireListings` handles Paused, race-safety on concurrent pause + take / pause + cancel.
+
+**Pause/resume locked decisions (2026-05-16):**
+
+- **Soft pause** — escrow stays held during pause; resume is a status flip only. Hard pause (release on pause, re-hold on resume) was rejected: extra wallet churn + resume can fail with `InsufficientBalanceException` if the balance was spent meanwhile.
+- **Per-listing only** — no global "Active Mode" toggle in v1. Stakly users own 1–5 listings; the global pattern (Bybit-style) is a scale solution that doesn't earn its complexity here. Revisit if usage data shows AFK is common.
+- **Cancel-from-paused allowed** — `ListingPolicy::cancel` accepts both Open and Paused. Lets the owner free up escrow without resuming first.
+- **Expiry clock keeps ticking during pause** — a paused listing past `expires_at` is treated by `listings:expire` the same way as an open one: refund escrow + flip to Expired. Pausing is visibility-only, not a time freeze. Pause-extends-expiry isn't a v1 feature.
+- **Confirmation dialog on Resume, none on Pause (revised 2026-05-16 in Phase 6.5 after asymmetric-risk realization)** — Pause stays instant + success toast (safe direction: just hides from board, nothing happens). Resume requires a confirmation dialog because reactivating a listing can trigger an immediate match within seconds — an opponent could take it before the user is ready to play, escrowing hard. The original Phase 6 ruling of "no dialog on either" was too dismissive of the resume-side risk. Cancel keeps its existing dialog (destructive + irreversible). Implementation lives in Phase 6.5.
+- **Two entry points (initially)** — listing detail page (button next to Cancel) + own-profile listing cards (inline icon). *Note: Phase 6.5 adds a third — the `/listings/mine` management dashboard. The two original entry points stay; they serve different audiences (the detail page for focused single-listing review, the profile inline icon for quick toggles while browsing your own page).*
+- **Status badge color** — amber / warning. Distinct from Open (success green), Taken (primary pink), Expired (muted), Cancelled (destructive red). Communicates "paused — your action needed to reactivate."
+
+**Test count: 324 / 1648 (was 277 / 1345 end of Phase 4 — +47 tests / +303 assertions).**
+
+---
+
+## Phase 6.5 — Listings management UI + design polish **(next)** (~2 days, no new deps)
+
+Filed 2026-05-16 after design review against Bybit's P2P management UX (My Ads / Orders / P2P User Center). Three concrete extensions to the Phase 6 work plus one reversal of a Phase 6 locked decision (Resume confirmation dialog).
+
+This phase is filed as **separate scope from Phase 6** so the Phase 6 commit can ship cleanly and 6.5 can be reverted independently if the design direction needs to change.
+
+### Scope
+
+- [ ] **6.5.1** `/matches` table-style redesign — wrap all match rows in a single container card (`bg-card/40 border-border/60 rounded-2xl`) with a column header at the top (Opponent · Status · Stake · Date) and rows stacked inside, separated by `border-t border-border/40`. Hover state changes from "lift + glow" to a calmer `bg-primary/5` row highlight — table-like rather than card-like. Visual reference: Bybit's Orders page, Stakly-skinned. Update `MatchListRow` (or replace with a thinner row component) so the same row renders correctly inside the new container.
+- [ ] **6.5.2** `/listings/mine` page — new authenticated route `GET /listings/mine` (controller method on `ListingController`). Two tabs:
+  - **Active** (default): Open + Paused, the listings the owner is still managing.
+  - **All**: every status the owner has ever held (Open, Paused, Taken, Expired, Cancelled). History view.
+  - Table layout with column header: Status · Stake · Time control · Created · Expires · Actions. Pagination 12/page via Spatie query-builder pattern.
+  - Actions column: Pause / Resume icon button (status-gated, with Resume dialog from 6.5.3) + Cancel icon button (opens existing Cancel dialog). Take is never an action here — owners can't take their own listings.
+  - Page header includes a gradient "Post listing" button (top-right) for one-click create.
+  - PII-safe — only the owner's own listings, scoped by `user_id`.
+- [ ] **6.5.3** Resume confirmation dialog — wrap every Resume entry point (listing detail page Resume button, profile inline icon, `/listings/mine` Resume action) in a shadcn Dialog. Copy: *"Resume this listing? It will appear on the marketplace immediately. An opponent could take it within seconds and start the match."* Buttons: "Keep paused" (ghost) + "Resume listing" (gradient). **Pause stays as-is** — instant action with success toast only. Implementation: a shared `ResumeListingDialog` component to avoid duplicating the dialog logic across three call sites.
+- [ ] **6.5.4** Tools dropdown on `/listings` page — compact `Tools ▾` dropdown trigger in the `/listings` page header (NOT the global `SiteHeader` — that stays marketing-friendly with the existing "Create listing" gradient button). Items: **Post listing** → `/listings/create`, **My listings** → `/listings/mine`, **Match history** → `/matches`. Stakly-skinned shadcn DropdownMenu (already skinned via ProfileMenu pattern). Visible only for authenticated users.
+- [ ] **6.5.5** Tests — `/listings/mine` page renders, auth-gated, only your listings visible, Active vs All tabs scope correctly, pagination works, Resume dialog appears + Cancel/Confirm both work, Pause stays dialog-free, Tools dropdown links resolve. Update existing pause/resume tests if needed (the redirect assertions still hold; only the UI gains a step).
+
+### Locked decisions (2026-05-16)
+
+- **Resume is asymmetric-risk; Pause isn't.** Pause hides from the marketplace, nothing else happens. Resume could trigger a match within seconds of the click. Resume gets a confirmation dialog; Pause doesn't. This is a **reversal of the original Phase 6 "no dialog on either" decision** — see the revised entry in Phase 6's locked decisions above.
+- **Keep both surfaces for managing listings.** `/listings/mine` is the dedicated management dashboard (table view, Active/All tabs, all actions). The profile's "Active listings" section stays — it serves a different audience (opponents browsing your shopfront, plus you-when-on-your-own-profile). The inline pause/resume icon on profile cards also stays — it's a one-click convenience, routed through the same Resume dialog as `/listings/mine` for consistency.
+- **`Create listing` button stays in the global `SiteHeader`.** It's the primary CTA for the entire app — especially the funnel for logged-out users who'll land on the homepage / listings index and need an obvious sign-up + post hook. The `Tools` dropdown on `/listings` contains a secondary "Post listing" entry for one-click access; the dropdown does not replace the global button.
+- **Tools dropdown is page-local, not global.** Lives in the `/listings` page header only. Other pages (homepage, profile, wallet, etc.) don't get it — those audiences aren't the management audience. Adding it everywhere would clutter the nav.
+- **No global "Active Mode" toggle.** Still per-listing only — same reasoning as the original Phase 6 decision. Resume's confirmation dialog gives users the "are you sure?" friction without needing a global on/off, which would be a scale solution Stakly doesn't have the listing volume to need.
+
+### Out of scope for 6.5 (deferred)
+
+- Bulk actions (pause-all, resume-all, cancel-all). One-listing-at-a-time covers the v1 user with 1–5 listings.
+- Edit a listing (change stake, change skill range, etc.). Cancel + recreate remains the v1 model.
+- Search within `/listings/mine`. Pagination at 12/page is enough at this scale.
+- Filter chips on `/listings/mine` beyond the Active/All tabs.
+- A separate `/listings/mine` empty state hero. Standard empty state with a "Post listing" CTA is fine.
+
+---
 
 **Phase 7 — Timeouts + edge cases + polish** (~1–2 days, no new deps)
 

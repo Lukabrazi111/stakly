@@ -78,13 +78,27 @@ class ListingController extends Controller
      * expired / cancelled listings still display, just with a status badge
      * and a disabled Take CTA. Avoids 404-ing on shared links to non-open
      * listings.
+     *
+     * For Taken listings, expose the related match id to the two participants
+     * (creator + taker) so the frontend can render a "View match →" link. Non-
+     * participants don't get the id — it's not strongly PII, but there's no
+     * reason for randoms to be able to enumerate match ids from listing pages.
      */
-    public function show(Listing $listing): Response
+    public function show(Request $request, Listing $listing): Response
     {
-        $listing->load('user:id,name,username');
+        $listing->load(['user:id,name,username', 'gameMatch:id,listing_id,taker_user_id']);
+
+        $user = $request->user();
+        $match = $listing->gameMatch;
+        $isParticipant = $match !== null
+            && $user !== null
+            && ($user->id === $listing->user_id || $user->id === $match->taker_user_id);
 
         return Inertia::render('listings/show', [
             'listing' => (new ListingResource($listing))->resolve(),
+            'match' => $isParticipant && $match !== null
+                ? ['id' => $match->id]
+                : null,
         ]);
     }
 
@@ -158,12 +172,13 @@ class ListingController extends Controller
     }
 
     /**
-     * Cancels an Open listing and refunds the escrow in a single transaction.
-     * The release is idempotent on `listing-cancel:{id}` so a double-submit
-     * (network retry, double-click after slow response) doesn't double-credit.
+     * Cancels an Open or Paused listing and refunds the escrow in a single
+     * transaction. The release is idempotent on `listing-cancel:{id}` so a
+     * double-submit (network retry, double-click after slow response) doesn't
+     * double-credit.
      *
      * Authorization is handled by `ListingPolicy::cancel`: creator-only AND
-     * status === Open. Taken / expired / cancelled listings return 403.
+     * status in {Open, Paused}. Taken / expired / cancelled listings return 403.
      */
     public function cancel(Listing $listing): RedirectResponse
     {
@@ -189,6 +204,86 @@ class ListingController extends Controller
         ]);
 
         return to_route('listings.show', $listing);
+    }
+
+    /**
+     * Soft pause — hides the listing from the public board without releasing
+     * the escrow. Single atomic status flip under a row lock; no wallet ops.
+     * Race-safe: re-checks status inside the lock so a concurrent take or
+     * expire can't slip in between the policy gate and the write.
+     *
+     * Redirects back() so pausing from the profile listings card stays on
+     * the profile, and pausing from the listing detail stays on the detail.
+     */
+    public function pause(Listing $listing): RedirectResponse
+    {
+        Gate::authorize('pause', $listing);
+
+        $paused = DB::transaction(function () use ($listing) {
+            $locked = Listing::query()->lockForUpdate()->findOrFail($listing->id);
+
+            if ($locked->status !== ListingStatus::Open) {
+                return false;
+            }
+
+            $locked->update(['status' => ListingStatus::Paused]);
+
+            return true;
+        });
+
+        if (! $paused) {
+            Inertia::flash('toast', [
+                'type' => 'info',
+                'message' => __('This listing can no longer be paused.'),
+            ]);
+
+            return back();
+        }
+
+        Inertia::flash('toast', [
+            'type' => 'success',
+            'message' => __('Listing paused. Hidden from the board until you resume it.'),
+        ]);
+
+        return back();
+    }
+
+    /**
+     * Inverse of pause. Flips Paused → Open under a row lock so the listing
+     * reappears on the public board. No wallet ops — escrow was held the
+     * entire time.
+     */
+    public function resume(Listing $listing): RedirectResponse
+    {
+        Gate::authorize('resume', $listing);
+
+        $resumed = DB::transaction(function () use ($listing) {
+            $locked = Listing::query()->lockForUpdate()->findOrFail($listing->id);
+
+            if ($locked->status !== ListingStatus::Paused) {
+                return false;
+            }
+
+            $locked->update(['status' => ListingStatus::Open]);
+
+            return true;
+        });
+
+        if (! $resumed) {
+            Inertia::flash('toast', [
+                'type' => 'info',
+                'message' => __('This listing can no longer be resumed.'),
+            ]);
+
+            return back();
+        }
+
+        Inertia::flash('toast', [
+            'type' => 'success',
+            'message' => __('Listing resumed. It’s back on the board.'),
+        ]);
+
+        return back();
     }
 
     /**

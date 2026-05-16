@@ -2,24 +2,39 @@ import { Link } from '@inertiajs/react';
 import { TransactionTypeChip } from '@/components/wallet/transaction-type-chip';
 import { formatSignedAmount, formatTransactionDate, formatUsdt } from '@/lib/wallet-format';
 import { show as showListing } from '@/routes/listings';
+import { show as showMatch } from '@/routes/matches';
 import type { WalletTransaction } from '@/types';
 
 interface Props {
     transaction: WalletTransaction;
 }
 
+// Transactions where the match itself is the most relevant context for the
+// row — clicking through should land on /matches/{id}, not /listings/{id}.
+// Hold / Release stay on the listing because that's where the money was
+// locked (and the listing might have been cancelled/expired, with no match
+// ever created).
+const MATCH_LINKED_TYPES: ReadonlySet<WalletTransaction['type']> = new Set([
+    'payout',
+    'fee',
+]);
+
 /**
  * One transaction line — works in both the /wallet recent activity slot and
  * the /wallet/history feed. Stacks vertically on mobile (chip + amount on
  * row 1, description + balance below) and lays out horizontally on md+.
  *
- * If the row references a listing, the description anchor links to it. The
- * row itself is not a Link — the only navigation target is the listing
- * reference, which is opt-in.
+ * If the row references a match (Payout / Fee), the description anchor links
+ * to the match detail page. Otherwise it links to the listing, when present.
+ * The row itself is not a Link — navigation is opt-in via the reference.
  */
 export function TransactionRow({ transaction }: Props) {
     const isCredit = transaction.amount > 0;
     const description = transaction.description ?? defaultDescription(transaction.type);
+
+    const linksToMatch
+        = MATCH_LINKED_TYPES.has(transaction.type)
+            && transaction.related_match !== null;
 
     return (
         <article className="border-border/60 bg-card/60 flex flex-col gap-3 rounded-xl border p-4 transition-colors md:flex-row md:items-center md:gap-4">
@@ -37,14 +52,25 @@ export function TransactionRow({ transaction }: Props) {
             <div className="min-w-0 flex-1">
                 <div className="text-foreground truncate text-sm">
                     {description}
-                    {transaction.related_listing && (
+                    {linksToMatch && transaction.related_match && (
+                        <>
+                            {' '}
+                            <Link
+                                href={showMatch(transaction.related_match.id).url}
+                                className="text-primary hover:text-primary/80 font-medium underline-offset-2 transition-colors hover:underline"
+                            >
+                                Match #{transaction.related_match.id}
+                            </Link>
+                        </>
+                    )}
+                    {!linksToMatch && transaction.related_listing && (
                         <>
                             {' '}
                             <Link
                                 href={showListing(transaction.related_listing.id).url}
                                 className="text-primary hover:text-primary/80 font-medium underline-offset-2 transition-colors hover:underline"
                             >
-                                #{transaction.related_listing.id}
+                                Listing #{transaction.related_listing.id}
                             </Link>
                         </>
                     )}
