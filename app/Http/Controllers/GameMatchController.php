@@ -114,6 +114,23 @@ class GameMatchController extends Controller
                     return null;
                 }
 
+                // Active Mode gate (M6 Phase 6.5): if the owner flipped to
+                // Inactive between the taker loading the listing detail page
+                // and submitting this Take, the listing is no longer takeable.
+                // `lockForUpdate` on the owner row serializes against any
+                // in-flight `ActiveModeController` toggle so the check sees
+                // a consistent view. Active Mode is "I'm not available" — it
+                // must gate the actual match-start, not just marketplace
+                // visibility, otherwise stale browser tabs bypass the intent.
+                $ownerActive = User::query()
+                    ->lockForUpdate()
+                    ->where('id', $locked->user_id)
+                    ->value('is_active_mode');
+
+                if (! $ownerActive) {
+                    return 'owner_inactive';
+                }
+
                 // Throws InsufficientBalanceException for the rare race where
                 // the balance dropped between TakeRequest's pre-check and now.
                 Wallet::hold(
@@ -136,6 +153,15 @@ class GameMatchController extends Controller
             throw ValidationException::withMessages([
                 'amount' => __('Stake exceeds your available balance.'),
             ]);
+        }
+
+        if ($match === 'owner_inactive') {
+            Inertia::flash('toast', [
+                'type' => 'info',
+                'message' => __('This player is currently inactive. Their listings are temporarily unavailable.'),
+            ]);
+
+            return to_route('listings.show', $listing);
         }
 
         if ($match === null) {

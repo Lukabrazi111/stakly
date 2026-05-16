@@ -141,6 +141,61 @@ test('taking a listing that is no longer open redirects with info toast', functi
         ->and((string) $taker->fresh()->usdt_balance)->toBe('500.000000');
 })->with(['taken', 'expired', 'cancelled']);
 
+// ─── Active Mode gate (M6 Phase 6.5) ──────────────────────────────────────
+
+test('taking an inactive owner listing is blocked with an info toast — no match, no hold', function () {
+    // The visibility filter (`scopeOnPublicMarketplace`) keeps inactive
+    // owners' listings off the marketplace + public profile. But a taker
+    // who already has the listing detail page loaded — or knows the direct
+    // URL — could still POST /take. Active Mode is "I'm not available";
+    // it must gate the actual match-start, not just visibility, otherwise
+    // stale tabs bypass the intent. Server bails inside the locked tx with
+    // `$ownerActive` check and returns the same friendly redirect pattern
+    // as the existing race-lost branch.
+    [$creator, $listing] = openListingWithCreator(stake: '100');
+    $creator->update(['is_active_mode' => false]);
+
+    $taker = takerWithBalance(balance: '500');
+
+    $response = $this->actingAs($taker)->postJson("/listings/{$listing->id}/take");
+
+    $response->assertRedirect(route('listings.show', $listing));
+    $response->assertInertiaFlash('toast', [
+        'type' => 'info',
+        'message' => 'This player is currently inactive. Their listings are temporarily unavailable.',
+    ]);
+
+    // No match created, listing stays Open, taker is not charged, creator's
+    // escrow is untouched.
+    expect(GameMatch::count())->toBe(0)
+        ->and($listing->fresh()->status)->toBe(ListingStatus::Open)
+        ->and((string) $taker->fresh()->usdt_balance)->toBe('500.000000')
+        ->and(WalletTransaction::query()
+            ->where('user_id', $taker->id)
+            ->where('type', WalletTransactionType::EscrowHold)
+            ->count()
+        )->toBe(0);
+});
+
+test('owner reactivating between page load + take request lets the take succeed', function () {
+    // Closed-loop check: the gate is live state, not cached. If the owner
+    // flips back to active before the taker submits, the take should go
+    // through normally.
+    [$creator, $listing] = openListingWithCreator(stake: '100');
+    $creator->update(['is_active_mode' => false]);
+    $creator->update(['is_active_mode' => true]);
+
+    $taker = takerWithBalance(balance: '500');
+
+    $response = $this->actingAs($taker)->postJson("/listings/{$listing->id}/take");
+
+    $match = GameMatch::query()->where('listing_id', $listing->id)->firstOrFail();
+    $response->assertRedirect(route('matches.show', $match));
+    expect($listing->fresh()->status)->toBe(ListingStatus::Taken);
+});
+
+// ─── Race-lost ──────────────────────────────────────────────────────────────
+
 test('taking an open-but-past-expiry listing also hits the race-lost branch', function () {
     $creator = User::factory()->create();
     Wallet::deposit($creator, '500', reference: "test:deposit:creator:{$creator->id}");
