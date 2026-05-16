@@ -2,6 +2,7 @@ import { Head, Link, router, usePage } from '@inertiajs/react';
 import { Clock, Globe, Languages, Trophy } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useState } from 'react';
+import { BackLink } from '@/components/site/back-link';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import {
@@ -55,6 +56,12 @@ export default function ListingShow({ listing, match }: ListingShowProps) {
     const canCancel = isOwner && isOpen;
     const endingSoon = isEndingSoon(listing.expires_at);
     const hasEnoughBalance = (auth.user?.usdt_balance ?? 0) >= listing.stake_amount;
+    // Owner-inactive frontend gate (M6 Phase 6.5). Mirrors the server-side
+    // check in `GameMatchController::take` — defense in depth, plus better
+    // UX: the visitor sees up-front that this listing can't be taken right
+    // now, instead of clicking Take and getting a redirect with a toast.
+    // Server remains the authoritative enforcement.
+    const isOwnerInactive = isOpen && !listing.creator.is_active_mode;
 
     const [takeOpen, setTakeOpen] = useState(false);
     const [takeProcessing, setTakeProcessing] = useState(false);
@@ -89,12 +96,7 @@ export default function ListingShow({ listing, match }: ListingShowProps) {
 
             <div className="mx-auto max-w-6xl px-4 py-10 md:px-6 md:py-14">
                 <div className="mb-6">
-                    <Link
-                        href={listingsIndex().url}
-                        className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1.5 text-sm transition-colors"
-                    >
-                        ← Back to listings
-                    </Link>
+                    <BackLink fallback={listingsIndex().url} />
                 </div>
 
                 <div className="grid gap-8 md:grid-cols-3">
@@ -219,10 +221,29 @@ export default function ListingShow({ listing, match }: ListingShowProps) {
                             {/* Take area — hidden for owners (cancel area below
                                 handles their case) and for participants (View
                                 match above replaces it). Branches by auth +
-                                balance + status. */}
+                                balance + status + owner active mode. */}
                             {!isOwner && !match && (
                                 <div className="mt-6 flex flex-col gap-3">
-                                    {isOpen && auth.user && hasEnoughBalance && (
+                                    {isOwnerInactive && (
+                                        <>
+                                            <Button
+                                                variant="gradient"
+                                                size="pill"
+                                                disabled
+                                                className="w-full"
+                                            >
+                                                Player currently inactive
+                                            </Button>
+                                            <Link
+                                                href={listingsIndex().url}
+                                                className="text-muted-foreground hover:text-foreground text-center text-xs transition-colors"
+                                            >
+                                                Browse other listings →
+                                            </Link>
+                                        </>
+                                    )}
+
+                                    {isOpen && !isOwnerInactive && auth.user && hasEnoughBalance && (
                                         <Dialog
                                             open={takeOpen}
                                             onOpenChange={setTakeOpen}
@@ -278,6 +299,7 @@ export default function ListingShow({ listing, match }: ListingShowProps) {
                                     )}
 
                                     {isOpen &&
+                                        !isOwnerInactive &&
                                         auth.user &&
                                         !hasEnoughBalance && (
                                             <>
@@ -298,7 +320,7 @@ export default function ListingShow({ listing, match }: ListingShowProps) {
                                             </>
                                         )}
 
-                                    {isOpen && !auth.user && (
+                                    {isOpen && !isOwnerInactive && !auth.user && (
                                         <Button
                                             variant="gradient"
                                             size="pill"

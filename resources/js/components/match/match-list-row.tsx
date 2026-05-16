@@ -24,8 +24,11 @@ interface Props {
  * its own rounded border. Hover is a flat `bg-primary/5` row-tint rather
  * than the lift+glow you'd expect on a floating card.
  *
- * Two interior `<Link>`s remain: opponent zone → user profile,
- * body → match detail. The outer `<article>` carries the row hover state.
+ * Whole row is clickable to the match detail page via an absolute-overlay
+ * Link (same pattern as `ListingRow` / `MineListingRow`). The opponent zone
+ * is a *sibling* Link with `relative` positioning so it paints above the
+ * overlay and intercepts its own clicks → user profile. Body content uses
+ * `pointer-events-none` so clicks fall through to the overlay.
  */
 export function MatchListRow({ match }: Props) {
     const getInitials = useInitials();
@@ -43,11 +46,18 @@ export function MatchListRow({ match }: Props) {
             && !youWon;
 
     return (
-        <article className="hover:bg-primary/5 border-border/40 group flex flex-col gap-4 border-t px-4 py-4 transition-colors duration-200 ease-out first:border-t-0 md:flex-row md:items-center md:gap-6 md:px-5">
-            {/* Opponent zone → opponent profile */}
+        <article className="hover:bg-primary/5 border-border/40 group relative flex flex-col gap-4 border-t px-4 py-4 transition-colors duration-200 ease-out first:border-t-0 md:flex-row md:items-center md:gap-6 md:px-5">
+            {/* Overlay: entire row → match detail */}
+            <Link
+                href={matchShow(match.id).url}
+                aria-label={`View match vs ${opponent.name}`}
+                className="focus-visible:ring-primary focus-visible:ring-offset-background absolute inset-0 rounded-lg focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none"
+            />
+
+            {/* Opponent zone — relative sibling, sits above overlay → user profile */}
             <Link
                 href={userShow(opponent.username).url}
-                className="focus-visible:ring-primary focus-visible:ring-offset-background flex min-w-0 items-center gap-3 rounded-lg focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none md:w-52 md:shrink-0"
+                className="focus-visible:ring-primary focus-visible:ring-offset-background relative flex min-w-0 items-center gap-3 rounded-lg focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none md:w-52 md:shrink-0"
             >
                 <Avatar className="size-10 shrink-0 overflow-hidden rounded-full">
                     <AvatarFallback className="bg-gradient-primary text-primary-foreground text-sm font-semibold">
@@ -65,11 +75,8 @@ export function MatchListRow({ match }: Props) {
                 </div>
             </Link>
 
-            {/* Match body → match detail */}
-            <Link
-                href={matchShow(match.id).url}
-                className="focus-visible:ring-primary focus-visible:ring-offset-background flex flex-1 flex-wrap items-center gap-3 rounded-lg focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none md:flex-nowrap md:gap-6"
-            >
+            {/* Match body — no Link wrapper; clicks bubble to overlay */}
+            <div className="pointer-events-none relative flex flex-1 flex-wrap items-center gap-3 md:flex-nowrap md:gap-6">
                 <div className="flex flex-wrap items-center gap-2 md:flex-1">
                     <span
                         className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-medium ${matchStatusTone[match.status]}`}
@@ -111,7 +118,7 @@ export function MatchListRow({ match }: Props) {
                     </span>
                     <span className="text-muted-foreground text-xs">USDT</span>
                 </div>
-            </Link>
+            </div>
         </article>
     );
 }

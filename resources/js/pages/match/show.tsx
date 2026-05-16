@@ -6,6 +6,7 @@ import { ConfirmButtons } from '@/components/match/confirm-buttons';
 import { MatchTimer } from '@/components/match/match-timer';
 import { OpenDisputeButton } from '@/components/match/open-dispute-button';
 import { SettlementSummary } from '@/components/match/settlement-summary';
+import { BackLink } from '@/components/site/back-link';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { useInitials } from '@/hooks/use-initials';
 import SiteLayout from '@/layouts/site-layout';
@@ -76,12 +77,9 @@ export default function MatchShow({ match }: MatchShowProps) {
             <Head title={`Match #${match.id}`} />
 
             <div className="mx-auto max-w-3xl px-4 py-10 md:px-6 md:py-14">
-                <Link
-                    href={listingShow(match.listing.id).url}
-                    className="text-muted-foreground hover:text-foreground mb-6 inline-flex items-center gap-1.5 text-sm transition-colors"
-                >
-                    ← Back to listing
-                </Link>
+                <div className="mb-6">
+                    <BackLink fallback={listingShow(match.listing.id).url} />
+                </div>
 
                 {/* Stack on mobile, row on sm: so neither truncates at 375px */}
                 <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">

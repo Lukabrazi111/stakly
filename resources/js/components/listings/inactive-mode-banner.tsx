@@ -31,9 +31,7 @@ export function InactiveModeBanner() {
                 </p>
                 <p className="text-muted-foreground mt-0.5 text-sm">
                     Your listings are hidden from the public marketplace and
-                    your profile. Toggle Active Mode (top-right) to make them
-                    visible again — any individually-paused listings will
-                    resume too.
+                    your profile. Toggle Active Mode above to bring them back.
                 </p>
             </div>
         </div>

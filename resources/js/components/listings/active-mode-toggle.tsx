@@ -85,8 +85,13 @@ export function ActiveModeToggle({ listingsCount }: Props) {
 
     return (
         <>
-            <div className="flex items-center gap-3">
-                <div className="flex flex-col items-end">
+            <div className="flex items-center justify-between gap-3">
+                {/* Mobile: labels left-aligned (text reads left-to-right
+                    naturally), switch on the far right via `justify-between`.
+                    Desktop: parent forces intrinsic width so `justify-between`
+                    is a no-op; labels right-align (items-end) to sit flush
+                    against the switch for a tight, compact group. */}
+                <div className="flex flex-col items-start sm:items-end">
                     <span className="text-foreground text-sm font-medium">
                         {active ? 'Active Mode' : 'Inactive Mode'}
                     </span>

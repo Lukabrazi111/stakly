@@ -1,24 +1,19 @@
-import { Head, Link } from '@inertiajs/react';
-import { AlertTriangle, ChevronLeft, Clock } from 'lucide-react';
+import { Head } from '@inertiajs/react';
+import { AlertTriangle, Clock } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
+import { BackLink } from '@/components/site/back-link';
 import { AddressDisplay } from '@/components/wallet/address-display';
-import SiteLayout from '@/layouts/site-layout';
+import PlayerHubLayout from '@/layouts/player-hub-layout';
 import { index as walletIndex } from '@/routes/wallet';
 import type { WalletDepositProps } from '@/types';
 
 export default function WalletDeposit({ tronAddress }: WalletDepositProps) {
     return (
-        <SiteLayout>
+        <PlayerHubLayout>
             <Head title="Deposit — Wallet" />
 
             <div className="mx-auto max-w-lg px-4 py-10 md:py-14">
-                <Link
-                    href={walletIndex().url}
-                    className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1 text-sm transition-colors"
-                >
-                    <ChevronLeft className="size-4" />
-                    Back to wallet
-                </Link>
+                <BackLink fallback={walletIndex().url} />
 
                 <header className="mt-4 mb-6">
                     <h1 className="font-display text-3xl font-bold tracking-tight md:text-4xl">
@@ -75,6 +70,6 @@ export default function WalletDeposit({ tronAddress }: WalletDepositProps) {
                     </span>
                 </p>
             </div>
-        </SiteLayout>
+        </PlayerHubLayout>
     );
 }

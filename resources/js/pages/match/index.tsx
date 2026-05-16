@@ -5,7 +5,7 @@ import { MatchesFilterChips } from '@/components/match/matches-filter-chips';
 import { MatchListRow } from '@/components/match/match-list-row';
 import { MatchListRowSkeleton } from '@/components/match/match-list-row-skeleton';
 import { MatchesPagination } from '@/components/match/matches-pagination';
-import SiteLayout from '@/layouts/site-layout';
+import PlayerHubLayout from '@/layouts/player-hub-layout';
 import { index as matchesIndex } from '@/routes/matches';
 import type { MatchesIndexProps } from '@/types';
 
@@ -50,7 +50,7 @@ export default function MatchesIndex({ matches, filters }: MatchesIndexProps) {
     const isEmpty = matches.data.length === 0;
 
     return (
-        <SiteLayout>
+        <PlayerHubLayout>
             <Head title="Your matches" />
 
             <div className="mx-auto max-w-5xl px-4 py-10 md:px-6 md:py-14">
@@ -106,7 +106,7 @@ export default function MatchesIndex({ matches, filters }: MatchesIndexProps) {
                     filters={filters}
                 />
             </div>
-        </SiteLayout>
+        </PlayerHubLayout>
     );
 }
 

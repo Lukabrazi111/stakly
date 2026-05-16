@@ -44,7 +44,7 @@ class ListingController extends Controller
         );
 
         $listings = QueryBuilder::for(
-            Listing::query()->onPublicMarketplace()->with('user:id,name,username'),
+            Listing::query()->onPublicMarketplace()->with('user:id,name,username,is_active_mode'),
         )
             ->allowedFilters(
                 AllowedFilter::exact('game')->default(Game::Chess->value),
@@ -86,7 +86,13 @@ class ListingController extends Controller
      */
     public function show(Request $request, Listing $listing): Response
     {
-        $listing->load(['user:id,name,username', 'gameMatch:id,listing_id,taker_user_id']);
+        // `is_active_mode` is needed for the frontend's owner-inactive gate
+        // on the Take button (M6 Phase 6.5). The marketplace + public profile
+        // surfaces never see inactive owners' listings via
+        // `scopeOnPublicMarketplace`, but this detail page bypasses that scope
+        // (direct URL access stays viewable so owners can share + manage), so
+        // the resource needs the flag.
+        $listing->load(['user:id,name,username,is_active_mode', 'gameMatch:id,listing_id,taker_user_id']);
 
         $user = $request->user();
         $match = $listing->gameMatch;
@@ -147,7 +153,7 @@ class ListingController extends Controller
             : 'listed';
 
         $query = $user->listings()
-            ->with('user:id,name,username')
+            ->with('user:id,name,username,is_active_mode')
             ->orderByDesc('created_at')
             ->orderByDesc('id');
 

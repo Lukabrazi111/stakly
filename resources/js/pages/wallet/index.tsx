@@ -3,7 +3,7 @@ import { ArrowDownToLine, ArrowUpFromLine, History, Wallet as WalletIcon } from 
 import type { LucideIcon } from 'lucide-react';
 import { BalanceCard } from '@/components/wallet/balance-card';
 import { TransactionRow } from '@/components/wallet/transaction-row';
-import SiteLayout from '@/layouts/site-layout';
+import PlayerHubLayout from '@/layouts/player-hub-layout';
 import { deposit as depositRoute, history as historyRoute, withdraw as withdrawRoute } from '@/routes/wallet';
 import type { WalletIndexProps } from '@/types';
 
@@ -11,7 +11,7 @@ export default function WalletIndex({ balance, recentTransactions }: WalletIndex
     const hasTransactions = recentTransactions.data.length > 0;
 
     return (
-        <SiteLayout>
+        <PlayerHubLayout>
             <Head title="Wallet" />
 
             <div className="mx-auto max-w-4xl px-4 py-10 md:py-14">
@@ -92,7 +92,7 @@ export default function WalletIndex({ balance, recentTransactions }: WalletIndex
                     )}
                 </section>
             </div>
-        </SiteLayout>
+        </PlayerHubLayout>
     );
 }
 

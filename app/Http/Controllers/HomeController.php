@@ -21,7 +21,7 @@ class HomeController extends Controller
     {
         $featured = Listing::query()
             ->onPublicMarketplace()
-            ->with('user:id,name,username')
+            ->with('user:id,name,username,is_active_mode')
             ->orderBy('expires_at')
             ->orderByDesc('id')
             ->limit(self::FEATURED_COUNT)

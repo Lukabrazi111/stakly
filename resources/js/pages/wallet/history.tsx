@@ -1,8 +1,9 @@
-import { Head, Link, router } from '@inertiajs/react';
-import { ChevronLeft, Inbox } from 'lucide-react';
+import { Head, router } from '@inertiajs/react';
+import { Inbox } from 'lucide-react';
+import { BackLink } from '@/components/site/back-link';
 import { TransactionRow } from '@/components/wallet/transaction-row';
 import { WalletPagination } from '@/components/wallet/wallet-pagination';
-import SiteLayout from '@/layouts/site-layout';
+import PlayerHubLayout from '@/layouts/player-hub-layout';
 import { buildWalletHistoryQuery } from '@/lib/wallet-history-query';
 import { history as historyRoute, index as walletIndex } from '@/routes/wallet';
 import type { WalletHistoryProps, WalletTransactionType } from '@/types';
@@ -32,17 +33,11 @@ export default function WalletHistory({ transactions, filters, types }: WalletHi
     const hasActiveFilter = filters.type !== null;
 
     return (
-        <SiteLayout>
+        <PlayerHubLayout>
             <Head title="Transaction history — Wallet" />
 
             <div className="mx-auto max-w-4xl px-4 py-10 md:py-14">
-                <Link
-                    href={walletIndex().url}
-                    className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1 text-sm transition-colors"
-                >
-                    <ChevronLeft className="size-4" />
-                    Back to wallet
-                </Link>
+                <BackLink fallback={walletIndex().url} />
 
                 <header className="mt-4 mb-6">
                     <h1 className="font-display text-3xl font-bold tracking-tight md:text-4xl">
@@ -115,7 +110,7 @@ export default function WalletHistory({ transactions, filters, types }: WalletHi
                     </>
                 )}
             </div>
-        </SiteLayout>
+        </PlayerHubLayout>
     );
 }
 

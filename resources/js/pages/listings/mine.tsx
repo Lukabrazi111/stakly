@@ -8,7 +8,7 @@ import { MinePagination } from '@/components/listings/mine-pagination';
 import { MineTabs } from '@/components/listings/mine-tabs';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
-import SiteLayout from '@/layouts/site-layout';
+import PlayerHubLayout from '@/layouts/player-hub-layout';
 import {
     create as listingsCreate,
     mine as mineRoute,
@@ -61,7 +61,7 @@ export default function ListingsMine({
     const isEmpty = listings.data.length === 0;
 
     return (
-        <SiteLayout>
+        <PlayerHubLayout>
             <Head title="My listings" />
 
             <div className="mx-auto max-w-5xl px-4 py-10 md:px-6 md:py-14">
@@ -147,7 +147,7 @@ export default function ListingsMine({
                     tab={tab}
                 />
             </div>
-        </SiteLayout>
+        </PlayerHubLayout>
     );
 }
 

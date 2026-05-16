@@ -35,6 +35,16 @@ class ListingResource extends JsonResource
                 'id' => $this->user->id,
                 'name' => $this->user->name,
                 'username' => $this->user->username,
+                // M6 Phase 6.5 — surface Active Mode to the frontend so the
+                // listing detail page can disable the Take button + show a
+                // banner when the owner is inactive. PII-wise this is already
+                // inferrable (an inactive owner's listings disappear from the
+                // marketplace + public profile via `scopeOnPublicMarketplace`),
+                // so exposing the boolean here just lets the listing-detail
+                // surface — which doesn't go through that scope — surface the
+                // same state explicitly. Server still enforces the gate
+                // independently in `GameMatchController::take`.
+                'is_active_mode' => (bool) $this->user->is_active_mode,
             ],
         ];
     }

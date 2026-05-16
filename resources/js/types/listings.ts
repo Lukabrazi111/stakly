@@ -23,6 +23,10 @@ export interface ListingCreator {
     id: number;
     name: string;
     username: string;
+    // M6 Phase 6.5 — used by the listing detail page to disable the Take
+    // button + show "currently inactive" banner when false. Server-side gate
+    // in `GameMatchController::take` is the authoritative enforcement.
+    is_active_mode: boolean;
 }
 
 export interface Listing {

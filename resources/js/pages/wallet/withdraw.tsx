@@ -1,24 +1,18 @@
-import { Head, Link } from '@inertiajs/react';
-import { ChevronLeft } from 'lucide-react';
+import { Head } from '@inertiajs/react';
+import { BackLink } from '@/components/site/back-link';
 import { BalanceCard } from '@/components/wallet/balance-card';
 import { WithdrawForm } from '@/components/wallet/withdraw-form';
-import SiteLayout from '@/layouts/site-layout';
+import PlayerHubLayout from '@/layouts/player-hub-layout';
 import { index as walletIndex } from '@/routes/wallet';
 import type { WalletWithdrawProps } from '@/types';
 
 export default function WalletWithdraw({ balance, minWithdrawal }: WalletWithdrawProps) {
     return (
-        <SiteLayout>
+        <PlayerHubLayout>
             <Head title="Withdraw — Wallet" />
 
             <div className="mx-auto max-w-lg px-4 py-10 md:py-14">
-                <Link
-                    href={walletIndex().url}
-                    className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1 text-sm transition-colors"
-                >
-                    <ChevronLeft className="size-4" />
-                    Back to wallet
-                </Link>
+                <BackLink fallback={walletIndex().url} />
 
                 <header className="mt-4 mb-6">
                     <h1 className="font-display text-3xl font-bold tracking-tight md:text-4xl">
@@ -36,6 +30,6 @@ export default function WalletWithdraw({ balance, minWithdrawal }: WalletWithdra
 
                 <WithdrawForm balance={balance} minWithdrawal={minWithdrawal} />
             </div>
-        </SiteLayout>
+        </PlayerHubLayout>
     );
 }

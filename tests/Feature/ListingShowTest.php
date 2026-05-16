@@ -110,3 +110,24 @@ test('match prop is populated for the taker on a Taken listing', function () {
             ->where('match.id', $match->id)
         );
 });
+
+// ─── Creator active mode exposed (M6 Phase 6.5) ───────────────────────────
+
+test('creator.is_active_mode is exposed on the listing detail resource', function () {
+    // The listing detail page is the one public surface where a non-owner
+    // can see an inactive owner's listing (it bypasses `scopeOnPublicMarketplace`
+    // so direct URLs still resolve). Frontend uses `creator.is_active_mode`
+    // to gate the Take button + show an "inactive" banner; server-side gate
+    // in `GameMatchController::take` remains authoritative.
+    $active = User::factory()->create();
+    $inactive = User::factory()->inactive()->create();
+
+    $listingByActive = Listing::factory()->open()->for($active)->create();
+    $listingByInactive = Listing::factory()->open()->for($inactive)->create();
+
+    $this->get("/listings/{$listingByActive->id}")
+        ->assertInertia(fn ($page) => $page->where('listing.creator.is_active_mode', true));
+
+    $this->get("/listings/{$listingByInactive->id}")
+        ->assertInertia(fn ($page) => $page->where('listing.creator.is_active_mode', false));
+});
