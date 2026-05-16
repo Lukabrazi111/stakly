@@ -278,3 +278,36 @@ test('invalid page param redirects to clean /listings (no error wall)', function
     $this->get('/listings?page=-1')->assertRedirect('/listings');
     $this->get('/listings?page=999999')->assertRedirect('/listings');
 });
+
+// ─── Active Mode visibility (M6 Phase 6.5) ────────────────────────────────
+
+test('listings of an inactive owner are hidden from the public marketplace', function () {
+    // `scopeOnPublicMarketplace` filters by `user.is_active_mode = true`.
+    // When the owner toggles Inactive on /listings/mine, the listings stay
+    // Open in the DB (so escrow is preserved) but they vanish from the
+    // public board.
+    $active = User::factory()->create();
+    $inactive = User::factory()->inactive()->create();
+
+    Listing::factory()->open()->for($active)->count(2)->create();
+    Listing::factory()->open()->for($inactive)->count(3)->create();
+
+    $this->get('/listings')
+        ->assertInertia(fn ($page) => $page->has('listings.data', 2));
+});
+
+test('flipping the owner back to active republishes their listings to the marketplace', function () {
+    // Closed-loop check: the visibility is a live filter (no cache, no
+    // status change), so toggling Inactive then Active immediately re-exposes
+    // every Open listing the user holds.
+    $owner = User::factory()->inactive()->create();
+    Listing::factory()->open()->for($owner)->count(2)->create();
+
+    $this->get('/listings')
+        ->assertInertia(fn ($page) => $page->has('listings.data', 0));
+
+    $owner->update(['is_active_mode' => true]);
+
+    $this->get('/listings')
+        ->assertInertia(fn ($page) => $page->has('listings.data', 2));
+});

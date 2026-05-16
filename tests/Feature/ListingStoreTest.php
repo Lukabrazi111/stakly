@@ -165,6 +165,50 @@ test('attacker-supplied user_id, status, and expires_at in the request body have
         ->and($listing->expires_at->isAfter(now()->addHours(23)))->toBeTrue();
 });
 
+// ─── Max-active-listings cap (M6 Phase 6.5) ───────────────────────────────
+
+test('a user at the active-listings cap cannot create another listing', function () {
+    // Defense-in-depth: frontend disables the Post button at cap, but a stale
+    // tab could still submit. `StoreListingRequest::withValidator` counts the
+    // user's Open listings and attaches an `active_listings_cap` error if at
+    // or over the MAX_ACTIVE_LISTINGS constant.
+    $user = User::factory()->create();
+    Wallet::deposit($user, '500', reference: "test:deposit:{$user->id}");
+
+    Listing::factory()->open()->for($user)->count(2)->create();
+
+    $response = $this->actingAs($user)->postJson('/listings', validPayload());
+
+    $response->assertStatus(422);
+    $response->assertJsonValidationErrors('active_listings_cap');
+
+    // The new listing was NOT written — count stays at 2.
+    expect(Listing::where('user_id', $user->id)->count())->toBe(2);
+});
+
+test('only Open listings count toward the cap (Taken / Expired / Cancelled are free)', function () {
+    // If a user has settled / expired / cancelled listings in their history,
+    // those should NOT block them from creating new ones. The cap is about
+    // "listings currently holding capital + slot," not lifetime count.
+    $user = User::factory()->create();
+    Wallet::deposit($user, '500', reference: "test:deposit:{$user->id}");
+
+    Listing::factory()->open()->for($user)->create();
+    Listing::factory()->taken()->for($user)->count(3)->create();
+    Listing::factory()->expired()->for($user)->count(3)->create();
+    Listing::factory()->cancelled()->for($user)->count(3)->create();
+
+    // Only 1 Open → still room for 1 more (cap = 2).
+    $this->actingAs($user)
+        ->postJson('/listings', validPayload(['stake_amount' => 50]))
+        ->assertRedirect(route('listings.mine'));
+
+    expect(Listing::where('user_id', $user->id)
+        ->where('status', ListingStatus::Open)
+        ->count()
+    )->toBe(2);
+});
+
 // ─── Toast flash (light sanity check) ─────────────────────────────────────
 
 test('successful store flashes a success toast', function () {

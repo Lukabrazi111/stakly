@@ -245,3 +245,41 @@ test('matchHistory caps at 10, newest settled first', function () {
     $this->get('/users/alice')
         ->assertInertia(fn ($page) => $page->has('matchHistory.data', 10));
 });
+
+// ─── Active Mode visibility (M6 Phase 6.5) ────────────────────────────────
+
+test('a visitor on an inactive owner profile sees no openListings', function () {
+    // Visitor branch uses `onPublicMarketplace` which checks
+    // `user.is_active_mode = true`. An inactive owner's Open listings still
+    // exist in the DB (escrow held) but disappear from the public profile.
+    $owner = User::factory()->inactive()->create(['username' => 'noah']);
+    Listing::factory()->open()->for($owner)->count(3)->create();
+
+    $this->get('/users/noah')
+        ->assertInertia(fn ($page) => $page->has('openListings.data', 0));
+});
+
+test('the owner viewing their own inactive profile still sees their listings', function () {
+    // Owner branch uses `open` (not `onPublicMarketplace`) so the listings
+    // are still visible to the owner regardless of Active Mode — they need
+    // to see what's hidden so they can manage from the profile too.
+    $owner = User::factory()->inactive()->create(['username' => 'olive']);
+    Listing::factory()->open()->for($owner)->count(3)->create();
+
+    $this->actingAs($owner)
+        ->get('/users/olive')
+        ->assertInertia(fn ($page) => $page->has('openListings.data', 3));
+});
+
+test('flipping the owner back to active republishes their listings on the public profile', function () {
+    $owner = User::factory()->inactive()->create(['username' => 'pam']);
+    Listing::factory()->open()->for($owner)->count(2)->create();
+
+    $this->get('/users/pam')
+        ->assertInertia(fn ($page) => $page->has('openListings.data', 0));
+
+    $owner->update(['is_active_mode' => true]);
+
+    $this->get('/users/pam')
+        ->assertInertia(fn ($page) => $page->has('openListings.data', 2));
+});

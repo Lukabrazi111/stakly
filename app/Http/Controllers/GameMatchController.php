@@ -12,6 +12,7 @@ use App\Http\Requests\GameMatch\TakeRequest;
 use App\Http\Resources\GameMatchResource;
 use App\Models\GameMatch;
 use App\Models\Listing;
+use App\Models\User;
 use App\Services\MatchSettlement;
 use App\Services\Wallet;
 use Illuminate\Http\RedirectResponse;
