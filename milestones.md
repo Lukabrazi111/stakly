@@ -493,14 +493,34 @@ Originally filed as an M8 prerequisite. Pulled forward to Phase 6.7 so the state
 
 **Phase 7 — Timeouts + edge cases + polish** (~1–2 days, no new deps)
 
-- [ ] **7.1** `App\Console\Commands\MatchesResolveTimeouts` Artisan command + scheduled task (`->everyTenMinutes()->withoutOverlapping()` in `routes/console.php`):
-  - For each `Pending` match older than 4h: if exactly one player confirmed → settle in their favor; if neither → trigger dispute (game-API).
-  - Idempotent via `match-timeout:{$match->id}` reference.
-  - **Deadline contract shared with frontend.** `MatchTimer` (shipped in Phase 3) already shows the 4h countdown using `match.created_at + 4h` and flips to "Expired" state when the deadline passes. Phase 7's job uses the SAME deadline calculation — its role is to actually flip the match status server-side. Until Phase 7 lands, the timer hits "Expired" but the match stays `Pending` indefinitely (no auto-resolution).
-- [ ] **7.2** Inertia flash toasts: "Listing taken — match started", "Match settled — you won/lost $X", "Dispute opened, awaiting resolution".
+**Implementation order:** 7.3 first (small, makes the codebase safer to build on), then 7.1 (the real work), then 7.2 / 7.4 / 7.5.
+
 - [ ] **7.3** Positive status guard on `MatchSettlement::settle` + `MatchSettlement::settleDraw`. Today the only check is "skip if `Settled`." Change to: no-op on `Settled` (preserves idempotency), proceed on `Pending` / `Disputed`, throw `InvalidArgumentException` on `ManualReview` or any unexpected status. Future admin tools resolving `ManualReview` must take their own code path — silently piggybacking on regular `settle` would bypass the review intent. No behavior change for current callers (`resolveBothConfirmed` and `resolveDispute` always run on `Pending` / `Disputed`).
-- [ ] **7.4** Final test sweep + manual end-to-end run: create listing, take from another account, confirm both ways (agree, disagree, draw, timeout, dispute).
+
+- [ ] **7.1** `App\Console\Commands\MatchesResolveTimeouts` Artisan command + scheduled task (`->everyTenMinutes()->withoutOverlapping()` in `routes/console.php`):
+  - **Resolution rules** for each `Pending` match older than 4h (`match.created_at + 4h < now()`):
+    - **One player confirmed `Won`** + silent opponent → that player wins. `MatchSettlement::settle`.
+    - **One player confirmed `Lost`** + silent opponent → the *opponent* wins. The confirmer's own claim is that the opponent won; we honor it. `MatchSettlement::settle`.
+    - **One player confirmed `Drawn`** + silent opponent → game-API arbitrates. Flip to `Disputed` + `MatchSettlement::resolveDispute`. A single Drawn claim can't unilaterally declare a draw — the opponent never agreed.
+    - **Neither confirmed** → game-API arbitrates. Flip to `Disputed` + `MatchSettlement::resolveDispute`.
+    - **Both confirmed but somehow still `Pending`** → defensive log + skip. Synchronous resolver in `GameMatchController::confirm` should make this impossible; if it ever happens we want the anomaly logged, not auto-resolved.
+  - **Mechanics:** iterate via `->chunkById(100)` so a backlog of timed-out matches stays bounded. Per-match `try { ... } catch (\Throwable $e) { Log::error(...) }` so one bad match doesn't kill the rest. Each match handled inside a row-locked transaction with a status re-check (Pending only).
+  - **Idempotency:** handled at the match-status level (Pending guard inside the row lock) + at the wallet-reference level via the existing `match-payout:{id}` / `match-draw-*:{id}` / `match-fee:{id}` keys on the underlying `settle` / `settleDraw` / `resolveDispute` calls. No additional `match-timeout:{id}` reference — would be ceremony, the status guard already covers replay safety.
+  - **Deadline contract shared with frontend.** `MatchTimer` (Phase 3) shows the 4h countdown using `match.created_at + 4h`. Phase 7's job uses the SAME calculation — its role is to flip the match status server-side. Until this lands, the timer hits "Expired" but the match stays `Pending` indefinitely (no auto-resolution).
+  - **Dev caveat:** Laravel's scheduler does NOT auto-run in dev. Fire manually via `sail artisan matches:resolve-timeouts`, or run `sail artisan schedule:work` in a separate terminal. Same constraint as `listings:expire`.
+
+- [ ] **7.2** Inertia flash toasts polish: "Listing taken — match started", "Match settled — you won/lost $X", "Dispute opened, awaiting resolution". Pass through any cleanup the end-to-end run surfaces.
+
+- [ ] **7.4** Final test sweep + manual end-to-end run: create listing, take from another account, confirm all paths (agree on winner, agree on draw, disagree → API winner, disagree → API draw, single-`Won`-confirmer timeout, single-`Lost`-confirmer timeout, single-`Drawn`-confirmer timeout, neither-confirmed timeout).
+
 - [ ] **7.5** Suggested commit: `feat: match flow with mock game-API (M6)`.
+
+### Locked decisions (2026-05-17)
+
+- **Single-confirmer rule: honor the claim, don't reward voting.** "I won" + silent → confirmer wins. "I lost" + silent → *opponent* wins (the confirmer told us the opponent won, we honor it). "Draw" + silent → game-API arbitrates (one-sided draw claim can't unilaterally declare a draw). The original spec said "settle in their favor" which was ambiguous about the Lost case — clarified during Phase 7 design.
+- **Platform does NOT pocket stakes on no-show.** Considered: if neither player confirms in 4h, the platform takes both stakes. Rejected — picture a player whose internet died for the 4h window. Pocketing their stake creates "Stakly scammed me" complaints for legitimate no-shows. Platform earns money on real settlements (10% fee), not from bad timing.
+- **No auto-refund on `GameApi` returning `Unknown`.** Match stays in `ManualReview`, money locked in escrow, admin reviews via the Filament panel (pre-launch). Auto-refund was rejected because a losing player with a linked chess.com account could deliberately not play (API finds nothing → Unknown), claim "Draw," ghost confirmation, recover their stake. Already locked in M6; re-confirmed during Phase 7 design.
+- **No admin in player match flows.** Considered: admin/support joining match chats, sending messages, observing in-flight matches. Rejected for v1 because it shifts the operational model from "automate everything, humans only on edge cases" to "humans-in-the-loop." A solo-dev project can't scale to per-match human attention. Post-MVP alternative: a "Request review" button on `ManualReview` matches lets players submit notes/screenshots → admin reads them via the Filament dashboard → decides out-of-band. Same human-makes-the-call outcome without live chat to babysit.
 
 ### Out of scope for M6 (deferred)
 

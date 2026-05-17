@@ -13,3 +13,11 @@ Artisan::command('inspire', function () {
 Schedule::command('listings:expire')
     ->everyMinute()
     ->withoutOverlapping();
+
+// Resolve matches stuck in Pending past their 4h confirmation window.
+// Every ten minutes is enough granularity — the timer on the frontend
+// already shows "Expired" so the user knows resolution is pending.
+// `withoutOverlapping` guards against backlogs causing collisions.
+Schedule::command('matches:resolve-timeouts')
+    ->everyTenMinutes()
+    ->withoutOverlapping();

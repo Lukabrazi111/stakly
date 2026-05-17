@@ -316,6 +316,33 @@ test('settleDraw preserves exact BCMath precision on awkward stake values', func
     expect(bccomp((string) $taker->fresh()->usdt_balance, '500.000000', 6))->toBe(0);
 });
 
+// ─── settle / settleDraw: ManualReview guard (Phase 7.3) ────────────────────
+
+test('settle throws when called on a ManualReview match', function () {
+    [$creator, , , $match] = pendingMatchForSettlement();
+    $match->update(['status' => MatchStatus::ManualReview]);
+
+    expect(fn () => MatchSettlement::settle($match, $creator))
+        ->toThrow(InvalidArgumentException::class);
+
+    // Status unchanged; no settlement ledger rows written.
+    expect($match->fresh()->status)->toBe(MatchStatus::ManualReview);
+    expect(WalletTransaction::query()->where('reference_id', "match-payout:{$match->id}")->exists())->toBeFalse()
+        ->and(WalletTransaction::query()->where('reference_id', "match-fee:{$match->id}")->exists())->toBeFalse();
+});
+
+test('settleDraw throws when called on a ManualReview match', function () {
+    [, , , $match] = pendingMatchForSettlement();
+    $match->update(['status' => MatchStatus::ManualReview]);
+
+    expect(fn () => MatchSettlement::settleDraw($match))
+        ->toThrow(InvalidArgumentException::class);
+
+    expect($match->fresh()->status)->toBe(MatchStatus::ManualReview);
+    expect(WalletTransaction::query()->where('reference_id', "match-draw-creator:{$match->id}")->exists())->toBeFalse()
+        ->and(WalletTransaction::query()->where('reference_id', "match-draw-taker:{$match->id}")->exists())->toBeFalse();
+});
+
 // ─── resolveDispute: drawn branch ───────────────────────────────────────────
 
 test('resolveDispute refunds both stakes when API confidence is Drawn', function () {

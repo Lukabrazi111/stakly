@@ -52,6 +52,18 @@ class MatchSettlement
                 return;
             }
 
+            // Defense in depth (Phase 7.3): settle is only valid mid-resolution
+            // — Pending (synchronous resolver after both confirm) or Disputed
+            // (after `resolveDispute` flips status). `ManualReview` is the
+            // terminal state for matches the game-API couldn't resolve;
+            // those must be resolved by admin tooling through a separate path,
+            // not by callers reaching into `settle` directly.
+            if ($locked->status !== MatchStatus::Pending && $locked->status !== MatchStatus::Disputed) {
+                throw new InvalidArgumentException(
+                    "Cannot settle match {$locked->id}: status is {$locked->status->value}, expected Pending or Disputed (ManualReview matches must be resolved via admin tools)."
+                );
+            }
+
             $locked->load('listing');
 
             // Defense in depth: validate the winner is a participant. The
@@ -114,6 +126,14 @@ class MatchSettlement
 
             if ($locked->status === MatchStatus::Settled) {
                 return;
+            }
+
+            // Same guard as `settle` (Phase 7.3): ManualReview must not be
+            // settled via this code path. Admin tools own that flow.
+            if ($locked->status !== MatchStatus::Pending && $locked->status !== MatchStatus::Disputed) {
+                throw new InvalidArgumentException(
+                    "Cannot settle match {$locked->id} as draw: status is {$locked->status->value}, expected Pending or Disputed (ManualReview matches must be resolved via admin tools)."
+                );
             }
 
             $locked->load(['listing.user', 'taker']);
