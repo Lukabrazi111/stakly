@@ -60,4 +60,34 @@ return [
 
     'match_confirmation_timeout_hours' => (int) env('STAKLY_MATCH_CONFIRMATION_TIMEOUT_HOURS', 4),
 
+    /*
+    |--------------------------------------------------------------------------
+    | chess.com User-Agent header
+    |--------------------------------------------------------------------------
+    |
+    | chess.com's Published Data API asks consumers to send a User-Agent that
+    | identifies the project and includes a contact email so they can reach
+    | out if they need to. Used by `App\Services\Provider\ChessComProfileClient`
+    | (M8 Phase 1) for linked-account verification.
+    |
+    | Format suggested by chess.com: `Project/Version (contact@email)`.
+    |
+    */
+
+    'chess_com_user_agent' => env('STAKLY_CHESS_COM_USER_AGENT', 'Stakly/1.0'),
+
+    /*
+    |--------------------------------------------------------------------------
+    | Linked-account verification code TTL
+    |--------------------------------------------------------------------------
+    |
+    | How long (in minutes) a generated bio-code is valid before the user
+    | must request a new one. Short enough that a leaked code has a tiny
+    | attack window; long enough that a user can comfortably copy → paste →
+    | switch tabs → verify without rushing.
+    |
+    */
+
+    'link_verification_ttl_minutes' => (int) env('STAKLY_LINK_VERIFICATION_TTL_MINUTES', 15),
+
 ];

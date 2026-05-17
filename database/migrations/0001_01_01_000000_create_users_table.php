@@ -61,6 +61,37 @@ return new class extends Migration
             // the DB level so mock collisions surface immediately.
             $table->string('tron_address', 34)->unique()->nullable();
 
+            // Linked external game accounts (M8). Players verify ownership of
+            // their chess.com / Lichess accounts via a bio-code paste flow:
+            // (1) request a code → stored in `pending_verification_*` columns
+            // for 15 min; (2) user pastes code in the target public field on
+            // their external profile (chess.com `location`, Lichess
+            // `profile.bio`); (3) verify endpoint fetches the profile, matches
+            // the code, sets `{provider}_verified_at = now()`, clears pending.
+            // UNIQUE on each username column — one external account per Stakly
+            // user; duplicate verify attempts hit the DB constraint and are
+            // translated to a friendly error. Snapshot copies of these
+            // usernames are persisted onto `game_matches` at match creation
+            // (M8 Phase 4) so a mid-match unlink can't break dispute
+            // resolution. chess.com max username length is 25; Lichess is 20
+            // — both columns sized generously.
+            $table->string('chess_com_username', 25)->unique()->nullable();
+            $table->timestamp('chess_com_verified_at')->nullable();
+            $table->string('lichess_username', 30)->unique()->nullable();
+            $table->timestamp('lichess_verified_at')->nullable();
+
+            // Pending verification state (transient, cleared on success or
+            // overwritten by a fresh request). At most one provider in flight
+            // at a time per user — `RequestLinkVerificationAction` overwrites
+            // any existing pending state, so starting a Lichess verification
+            // cancels an in-progress chess.com one. Code is stored plaintext
+            // because we need to display it back to the user; TTL is short
+            // (15 min) so leaked codes have a tiny attack window.
+            $table->string('pending_verification_provider', 16)->nullable();
+            $table->string('pending_verification_username', 30)->nullable();
+            $table->string('pending_verification_code', 32)->nullable();
+            $table->timestamp('pending_verification_expires_at')->nullable();
+
             $table->rememberToken();
             $table->timestamps();
         });

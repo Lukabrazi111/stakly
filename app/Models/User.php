@@ -13,8 +13,30 @@ use Illuminate\Notifications\Notifiable;
 use Laravel\Fortify\TwoFactorAuthenticatable;
 use Spatie\Permission\Traits\HasRoles;
 
-#[Fillable(['name', 'username', 'bio', 'email', 'password', 'tron_address', 'is_active_mode'])]
-#[Hidden(['password', 'two_factor_secret', 'two_factor_recovery_codes', 'remember_token'])]
+#[Fillable([
+    'name',
+    'username',
+    'bio',
+    'email',
+    'password',
+    'tron_address',
+    'is_active_mode',
+    'chess_com_username',
+    'chess_com_verified_at',
+    'lichess_username',
+    'lichess_verified_at',
+    'pending_verification_provider',
+    'pending_verification_username',
+    'pending_verification_code',
+    'pending_verification_expires_at',
+])]
+#[Hidden([
+    'password',
+    'two_factor_secret',
+    'two_factor_recovery_codes',
+    'remember_token',
+    'pending_verification_code',
+])]
 class User extends Authenticatable implements MustVerifyEmail
 {
     /** @use HasFactory<UserFactory> */
@@ -44,6 +66,9 @@ class User extends Authenticatable implements MustVerifyEmail
             'usdt_balance' => 'decimal:6',
             'is_platform' => 'boolean',
             'is_active_mode' => 'boolean',
+            'chess_com_verified_at' => 'datetime',
+            'lichess_verified_at' => 'datetime',
+            'pending_verification_expires_at' => 'datetime',
         ];
     }
 
