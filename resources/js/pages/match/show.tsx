@@ -124,11 +124,19 @@ export default function MatchShow({ match }: MatchShowProps) {
                             myConfirmedOutcome={myConfirmedOutcome}
                             opponentConfirmedOutcome={opponentConfirmedOutcome}
                         />
-                        {/* Escape hatch — only shown after the player has
-                            made their own claim. Disputing without claiming
-                            first is structurally weird and would clutter the
-                            initial decision. */}
-                        {myConfirmedOutcome !== null && (
+                        {/* Escape hatch — visible once EITHER player has
+                            claimed something. Originally this was gated on
+                            the viewer having claimed first ("structurally
+                            weird to dispute without your own claim"), but
+                            that left the viewer trapped if the opponent
+                            lied first: their only paths were to mirror the
+                            lie (settles to liar) or claim Draw / mirror back
+                            and indirectly trigger dispute. With the wider
+                            gate, the viewer can challenge a bad-faith claim
+                            directly. While neither player has claimed yet,
+                            the button stays hidden — nothing to dispute. */}
+                        {(myConfirmedOutcome !== null ||
+                            opponentConfirmedOutcome !== null) && (
                             <div className="mt-5 flex justify-center border-t border-border/60 pt-5">
                                 <OpenDisputeButton matchId={match.id} />
                             </div>
