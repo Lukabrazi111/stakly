@@ -8,7 +8,10 @@ import type { Paginator, TimeControl } from '@/types/listings';
 
 export type MatchStatus = 'pending' | 'disputed' | 'settled' | 'manual_review';
 
-export type MatchOutcome = 'won' | 'lost';
+// `drawn` is a self-reported outcome submitted via the third button in
+// `ConfirmButtons`. Both players claiming `drawn` settles as a draw —
+// stakes refunded, no platform fee, `Match.winner` stays null.
+export type MatchOutcome = 'won' | 'lost' | 'drawn';
 
 export interface MatchPlayer {
     id: number;

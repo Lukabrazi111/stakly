@@ -246,3 +246,96 @@ test('resolveDispute preserves BCMath precision on awkward stake values', functi
         ->firstOrFail();
     expect(bccomp($payout->amount, '222.210000', 6))->toBe(0);
 });
+
+// ─── settleDraw: happy path ─────────────────────────────────────────────────
+
+test('settleDraw refunds both stakes, posts no fee, flips status with no winner', function () {
+    [$creator, $taker, , $match] = pendingMatchForSettlement(stake: '100');
+
+    MatchSettlement::settleDraw($match);
+
+    $fresh = $match->fresh();
+    expect($fresh->status)->toBe(MatchStatus::Settled)
+        ->and($fresh->winner_user_id)->toBeNull()
+        ->and($fresh->settled_at)->not->toBeNull();
+
+    // Both balances restored to pre-hold values:
+    // $500 (deposit) - $100 (held) + $100 (release) = $500.
+    expect((string) $creator->fresh()->usdt_balance)->toBe('500.000000');
+    expect((string) $taker->fresh()->usdt_balance)->toBe('500.000000');
+
+    // One refund row per player.
+    expect(WalletTransaction::query()->where('reference_id', "match-draw-creator:{$match->id}")->exists())->toBeTrue()
+        ->and(WalletTransaction::query()->where('reference_id', "match-draw-taker:{$match->id}")->exists())->toBeTrue();
+
+    // No platform fee row exists for this match.
+    expect(WalletTransaction::query()->where('reference_id', "match-fee:{$match->id}")->exists())->toBeFalse();
+});
+
+// ─── settleDraw: conservation ───────────────────────────────────────────────
+
+test('settleDraw conserves money — sum of all match-related ledger entries is zero', function () {
+    [, , $listing, $match] = pendingMatchForSettlement(stake: '100');
+
+    MatchSettlement::settleDraw($match);
+
+    $totalLedgerForMatch = WalletTransaction::query()
+        ->where('related_listing_id', $listing->id)
+        ->sum('amount');
+
+    expect(bccomp((string) $totalLedgerForMatch, '0', 6))->toBe(0);
+});
+
+// ─── settleDraw: idempotency ────────────────────────────────────────────────
+
+test('settleDraw is idempotent — repeat call is a no-op', function () {
+    [$creator, $taker, , $match] = pendingMatchForSettlement(stake: '100');
+
+    MatchSettlement::settleDraw($match);
+    $creatorBalanceAfterFirst = $creator->fresh()->usdt_balance;
+    $takerBalanceAfterFirst = $taker->fresh()->usdt_balance;
+
+    MatchSettlement::settleDraw($match->fresh());
+
+    expect((string) $creator->fresh()->usdt_balance)->toBe((string) $creatorBalanceAfterFirst);
+    expect((string) $taker->fresh()->usdt_balance)->toBe((string) $takerBalanceAfterFirst);
+
+    expect(WalletTransaction::query()->where('reference_id', "match-draw-creator:{$match->id}")->count())->toBe(1)
+        ->and(WalletTransaction::query()->where('reference_id', "match-draw-taker:{$match->id}")->count())->toBe(1);
+});
+
+// ─── settleDraw: BCMath precision on awkward stakes ─────────────────────────
+
+test('settleDraw preserves exact BCMath precision on awkward stake values', function () {
+    [$creator, $taker, , $match] = pendingMatchForSettlement(stake: '123.45');
+
+    MatchSettlement::settleDraw($match);
+
+    // Each refunded $123.45 → back to $500.
+    expect(bccomp((string) $creator->fresh()->usdt_balance, '500.000000', 6))->toBe(0);
+    expect(bccomp((string) $taker->fresh()->usdt_balance, '500.000000', 6))->toBe(0);
+});
+
+// ─── resolveDispute: drawn branch ───────────────────────────────────────────
+
+test('resolveDispute refunds both stakes when API confidence is Drawn', function () {
+    [$creator, $taker, , $match] = pendingMatchForSettlement(stake: '100');
+    $match->update(['status' => MatchStatus::Disputed, 'dispute_opened_at' => now()]);
+    mockGameApi()->forceDraw();
+
+    MatchSettlement::resolveDispute($match);
+
+    $fresh = $match->fresh();
+    expect($fresh->status)->toBe(MatchStatus::Settled)
+        ->and($fresh->winner_user_id)->toBeNull()
+        ->and($fresh->settled_at)->not->toBeNull()
+        ->and($fresh->api_resolved_at)->not->toBeNull()
+        ->and($fresh->api_response)->toBeArray();
+
+    // Both balances restored — settlement was a refund, not a payout.
+    expect((string) $creator->fresh()->usdt_balance)->toBe('500.000000');
+    expect((string) $taker->fresh()->usdt_balance)->toBe('500.000000');
+
+    // No fee posted.
+    expect(WalletTransaction::query()->where('reference_id', "match-fee:{$match->id}")->exists())->toBeFalse();
+});

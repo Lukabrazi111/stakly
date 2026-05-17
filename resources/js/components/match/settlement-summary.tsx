@@ -1,19 +1,23 @@
-import { Trophy } from 'lucide-react';
+import { Handshake, Trophy } from 'lucide-react';
 import type { ReactNode } from 'react';
 import type { MatchPlayer } from '@/types';
 
 interface SettlementSummaryProps {
-    winner: MatchPlayer;
+    /** Null when the match was settled as a draw (refund-only, no winner). */
+    winner: MatchPlayer | null;
     pot: number;
+    /** Platform fee. Always 0 on a draw. */
     fee: number;
+    /** Winner payout when there's a winner; per-player refund when drawn. */
     payout: number;
     iAmWinner: boolean;
 }
 
 /**
- * Shown when match.status === 'settled'. Differentiates visually between
- * the winner's view (success accent) and the loser's (muted) so the
- * outcome reads at a glance.
+ * Shown when `match.status === 'settled'`. Three views:
+ *   - Winner's view: success accent, "You won."
+ *   - Loser's view: muted, "[Winner] won."
+ *   - Draw (winner === null): neutral, "Both stakes refunded." No fee row.
  */
 export function SettlementSummary({
     winner,
@@ -22,6 +26,35 @@ export function SettlementSummary({
     payout,
     iAmWinner,
 }: SettlementSummaryProps) {
+    if (winner === null) {
+        return (
+            <section className="rounded-2xl border border-border/60 bg-card/60 p-6">
+                <div className="mb-5 flex items-center gap-3">
+                    <div className="rounded-full bg-muted p-2">
+                        <Handshake className="size-5 text-muted-foreground" />
+                    </div>
+                    <div>
+                        <h2 className="font-display text-lg font-semibold text-foreground">
+                            Match drawn
+                        </h2>
+                        <p className="text-sm text-muted-foreground">
+                            Both stakes refunded. No platform fee.
+                        </p>
+                    </div>
+                </div>
+
+                <dl className="grid gap-5 sm:grid-cols-2">
+                    <Stat label="Pot" value={`$${pot}`} />
+                    <Stat
+                        label="Refund (each)"
+                        value={`$${payout.toFixed(2)}`}
+                        accent
+                    />
+                </dl>
+            </section>
+        );
+    }
+
     return (
         <section
             className={`rounded-2xl border p-6 ${
@@ -43,10 +76,10 @@ export function SettlementSummary({
                     />
                 </div>
                 <div>
-                    <h2 className="font-display text-foreground text-lg font-semibold">
+                    <h2 className="font-display text-lg font-semibold text-foreground">
                         Match settled
                     </h2>
-                    <p className="text-muted-foreground text-sm">
+                    <p className="text-sm text-muted-foreground">
                         {iAmWinner ? 'You won.' : `${winner.name} won.`}
                     </p>
                 </div>
@@ -79,15 +112,15 @@ interface StatProps {
 function Stat({ label, value, accent, muted }: StatProps): ReactNode {
     return (
         <div>
-            <dt className="text-muted-foreground text-xs uppercase tracking-wide">
+            <dt className="text-xs tracking-wide text-muted-foreground uppercase">
                 {label}
             </dt>
             <dd
-                className={`font-display mt-1.5 text-xl font-bold ${
+                className={`mt-1.5 font-display text-xl font-bold ${
                     accent
                         ? 'text-success'
                         : muted
-                          ? 'text-muted-foreground font-medium'
+                          ? 'font-medium text-muted-foreground'
                           : 'text-foreground'
                 }`}
             >

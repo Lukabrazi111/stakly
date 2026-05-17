@@ -43,9 +43,15 @@ export default function MatchShow({ match }: MatchShowProps) {
         ? match.taker_confirmed_outcome
         : match.creator_confirmed_outcome;
 
+    // A Settled match with no winner is a draw — both stakes were refunded
+    // via `MatchSettlement::settleDraw`, no platform fee charged. Backend
+    // contract: `winner === null && status === 'settled'` ⇒ draw.
+    const isDraw = match.status === 'settled' && match.winner === null;
     const pot = match.listing.stake_amount * 2;
-    const fee = pot * match.fee_rate;
-    const winnerPayout = pot - fee;
+    const fee = isDraw ? 0 : pot * match.fee_rate;
+    // For draws, the "payout" stat is each player's refund (their original
+    // stake). For wins, it's pot minus platform fee.
+    const winnerPayout = isDraw ? match.listing.stake_amount : pot - fee;
 
     // 4-hour confirmation window from match creation. Backend Phase 7 will
     // enforce this with a scheduled job; the timer here is the player-facing
@@ -84,10 +90,10 @@ export default function MatchShow({ match }: MatchShowProps) {
                 {/* Stack on mobile, row on sm: so neither truncates at 375px */}
                 <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                     <div>
-                        <h1 className="font-display text-foreground text-3xl font-bold tracking-tight">
+                        <h1 className="font-display text-3xl font-bold tracking-tight text-foreground">
                             Match #{match.id}
                         </h1>
-                        <p className="text-muted-foreground mt-1 text-sm">
+                        <p className="mt-1 text-sm text-muted-foreground">
                             You are the {youAre.toLowerCase()}.
                         </p>
                     </div>
@@ -109,8 +115,8 @@ export default function MatchShow({ match }: MatchShowProps) {
                 {/* Action area — varies by status. Confirm UI / settlement
                     summary / dispute banner take the prominent slot. */}
                 {match.status === 'pending' && (
-                    <section className="border-border/60 bg-card/60 mb-6 rounded-2xl border p-6">
-                        <h2 className="text-foreground mb-4 text-lg font-semibold">
+                    <section className="mb-6 rounded-2xl border border-border/60 bg-card/60 p-6">
+                        <h2 className="mb-4 text-lg font-semibold text-foreground">
                             Confirm outcome
                         </h2>
                         <ConfirmButtons
@@ -123,34 +129,36 @@ export default function MatchShow({ match }: MatchShowProps) {
                             first is structurally weird and would clutter the
                             initial decision. */}
                         {myConfirmedOutcome !== null && (
-                            <div className="border-border/60 mt-5 flex justify-center border-t pt-5">
+                            <div className="mt-5 flex justify-center border-t border-border/60 pt-5">
                                 <OpenDisputeButton matchId={match.id} />
                             </div>
                         )}
                     </section>
                 )}
 
-                {match.status === 'settled' && match.winner && (
+                {match.status === 'settled' && (
                     <div className="mb-6">
                         <SettlementSummary
                             winner={match.winner}
                             pot={pot}
                             fee={fee}
                             payout={winnerPayout}
-                            iAmWinner={auth.user?.id === match.winner.id}
+                            iAmWinner={
+                                !isDraw && auth.user?.id === match.winner?.id
+                            }
                         />
                     </div>
                 )}
 
                 {(match.status === 'disputed' ||
                     match.status === 'manual_review') && (
-                    <section className="border-destructive/40 bg-destructive/5 mb-6 rounded-2xl border p-6">
-                        <h2 className="font-display text-foreground mb-2 text-lg font-semibold">
+                    <section className="mb-6 rounded-2xl border border-destructive/40 bg-destructive/5 p-6">
+                        <h2 className="mb-2 font-display text-lg font-semibold text-foreground">
                             {match.status === 'disputed'
                                 ? 'Resolving via game API'
                                 : 'Manual review pending'}
                         </h2>
-                        <p className="text-muted-foreground text-sm">
+                        <p className="text-sm text-muted-foreground">
                             {match.status === 'disputed'
                                 ? 'This match is being resolved via the official game API. It usually completes in seconds — refresh the page if it doesn’t update shortly.'
                                 : 'The game API could not determine a winner. An admin will review this match manually. Your stake stays in escrow until then.'}
@@ -159,24 +167,24 @@ export default function MatchShow({ match }: MatchShowProps) {
                 )}
 
                 {/* Opponent card */}
-                <section className="border-border/60 bg-card/60 mb-6 rounded-2xl border p-6">
-                    <h2 className="text-foreground mb-4 text-lg font-semibold">
+                <section className="mb-6 rounded-2xl border border-border/60 bg-card/60 p-6">
+                    <h2 className="mb-4 text-lg font-semibold text-foreground">
                         Your opponent
                     </h2>
                     <Link
                         href={userShow(opponent.username).url}
-                        className="focus-visible:ring-primary focus-visible:ring-offset-background hover:bg-primary/5 -mx-2 flex items-center gap-4 rounded-lg p-2 transition-colors focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none"
+                        className="-mx-2 flex items-center gap-4 rounded-lg p-2 transition-colors hover:bg-primary/5 focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none"
                     >
                         <Avatar className="size-16">
-                            <AvatarFallback className="bg-gradient-primary text-primary-foreground text-xl font-semibold">
+                            <AvatarFallback className="bg-gradient-primary text-xl font-semibold text-primary-foreground">
                                 {getInitials(opponent.name)}
                             </AvatarFallback>
                         </Avatar>
                         <div>
-                            <div className="text-foreground font-semibold">
+                            <div className="font-semibold text-foreground">
                                 {opponent.name}
                             </div>
-                            <div className="text-muted-foreground text-sm">
+                            <div className="text-sm text-muted-foreground">
                                 @{opponent.username}
                             </div>
                         </div>
@@ -184,8 +192,8 @@ export default function MatchShow({ match }: MatchShowProps) {
                 </section>
 
                 {/* Match details — for reference */}
-                <section className="border-border/60 bg-card/60 rounded-2xl border p-6">
-                    <h2 className="text-foreground mb-5 text-lg font-semibold">
+                <section className="rounded-2xl border border-border/60 bg-card/60 p-6">
+                    <h2 className="mb-5 text-lg font-semibold text-foreground">
                         Match details
                     </h2>
                     <dl className="grid gap-5 sm:grid-cols-3">
@@ -209,7 +217,7 @@ export default function MatchShow({ match }: MatchShowProps) {
                 </section>
 
                 {match.status === 'pending' && (
-                    <p className="text-muted-foreground mt-8 text-center text-xs">
+                    <p className="mt-8 text-center text-xs text-muted-foreground">
                         Play your game on chess.com or Lichess, then return here
                         and confirm the outcome.
                     </p>
@@ -229,12 +237,12 @@ interface StatProps {
 function Stat({ icon, label, value, accent }: StatProps): ReactNode {
     return (
         <div>
-            <dt className="text-muted-foreground inline-flex items-center gap-1.5 text-xs uppercase tracking-wide">
+            <dt className="inline-flex items-center gap-1.5 text-xs tracking-wide text-muted-foreground uppercase">
                 {icon}
                 {label}
             </dt>
             <dd
-                className={`font-display mt-1.5 text-xl font-bold ${accent ? 'text-gradient-primary' : 'text-foreground'}`}
+                className={`mt-1.5 font-display text-xl font-bold ${accent ? 'text-gradient-primary' : 'text-foreground'}`}
             >
                 {value}
             </dd>

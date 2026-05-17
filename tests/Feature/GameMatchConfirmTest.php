@@ -346,3 +346,105 @@ test('disagreement → API unknown → manual-review toast', function () {
             'message' => 'Game API could not determine a winner — match flagged for admin review.',
         ]);
 });
+
+// ─── Drawn outcome (Phase 6.7) ──────────────────────────────────────────────
+
+test('both confirm Drawn → settled as draw, both refunded, no fee, no dispute', function () {
+    [$creator, $taker, , $match] = pendingMatch(stake: '100');
+
+    $this->actingAs($creator)->postJson(route('matches.confirm', $match), ['outcome' => 'drawn']);
+    $this->actingAs($taker)->postJson(route('matches.confirm', $match), ['outcome' => 'drawn']);
+
+    $fresh = $match->fresh();
+
+    expect($fresh->status)->toBe(MatchStatus::Settled)
+        ->and($fresh->winner_user_id)->toBeNull()
+        ->and($fresh->settled_at)->not->toBeNull()
+        // Both-agree-on-draw skips the dispute path entirely.
+        ->and($fresh->dispute_opened_at)->toBeNull()
+        ->and($fresh->api_resolved_at)->toBeNull();
+
+    // Both refunded back to $500.
+    expect((string) $creator->fresh()->usdt_balance)->toBe('500.000000');
+    expect((string) $taker->fresh()->usdt_balance)->toBe('500.000000');
+
+    // No fee.
+    expect(WalletTransaction::query()->where('reference_id', "match-fee:{$match->id}")->exists())->toBeFalse();
+});
+
+test('both confirm Drawn flashes a settled-as-draw toast', function () {
+    [$creator, $taker, , $match] = pendingMatch();
+
+    $this->actingAs($creator)->postJson(route('matches.confirm', $match), ['outcome' => 'drawn']);
+
+    $this->actingAs($taker)
+        ->postJson(route('matches.confirm', $match), ['outcome' => 'drawn'])
+        ->assertInertiaFlash('toast', [
+            'type' => 'success',
+            'message' => 'Both players agreed it was a draw. Stakes refunded.',
+        ]);
+});
+
+test('creator Drawn + taker Won → auto-dispute → API arbitrates to winner', function () {
+    [$creator, $taker, , $match] = pendingMatch();
+    mockGameApi()->forceWinner($creator->id);
+
+    $this->actingAs($creator)->postJson(route('matches.confirm', $match), ['outcome' => 'drawn']);
+    $this->actingAs($taker)->postJson(route('matches.confirm', $match), ['outcome' => 'won']);
+
+    $fresh = $match->fresh();
+
+    expect($fresh->status)->toBe(MatchStatus::Settled)
+        ->and($fresh->winner_user_id)->toBe($creator->id)
+        ->and($fresh->dispute_opened_at)->not->toBeNull()
+        ->and($fresh->api_resolved_at)->not->toBeNull();
+});
+
+test('creator Won + taker Drawn → auto-dispute → API arbitrates to winner', function () {
+    [$creator, $taker, , $match] = pendingMatch();
+    mockGameApi()->forceWinner($taker->id);
+
+    $this->actingAs($creator)->postJson(route('matches.confirm', $match), ['outcome' => 'won']);
+    $this->actingAs($taker)->postJson(route('matches.confirm', $match), ['outcome' => 'drawn']);
+
+    $fresh = $match->fresh();
+
+    expect($fresh->status)->toBe(MatchStatus::Settled)
+        ->and($fresh->winner_user_id)->toBe($taker->id)
+        ->and($fresh->dispute_opened_at)->not->toBeNull();
+});
+
+test('disagreement involving Drawn → API ruled draw → both refunded, no fee', function () {
+    [$creator, $taker, , $match] = pendingMatch(stake: '100');
+    mockGameApi()->forceDraw();
+
+    $this->actingAs($creator)->postJson(route('matches.confirm', $match), ['outcome' => 'drawn']);
+    $this->actingAs($taker)->postJson(route('matches.confirm', $match), ['outcome' => 'lost']);
+
+    $fresh = $match->fresh();
+
+    expect($fresh->status)->toBe(MatchStatus::Settled)
+        ->and($fresh->winner_user_id)->toBeNull()
+        ->and($fresh->settled_at)->not->toBeNull()
+        ->and($fresh->dispute_opened_at)->not->toBeNull()
+        ->and($fresh->api_resolved_at)->not->toBeNull();
+
+    expect((string) $creator->fresh()->usdt_balance)->toBe('500.000000');
+    expect((string) $taker->fresh()->usdt_balance)->toBe('500.000000');
+
+    expect(WalletTransaction::query()->where('reference_id', "match-fee:{$match->id}")->exists())->toBeFalse();
+});
+
+test('API ruled draw on auto-dispute flashes settled-by-api-draw toast', function () {
+    [$creator, $taker, , $match] = pendingMatch();
+    mockGameApi()->forceDraw();
+
+    $this->actingAs($creator)->postJson(route('matches.confirm', $match), ['outcome' => 'won']);
+
+    $this->actingAs($taker)
+        ->postJson(route('matches.confirm', $match), ['outcome' => 'won'])
+        ->assertInertiaFlash('toast', [
+            'type' => 'success',
+            'message' => 'Players disagreed — game API ruled it a draw. Stakes refunded.',
+        ]);
+});

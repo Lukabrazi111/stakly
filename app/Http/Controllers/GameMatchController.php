@@ -283,10 +283,15 @@ class GameMatchController extends Controller
     }
 
     /**
-     * Both players have confirmed. If their claims are mirror images
-     * (one Won + one Lost), agreement → settle. If they're the same
-     * (both Won or both Lost), disagreement → flip to Disputed for
-     * Phase 4 game-API resolution.
+     * Both players have confirmed. Three resolution paths:
+     *
+     *   - Both `Drawn` → settle as a draw (refund both stakes, no fee, no winner)
+     *     via `MatchSettlement::settleDraw`. Returns `'settled-as-draw'`.
+     *   - Mirror `Won` / `Lost` (one says Won + the other says Lost) → settle,
+     *     winner gets the pot minus platform fee. Returns `'settled'`.
+     *   - Anything else (both Won, both Lost, or any mismatch involving Drawn
+     *     that isn't both-Drawn) → real disagreement, flip to `Disputed` for
+     *     game-API resolution. Returns `'disputed'`.
      *
      * Returns a sentinel string the controller maps to a flash toast.
      */
@@ -295,24 +300,38 @@ class GameMatchController extends Controller
         $creatorOutcome = $match->creator_confirmed_outcome;
         $takerOutcome = $match->taker_confirmed_outcome;
 
-        if ($creatorOutcome === $takerOutcome) {
-            // Same outcome (both Won or both Lost) → disagreement → dispute.
-            $match->update([
-                'status' => MatchStatus::Disputed,
-                'dispute_opened_at' => now(),
-            ]);
+        // Both agree it was a draw → refund both, no fee.
+        if ($creatorOutcome === MatchOutcome::Drawn && $takerOutcome === MatchOutcome::Drawn) {
+            MatchSettlement::settleDraw($match);
 
-            return 'disputed';
+            return 'settled-as-draw';
         }
 
-        // Mirror images → agreement → settle.
-        $winner = $creatorOutcome === MatchOutcome::Won
-            ? $match->listing->user
-            : $match->taker;
+        // Mirror Won/Lost → winner emerges, settle. Any combination involving
+        // Drawn falls through to the dispute branch below — we don't pick
+        // sides when one player claims a draw and the other claims a win.
+        $isMirrorWonLost = (
+            ($creatorOutcome === MatchOutcome::Won && $takerOutcome === MatchOutcome::Lost)
+            || ($creatorOutcome === MatchOutcome::Lost && $takerOutcome === MatchOutcome::Won)
+        );
 
-        MatchSettlement::settle($match, $winner);
+        if ($isMirrorWonLost) {
+            $winner = $creatorOutcome === MatchOutcome::Won
+                ? $match->listing->user
+                : $match->taker;
 
-        return 'settled';
+            MatchSettlement::settle($match, $winner);
+
+            return 'settled';
+        }
+
+        // Everything else is a real disagreement → game-API arbitrates.
+        $match->update([
+            'status' => MatchStatus::Disputed,
+            'dispute_opened_at' => now(),
+        ]);
+
+        return 'disputed';
     }
 
     /**
@@ -373,6 +392,7 @@ class GameMatchController extends Controller
 
         Inertia::flash('toast', match ($resolution) {
             'settled-by-api' => ['type' => 'success', 'message' => __('Dispute resolved — game API determined the winner.')],
+            'settled-by-api-draw' => ['type' => 'success', 'message' => __('Dispute resolved — game API ruled it a draw. Stakes refunded.')],
             'manual-review' => ['type' => 'warning', 'message' => __('Dispute opened — game API could not determine a winner. Match flagged for admin review.')],
             default => ['type' => 'warning', 'message' => __('Dispute opened — awaiting resolution.')],
         });
@@ -382,14 +402,17 @@ class GameMatchController extends Controller
 
     /**
      * Translate a post-`resolveDispute` match status into the toast sentinel
-     * the controller will flash. Mock driver always returns Confirmed (so we
-     * land on `settled-by-api`); the `manual-review` and fallback `disputed`
-     * branches will start firing once real adapters are in (M8).
+     * the controller will flash. A `Settled` match is distinguished by whether
+     * a `winner_user_id` was set — when null the API ruled it a draw and both
+     * stakes were refunded (`settled-by-api-draw`); otherwise a winner took
+     * the pot (`settled-by-api`).
      */
     private function postDisputeResolutionSentinel(GameMatch $match): string
     {
         return match ($match->status) {
-            MatchStatus::Settled => 'settled-by-api',
+            MatchStatus::Settled => $match->winner_user_id === null
+                ? 'settled-by-api-draw'
+                : 'settled-by-api',
             MatchStatus::ManualReview => 'manual-review',
             default => 'disputed',
         };
@@ -411,7 +434,9 @@ class GameMatchController extends Controller
 
         Inertia::flash('toast', match ($resolution) {
             'settled' => ['type' => 'success', 'message' => __('Both players agreed — match settled.')],
+            'settled-as-draw' => ['type' => 'success', 'message' => __('Both players agreed it was a draw. Stakes refunded.')],
             'settled-by-api' => ['type' => 'success', 'message' => __('Players disagreed — game API resolved the match.')],
+            'settled-by-api-draw' => ['type' => 'success', 'message' => __('Players disagreed — game API ruled it a draw. Stakes refunded.')],
             'manual-review' => ['type' => 'warning', 'message' => __('Game API could not determine a winner — match flagged for admin review.')],
             'disputed' => ['type' => 'warning', 'message' => __('Both players disagree — match flagged for review.')],
             'no-change' => ['type' => 'info', 'message' => __("You've already chosen that outcome.")],

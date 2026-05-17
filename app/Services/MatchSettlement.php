@@ -96,6 +96,55 @@ class MatchSettlement
     }
 
     /**
+     * Settle a match as a draw — refund both players' stakes via `Wallet::release`,
+     * no platform fee, no winner. Used when both players agree it was a draw
+     * (`GameMatchController::resolveBothConfirmed`) or when the game-API
+     * returns `GameApiConfidence::Drawn` (via `resolveDispute` below).
+     *
+     * Conservation per match: `-A_stake + -B_stake + +A_release + +B_release = 0`.
+     *
+     * Idempotent: short-circuits if the match is already `Settled`. The two
+     * `Wallet::release` calls are also idempotent via their `match-draw-*`
+     * references — repeat invocations with the same match id are safe.
+     */
+    public static function settleDraw(GameMatch $match): void
+    {
+        DB::transaction(function () use ($match) {
+            $locked = GameMatch::query()->lockForUpdate()->findOrFail($match->id);
+
+            if ($locked->status === MatchStatus::Settled) {
+                return;
+            }
+
+            $locked->load(['listing.user', 'taker']);
+
+            $stake = (string) $locked->listing->stake_amount;
+
+            Wallet::release(
+                user: $locked->listing->user,
+                amount: $stake,
+                listing: $locked->listing,
+                reference: "match-draw-creator:{$locked->id}",
+                description: 'Draw — creator stake refunded.',
+            );
+
+            Wallet::release(
+                user: $locked->taker,
+                amount: $stake,
+                listing: $locked->listing,
+                reference: "match-draw-taker:{$locked->id}",
+                description: 'Draw — taker stake refunded.',
+            );
+
+            $locked->update([
+                'status' => MatchStatus::Settled,
+                // winner_user_id stays null — that's the marker for "draw".
+                'settled_at' => now(),
+            ]);
+        });
+    }
+
+    /**
      * Resolve a Disputed match via the configured `GameApi` driver.
      *
      * Confidence === Confirmed → settle in favour of the API winner (delegates
@@ -155,6 +204,16 @@ class MatchSettlement
 
             if ($result->confidence === GameApiConfidence::Unknown) {
                 $locked->update(['status' => MatchStatus::ManualReview]);
+
+                return;
+            }
+
+            if ($result->confidence === GameApiConfidence::Drawn) {
+                // API ruled it a draw — refund both stakes, no winner, no
+                // platform fee. `settleDraw` runs inside its own DB::transaction
+                // which Laravel composes via savepoint; the outer audit-trail
+                // update commits atomically with the refund.
+                self::settleDraw($locked);
 
                 return;
             }

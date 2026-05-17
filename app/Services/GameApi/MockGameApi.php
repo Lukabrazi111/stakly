@@ -52,6 +52,16 @@ final class MockGameApi implements GameApi
     }
 
     /**
+     * Force the next (and subsequent) calls to return Drawn confidence,
+     * exercising the `Disputed → settleDraw` branch (both refunded, no fee).
+     */
+    public function forceDraw(): void
+    {
+        $this->forcedWinnerId = null;
+        $this->forcedConfidence = GameApiConfidence::Drawn;
+    }
+
+    /**
      * Clear any forced state — subsequent calls fall back to the
      * deterministic default. Tests that share a singleton between
      * scenarios should call this in setup.
@@ -66,9 +76,13 @@ final class MockGameApi implements GameApi
     {
         if ($this->forcedConfidence !== null) {
             return new GameApiResult(
-                winner_user_id: $this->forcedConfidence === GameApiConfidence::Unknown
-                    ? null
-                    : $this->forcedWinnerId,
+                // Only `Confirmed` carries a winner; `Drawn` and `Unknown`
+                // both null it. Phrased as "use the id only when Confirmed"
+                // so adding future cases (e.g. partial-confidence) doesn't
+                // accidentally inherit a non-null winner via the negative.
+                winner_user_id: $this->forcedConfidence === GameApiConfidence::Confirmed
+                    ? $this->forcedWinnerId
+                    : null,
                 confidence: $this->forcedConfidence,
                 raw_response: [
                     'driver' => 'mock',

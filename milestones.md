@@ -419,6 +419,76 @@ This phase is filed as **separate scope from Phase 6** so the Phase 6 commit can
 - Filter chips on `/listings/mine` beyond the Active/All tabs.
 - A separate `/listings/mine` empty state hero. Standard empty state with a "Post listing" CTA is fine.
 
+### Post-6.5 hotfix shipped same day (2026-05-16)
+
+- [x] **Active Mode must gate match Take, not just visibility.** Bug found after 6.5 close-out: a taker who already had the listing detail page loaded (or knew the direct URL) could POST `/take` and start a match even after the owner went Inactive. The `scopeOnPublicMarketplace` filter only hid listings on browse surfaces — the mutation endpoint had no Active Mode check. Fix in `GameMatchController::take`: inside the existing locked transaction, `lockForUpdate` SELECT on `users.is_active_mode` (serializes against concurrent `ActiveModeController` toggles); if false, return a new `'owner_inactive'` sentinel that the controller translates to an info toast ("This player is currently inactive. Their listings are temporarily unavailable.") + redirect back to listing detail. Frontend defense-in-depth: `ListingResource.creator.is_active_mode` exposed (PII-safe — already inferrable from marketplace visibility); listing detail page disables Take button + shows "Player currently inactive" with a "Browse other listings →" link when owner is inactive. Two new tests in `GameMatchTakeTest`: inactive-owner blocks the take; reactivation between page-load and Take lets it succeed. **Three-layer enforcement now:** (1) `Listing::scopeOnPublicMarketplace` (visibility), (2) `GameMatchController::take` (mutation, authoritative), (3) listing detail frontend gate (UX). Future "consume listing" paths (e.g. private-challenge if ever added) must mirror this gate.
+
+---
+
+## Phase 6.6 — Player Hub Layout **(shipped 2026-05-16)** (~half a day, no new deps)
+
+Filed and shipped same-day as a UX follow-on after the user noted that navigating between management surfaces (listings, matches, wallet) required opening the profile dropdown each time. Bybit-style scoped sidebar pattern — only on management pages, not site-wide.
+
+### Scope
+
+- [x] **`PlayerHubLayout`** (`resources/js/layouts/player-hub-layout.tsx`) — wraps `SiteLayout` and adds a sticky left `PlayerSidebar`. Used by `/listings/mine`, `/matches`, `/wallet`, `/wallet/deposit`, `/wallet/withdraw`, `/wallet/history`. Public pages (`/`, `/listings`, `/listings/{id}`, `/users/{username}`) keep plain `SiteLayout` — sidebar would feel out of place on browsing surfaces and would shrink content for no benefit.
+- [x] **`PlayerSidebar`** (`resources/js/components/site/player-sidebar.tsx`):
+  - Three items: **My listings** (`ListChecks`) → `/listings/mine`, **Matches** (`Swords`) → `/matches`, **Wallet** (`WalletIcon`) → `/wallet` (Wallet's `matchPrefix = /wallet` lights up across all sub-pages).
+  - Sticky `top-28` (just below sticky SiteHeader `h-16` + MarqueeStrip `~h-12`).
+  - Full viewport height: `h-[calc(100vh-7rem)]` — right border extends the full visible height.
+  - Active state: pink left accent bar (`w-1 h-6 absolute left-0 top-1/2 -translate-y-1/2 rounded-r-full bg-primary` with soft `--gradient-glow` shadow) + `bg-primary/15` wash + pink icon (`text-primary`).
+  - Collapsible: rail mode toggles between `w-60` (expanded) and `w-16` (icon-only). `PanelLeftClose` / `PanelLeftOpen` button at top-left of sidebar. Smooth `transition-[width] duration-200 ease-out`. Tooltips on hover when collapsed (Radix Tooltip with 300ms delay).
+  - **Preference persists in `localStorage`** under `stakly:player-sidebar:collapsed` so collapsed/expanded state survives reloads + navigation.
+- [x] **Mobile**: sidebar is `hidden md:flex` — disappears entirely. Mobile users navigate via the existing SiteHeader hamburger menu (already has links to all three management surfaces). Avoids duplicating navigation patterns on small screens.
+- [x] **Smart `BackLink`** (`resources/js/components/site/back-link.tsx`) — replaces 5 hardcoded "Back to X" links across listing detail, match detail, wallet deposit / withdraw / history. Generic "Back" label + `ChevronLeft` icon. On left-click, calls `window.history.back()` if `window.history.length > 1`; otherwise falls through to Inertia `<Link>` to the `fallback` URL (e.g. `/listings`, `/wallet`). Modifier-clicks (cmd/ctrl/shift/middle) bypass the smart behavior — those keep `<Link>` semantics for "Open in new tab". Why generic "Back" instead of context-specific labels: matches browser semantics, handles arbitrary referrers (user came from `/listings/mine` vs `/listings` vs a profile), survives weird flows (deep links, opened-in-new-tab) gracefully.
+
+### Locked decisions (2026-05-16)
+
+- **Scoped sidebar, not site-wide.** Mirrors Bybit's pattern — their P2P section has the sidebar, the rest of the site doesn't. Public pages stay full-width: marketing audience there isn't a management audience.
+- **"Matches" stays "Matches" (not "Orders").** Bybit-style "Orders" semantic was discussed and deferred. `Matches` page already has filter chips (All / Pending / Disputed / Settled) which covers the same need. Can split into "Orders" (Pending) + "Match history" (Settled) later if usage data shows the split is useful.
+- **Sidebar items locked at 3 for v1.** My listings, Matches, Wallet. Settings would be the next natural addition (when a settings page is built). No KYC / Disputes / Orders items yet — they don't exist as routes.
+- **Mobile = no sidebar.** Considered (a) icon rail at top of page, (b) sheet/drawer from hamburger, (c) hide entirely. Picked (c) because the hamburger menu already lists all three management surfaces; adding a second mobile nav pattern would duplicate without benefit. Revisit only if mobile management UX feels cramped after launch.
+
+### Out of scope for 6.6 (deferred)
+
+- "Orders" sub-section (active matches vs match history split).
+- Settings, KYC, Disputes sidebar items (not enough surfaces to justify yet).
+- Sidebar item badges (e.g. unread match count, pending dispute count) — nice-to-have, not v1.
+
+---
+
+## Phase 6.7 — Drawn outcome support **(shipped 2026-05-17)** (~half a day, no new deps)
+
+Real chess games can end in draws (stalemate, threefold repetition, 50-move rule, agreement, time-out vs insufficient material). The original `MatchOutcome` enum was `Won | Lost` only — when M8 swaps in real chess.com / Lichess adapters, the API will return draw results that the settlement code would have had no handler for.
+
+Originally filed as an M8 prerequisite. Pulled forward to Phase 6.7 so the state machine is complete *before* Phase 7's timeout job builds on top of it — landing Phase 7 first would have meant revisiting it after Drawn lands.
+
+### Scope
+
+- [x] **6.7.1** Added `MatchOutcome::Drawn` enum case.
+- [x] **6.7.2** Added `GameApiConfidence::Drawn` enum case (per locked design — extending the enum, not adding a separate `is_draw` flag on `GameApiResult`).
+- [x] **6.7.3** New `MatchSettlement::settleDraw(GameMatch $match)` — row-locked, idempotent on `Settled`, calls `Wallet::release` for both players' stakes (refs `match-draw-creator:{id}` / `match-draw-taker:{id}`), flips status to `Settled` with `winner_user_id = null` + `settled_at = now()`. The `ManualReview` rejection guard (shared with `settle`) lands as part of Phase 7's 7.3.
+- [x] **6.7.4** `GameMatchController::resolveBothConfirmed` rewritten with explicit branches: both `Drawn` → `settleDraw`; mirror `Won`/`Lost` → `settle`; anything else (including any disagreement involving `Drawn`) → dispute.
+- [x] **6.7.5** `MatchSettlement::resolveDispute` extended: `confidence === Drawn` → `settleDraw`. Existing `Confirmed` / `Unknown` branches unchanged.
+- [x] **6.7.6** `postDisputeResolutionSentinel` distinguishes `Settled` with a winner (`'settled-by-api'`) from `Settled` with no winner (`'settled-by-api-draw'`). New toast strings in `confirmRedirect` + `openDispute` for the agree-on-draw and draw-via-API paths.
+- [x] **6.7.7** `MockGameApi::forceDraw()` test helper alongside `forceWinner()` / `forceUnknown()`. Winner-id ternary refactored to a positive `=== Confirmed` check so future enum cases don't accidentally inherit a non-null winner.
+- [x] **6.7.8** Frontend: third "Draw" button (Handshake icon) in `ConfirmButtons` (2-col → 3-col). `SettlementSummary` gained a draw branch (refund both, no winner, no fee row, neutral tone, `Match drawn` header). `MatchListRow` + `ProfileMatchRow` gained `Draw` result chips. `match/show.tsx` derives `isDraw`, drops the `&& match.winner` guard on summary render. `MatchOutcome` TS type gained `'drawn'`.
+- [x] **6.7.9** Tests: 11 new tests / 50 new assertions. `MatchSettlementTest` covers `settleDraw` happy path / conservation / idempotency / BCMath precision + `resolveDispute` Drawn branch. `GameMatchConfirmTest` covers both-Drawn settles + toast, Drawn-vs-Won routes to dispute (both directions), API-ruled draw refunds both + toast.
+
+### Locked decisions
+
+- **Refund both, no platform fee.** Draws are refund-only — not revenue events. Conservation still holds across the four-party flow.
+- **Separate `settleDraw()` method, not a `settle($winner = null)` overload.** Semantics differ enough that conflating muddies both — `settle` pays a winner + fees the platform; `settleDraw` refunds both, no fee, no winner. Same row-lock + idempotency pattern.
+- **`GameApiConfidence` gains `Drawn` (option a), not `GameApiResult.is_draw` (option b).** Single source of truth; three result types in one enum. Enum semantically becomes "result type" rather than strict "confidence" but the rename isn't worth the churn.
+- **Disagreement involving Drawn → dispute, not auto-settle.** If one player says `Won` and the other says `Drawn`, that's a real disagreement — the API arbitrates. We don't pick sides.
+- **Sentinel split for API-resolved draws.** `'settled-by-api'` (winner emerged) and `'settled-by-api-draw'` (refund-both) carry different toast copy. Distinguished by `winner_user_id === null` after `resolveDispute`.
+
+### Out of scope for 6.7 (deferred)
+
+- Rake on draws (stays at zero — refund-only, no revenue event).
+- Draw-by-agreement *before* the game is played (separate "mutual cancel" feature — not in M6).
+- Per-game-type draw rules (Lichess's draw conditions differ slightly from chess.com's — handle when real adapters land in M8).
+
 ---
 
 **Phase 7 — Timeouts + edge cases + polish** (~1–2 days, no new deps)
@@ -428,8 +498,9 @@ This phase is filed as **separate scope from Phase 6** so the Phase 6 commit can
   - Idempotent via `match-timeout:{$match->id}` reference.
   - **Deadline contract shared with frontend.** `MatchTimer` (shipped in Phase 3) already shows the 4h countdown using `match.created_at + 4h` and flips to "Expired" state when the deadline passes. Phase 7's job uses the SAME deadline calculation — its role is to actually flip the match status server-side. Until Phase 7 lands, the timer hits "Expired" but the match stays `Pending` indefinitely (no auto-resolution).
 - [ ] **7.2** Inertia flash toasts: "Listing taken — match started", "Match settled — you won/lost $X", "Dispute opened, awaiting resolution".
-- [ ] **7.3** Final test sweep + manual end-to-end run: create listing, take it from another account, confirm both ways (agree, disagree, timeout, dispute).
-- [ ] **7.4** Suggested commit: `feat: match flow with mock game-API (M6)`.
+- [ ] **7.3** Positive status guard on `MatchSettlement::settle` + `MatchSettlement::settleDraw`. Today the only check is "skip if `Settled`." Change to: no-op on `Settled` (preserves idempotency), proceed on `Pending` / `Disputed`, throw `InvalidArgumentException` on `ManualReview` or any unexpected status. Future admin tools resolving `ManualReview` must take their own code path — silently piggybacking on regular `settle` would bypass the review intent. No behavior change for current callers (`resolveBothConfirmed` and `resolveDispute` always run on `Pending` / `Disputed`).
+- [ ] **7.4** Final test sweep + manual end-to-end run: create listing, take from another account, confirm both ways (agree, disagree, draw, timeout, dispute).
+- [ ] **7.5** Suggested commit: `feat: match flow with mock game-API (M6)`.
 
 ### Out of scope for M6 (deferred)
 
@@ -477,23 +548,7 @@ User-facing wallet pages on top of the M3.5 ledger. v1 mocks the chain layer —
 
 Profile settings, chess.com / Lichess account linking flow with ownership verification (UI only).
 
-### Prerequisite: `Drawn` outcome support
-
-**Must land before M8 swaps in real chess.com / Lichess adapters.** Surfaced 2026-05-16 while reviewing M6 Phase 4 with the user — the current `MatchOutcome` enum is `Won | Lost` only, but real chess games end in draws (stalemate, threefold repetition, 50-move rule, agreement, time-out vs insufficient material). Without a `Drawn` branch, the real API will return draw results that our settlement code has no handler for.
-
-**Locked design (2026-05-16):**
-
-- Add `MatchOutcome::Drawn` to the enum.
-- Settlement on draw: **refund both stakes via `Wallet::release`** (not `Wallet::payout` — no winner). No platform fee on draws — refund-only flows shouldn't be revenue events. This stays consistent with the M6 conservation invariant: `-A_stake + -B_stake + +A_release + +B_release = 0`.
-- Frontend: add a third "Draw" button alongside "I won" / "I lost" in `ConfirmButtons`. Mirror agreement (both Drawn) → settle as draw. Disagreement (one Drawn vs one Won/Lost) → auto-dispute, API arbitrates.
-- `GameApi` driver returns `Drawn` as a third confidence-or-status value. Either:
-  - (a) extend `GameApiConfidence` enum with `Drawn` case, OR
-  - (b) add a `is_draw: bool` flag to `GameApiResult` and keep `confidence` as `Confirmed | Unknown`.
-  - **Pick (a)** — simpler, single source of truth. Three cases instead of two.
-- `MockGameApi`: add `forceDraw()` test helper alongside `forceWinner()` / `forceUnknown()`.
-- New tests: agree-on-draw settles as refund; disagree-with-draw goes to API; API returns Drawn → both refund.
-
-**Out of scope for the prereq:** rake on draws (stays at zero), draw-by-agreement before the game is played (separate "mutual cancel" feature), per-game-type draw rules (Lichess draw conditions slightly differ from chess.com — handle when adapter lands).
+> **Drawn outcome support pulled forward to M6 Phase 6.7** (planned). When M8 picks up real adapters, the settlement code already handles draws — adapters just need to map their draw responses to `GameApiConfidence::Drawn`. Design + scope live in Phase 6.7 above.
 
 ---
 

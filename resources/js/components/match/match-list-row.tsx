@@ -1,5 +1,5 @@
 import { Link, usePage } from '@inertiajs/react';
-import { Clock, Trophy } from 'lucide-react';
+import { Clock, Handshake, Trophy } from 'lucide-react';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { useInitials } from '@/hooks/use-initials';
 import { timeControlLabels } from '@/lib/listings-format';
@@ -38,38 +38,38 @@ export function MatchListRow({ match }: Props) {
     const isCreator = match.creator.id === userId;
     const opponent = isCreator ? match.taker : match.creator;
 
-    // Result chip only on settled matches.
+    // Result chip only on settled matches. Three mutually-exclusive states:
+    // youWon / youLost / isDraw (settled with no winner).
     const youWon = match.winner !== null && userId === match.winner.id;
-    const youLost
-        = match.status === 'settled'
-            && match.winner !== null
-            && !youWon;
+    const youLost =
+        match.status === 'settled' && match.winner !== null && !youWon;
+    const isDraw = match.status === 'settled' && match.winner === null;
 
     return (
-        <article className="hover:bg-primary/5 border-border/40 group relative flex flex-col gap-4 border-t px-4 py-4 transition-colors duration-200 ease-out first:border-t-0 md:flex-row md:items-center md:gap-6 md:px-5">
+        <article className="group relative flex flex-col gap-4 border-t border-border/40 px-4 py-4 transition-colors duration-200 ease-out first:border-t-0 hover:bg-primary/5 md:flex-row md:items-center md:gap-6 md:px-5">
             {/* Overlay: entire row → match detail */}
             <Link
                 href={matchShow(match.id).url}
                 aria-label={`View match vs ${opponent.name}`}
-                className="focus-visible:ring-primary focus-visible:ring-offset-background absolute inset-0 rounded-lg focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none"
+                className="absolute inset-0 rounded-lg focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none"
             />
 
             {/* Opponent zone — relative sibling, sits above overlay → user profile */}
             <Link
                 href={userShow(opponent.username).url}
-                className="focus-visible:ring-primary focus-visible:ring-offset-background relative flex min-w-0 items-center gap-3 rounded-lg focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none md:w-52 md:shrink-0"
+                className="relative flex min-w-0 items-center gap-3 rounded-lg focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none md:w-52 md:shrink-0"
             >
                 <Avatar className="size-10 shrink-0 overflow-hidden rounded-full">
-                    <AvatarFallback className="bg-gradient-primary text-primary-foreground text-sm font-semibold">
+                    <AvatarFallback className="bg-gradient-primary text-sm font-semibold text-primary-foreground">
                         {getInitials(opponent.name)}
                     </AvatarFallback>
                 </Avatar>
 
                 <div className="flex min-w-0 flex-col">
-                    <span className="text-foreground hover:text-primary truncate text-sm font-semibold transition-colors">
+                    <span className="truncate text-sm font-semibold text-foreground transition-colors hover:text-primary">
                         {opponent.name}
                     </span>
-                    <span className="text-muted-foreground truncate text-xs">
+                    <span className="truncate text-xs text-muted-foreground">
                         @{opponent.username}
                     </span>
                 </div>
@@ -87,14 +87,14 @@ export function MatchListRow({ match }: Props) {
                     {match.listing.time_control.map((tc) => (
                         <span
                             key={tc}
-                            className="border-border/60 bg-background/60 text-muted-foreground inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium"
+                            className="inline-flex items-center gap-1.5 rounded-full border border-border/60 bg-background/60 px-3 py-1 text-xs font-medium text-muted-foreground"
                         >
                             <Clock className="size-3" />
                             {timeControlLabels[tc]}
                         </span>
                     ))}
 
-                    {(youWon || youLost) && (
+                    {(youWon || youLost || isDraw) && (
                         <span
                             className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium ${
                                 youWon
@@ -102,21 +102,25 @@ export function MatchListRow({ match }: Props) {
                                     : 'border-muted-foreground/40 bg-muted text-muted-foreground'
                             }`}
                         >
-                            <Trophy className="size-3" />
-                            {youWon ? 'You won' : 'You lost'}
+                            {isDraw ? (
+                                <Handshake className="size-3" />
+                            ) : (
+                                <Trophy className="size-3" />
+                            )}
+                            {isDraw ? 'Draw' : youWon ? 'You won' : 'You lost'}
                         </span>
                     )}
                 </div>
 
-                <div className="text-muted-foreground inline-flex shrink-0 items-center gap-1.5 text-xs font-medium md:w-20 md:justify-end">
+                <div className="inline-flex shrink-0 items-center gap-1.5 text-xs font-medium text-muted-foreground md:w-20 md:justify-end">
                     {match.created_at && formatMatchDate(match.created_at)}
                 </div>
 
                 <div className="flex items-baseline gap-1 md:w-28 md:shrink-0 md:justify-end">
-                    <span className="font-display text-gradient-primary text-xl font-bold leading-none md:text-2xl">
+                    <span className="text-gradient-primary font-display text-xl leading-none font-bold md:text-2xl">
                         ${match.listing.stake_amount}
                     </span>
-                    <span className="text-muted-foreground text-xs">USDT</span>
+                    <span className="text-xs text-muted-foreground">USDT</span>
                 </div>
             </div>
         </article>
