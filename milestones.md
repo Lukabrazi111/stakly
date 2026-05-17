@@ -123,14 +123,14 @@ The API is no longer the primary truth source — it's a smart link-previewer in
 
 **Phase 1 — Linked accounts foundation (chess.com + Lichess)** (~3-4 days)
 
-- Schema migration on `users`: `chess_com_username`, `chess_com_verified_at`, `lichess_username`, `lichess_verified_at`, `pending_verification_provider`, `pending_verification_username`, `pending_verification_code`, `pending_verification_expires_at`.
-- Action: `RequestLinkVerificationAction` — generates 16-char random code, stores pending columns, returns code for UI display.
-- Action: `VerifyLinkedAccountAction` — calls provider profile API, parses target field, matches code, marks `*_verified_at = now()`, clears pending columns.
-- Services: `App\Services\Provider\ChessComProfileClient` + `LichessProfileClient` (`Http::fake()`-able). chess.com requires User-Agent header with contact email.
-- New settings tab `/settings/linked-accounts` (alongside Profile / Security / Appearance).
-- Profile section `LinkedAccountsSection` binds real data (username + verified badge); existing "Not linked" placeholder is replaced.
-- Throttle middleware on verify endpoint (`throttle:6,1`).
-- Tests with `Http::fake()` for both providers (happy path, expired code, mismatched code, API 404, API 500, rate limit).
+- [ ] Schema migration on `users`: `chess_com_username`, `chess_com_verified_at`, `lichess_username`, `lichess_verified_at`, `pending_verification_provider`, `pending_verification_username`, `pending_verification_code`, `pending_verification_expires_at`.
+- [ ] Action: `RequestLinkVerificationAction` — generates 16-char random code, stores pending columns, returns code for UI display.
+- [ ] Action: `VerifyLinkedAccountAction` — calls provider profile API, parses target field, matches code, marks `*_verified_at = now()`, clears pending columns.
+- [ ] Services: `App\Services\Provider\ChessComProfileClient` + `LichessProfileClient` (`Http::fake()`-able). chess.com requires User-Agent header with contact email.
+- [ ] New settings tab `/settings/linked-accounts` (alongside Profile / Security / Appearance).
+- [ ] Profile section `LinkedAccountsSection` binds real data (username + verified badge); existing "Not linked" placeholder is replaced.
+- [ ] Throttle middleware on verify endpoint (`throttle:6,1`).
+- [ ] Tests with `Http::fake()` for both providers (happy path, expired code, mismatched code, API 404, API 500, rate limit).
 
 **Locked decisions** (Phase 1):
 - **Bio-code target field**: chess.com `name` (public display name — chess.com's public JSON exposes this; their "About" bio is NOT in the public API). Lichess `profile.bio` (proper 400-char bio field). Users see "paste this code in your display name on chess.com" / "paste this code in your bio on Lichess." The chess.com clobber UX is acceptable since it's a one-time-per-provider action.
@@ -139,15 +139,15 @@ The API is no longer the primary truth source — it's a smart link-previewer in
 
 **Phase 2 — Reverb infrastructure + chat schema + text chat** (~3-4 days)
 
-- Add `reverb` service to `compose.yaml` (port 8080).
-- Composer: `laravel/reverb` + `@laravel/echo` + `pusher-js` client.
-- Schema: `messages` table (id, match_id FK, user_id FK nullable, type [text/image/link/system], content text, attachments_json, created_at), indexed by `match_id`.
-- Model: `App\Models\Message` + factory + `match` / `user` relations. `UPDATED_AT = null` (immutable — keep dispute logs honest).
-- Action: `SendMessageAction` — validates participant (via existing `GameMatchPolicy`), validates rate limit, persists, broadcasts `MessageSent` event.
-- Event: `MessageSent` broadcasts to `match.{id}` **private** channel.
-- Channel auth in `routes/channels.php`: only the two match participants subscribe.
-- React: `MatchChatPanel` component in match `show.tsx` (message list + input).
-- Tests: rate limit hit, channel auth (non-participant rejected), persistence, broadcast event fired.
+- [ ] Add `reverb` service to `compose.yaml` (port 8080).
+- [ ] Composer: `laravel/reverb` + `@laravel/echo` + `pusher-js` client.
+- [ ] Schema: `messages` table (id, match_id FK, user_id FK nullable, type [text/image/link/system], content text, attachments_json, created_at), indexed by `match_id`.
+- [ ] Model: `App\Models\Message` + factory + `match` / `user` relations. `UPDATED_AT = null` (immutable — keep dispute logs honest).
+- [ ] Action: `SendMessageAction` — validates participant (via existing `GameMatchPolicy`), validates rate limit, persists, broadcasts `MessageSent` event.
+- [ ] Event: `MessageSent` broadcasts to `match.{id}` **private** channel.
+- [ ] Channel auth in `routes/channels.php`: only the two match participants subscribe.
+- [ ] React: `MatchChatPanel` component in match `show.tsx` (message list + input).
+- [ ] Tests: rate limit hit, channel auth (non-participant rejected), persistence, broadcast event fired.
 
 **Locked decisions** (Phase 2):
 - **Reverb over Pusher**: free, Laravel-team built, Redis-backed (we have Redis), `.env` swap to Pusher possible if we hit scale issues.
@@ -158,11 +158,11 @@ The API is no longer the primary truth source — it's a smart link-previewer in
 
 **Phase 3 — File uploads + plain link cards** (~2-3 days)
 
-- Storage: local disk for dev (`storage/app/public/match-attachments`) with S3-ready abstraction via Laravel's filesystem driver.
-- Upload route: `POST /matches/{match}/messages/attachment`, validates image-only (`mimetypes:image/jpeg,image/png,image/webp`), max 5MB.
-- Link detection: regex in `SendMessageAction` finds URLs in message content, dispatches queued `FetchLinkMetadataJob`.
-- `FetchLinkMetadataJob`: fetches Open Graph `<title>` + `<image>` + canonical URL, caches result (1h TTL), updates message's `attachments_json`.
-- React: file picker in chat input; image render with lightbox in message list; link cards with OG preview.
+- [ ] Storage: local disk for dev (`storage/app/public/match-attachments`) with S3-ready abstraction via Laravel's filesystem driver.
+- [ ] Upload route: `POST /matches/{match}/messages/attachment`, validates image-only (`mimetypes:image/jpeg,image/png,image/webp`), max 5MB.
+- [ ] Link detection: regex in `SendMessageAction` finds URLs in message content, dispatches queued `FetchLinkMetadataJob`.
+- [ ] `FetchLinkMetadataJob`: fetches Open Graph `<title>` + `<image>` + canonical URL, caches result (1h TTL), updates message's `attachments_json`.
+- [ ] React: file picker in chat input; image render with lightbox in message list; link cards with OG preview.
 
 **Locked decisions** (Phase 3):
 - **Image-only uploads**: PDFs, videos, generic files are rejected. Screenshots are the only file type we want for v1. Videos hosted externally and posted as links.
@@ -173,13 +173,13 @@ The API is no longer the primary truth source — it's a smart link-previewer in
 
 The big payoff of having linked accounts: Lichess game URLs in chat become trusted evidence cards.
 
-- Schema additions: `creator_provider_username` + `taker_provider_username` on `game_matches` (snapshot at match creation — see "snapshot don't link" locked decision).
-- Update `TakeListingAction`: populate snapshot from `match.taker->lichess_username` + `match.listing.user->lichess_username` if linked (mirror for chess.com when Phase 4b lands).
-- URL pattern detection in `SendMessageAction`: Lichess game URLs (`lichess.org/{8-char-id}` and longer-form export URLs).
-- Service: `LichessGameClient` calls `GET /api/game/{gameId}` (returns JSON with player usernames + result).
-- Cross-check: fetched game's player usernames must match the match's snapshot columns (case-insensitive). If they match → "verified" card. If they don't match → plain link card with subtle "could not verify" hint visible only to the pasting user.
-- React: enriched card component shows winner + time control + game ID + "Verified via Lichess" green check.
-- Tests: verified happy path, mismatched usernames, game not found, API error.
+- [ ] Schema additions: `creator_provider_username` + `taker_provider_username` on `game_matches` (snapshot at match creation — see "snapshot don't link" locked decision).
+- [ ] Update `TakeListingAction`: populate snapshot from `match.taker->lichess_username` + `match.listing.user->lichess_username` if linked (mirror for chess.com when Phase 4b lands).
+- [ ] URL pattern detection in `SendMessageAction`: Lichess game URLs (`lichess.org/{8-char-id}` and longer-form export URLs).
+- [ ] Service: `LichessGameClient` calls `GET /api/game/{gameId}` (returns JSON with player usernames + result).
+- [ ] Cross-check: fetched game's player usernames must match the match's snapshot columns (case-insensitive). If they match → "verified" card. If they don't match → plain link card with subtle "could not verify" hint visible only to the pasting user.
+- [ ] React: enriched card component shows winner + time control + game ID + "Verified via Lichess" green check.
+- [ ] Tests: verified happy path, mismatched usernames, game not found, API error.
 
 **Locked decisions** (Phase 4):
 - **Lichess first**. Lichess has direct game-by-ID lookup (`GET /api/game/{id}`); chess.com requires archive paging + eventual-consistency retries. Building Lichess first shakes out the architecture on the easier API. chess.com enrichment follows in Phase 4b.
@@ -188,20 +188,20 @@ The big payoff of having linked accounts: Lichess game URLs in chat become trust
 
 **Phase 4b — Smart link enrichment for chess.com** (~3-4 days, follow-up to Phase 4)
 
-- Service: `ChessComGameClient`. Strategy: parse chess.com URL for game ID, fetch the player's monthly archive (`GET /pub/player/{username}/games/{YYYY}/{MM}`), filter for matching game ID. Query current month + previous month to handle midnight UTC boundary.
-- Eventual consistency: 3-retry queued job with backoff (5s / 15s / 45s) for games not yet in archive.
-- User-Agent header per chess.com guidelines (contact email).
-- Archive response is cached aggressively to avoid double-fetching during retries.
-- Cross-check logic mirrors Phase 4 (snapshot column comparison).
+- [ ] Service: `ChessComGameClient`. Strategy: parse chess.com URL for game ID, fetch the player's monthly archive (`GET /pub/player/{username}/games/{YYYY}/{MM}`), filter for matching game ID. Query current month + previous month to handle midnight UTC boundary.
+- [ ] Eventual consistency: 3-retry queued job with backoff (5s / 15s / 45s) for games not yet in archive.
+- [ ] User-Agent header per chess.com guidelines (contact email).
+- [ ] Archive response is cached aggressively to avoid double-fetching during retries.
+- [ ] Cross-check logic mirrors Phase 4 (snapshot column comparison).
 
 **Phase 5 — Listing platform binding + capability badge + dispute evidence prompt** (~2-3 days)
 
-- Schema: `platform` column on `listings` (enum: `chess_com` / `lichess`, default `chess_com` for existing rows). Create form picker (visible only if user has linked accounts on multiple platforms).
-- Take-gate: `TakeListingAction` validates `$taker->{platform}_verified_at !== null` (must have linked + verified the relevant platform to take). `StoreListingRequest` validates creator likewise.
-- Match page indicator: "Outcome can be auto-verified via Lichess" or "Auto-verification via chess.com coming soon" or "Manual review only" depending on game + listing platform.
-- On dispute open, `OpenDisputeAction` posts a system message in chat: "Dispute opened by {user}. Submit evidence — screenshot, game URL, or PGN. An admin will review."
-- React: system message variant (visually distinct, no user attribution).
-- `/listings` filter chip: filter by platform (chess.com / Lichess).
+- [ ] Schema: `platform` column on `listings` (enum: `chess_com` / `lichess`, default `chess_com` for existing rows). Create form picker (visible only if user has linked accounts on multiple platforms).
+- [ ] Take-gate: `TakeListingAction` validates `$taker->{platform}_verified_at !== null` (must have linked + verified the relevant platform to take). `StoreListingRequest` validates creator likewise.
+- [ ] Match page indicator: "Outcome can be auto-verified via Lichess" or "Auto-verification via chess.com coming soon" or "Manual review only" depending on game + listing platform.
+- [ ] On dispute open, `OpenDisputeAction` posts a system message in chat: "Dispute opened by {user}. Submit evidence — screenshot, game URL, or PGN. An admin will review."
+- [ ] React: system message variant (visually distinct, no user attribution).
+- [ ] `/listings` filter chip: filter by platform (chess.com / Lichess).
 
 **Locked decisions** (Phase 5):
 - **Linking is required to create or take listings.** Players without a verified account can't participate. This is a real UX gate — but without it, dispute resolution is impossible (admin has nothing to cross-check).
@@ -227,23 +227,23 @@ Pulled forward from "pre-launch gate" because chat-first dispute resolution requ
 
 **Phase 1 — Install Filament + admin auth** (~2 days)
 
-- `composer require filament/filament`. Filament admin lives at `/admin/*` (Livewire + Alpine + Filament's Tailwind config, separate from the Inertia + React user app — doesn't share Stakly's pink/purple design).
-- Admin user role via Spatie permissions (Spatie already installed).
-- First admin user seeded via dedicated seeder.
+- [ ] `composer require filament/filament`. Filament admin lives at `/admin/*` (Livewire + Alpine + Filament's Tailwind config, separate from the Inertia + React user app — doesn't share Stakly's pink/purple design).
+- [ ] Admin user role via Spatie permissions (Spatie already installed).
+- [ ] First admin user seeded via dedicated seeder.
 
 **Phase 2 — Match resolution panel** (~2-3 days)
 
-- Filament resource for `GameMatch` with filters by status (Disputed / ManualReview).
-- Resolution view: shows full chat history inline (text + screenshots + link cards including any API-verified evidence cards from M8 Phase 4), match metadata, both players' linked-account info.
-- Three action buttons: "Settle to {creator}", "Settle to {taker}", "Draw — refund both." Each calls the existing `SettleMatchAction` / `SettleDrawMatchAction` (idempotent, status-guarded — Phase 7 of M6 made this safe).
-- Audit log: every admin resolution writes a row to a new `match_admin_resolutions` table (admin user + action + reason text + timestamp).
+- [ ] Filament resource for `GameMatch` with filters by status (Disputed / ManualReview).
+- [ ] Resolution view: shows full chat history inline (text + screenshots + link cards including any API-verified evidence cards from M8 Phase 4), match metadata, both players' linked-account info.
+- [ ] Three action buttons: "Settle to {creator}", "Settle to {taker}", "Draw — refund both." Each calls the existing `SettleMatchAction` / `SettleDrawMatchAction` (idempotent, status-guarded — Phase 7 of M6 made this safe).
+- [ ] Audit log: every admin resolution writes a row to a new `match_admin_resolutions` table (admin user + action + reason text + timestamp).
 
 **Phase 3 — Switch dispute resolver** (~1-2 days)
 
-- `OpenDisputeAction` no longer dispatches `MockGameApi` resolution. Sets match to `Disputed` and waits for admin.
-- `ResolveMatchTimeoutAction`: cases that would have gone to `MockGameApi` now go to `Disputed` and surface in admin queue.
-- `MockGameApi` retained for the existing test suite (tests still call it via service binding); production binding switches to a null-driver that no-ops or to the real Lichess adapter once M14 lands.
-- Migration of the conceptual model: `Disputed` becomes "waiting for admin or API," `ManualReview` becomes the truly-irrecoverable terminal state (locked, money frozen pending refund-or-payout decision).
+- [ ] `OpenDisputeAction` no longer dispatches `MockGameApi` resolution. Sets match to `Disputed` and waits for admin.
+- [ ] `ResolveMatchTimeoutAction`: cases that would have gone to `MockGameApi` now go to `Disputed` and surface in admin queue.
+- [ ] `MockGameApi` retained for the existing test suite (tests still call it via service binding); production binding switches to a null-driver that no-ops or to the real Lichess adapter once M14 lands.
+- [ ] Migration of the conceptual model: `Disputed` becomes "waiting for admin or API," `ManualReview` becomes the truly-irrecoverable terminal state (locked, money frozen pending refund-or-payout decision).
 
 ### Out of scope for M12
 
@@ -261,21 +261,21 @@ Chat is the highest-abuse-surface feature on the platform. M13 builds the polici
 
 **Phase 1 — Off-platform deal detection** (~2-3 days)
 
-- Regex flags in `SendMessageAction`: TRC20 wallet addresses (`T[1-9A-HJ-NP-Za-km-z]{33}`), ERC20 addresses (`0x[a-fA-F0-9]{40}`), BTC addresses, common payment-method names ("revolut", "paypal", "venmo", "cashapp"), messenger handles ("telegram @", "discord:", "wickr"), trade-coordination keywords ("send me", "outside stakly", "off platform").
-- Flagged messages still post (we don't want to tip the abuser), but write to a `flagged_messages` table with the trigger pattern.
-- Filament dashboard widget: recent flags, click-through to chat context.
+- [ ] Regex flags in `SendMessageAction`: TRC20 wallet addresses (`T[1-9A-HJ-NP-Za-km-z]{33}`), ERC20 addresses (`0x[a-fA-F0-9]{40}`), BTC addresses, common payment-method names ("revolut", "paypal", "venmo", "cashapp"), messenger handles ("telegram @", "discord:", "wickr"), trade-coordination keywords ("send me", "outside stakly", "off platform").
+- [ ] Flagged messages still post (we don't want to tip the abuser), but write to a `flagged_messages` table with the trigger pattern.
+- [ ] Filament dashboard widget: recent flags, click-through to chat context.
 
 **Phase 2 — Rate limits + report-user button** (~1-2 days)
 
-- Per-user chat rate limit (10 messages / 10s, already in M8 Phase 2 — Phase 2 here adds the soft-warn UI: "You're sending messages quickly — pause a moment").
-- Per-match-day cap (200 messages/day/user/match) — prevents flooding.
-- Report-user button on each message: opens a Filament-routed report record with the message ID, reporter, reason.
+- [ ] Per-user chat rate limit (10 messages / 10s, already in M8 Phase 2 — Phase 2 here adds the soft-warn UI: "You're sending messages quickly — pause a moment").
+- [ ] Per-match-day cap (200 messages/day/user/match) — prevents flooding.
+- [ ] Report-user button on each message: opens a Filament-routed report record with the message ID, reporter, reason.
 
 **Phase 3 — Blocked words + admin moderation tools** (~2 days)
 
-- Configurable blocked words list (slurs, harassment terms). Filtered server-side in `SendMessageAction` — message is replaced with a placeholder + flagged for admin.
-- Admin moderation panel: list flagged + reported users, ban/mute tools, history of actions per user.
-- Mute = can't send messages for N hours (configurable). Ban = account suspended (manual unban only).
+- [ ] Configurable blocked words list (slurs, harassment terms). Filtered server-side in `SendMessageAction` — message is replaced with a placeholder + flagged for admin.
+- [ ] Admin moderation panel: list flagged + reported users, ban/mute tools, history of actions per user.
+- [ ] Mute = can't send messages for N hours (configurable). Ban = account suspended (manual unban only).
 
 ---
 
