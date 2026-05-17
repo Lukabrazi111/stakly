@@ -48,6 +48,20 @@ This project has domain-specific skills available in `**/skills/**`. You MUST ac
 - Stick to existing directory structure; don't create new base folders without approval.
 - Do not change the application's dependencies without approval.
 
+### Actions pattern (M11)
+
+Business logic for stateful operations lives in `app/Actions/<Domain>/<Verb><Noun>Action.php`. Controllers and artisan commands are thin adapters — they handle HTTP / CLI concerns (request validation, authorization, flash, redirect, exit codes) and delegate to Actions for the actual work.
+
+- One Action class per use case. Single public `handle()` method.
+- Containers compose via constructor injection when one Action calls another (e.g. `ResolveDisputeAction` injects `SettleMatchAction` + `SettleDrawMatchAction`).
+- Decompose long `handle()` bodies into named `private` helpers (`assertX`, `computeY`, `markZ`) so `handle()` reads like a recipe of high-level steps.
+- Controllers method-inject the Action they need: `public function take(TakeRequest $req, Listing $l, TakeListingAction $action) { ... $action->handle(...); }`.
+- Artisan commands method-inject the Action on `handle()` too: `public function handle(ExpireListingAction $action): int { ... }`.
+- Tests calling an Action directly: `app(TakeListingAction::class)->handle(...)`.
+- **Not everything is an Action.** Pure queries (read-only `index` / `show` methods) stay in controllers — they don't earn the indirection. `App\Services\Wallet` stays as a primitive (single-source-of-truth ledger writer; splitting into N tiny Actions would lose the invariant). `App\Services\GameApi\*` stay as primitives too — external-API adapters, not use-case actions.
+- Domain folders: `app/Actions/Listing/`, `app/Actions/GameMatch/`. `app/Actions/Fortify/` is starter-kit, leave it alone.
+- Full design rationale in milestones.md M11. Short version: plain PHP, no package, no Repositories — Eloquent IS the repository.
+
 ## Frontend Bundling
 
 - If the user doesn't see a frontend change reflected in the UI, it could mean they need to run `vendor/bin/sail npm run build`, `vendor/bin/sail npm run dev`, or `vendor/bin/sail composer run dev`. Ask them.

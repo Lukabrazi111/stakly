@@ -15,7 +15,7 @@ namespace App\Enums;
  * Drawn     — the driver knows the game ended in a draw (stalemate, threefold
  *             repetition, 50-move rule, agreement, time-out vs insufficient
  *             material). `winner_user_id` is null. Settlement refunds both
- *             stakes via `MatchSettlement::settleDraw` — no platform fee.
+ *             stakes via `SettleDrawMatchAction` — no platform fee.
  *
  * Unknown   — the driver could not determine a result (game not found,
  *             ambiguous, abandoned, or — in the mock — a forced test branch).

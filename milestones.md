@@ -12,8 +12,9 @@ Frontend-first MVP. Build UI against real DB infrastructure + seeded fake data; 
 - **M4** — Listing Detail + Create Flow ✅
 - **M5** — User Profile ✅
 - **M7** — Wallet UI ✅
-- **M6** — Match Flow (mock) **(next)**
-- **M8** — Settings / Linked Accounts (chess.com / Lichess) [deferred]
+- **M6** — Match Flow (mock) ✅
+- **M11** — Controller Refactor to Actions Pattern ✅
+- **M8** — Settings / Linked Accounts (chess.com / Lichess) [deferred — natural next]
 - **M9** — Chain Integration [deferred — pending crypto-payment-gateway specialist]
 - **M10** — Match Chat [deferred — post-launch v1.1]
 
@@ -157,48 +158,40 @@ When the specialist joins, the live questions to resolve are: **provider** (Tatu
 
 ---
 
-## M11 — Controller Refactor to Actions Pattern
+## M11 — Controller Refactor to Actions Pattern ✅ shipped 2026-05-17
 
-**Scheduled after M6 ships, before M8 (real chess.com / Lichess) lands.** Pure Actions pattern — no package (`lorisleiva/laravel-actions` not adopted), no Repositories. Just plain PHP classes organized by domain under `app/Actions/<Domain>/`.
+Plain PHP Actions, no package, no Repositories. Business logic moved from controllers + artisan commands into `app/Actions/<Domain>/` classes with `handle()` methods; controllers + commands shrink to thin HTTP/CLI adapters that delegate via method-injection.
 
-### Motivation
+**Shipped:**
 
-Controllers (`GameMatchController`, `WalletController`, `ListingController`) have grown into business-logic-holders rather than thin dispatchers. `GameMatchController::confirm` alone owns: route binding, FormRequest validation, policy gate, transaction, race-check, sentinel mapping, post-commit dispute resolution, toast flashing. That's five concerns in one method. The split is overdue and gets worse with M8 — when chess.com / Lichess calls become queued jobs, we'd otherwise duplicate the dispute-resolution logic across controller and job. One Action class callable from both surfaces fixes this.
+- `app/Actions/Listing/`: `CreateListingAction`, `CancelListingAction`, `ExpireListingAction`.
+- `app/Actions/GameMatch/`: `TakeListingAction`, `ConfirmOutcomeAction`, `OpenDisputeAction`, `SettleMatchAction`, `SettleDrawMatchAction`, `ResolveDisputeAction`, `ResolveMatchTimeoutAction`.
+- `ListingController::store` + `cancel` delegate to `CreateListingAction` / `CancelListingAction` (~10 lines each, was ~30).
+- `GameMatchController::take` / `confirm` / `openDispute` delegate to their corresponding Actions; `resolveBothConfirmed` and `postDisputeResolutionSentinel` helpers moved into `ConfirmOutcomeAction` / `OpenDisputeAction`.
+- `MatchesResolveTimeouts` + `ExpireListings` artisan commands now own only the iteration loop + per-item try/catch + summary print; the per-item resolution logic lives in the matching Actions.
+- Old `App\Services\MatchSettlement` deleted.
+- All 366 / 1969 tests still pass — existing controller-level tests didn't need changes (the routes still behave the same); `MatchSettlementTest` updated to call `app(SettleMatchAction::class)->handle(...)` etc.
+- `CLAUDE.md` "Application Structure & Architecture" gained an "Actions pattern" subsection documenting the convention so future-me / future-AI doesn't re-introduce business logic in controllers.
 
 ### Locked design decisions (2026-05-16)
 
-- **No package.** Plain PHP classes. The package's main value-add (use-as-controller / use-as-job / use-as-command via traits) isn't load-bearing for Stakly until M8 introduces queued jobs — and even then, calling `app(SomeAction::class)->handle(...)` from both contexts is one line either way.
-- **No Repositories.** Eloquent IS the repository in this codebase (queries live on models / scopes / `with(...)` calls). Adding a Repository layer would just be indirection without payoff.
-- **Method name: `handle()`** — matches Laravel queue job convention, least cognitive load.
-- **Invocation: container-resolved via constructor injection.** Controllers method-inject the action: `public function take(TakeRequest $request, Listing $listing, TakeListingAction $action) { return $action->handle($request->user(), $listing); }`. Makes deps explicit and tests can swap via `app()->bind(TakeListingAction::class, ...)`.
-- **Wallet stays as a primitive at `App\Services\Wallet`.** It's not an Action — it's the ledger writer that Actions compose. Splitting it into N tiny `DepositAction` / `HoldAction` / `PayoutAction` classes would lose the "single source of money writes" invariant enforced by `WalletTest.php` (`balance == SUM(transactions)`). Same reasoning keeps `App\Services\GameApi\*` as primitives — they're external-API adapters, not use-case actions.
-- **`MatchSettlement` becomes Actions.** Its two static methods (`settle`, `resolveDispute`) are use-case-shaped — they compose Wallet primitives into business operations. Becomes `SettleMatchAction` and `ResolveDisputeAction` under `app/Actions/GameMatch/`.
+- **No package.** Plain PHP classes. `lorisleiva/laravel-actions`'s value-add (use-as-controller / use-as-job traits) isn't load-bearing until M8's queued jobs, and even then `app(SomeAction::class)->handle(...)` is one line either way.
+- **No Repositories.** Eloquent IS the repository — queries live on models / scopes / `with(...)` calls. A Repository layer would be indirection without payoff.
+- **Method name: `handle()`** — matches Laravel queue job convention.
+- **Invocation: container-resolved via constructor injection.** Controllers / commands method-inject the action: `public function take(TakeRequest $request, Listing $listing, TakeListingAction $action) { return $action->handle($request->user(), $listing); }`. Makes deps explicit; tests can swap via `app()->bind(...)`.
+- **Wallet + GameApi stay as primitives.** `App\Services\Wallet` is the single-source-of-truth ledger writer — splitting into N tiny `DepositAction` / `HoldAction` / `PayoutAction` classes would lose the invariant enforced by `WalletTest.php`. `App\Services\GameApi\*` are external-API adapters, not use-case actions.
+- **Pure queries (read-only index / show controller methods) stay in controllers** — they don't earn the indirection. Configuration-heavy (Spatie QueryBuilder `allowedFilters` / `allowedSorts`) is HTTP-layer config, not business logic.
+- **Decompose long `handle()` bodies into private helpers.** `handle()` should read like a recipe of high-level steps (`assertX`, `computeY`, `markZ`); the implementation details sit one level down. Applied across all the bigger Actions (SettleMatch, ResolveDispute, ConfirmOutcome, TakeListing, ResolveMatchTimeout).
 
-### Scope
+### Out of scope for M11 (deferred)
 
-- [ ] **11.1** Create `app/Actions/<Domain>/` directories: `Listing/`, `GameMatch/`, `Wallet/` (the Wallet/ folder is for wallet-flow actions like `RecordDepositAction` once M9 chain integration lands — not for the existing `Wallet` primitive).
-- [ ] **11.2** Extract from `ListingController`: `CreateListingAction`, `CancelListingAction`. Leave `index` / `create` / `show` in the controller (they're read-only thin wrappers).
-- [ ] **11.3** Extract from `GameMatchController`: `TakeListingAction`, `ConfirmOutcomeAction`, `OpenDisputeAction`. Each owns the transaction + race-check + sentinel resolution that currently lives in the controller. Controller methods shrink to 3-5 lines.
-- [ ] **11.4** Convert `MatchSettlement::settle` → `SettleMatchAction::handle`, `MatchSettlement::resolveDispute` → `ResolveDisputeAction::handle`. Delete the old `MatchSettlement` shell.
-- [ ] **11.5** Extract from `App\Console\Commands\ListingsExpire`: `ExpireListingsAction` (the artisan command's body becomes a single Action call). Same refactor for any other current artisan commands.
-- [ ] **11.6** Wallet UI controllers (`WalletController`) — most methods are read-only or short. Only `withdrawStore` has logic worth extracting (and it's currently a no-op short-circuit). Defer this controller's refactor to whenever the withdraw flow becomes real (post-M9).
-- [ ] **11.7** Update existing tests — most should keep working unchanged (they hit the controller routes). Add a few service-level tests directly on Action classes for the more complex ones (`ConfirmOutcomeAction`, `ResolveDisputeAction`).
-- [ ] **11.8** Update CLAUDE.md "Application Structure & Architecture" section to document the convention, so future-me / future-AI doesn't re-introduce business logic in controllers.
-
-### Why "after M6, before M8" specifically
-
-- **After M6** because refactoring code we're still actively writing means re-doing the same extract twice. M6 Phase 6 (match list + integrations) and Phase 7 (timeouts + polish) are still adding controller methods — let those settle first.
-- **Before M8** because M8 introduces real chess.com / Lichess API calls that will be queued jobs. With Actions in place, the same `ResolveDisputeAction` runs from both the controller (manual `openDispute`) and the queued job — no duplication. Doing M11 after M8 means writing the duplication first then deleting it.
-
-### Out of scope for M11 (defer)
-
+- **11.6 — `WalletController` refactor.** Most methods are read-only or short. Only `withdrawStore` has logic worth extracting, and it's currently a no-op short-circuit. Defer until the withdraw flow becomes real (post-M9).
 - DTOs / Value Objects per Action input. Current pattern (typed positional arguments) is fine.
-- `Repository` layer. Eloquent is the repository.
-- Adopting `lorisleiva/laravel-actions` package. If the manual pattern proves insufficient (e.g. we end up writing the same controller-to-action plumbing 10 times), revisit.
+- Adopting `lorisleiva/laravel-actions` package. If the manual pattern proves insufficient (e.g. same controller-to-action plumbing 10× over), revisit.
 
 ---
 
-## M6 — Match Flow (mock) **(next)**
+## M6 — Match Flow (mock) ✅
 
 The missing core loop: take listing → match created → both players play off-platform → return to confirm outcome → money settles. Real chess.com / Lichess outcome verification is M8; M6 uses a mocked game-API for the dispute tiebreaker so the milestone is self-contained.
 
@@ -341,29 +334,15 @@ Real chess games can end in draws (stalemate, threefold repetition, etc.). The o
 
 ---
 
-**Phase 7 — Timeouts + edge cases + polish** (~1–2 days, no new deps)
+**Phase 7 — Timeouts + edge cases + polish** ✅ shipped 2026-05-17 (~1 day, no new deps)
 
-**Implementation order:** 7.3 first (small, makes the codebase safer to build on), then 7.1 (the real work), then 7.2 / 7.4 / 7.5.
+**Status guard** (`MatchSettlement::settle` + `settleDraw`): no-op on `Settled` (idempotency), proceed on `Pending` / `Disputed`, throw on `ManualReview` or any unexpected status. Defense in depth so future admin tools resolving `ManualReview` can't silently piggyback on regular `settle`.
 
-- [ ] **7.3** Positive status guard on `MatchSettlement::settle` + `MatchSettlement::settleDraw`. Today the only check is "skip if `Settled`." Change to: no-op on `Settled` (preserves idempotency), proceed on `Pending` / `Disputed`, throw `InvalidArgumentException` on `ManualReview` or any unexpected status. Future admin tools resolving `ManualReview` must take their own code path — silently piggybacking on regular `settle` would bypass the review intent. No behavior change for current callers (`resolveBothConfirmed` and `resolveDispute` always run on `Pending` / `Disputed`).
+**Timeout resolver** (`App\Console\Commands\MatchesResolveTimeouts`) — scheduled `everyTenMinutes()->withoutOverlapping()`. For each Pending match older than `stakly.match_confirmation_timeout_hours` (default 4h): single `Won` → confirmer wins; single `Lost` → opponent wins (claim honored); single `Drawn` → game-API arbitrates (one-sided draw can't unilaterally declare); neither confirmed → game-API arbitrates; both confirmed but still `Pending` → defensive log + skip (anomaly the synchronous resolver should have caught). Iterates via `chunkById(100)`, per-match `try/catch` + `report()`, row-locked transaction with status re-check. `resolveDispute` runs outside the transaction (mirrors `GameMatchController::confirm` pattern). Idempotency at the match-status level + via existing wallet reference IDs (no new `match-timeout:{id}` key — would be ceremony, the status guard already covers replay safety). 15 new tests.
 
-- [ ] **7.1** `App\Console\Commands\MatchesResolveTimeouts` Artisan command + scheduled task (`->everyTenMinutes()->withoutOverlapping()` in `routes/console.php`):
-  - **Resolution rules** for each `Pending` match older than 4h (`match.created_at + 4h < now()`):
-    - **One player confirmed `Won`** + silent opponent → that player wins. `MatchSettlement::settle`.
-    - **One player confirmed `Lost`** + silent opponent → the *opponent* wins. The confirmer's own claim is that the opponent won; we honor it. `MatchSettlement::settle`.
-    - **One player confirmed `Drawn`** + silent opponent → game-API arbitrates. Flip to `Disputed` + `MatchSettlement::resolveDispute`. A single Drawn claim can't unilaterally declare a draw — the opponent never agreed.
-    - **Neither confirmed** → game-API arbitrates. Flip to `Disputed` + `MatchSettlement::resolveDispute`.
-    - **Both confirmed but somehow still `Pending`** → defensive log + skip. Synchronous resolver in `GameMatchController::confirm` should make this impossible; if it ever happens we want the anomaly logged, not auto-resolved.
-  - **Mechanics:** iterate via `->chunkById(100)` so a backlog of timed-out matches stays bounded. Per-match `try { ... } catch (\Throwable $e) { Log::error(...) }` so one bad match doesn't kill the rest. Each match handled inside a row-locked transaction with a status re-check (Pending only).
-  - **Idempotency:** handled at the match-status level (Pending guard inside the row lock) + at the wallet-reference level via the existing `match-payout:{id}` / `match-draw-*:{id}` / `match-fee:{id}` keys on the underlying `settle` / `settleDraw` / `resolveDispute` calls. No additional `match-timeout:{id}` reference — would be ceremony, the status guard already covers replay safety.
-  - **Deadline contract shared with frontend.** `MatchTimer` (Phase 3) shows the 4h countdown using `match.created_at + 4h`. Phase 7's job uses the SAME calculation — its role is to flip the match status server-side. Until this lands, the timer hits "Expired" but the match stays `Pending` indefinitely (no auto-resolution).
-  - **Dev caveat:** Laravel's scheduler does NOT auto-run in dev. Fire manually via `sail artisan matches:resolve-timeouts`, or run `sail artisan schedule:work` in a separate terminal. Same constraint as `listings:expire`.
+**Follow-up — dispute button visibility** (committed separately): frontend gate on `OpenDisputeButton` widened from "viewer has claimed" to "either player has claimed." Closes a UX gap where the viewer couldn't push back on a bad-faith claim from the opponent without first committing to one of their own. Backend was already permissive; this is a one-line conditional change in `match/show.tsx`.
 
-- [ ] **7.2** Inertia flash toasts polish: "Listing taken — match started", "Match settled — you won/lost $X", "Dispute opened, awaiting resolution". Pass through any cleanup the end-to-end run surfaces.
-
-- [ ] **7.4** Final test sweep + manual end-to-end run: create listing, take from another account, confirm all paths (agree on winner, agree on draw, disagree → API winner, disagree → API draw, single-`Won`-confirmer timeout, single-`Lost`-confirmer timeout, single-`Drawn`-confirmer timeout, neither-confirmed timeout).
-
-- [ ] **7.5** Suggested commit: `feat: match flow with mock game-API (M6)`.
+**Dev caveat:** Laravel's scheduler does NOT auto-run in dev. Fire `matches:resolve-timeouts` manually, or run `sail artisan schedule:work` in a separate terminal. Same constraint as `listings:expire`.
 
 ### Locked decisions (2026-05-17)
 

@@ -1,11 +1,13 @@
 <?php
 
+use App\Actions\GameMatch\ResolveDisputeAction;
+use App\Actions\GameMatch\SettleDrawMatchAction;
+use App\Actions\GameMatch\SettleMatchAction;
 use App\Enums\MatchStatus;
 use App\Models\GameMatch;
 use App\Models\Listing;
 use App\Models\User;
 use App\Models\WalletTransaction;
-use App\Services\MatchSettlement;
 use App\Services\Wallet;
 
 function pendingMatchForSettlement(string $stake = '100'): array
@@ -39,7 +41,7 @@ function pendingMatchForSettlement(string $stake = '100'): array
 test('settlement conserves money — sum of all match-related ledger entries is zero', function () {
     [$creator, , $listing, $match] = pendingMatchForSettlement(stake: '100');
 
-    MatchSettlement::settle($match, $creator);
+    app(SettleMatchAction::class)->handle($match, $creator);
 
     // Sum all wallet transactions tied to this listing.
     $totalLedgerForMatch = WalletTransaction::query()
@@ -55,10 +57,10 @@ test('settlement conserves money — sum of all match-related ledger entries is 
 test('settle is idempotent — repeat call is a no-op', function () {
     [$creator, , , $match] = pendingMatchForSettlement(stake: '100');
 
-    MatchSettlement::settle($match, $creator);
+    app(SettleMatchAction::class)->handle($match, $creator);
     $balanceAfterFirst = $creator->fresh()->usdt_balance;
 
-    MatchSettlement::settle($match->fresh(), $creator);
+    app(SettleMatchAction::class)->handle($match->fresh(), $creator);
     $balanceAfterSecond = $creator->fresh()->usdt_balance;
 
     expect((string) $balanceAfterSecond)->toBe((string) $balanceAfterFirst);
@@ -79,7 +81,7 @@ test('settle throws if winner is not a participant', function () {
     [, , , $match] = pendingMatchForSettlement();
     $stranger = User::factory()->create();
 
-    expect(fn () => MatchSettlement::settle($match, $stranger))
+    expect(fn () => app(SettleMatchAction::class)->handle($match, $stranger))
         ->toThrow(InvalidArgumentException::class);
 });
 
@@ -88,7 +90,7 @@ test('settle throws if winner is not a participant', function () {
 test('settlement preserves exact BCMath precision on awkward stake values', function () {
     [$creator, , , $match] = pendingMatchForSettlement(stake: '123.45');
 
-    MatchSettlement::settle($match, $creator);
+    app(SettleMatchAction::class)->handle($match, $creator);
 
     // Pot = 246.90, fee = 24.69, payout = 222.21.
     // Creator: $500 - $123.45 (held) + $222.21 (payout) = $598.76.
@@ -111,7 +113,7 @@ test('fee rate is read from config (changing config changes the fee)', function 
     config(['stakly.platform_fee_rate' => '0.20']); // 20%
     [$creator, , , $match] = pendingMatchForSettlement(stake: '100');
 
-    MatchSettlement::settle($match, $creator);
+    app(SettleMatchAction::class)->handle($match, $creator);
 
     // Pot = 200, fee = 40, payout = 160.
     $fee = WalletTransaction::query()
@@ -130,7 +132,7 @@ test('fee rate is read from config (changing config changes the fee)', function 
 test('settle flips match status to Settled and sets winner_user_id + settled_at', function () {
     [$creator, , , $match] = pendingMatchForSettlement();
 
-    MatchSettlement::settle($match, $creator);
+    app(SettleMatchAction::class)->handle($match, $creator);
 
     $fresh = $match->fresh();
 
@@ -146,7 +148,7 @@ test('resolveDispute calls API and settles when confidence is Confirmed', functi
     $match->update(['status' => MatchStatus::Disputed, 'dispute_opened_at' => now()]);
     mockGameApi()->forceWinner($creator->id);
 
-    MatchSettlement::resolveDispute($match);
+    app(ResolveDisputeAction::class)->handle($match);
 
     $fresh = $match->fresh();
 
@@ -166,7 +168,7 @@ test('resolveDispute moves to ManualReview when confidence is Unknown', function
     $match->update(['status' => MatchStatus::Disputed, 'dispute_opened_at' => now()]);
     mockGameApi()->forceUnknown();
 
-    MatchSettlement::resolveDispute($match);
+    app(ResolveDisputeAction::class)->handle($match);
 
     $fresh = $match->fresh();
 
@@ -191,11 +193,11 @@ test('resolveDispute is a no-op on already-Settled match', function () {
     $match->update(['status' => MatchStatus::Disputed, 'dispute_opened_at' => now()]);
     mockGameApi()->forceWinner($creator->id);
 
-    MatchSettlement::resolveDispute($match);
+    app(ResolveDisputeAction::class)->handle($match);
     $balanceAfterFirst = $creator->fresh()->usdt_balance;
 
     // Repeat — should short-circuit on the Settled status guard.
-    MatchSettlement::resolveDispute($match->fresh());
+    app(ResolveDisputeAction::class)->handle($match->fresh());
     $balanceAfterSecond = $creator->fresh()->usdt_balance;
 
     expect((string) $balanceAfterSecond)->toBe((string) $balanceAfterFirst);
@@ -210,7 +212,7 @@ test('resolveDispute is a no-op on already-ManualReview match', function () {
     $match->update(['status' => MatchStatus::ManualReview, 'dispute_opened_at' => now()]);
     mockGameApi()->forceWinner($match->listing->user_id);
 
-    MatchSettlement::resolveDispute($match);
+    app(ResolveDisputeAction::class)->handle($match);
 
     // ManualReview is terminal — no transition to Settled even though API
     // would have returned a Confirmed winner. Admin tooling owns this state.
@@ -224,7 +226,7 @@ test('resolveDispute throws on a Pending match (caller must transition to Disput
     [, , , $match] = pendingMatchForSettlement();
     // Status is Pending by default — never transitioned to Disputed.
 
-    expect(fn () => MatchSettlement::resolveDispute($match))
+    expect(fn () => app(ResolveDisputeAction::class)->handle($match))
         ->toThrow(InvalidArgumentException::class);
 });
 
@@ -235,7 +237,7 @@ test('resolveDispute preserves BCMath precision on awkward stake values', functi
     $match->update(['status' => MatchStatus::Disputed, 'dispute_opened_at' => now()]);
     mockGameApi()->forceWinner($creator->id);
 
-    MatchSettlement::resolveDispute($match);
+    app(ResolveDisputeAction::class)->handle($match);
 
     // Pot = 246.90, fee = 24.69, payout = 222.21.
     // Creator: $500 - $123.45 (held) + $222.21 (payout) = $598.76.
@@ -252,7 +254,7 @@ test('resolveDispute preserves BCMath precision on awkward stake values', functi
 test('settleDraw refunds both stakes, posts no fee, flips status with no winner', function () {
     [$creator, $taker, , $match] = pendingMatchForSettlement(stake: '100');
 
-    MatchSettlement::settleDraw($match);
+    app(SettleDrawMatchAction::class)->handle($match);
 
     $fresh = $match->fresh();
     expect($fresh->status)->toBe(MatchStatus::Settled)
@@ -277,7 +279,7 @@ test('settleDraw refunds both stakes, posts no fee, flips status with no winner'
 test('settleDraw conserves money — sum of all match-related ledger entries is zero', function () {
     [, , $listing, $match] = pendingMatchForSettlement(stake: '100');
 
-    MatchSettlement::settleDraw($match);
+    app(SettleDrawMatchAction::class)->handle($match);
 
     $totalLedgerForMatch = WalletTransaction::query()
         ->where('related_listing_id', $listing->id)
@@ -291,11 +293,11 @@ test('settleDraw conserves money — sum of all match-related ledger entries is 
 test('settleDraw is idempotent — repeat call is a no-op', function () {
     [$creator, $taker, , $match] = pendingMatchForSettlement(stake: '100');
 
-    MatchSettlement::settleDraw($match);
+    app(SettleDrawMatchAction::class)->handle($match);
     $creatorBalanceAfterFirst = $creator->fresh()->usdt_balance;
     $takerBalanceAfterFirst = $taker->fresh()->usdt_balance;
 
-    MatchSettlement::settleDraw($match->fresh());
+    app(SettleDrawMatchAction::class)->handle($match->fresh());
 
     expect((string) $creator->fresh()->usdt_balance)->toBe((string) $creatorBalanceAfterFirst);
     expect((string) $taker->fresh()->usdt_balance)->toBe((string) $takerBalanceAfterFirst);
@@ -309,7 +311,7 @@ test('settleDraw is idempotent — repeat call is a no-op', function () {
 test('settleDraw preserves exact BCMath precision on awkward stake values', function () {
     [$creator, $taker, , $match] = pendingMatchForSettlement(stake: '123.45');
 
-    MatchSettlement::settleDraw($match);
+    app(SettleDrawMatchAction::class)->handle($match);
 
     // Each refunded $123.45 → back to $500.
     expect(bccomp((string) $creator->fresh()->usdt_balance, '500.000000', 6))->toBe(0);
@@ -322,7 +324,7 @@ test('settle throws when called on a ManualReview match', function () {
     [$creator, , , $match] = pendingMatchForSettlement();
     $match->update(['status' => MatchStatus::ManualReview]);
 
-    expect(fn () => MatchSettlement::settle($match, $creator))
+    expect(fn () => app(SettleMatchAction::class)->handle($match, $creator))
         ->toThrow(InvalidArgumentException::class);
 
     // Status unchanged; no settlement ledger rows written.
@@ -335,7 +337,7 @@ test('settleDraw throws when called on a ManualReview match', function () {
     [, , , $match] = pendingMatchForSettlement();
     $match->update(['status' => MatchStatus::ManualReview]);
 
-    expect(fn () => MatchSettlement::settleDraw($match))
+    expect(fn () => app(SettleDrawMatchAction::class)->handle($match))
         ->toThrow(InvalidArgumentException::class);
 
     expect($match->fresh()->status)->toBe(MatchStatus::ManualReview);
@@ -350,7 +352,7 @@ test('resolveDispute refunds both stakes when API confidence is Drawn', function
     $match->update(['status' => MatchStatus::Disputed, 'dispute_opened_at' => now()]);
     mockGameApi()->forceDraw();
 
-    MatchSettlement::resolveDispute($match);
+    app(ResolveDisputeAction::class)->handle($match);
 
     $fresh = $match->fresh();
     expect($fresh->status)->toBe(MatchStatus::Settled)

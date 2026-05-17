@@ -14,9 +14,9 @@ use App\Models\GameMatch;
  * retries, rate limiting).
  *
  * Implementations MUST be safe to call multiple times for the same match
- * (callers handle idempotency via `MatchSettlement::resolveDispute`'s row
- * lock + status guard, but a driver that mutates external state on every
- * call would break that contract).
+ * (callers handle idempotency via `ResolveDisputeAction`'s row lock +
+ * status guard, but a driver that mutates external state on every call
+ * would break that contract).
  */
 interface GameApi
 {

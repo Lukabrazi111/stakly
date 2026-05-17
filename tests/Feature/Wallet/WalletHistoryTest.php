@@ -143,7 +143,7 @@ test('payout row has related_match populated', function () {
         ->settled($alice)
         ->create();
 
-    // Real payout — same code path as MatchSettlement uses.
+    // Real payout — same code path as SettleMatchAction uses.
     Wallet::payout(winner: $alice, amount: '180', listing: $listing, reference: "match-payout:{$match->id}");
 
     $this->actingAs($alice)

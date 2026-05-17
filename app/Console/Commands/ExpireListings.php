@@ -2,22 +2,19 @@
 
 namespace App\Console\Commands;
 
+use App\Actions\Listing\ExpireListingAction;
 use App\Enums\ListingStatus;
 use App\Models\Listing;
-use App\Services\Wallet;
 use Illuminate\Console\Command;
-use Illuminate\Support\Facades\DB;
 use Throwable;
 
 /**
  * Refunds escrow + flips status on listings whose `expires_at` has passed
  * but whose `status` is still Open. Runs every minute via the scheduler.
  *
- * Idempotent end-to-end:
- *   - Re-checks status + expiry inside a row-locked transaction so concurrent
- *     take / cancel can't race us into a double-action.
- *   - `Wallet::release` is keyed on `listing-expire:{id}`, so a crashed
- *     mid-run never double-refunds on retry.
+ * The per-listing refund logic lives in `ExpireListingAction`. This
+ * command owns the iteration loop, summary statistics, and per-listing
+ * failure isolation.
  */
 class ExpireListings extends Command
 {
@@ -25,7 +22,7 @@ class ExpireListings extends Command
 
     protected $description = 'Refund escrow + flip status on listings past their expiry.';
 
-    public function handle(): int
+    public function handle(ExpireListingAction $action): int
     {
         $limit = (int) $this->option('limit');
 
@@ -42,30 +39,7 @@ class ExpireListings extends Command
 
         foreach ($ids as $id) {
             try {
-                $didExpire = DB::transaction(function () use ($id) {
-                    $listing = Listing::query()->lockForUpdate()->find($id);
-
-                    // Re-check inside the lock: a concurrent take or cancel
-                    // may have flipped status between our SELECT and the lock.
-                    if (! $listing
-                        || $listing->status !== ListingStatus::Open
-                        || $listing->expires_at->gt(now())
-                    ) {
-                        return false;
-                    }
-
-                    Wallet::release(
-                        user: $listing->user,
-                        amount: (string) $listing->stake_amount,
-                        listing: $listing,
-                        reference: "listing-expire:{$listing->id}",
-                        description: 'Stake refunded on listing expiry.',
-                    );
-
-                    $listing->update(['status' => ListingStatus::Expired]);
-
-                    return true;
-                });
+                $didExpire = $action->handle($id);
 
                 $didExpire ? $expired++ : $skipped++;
             } catch (Throwable $e) {

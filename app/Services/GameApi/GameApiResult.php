@@ -9,7 +9,7 @@ use App\Enums\GameApiConfidence;
  *
  * Shape is intentionally driver-agnostic so the real chess.com / Lichess
  * adapters (M8) can map their wildly different response shapes into the
- * same surface that `MatchSettlement::resolveDispute` consumes.
+ * same surface that `ResolveDisputeAction` consumes.
  *
  * `winner_user_id` is null when `confidence === Unknown` — settlement code
  * MUST gate on confidence first, never read winner_user_id without checking.

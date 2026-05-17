@@ -1,0 +1,54 @@
+<?php
+
+namespace App\Actions\Listing;
+
+use App\Models\Listing;
+use App\Models\User;
+use App\Services\Wallet;
+use Illuminate\Support\Facades\DB;
+
+/**
+ * Creates a listing AND escrows the stake atomically. The DB::transaction
+ * wraps both operations so a failed `Wallet::hold` rolls back the listing
+ * row — we never leave an unfunded listing on the board.
+ *
+ * Propagates `App\Exceptions\InsufficientBalanceException` to the caller
+ * (race window between the FormRequest's balance pre-check and the
+ * row-locked re-check inside `Wallet::hold`). `ListingController::store`
+ * catches it and maps to a `ValidationException` keyed on `stake_amount`.
+ *
+ * Idempotency key on `Wallet::hold` is `listing-create:{id}` — paired with
+ * `listing-cancel:{id}` in `CancelListingAction` so the create/release
+ * reference pair is always discoverable.
+ */
+class CreateListingAction
+{
+    /**
+     * @param  array<string, mixed>  $data  Validated input from `StoreListingRequest::validated()`.
+     */
+    public function handle(User $user, array $data): Listing
+    {
+        return DB::transaction(function () use ($user, $data) {
+            $listing = $user->listings()->create([
+                'game' => $data['game'],
+                'stake_amount' => $data['stake_amount'],
+                'skill_min' => $data['skill_min'] ?? null,
+                'skill_max' => $data['skill_max'] ?? null,
+                'time_control' => $data['time_control'],
+                'region' => $data['region'] ?? null,
+                'language' => $data['language'] ?? null,
+                'expires_at' => now()->addHours((int) $data['duration_hours']),
+            ]);
+
+            Wallet::hold(
+                user: $user,
+                amount: (string) $data['stake_amount'],
+                listing: $listing,
+                reference: "listing-create:{$listing->id}",
+                description: 'Stake escrowed on listing creation.',
+            );
+
+            return $listing;
+        });
+    }
+}
