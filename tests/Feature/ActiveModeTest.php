@@ -41,7 +41,7 @@ test('flipping inactive → active updates the user and flashes a success toast'
 });
 
 test('flipping active → inactive updates the user and flashes an info toast', function () {
-    $user = User::factory()->create();
+    $user = User::factory()->active()->create();
 
     $response = $this->actingAs($user)->post('/active-mode', ['active' => false]);
 
@@ -59,7 +59,7 @@ test('submitting the same state as already set is a silent no-op', function () {
     // The controller short-circuits inside the transaction: `if (locked->is_active_mode === active) return 'unchanged'`.
     // Result: no DB write (updated_at unchanged), no success/info toast (the
     // `match` returns null for the 'unchanged' branch).
-    $user = User::factory()->create(); // is_active_mode = true by default
+    $user = User::factory()->active()->create();
     $before = $user->fresh()->updated_at;
 
     // Travel forward so any UPDATE would bump the timestamp visibly.

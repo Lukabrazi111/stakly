@@ -69,8 +69,8 @@ test('profile resource never leaks email, usdt_balance, or is_platform', functio
 // ─── openListings scoping ────────────────────────────────────────────────
 
 test('openListings includes only the profile owner open listings', function () {
-    $owner = User::factory()->create(['username' => 'erin']);
-    $other = User::factory()->create(['username' => 'frank']);
+    $owner = User::factory()->active()->create(['username' => 'erin']);
+    $other = User::factory()->active()->create(['username' => 'frank']);
 
     Wallet::deposit($owner, '1000', reference: "test:deposit:{$owner->id}");
     Wallet::deposit($other, '1000', reference: "test:deposit:{$other->id}");
@@ -90,7 +90,7 @@ test('openListings includes only the profile owner open listings', function () {
 });
 
 test('openListings excludes taken / expired / cancelled listings', function () {
-    $owner = User::factory()->create(['username' => 'george']);
+    $owner = User::factory()->active()->create(['username' => 'george']);
     Wallet::deposit($owner, '1000', reference: "test:deposit:{$owner->id}");
 
     $open = Listing::factory()->open()->for($owner)->state(['stake_amount' => '50'])->create();
@@ -110,7 +110,7 @@ test('openListings excludes taken / expired / cancelled listings', function () {
 });
 
 test('openListings is capped at 5, newest first', function () {
-    $owner = User::factory()->create(['username' => 'helen']);
+    $owner = User::factory()->active()->create(['username' => 'helen']);
     Wallet::deposit($owner, '10000', reference: "test:deposit:{$owner->id}");
 
     foreach (range(1, 7) as $i) {

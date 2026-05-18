@@ -16,7 +16,10 @@ use App\Services\Wallet;
  */
 function openListingWithCreator(string $stake = '100', string $deposit = '500'): array
 {
-    $creator = User::factory()->create();
+    // `->active()` so the take-gate (`scopeOnPublicMarketplace` +
+    // `ownerIsActive` in `TakeListingAction`) doesn't reject every test.
+    // Tests exercising the inactive branch override via `update(['is_active_mode' => false])`.
+    $creator = User::factory()->active()->create();
     Wallet::deposit($creator, $deposit, reference: "test:deposit:creator:{$creator->id}");
 
     $listing = Listing::factory()->open()->for($creator)->state([

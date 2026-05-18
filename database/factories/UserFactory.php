@@ -37,19 +37,33 @@ class UserFactory extends Factory
             'two_factor_recovery_codes' => null,
             'two_factor_confirmed_at' => null,
             'tron_address' => MockTronAddress::generate(),
-            // Default factory users to ACTIVE so existing tests + seeded data
-            // continue to render listings on public surfaces without explicit
-            // overrides. Production new-user default is `false` (column-level)
-            // — the explicit-state override lives at the factory boundary so
-            // tests don't have to opt in everywhere.
-            'is_active_mode' => true,
+            // `is_active_mode` is intentionally omitted — falls through to the
+            // column default (`false`). Production new users start inactive
+            // and must explicitly opt in via the toggle on /listings/mine.
+            // Tests + seeders that need marketplace-visible listings chain
+            // `->active()` on this factory (or use `ListingFactory`, which
+            // auto-creates an active owner so its default makes a visible
+            // listing).
         ];
     }
 
     /**
+     * Indicate that the user is in Active Mode — their Open listings are
+     * visible on the public marketplace + profile. Most listing-creation
+     * tests need this; seeders use it for the marketplace dataset.
+     */
+    public function active(): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'is_active_mode' => true,
+        ]);
+    }
+
+    /**
      * Indicate that the user is in Inactive Mode — their Open listings
-     * are hidden from public surfaces. Used in tests that exercise the
-     * active-mode-visibility behaviour.
+     * are hidden from public surfaces. Redundant with the column default
+     * but kept for readability: a test calling `->inactive()` is clearly
+     * exercising the inactive branch.
      */
     public function inactive(): static
     {

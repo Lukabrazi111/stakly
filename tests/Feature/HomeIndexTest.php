@@ -50,7 +50,7 @@ test('featured strip is empty when no open listings exist', function () {
 });
 
 test('featured listings whitelist creator (no email leak)', function () {
-    $user = User::factory()->create(['email' => 'private@example.com']);
+    $user = User::factory()->active()->create(['email' => 'private@example.com']);
     Listing::factory()->open()->for($user)->create();
 
     $response = $this->get('/');

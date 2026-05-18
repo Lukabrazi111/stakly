@@ -22,7 +22,9 @@ class DatabaseSeeder extends Seeder
 
         // Test User gets a known-stable username so feature tests can hit
         // `/users/testuser` without depending on faker's random output.
-        $test = User::factory()->create([
+        // `->active()` so manual UI testing sees the user as discoverable
+        // (column default is `false`; production new users opt in).
+        $test = User::factory()->active()->create([
             'name' => 'Test User',
             'username' => 'testuser',
             'email' => 'test@example.com',

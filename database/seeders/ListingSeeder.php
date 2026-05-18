@@ -19,7 +19,10 @@ class ListingSeeder extends Seeder
      */
     public function run(): void
     {
-        $users = User::factory()->count(20)->create();
+        // `->active()` so the seeded marketplace dataset is publicly visible
+        // out-of-the-box — column default is `false`, so without this every
+        // seeded listing would be hidden by `scopeOnPublicMarketplace`.
+        $users = User::factory()->count(20)->active()->create();
 
         // Every marketplace user starts with $10,000 — comfortable headroom
         // so the open/taken listing holds below never trip

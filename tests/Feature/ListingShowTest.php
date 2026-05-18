@@ -119,7 +119,7 @@ test('creator.is_active_mode is exposed on the listing detail resource', functio
     // so direct URLs still resolve). Frontend uses `creator.is_active_mode`
     // to gate the Take button + show an "inactive" banner; server-side gate
     // in `GameMatchController::take` remains authoritative.
-    $active = User::factory()->create();
+    $active = User::factory()->active()->create();
     $inactive = User::factory()->inactive()->create();
 
     $listingByActive = Listing::factory()->open()->for($active)->create();

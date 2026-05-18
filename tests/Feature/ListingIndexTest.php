@@ -182,7 +182,7 @@ test('unknown filter keys are rejected by validation (redirect to clean /listing
 });
 
 test('creator data is whitelisted — no email or sensitive fields ship', function () {
-    $user = User::factory()->create([
+    $user = User::factory()->active()->create([
         'email' => 'private@example.com',
     ]);
     Listing::factory()->open()->for($user)->create();
@@ -286,7 +286,7 @@ test('listings of an inactive owner are hidden from the public marketplace', fun
     // When the owner toggles Inactive on /listings/mine, the listings stay
     // Open in the DB (so escrow is preserved) but they vanish from the
     // public board.
-    $active = User::factory()->create();
+    $active = User::factory()->active()->create();
     $inactive = User::factory()->inactive()->create();
 
     Listing::factory()->open()->for($active)->count(2)->create();

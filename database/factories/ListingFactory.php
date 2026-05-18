@@ -33,7 +33,11 @@ class ListingFactory extends Factory
         $timeControlValues = array_map(fn (TimeControl $tc) => $tc->value, TimeControl::cases());
 
         return [
-            'user_id' => User::factory(),
+            // Auto-created users are active by default — an "open listing"
+            // implies a reachable owner, so the factory's default produces a
+            // marketplace-visible listing. Tests exercising the inactive-owner
+            // branch override via `->for(User::factory()->inactive()->create())`.
+            'user_id' => User::factory()->active(),
             'game' => Game::Chess,
             'stake_amount' => $stake,
             'skill_min' => $skillMin,
