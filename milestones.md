@@ -14,7 +14,8 @@ Frontend-first MVP. Build UI against real DB infrastructure + seeded fake data; 
 - **M6** — Match Flow (mock) ✅
 - **M7** — Wallet UI ✅
 - **M11** — Controller Refactor to Actions Pattern ✅
-- **M8** — Match Chat + Linked Accounts **← in progress (started 2026-05-18)**
+- **M8** — Match Chat + Linked Accounts **← in progress** (Phases 1–2 ✅; Phases 3, 4, 4b, 5 next)
+- **M10** — Mutual Match Cancellation
 - **M12** — Filament admin panel + chat-driven dispute resolution
 - **M13** — Chat anti-abuse + moderation
 - **M14** — Automated outcome adapters (post-launch optimization)
@@ -137,28 +138,46 @@ The API is no longer the primary truth source — it's a smart link-previewer in
 - **Both providers from Phase 1**. The shared flow + symmetric UI cost almost nothing to add the second provider. Players who play only on one platform aren't locked out.
 - **Verification is immutable until unlinked**. Re-verifying isn't required unless the user unlinks and relinks.
 
-**Phase 2 — Reverb infrastructure + chat schema + text chat** (~3-4 days)
+**Phase 2 — Reverb infrastructure + chat schema + text chat** ✅ shipped 2026-05-18
 
-- [ ] Add `reverb` service to `compose.yaml` (port 8080). Free, self-hosted, Redis-backed (we already run Redis); `.env` swap to Pusher possible later if scale demands.
-- [ ] Composer: `laravel/reverb` + `@laravel/echo` + `pusher-js` client.
-- [ ] Schema: `messages` table (id, match_id FK, user_id FK nullable, type [text/image/link/system], content text, attachments_json, created_at), indexed by `match_id`.
-- [ ] Model: `App\Models\Message` + factory + `match` / `user` relations. `UPDATED_AT = null` (immutable — keep dispute logs honest).
-- [ ] Action: `SendMessageAction` — validates participant (via existing `GameMatchPolicy`), validates rate limit, validates match status (rejects on `Settled` / `ManualReview` — chat locks after settlement), persists, broadcasts `MessageSent` event.
-- [ ] Event: `MessageSent` broadcasts to `match.{id}` **private** channel.
-- [ ] Channel auth in `routes/channels.php`: only the two match participants subscribe.
-- [ ] React: `MatchChatPanel` as a **right-side panel** on `match/show.tsx` — Bybit-style compact column (~360px) sitting alongside match details on desktop. Mobile: hidden by default, opens as a bottom-sheet drawer via a floating "Chat (N)" button with unread count. Input pinned to bottom, scrollable list above. Reference screenshot: `images-examples/bybit-chat-layout.png` (saved 2026-05-18).
-- [ ] Read-only state after settle: chat input hides + "This match is settled — chat is read-only." footer note appears. History stays scrollable.
-- [ ] Tests: rate limit hit, channel auth (non-participant rejected), persistence, broadcast event fired, post-settle send 403s.
+- [x] Add `reverb` service to `compose.yaml` (port 8080). Plus a `queue` service running `php artisan queue:listen` — `ShouldBroadcast` events route through the queue, without a worker broadcasts stall in the `jobs` table.
+- [x] Composer: `laravel/reverb`. NPM: `@laravel/echo-react` + `pusher-js` (React hooks layer rather than plain `laravel-echo` — `useEcho` handles cleanup on unmount).
+- [x] Schema: `messages` table with composite `(match_id, id)` index, `attachments_json` jsonb column reserved for Phase 3/4, immutable (no `updated_at`).
+- [x] Model: `App\Models\Message` + factory (`->system()` state) + `match` / `user` relations. `UPDATED_AT = null`.
+- [x] Action: `App\Actions\Message\SendMessageAction` — rate limit (10/10s via `RateLimiter`), status gate (Settled/ManualReview reject, Disputed allows as evidence record), content trim + 2000-char cap, persist + dispatch.
+- [x] Event: `App\Events\MessageSent` — `ShouldBroadcast` + `ShouldDispatchAfterCommit` (Laravel 13 split — no single `ShouldBroadcastAfterCommit` interface exists), `broadcastAs(): 'message.sent'` for a stable event name decoupled from PHP class path. Broadcasts to `match.{id}` private channel.
+- [x] Channel auth: extracted to `App\Broadcasting\MatchChannel::join(User, int): bool` (named class rather than inline closure) so the auth callback is directly unit-testable without going through `/broadcasting/auth` HTTP (test broadcasting connection is `null` which doesn't run callbacks).
+- [x] React: `MatchChatPanel` as a right-side panel on `match/show.tsx` — sticky at `top-28` (clears the marquee at `top-16` + ~46px), fixed `h-[600px]` compact height, internal message-list scroll. Mobile: bottom-sheet via `MobileChatTrigger` with floating "Chat" button + unread count. Echo subscription via `useMatchChat` hook called once in the page (single subscription serves both desktop + mobile renders).
+- [x] Read-only state when Settled / ManualReview: chat input replaced by "This match is settled — chat is read-only." footer.
+- [x] Tests: 22 in `SendMessageTest` (auth gates, validation, rate limit, status gate, broadcast assertion, `MatchChannel::join` direct callback tests) + 14 in `SystemMessageTest`.
+
+**Lifecycle system messages** (shipped same slice — narrate state changes inline with chat):
+
+- [x] `App\Actions\Message\PostSystemMessageAction` — `type = system`, `user_id = null`, hard-coded so no HTTP path can produce one (un-impersonatable). Broadcasts via the same `MessageSent` event.
+- [x] Wired into 7 lifecycle Actions: `TakeListingAction` ("Match started"), `ConfirmOutcomeAction` ("Alice confirmed: Won"), `SettleMatchAction` ("Match settled. Alice wins $X"), `SettleDrawMatchAction` ("Match ended as a draw"), `OpenDisputeAction` ("Dispute opened by Alice"), `ResolveDisputeAction` Unknown branch ("Game API could not determine — admin review"), `ResolveMatchTimeoutAction` ("4-hour confirmation window expired").
+- [x] `SystemBubble` component visual: megaphone icon + muted background + centered, distinct from player message bubbles.
+
+**Match page redesign** (shipped same slice):
+
+- [x] `MatchInfoCard` (Bybit-style key:value list) replaces the old separate "Your opponent" + "Match details" cards. Rows: Opponent (clickable to profile, small avatar) → Stake (each) → Pot → Winner payout (gradient-accent, gameplay only — hidden when Settled since SettlementSummary already breaks it down) → Time control. Dropped redundant Pot duplication between settlement and details cards.
+- [x] `MatchTimestamps` — subtle metadata strip under the page subtitle showing absolute timestamps ("Started May 18, 2026, 09:12 PM · Finished May 18, 2026, 09:13 PM"). Locale-aware via `toLocaleString`.
+- [x] `MatchFaq` — 6 Stakly-specific Q&As via shadcn `Accordion` (Stakly-skinned at the source: dropped upstream `hover:underline` + `ring-[3px]`, swapped to text-color hover + `ring-2 ring-primary/25`, added `cursor-pointer`).
+- [x] `SettlementSummary` enriched: opponent's `@handle` shown inline next to name in loser-view subtitle.
 
 **Locked decisions** (Phase 2):
-- **Reverb over Pusher**: free, Laravel-team built, Redis-backed (we have Redis), `.env` swap to Pusher possible if we hit scale issues.
+
+- **Reverb over Pusher**: free, Laravel-team built, Redis-backed, `.env` swap to Pusher possible if we hit scale issues.
 - **Private channel scope**: only the two match participants subscribe. Admin reads via Filament dashboard (M12), not via channel subscription.
-- **Chat locks after settlement** (decided 2026-05-18). Once status is `Settled` (winner OR draw refund) OR `ManualReview`, chat becomes read-only. Reasoning: post-resolution messages add abuse surface (evidence pollution by losers, harassment) without product value — match is over, both players move on. Audit trail stays viewable. Original "keep it open for GG / rematch" idea reversed because the failure mode (one party adds messages after losing) is more impactful than the lost value (GG wishes happen on the other player's profile anyway). `Pending` / `Disputed` keep chat open. Frontend hides input; backend `SendMessageAction` rejects with 403.
-- **Right-side panel layout** (decided 2026-05-18). Bybit's P2P chat reference (`images-examples/bybit-chat-layout.png`) — compact column to the right of match details on desktop, bottom-sheet on mobile. Match info stays the primary surface; chat is co-visible but not dominant. Avoids the modal-hijack anti-pattern.
+- **Queue worker is infrastructure, not optional**. `ShouldBroadcast` events are queued by default. With `QUEUE_CONNECTION=database` (production posture) and no worker, broadcasts stall in the `jobs` table and never reach Reverb. Solution: a dedicated `queue` service in `compose.yaml` running `php artisan queue:listen --tries=1 --timeout=0`. Same pattern as the `reverb` service — always running, no manual `composer run dev` orchestration needed.
+- **Chat locks after settlement** (decided 2026-05-18). Once status is `Settled` (winner OR draw refund) OR `ManualReview`, chat becomes read-only. Reasoning: post-resolution messages add abuse surface (evidence pollution by losers, harassment) without product value. Audit trail stays viewable. `Pending` / `Disputed` keep chat open. Frontend hides input; backend `SendMessageAction` rejects with 422.
+- **Right-side panel layout** (decided 2026-05-18). Compact column (`h-[600px]`, sticky `top-28`) to the right of match details on desktop, bottom-sheet on mobile. Match info stays the primary surface; chat is co-visible but not dominant.
 - **Messages are immutable**: no edit, no delete. Dispute review depends on truthful logs.
-- **System message type**: posted by `SendMessageAction` with `user_id = null` and `type = system`. Cannot be impersonated. Used in Phase 5 for dispute prompts.
-- **Content cap = 2000 chars** (decided 2026-05-18). Enforced in `SendMessageAction` validation. Covers regular chat (typical message < 200 chars) with headroom for Phase 5's paste-PGN evidence. Lichess PGN exports for a 40-move game are ~1.5–1.8 KB; 2000 is comfortable. Above this, the user should host externally and paste a link (Phase 4 link cards). DB column is `text` (no Postgres-level cap); the Action is the single enforcement point.
-- **Send semantics**: Enter sends, Shift+Enter inserts newline. Standard chat UX.
+- **System message type**: produced via `PostSystemMessageAction`, never the HTTP path. `user_id = null`, `type = system`. Cannot be impersonated.
+- **Content cap = 2000 chars**. Enforced in `SendMessageAction`. Covers regular chat + Phase 5 paste-PGN evidence (~1.5-1.8 KB for a 40-move Lichess export). DB column is `text` (no Postgres-level cap); the Action is the single enforcement point.
+- **Send semantics**: Enter sends, Shift+Enter inserts newline.
+- **Direct callback testing for channel auth**. Named class (`MatchChannel`) over inline closure so tests can invoke `->join()` directly. Avoids the test-env-only no-op of the `null` broadcaster.
+
+**Test count after Phase 2**: 442 tests / 2186 assertions (up from 406 / 2090).
 
 **Phase 3 — File uploads + plain link cards** (~2-3 days)
 
@@ -220,6 +239,60 @@ The big payoff of having linked accounts: Lichess game URLs in chat become trust
 - **Chat anti-abuse** (off-platform deal detection, rate limits beyond basic, report-user, blocked words) — M13.
 - **Voice / video chat** — v2 if ever.
 - **Read receipts, typing indicators, message reactions, edit/delete, mentions, DMs** — v2.
+
+---
+
+## M10 — Mutual Match Cancellation
+
+The fourth resolution path for a Pending match. Today a match has three exits: both players confirm an outcome → `Settled`; either opens a dispute → `Disputed`; the 4-hour timer expires → resolution per Phase 7 rules. Real players will occasionally want a fourth — cancel by mutual agreement. Common scenarios: opponent goes AFK before play, both realise the match was a misclick or miscommunication, one player has an emergency and the other is willing to bail.
+
+The UX models Bybit's order-cancellation pattern: when one player requests cancellation, the other sees an inline accept/reject banner at the top of the match page. On accept the match transitions to `Cancelled`, both stakes are refunded via `Wallet::release`, and a system message in chat narrates the resolution.
+
+### Locked decisions (pre-design)
+
+- **Pending only.** Once a match flips to `Disputed` (game-API has been invoked) or `Settled` (money's moved), cancellation is off the table. From those states the dispute / settlement path is the only exit.
+- **One open request at a time per match.** A second request before the first resolves is rejected at the controller with a toast: "There's already an open cancellation request."
+- **30-minute cooldown after rejection.** If Bob rejects Alice's request, Alice can't re-request for 30 min. Prevents spam-cancel as a coercion tactic ("cancel or I'll keep asking until you give in").
+- **Request expires with the match timeout.** If neither player responds within the existing 4h confirmation window, the regular timeout resolver runs (honored claim or game-API arbitration). The cancel request is a polite offer — it doesn't extend or interrupt the match's primary lifecycle.
+- **Reason is optional, capped at 200 chars.** Short free-text so the other player understands the why.
+- **System messages narrate the flow.** "Alice requested to cancel the match. [reason]" → "Bob accepted. Match cancelled, stakes refunded." or "Bob declined. Match continues."
+- **No fee on cancellation.** Mirrors the draw outcome — both stakes released, no platform rake. Cancellation is a no-result, not a no-winner game.
+- **Cancellation doesn't count toward player record.** Like a draw with no fee, but explicitly logged as "Cancelled" not "Drawn" — preserves the distinction for future statistics / reputation surfaces.
+
+### Phases
+
+**Phase 1 — Schema + state machine (~1-2 days)**
+
+- [ ] Migration: add `cancelled_at`, `cancellation_requested_by` (FK to users), `cancellation_requested_at`, `cancellation_rejected_at`, `cancellation_reason` columns to `game_matches`. `cancellation_rejected_at` tracks the cooldown window for the requester.
+- [ ] Enum: extend `MatchStatus` with `Cancelled`. Update the state-machine doc in M6 to reflect the new path.
+- [ ] `GameMatchPolicy::requestCancellation` — participant-only, Pending only, no open request from same user, past cooldown if previously rejected.
+
+**Phase 2 — Backend Actions (~1-2 days)**
+
+- [ ] `RequestCancellationAction`: row-locked transaction, validates state + cooldown, writes pending columns, posts system message via `PostSystemMessageAction`. Returns a sentinel for the controller.
+- [ ] `AcceptCancellationAction`: row-locked transaction, transitions status to `Cancelled`, calls `Wallet::release` for both players (idempotent via `cancel-refund-creator:{match_id}` / `cancel-refund-taker:{match_id}` references), posts system message. Same conservation invariant as `SettleDrawMatchAction`.
+- [ ] `RejectCancellationAction`: clears pending columns, records `cancellation_rejected_at` for cooldown tracking, posts system message.
+- [ ] Route: `POST /matches/{match}/cancellation` (request), `POST /matches/{match}/cancellation/accept`, `POST /matches/{match}/cancellation/reject`.
+
+**Phase 3 — Frontend (~1-2 days)**
+
+- [ ] "Request cancellation" button on the Pending action card (alongside Confirm and Open dispute).
+- [ ] Modal asking for optional reason (textarea, 200-char cap mirroring backend).
+- [ ] Inline banner at the top of `match/show.tsx` when there's an open request — shown to the OTHER player with Accept / Reject buttons. Requester sees a "Cancellation pending — waiting for {opponent}" version with no actions.
+- [ ] Cancelled-status banner replaces the active-pending banner once the match transitions: "Match cancelled by mutual agreement. Both stakes refunded."
+- [ ] Disable the "Request cancellation" button when in cooldown; show a tooltip with the cooldown expiry.
+
+**Phase 4 — Tests + polish (~1 day)**
+
+- [ ] Pest coverage: happy path (request → accept), reject path, cooldown enforcement, double-request rejection, status guards (no-cancel from Settled / Disputed / ManualReview), wallet refunds + ledger conservation, broadcast events fired.
+- [ ] Wallet ledger conservation per cancelled match: `-A_stake + -B_stake + +A_release + +B_release = 0` (same as draw settlement).
+
+### Out of scope
+
+- **Unilateral cancellation** (one player cancels without consent). The only one-sided exit during Pending remains "open dispute" — the API decides.
+- **Partial refund / negotiated split.** Cancellation refunds both stakes equally; players who want to split unequally should play it out or dispute.
+- **Cancellation during Disputed or ManualReview.** Once the game API has been invoked, only the API or admin can resolve.
+- **Cancellation by listing creator before take.** Already exists via `ListingController::cancel` — that's a separate path that operates on `Listing` (not `GameMatch`) and doesn't need a peer's agreement.
 
 ---
 

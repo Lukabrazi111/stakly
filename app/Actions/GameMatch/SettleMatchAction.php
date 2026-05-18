@@ -2,6 +2,7 @@
 
 namespace App\Actions\GameMatch;
 
+use App\Actions\Message\PostSystemMessageAction;
 use App\Enums\MatchStatus;
 use App\Models\GameMatch;
 use App\Models\User;
@@ -31,6 +32,10 @@ class SettleMatchAction
 {
     private const SCALE = 6;
 
+    public function __construct(
+        private readonly PostSystemMessageAction $postSystem,
+    ) {}
+
     public function handle(GameMatch $match, User $winner): void
     {
         DB::transaction(function () use ($match, $winner) {
@@ -50,6 +55,14 @@ class SettleMatchAction
 
             $this->postLedgerEntries($locked, $winner, $winnerPayout, $fee);
             $this->markSettled($locked, $winner);
+
+            $this->postSystem->handle(
+                $locked,
+                __('Match settled. :name wins $:payout USDT.', [
+                    'name' => $winner->name,
+                    'payout' => number_format((float) $winnerPayout, 2, '.', ''),
+                ]),
+            );
         });
     }
 

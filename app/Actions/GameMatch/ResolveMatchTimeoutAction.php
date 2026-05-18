@@ -2,6 +2,7 @@
 
 namespace App\Actions\GameMatch;
 
+use App\Actions\Message\PostSystemMessageAction;
 use App\Enums\MatchOutcome;
 use App\Enums\MatchStatus;
 use App\Models\GameMatch;
@@ -40,6 +41,7 @@ class ResolveMatchTimeoutAction
     public function __construct(
         private readonly SettleMatchAction $settle,
         private readonly ResolveDisputeAction $resolveDispute,
+        private readonly PostSystemMessageAction $postSystem,
     ) {}
 
     public function handle(int $matchId, DateTimeInterface $deadline): string
@@ -104,6 +106,11 @@ class ResolveMatchTimeoutAction
      */
     private function resolveByConfirmations(GameMatch $match): string
     {
+        $this->postSystem->handle(
+            $match,
+            __('4-hour confirmation window expired. Resolving the match now.'),
+        );
+
         $singleConfirmedOutcome = $match->creator_confirmed_outcome ?? $match->taker_confirmed_outcome;
 
         if ($singleConfirmedOutcome === null || $singleConfirmedOutcome === MatchOutcome::Drawn) {

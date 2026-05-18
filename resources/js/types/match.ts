@@ -43,8 +43,27 @@ export interface Match {
     created_at: string | null;
 }
 
+// Chat messages on a match. Mirrors `App\Http\Resources\MessageResource` AND
+// `App\Events\MessageSent::broadcastWith()` — initial-load and live-broadcast
+// payloads share this shape so the component can append from either source.
+export type ChatMessageType = 'text' | 'system';
+
+export interface ChatMessage {
+    id: number;
+    match_id: number;
+    // Null for system messages (no human author).
+    user_id: number | null;
+    type: ChatMessageType;
+    content: string;
+    // Reserved for Phase 3 (image uploads) / Phase 4 (link cards). Always
+    // null for text/system messages in Phase 2.
+    attachments: Record<string, unknown> | null;
+    created_at: string | null;
+}
+
 export interface MatchShowProps {
     match: Match;
+    messages: { data: ChatMessage[] };
 }
 
 // Filters echoed from the backend (IndexMatchesRequest::filters()) so the

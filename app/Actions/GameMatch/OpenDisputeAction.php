@@ -2,6 +2,7 @@
 
 namespace App\Actions\GameMatch;
 
+use App\Actions\Message\PostSystemMessageAction;
 use App\Enums\MatchStatus;
 use App\Models\GameMatch;
 use App\Models\User;
@@ -28,6 +29,7 @@ class OpenDisputeAction
 {
     public function __construct(
         private readonly ResolveDisputeAction $resolveDispute,
+        private readonly PostSystemMessageAction $postSystem,
     ) {}
 
     public function handle(User $user, GameMatch $match): ?string
@@ -40,6 +42,13 @@ class OpenDisputeAction
             }
 
             $this->flipToDisputed($locked, $user);
+
+            $this->postSystem->handle(
+                $locked,
+                __('Dispute opened by :name. Resolving via game API…', [
+                    'name' => $user->name,
+                ]),
+            );
 
             return true;
         });

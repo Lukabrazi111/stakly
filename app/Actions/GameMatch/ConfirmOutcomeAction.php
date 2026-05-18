@@ -2,6 +2,7 @@
 
 namespace App\Actions\GameMatch;
 
+use App\Actions\Message\PostSystemMessageAction;
 use App\Enums\MatchOutcome;
 use App\Enums\MatchStatus;
 use App\Models\GameMatch;
@@ -40,6 +41,7 @@ class ConfirmOutcomeAction
         private readonly SettleMatchAction $settle,
         private readonly SettleDrawMatchAction $settleDraw,
         private readonly ResolveDisputeAction $resolveDispute,
+        private readonly PostSystemMessageAction $postSystem,
     ) {}
 
     public function handle(User $user, GameMatch $match, MatchOutcome $newOutcome): string
@@ -61,6 +63,14 @@ class ConfirmOutcomeAction
             }
 
             $this->recordOutcome($locked, $user, $newOutcome);
+
+            $this->postSystem->handle(
+                $locked,
+                __(':name confirmed: :outcome.', [
+                    'name' => $user->name,
+                    'outcome' => $this->labelFor($newOutcome),
+                ]),
+            );
 
             if ($this->bothConfirmed($locked)) {
                 return $this->resolveBothConfirmed($locked);
@@ -163,5 +173,19 @@ class ConfirmOutcomeAction
     private function isCreator(GameMatch $match, User $user): bool
     {
         return $match->listing->user_id === $user->id;
+    }
+
+    /**
+     * Human-readable label for a `MatchOutcome` — used in system message
+     * copy. Title-case rather than the raw enum value so the message reads
+     * "Alice confirmed: Won." not "Alice confirmed: won."
+     */
+    private function labelFor(MatchOutcome $outcome): string
+    {
+        return match ($outcome) {
+            MatchOutcome::Won => 'Won',
+            MatchOutcome::Lost => 'Lost',
+            MatchOutcome::Drawn => 'Drawn',
+        };
     }
 }

@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /**
  * A 1v1 match between the listing's creator and a taker. Match metadata only —
@@ -68,6 +69,16 @@ class GameMatch extends Model
     public function disputeOpener(): BelongsTo
     {
         return $this->belongsTo(User::class, 'dispute_opened_by');
+    }
+
+    /**
+     * Chat history (M8 Phase 2). Append-only — ordered by id (= insert order
+     * thanks to bigserial). Composite `(match_id, id)` index on `messages`
+     * keeps the per-match lookup cheap.
+     */
+    public function messages(): HasMany
+    {
+        return $this->hasMany(Message::class, 'match_id');
     }
 
     /**

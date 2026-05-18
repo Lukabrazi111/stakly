@@ -1,17 +1,18 @@
-import { Head, Link, router, usePage } from '@inertiajs/react';
-import { Clock, Coins, Trophy } from 'lucide-react';
-import type { ReactNode } from 'react';
+import { Head, router, usePage } from '@inertiajs/react';
 import { useEffect } from 'react';
+import { ChatPanel } from '@/components/match/chat-panel';
 import { ConfirmButtons } from '@/components/match/confirm-buttons';
+import { MatchFaq } from '@/components/match/match-faq';
+import { MatchInfoCard } from '@/components/match/match-info-card';
 import { MatchTimer } from '@/components/match/match-timer';
+import { MatchTimestamps } from '@/components/match/match-timestamps';
+import { MobileChatTrigger } from '@/components/match/mobile-chat-trigger';
 import { OpenDisputeButton } from '@/components/match/open-dispute-button';
 import { SettlementSummary } from '@/components/match/settlement-summary';
 import { BackLink } from '@/components/site/back-link';
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
-import { useInitials } from '@/hooks/use-initials';
+import { useMatchChat } from '@/hooks/use-match-chat';
 import SiteLayout from '@/layouts/site-layout';
 import { show as listingShow } from '@/routes/listings';
-import { show as userShow } from '@/routes/users';
 import type { MatchShowProps, MatchStatus } from '@/types';
 
 const STATUS_LABEL: Record<MatchStatus, string> = {
@@ -28,9 +29,17 @@ const STATUS_TONE: Record<MatchStatus, string> = {
     manual_review: 'border-muted-foreground/40 bg-muted text-muted-foreground',
 };
 
-export default function MatchShow({ match }: MatchShowProps) {
-    const getInitials = useInitials();
+export default function MatchShow({ match, messages }: MatchShowProps) {
     const { auth } = usePage().props;
+
+    // Chat state lives in one hook so a single Echo subscription serves both
+    // the desktop right-rail and the mobile bottom-sheet renders below. The
+    // viewer is one of the two participants; the hook trusts that (the
+    // backend rejects non-participants from both the POST endpoint and the
+    // channel auth callback).
+    const chat = useMatchChat(match.id, messages.data);
+    const chatIsReadOnly =
+        match.status === 'settled' || match.status === 'manual_review';
 
     const isCreator = auth.user?.id === match.creator.id;
     const opponent = isCreator ? match.taker : match.creator;
@@ -82,10 +91,13 @@ export default function MatchShow({ match }: MatchShowProps) {
         <SiteLayout>
             <Head title={`Match #${match.id}`} />
 
-            <div className="mx-auto max-w-3xl px-4 py-10 md:px-6 md:py-14">
+            <div className="mx-auto max-w-6xl px-4 py-10 md:px-6 md:py-14">
                 <div className="mb-6">
                     <BackLink fallback={listingShow(match.listing.id).url} />
                 </div>
+
+                <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_360px] lg:gap-6">
+                    <div className="min-w-0">
 
                 {/* Stack on mobile, row on sm: so neither truncates at 375px */}
                 <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -96,6 +108,10 @@ export default function MatchShow({ match }: MatchShowProps) {
                         <p className="mt-1 text-sm text-muted-foreground">
                             You are the {youAre.toLowerCase()}.
                         </p>
+                        <MatchTimestamps
+                            startedAt={match.created_at}
+                            finishedAt={match.settled_at}
+                        />
                     </div>
                     {/* Status + countdown live together on the right side
                         of the header. Wraps to a new line on narrow widths
@@ -174,55 +190,26 @@ export default function MatchShow({ match }: MatchShowProps) {
                     </section>
                 )}
 
-                {/* Opponent card */}
-                <section className="mb-6 rounded-2xl border border-border/60 bg-card/60 p-6">
-                    <h2 className="mb-4 text-lg font-semibold text-foreground">
-                        Your opponent
-                    </h2>
-                    <Link
-                        href={userShow(opponent.username).url}
-                        className="-mx-2 flex items-center gap-4 rounded-lg p-2 transition-colors hover:bg-primary/5 focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none"
-                    >
-                        <Avatar className="size-16">
-                            <AvatarFallback className="bg-gradient-primary text-xl font-semibold text-primary-foreground">
-                                {getInitials(opponent.name)}
-                            </AvatarFallback>
-                        </Avatar>
-                        <div>
-                            <div className="font-semibold text-foreground">
-                                {opponent.name}
-                            </div>
-                            <div className="text-sm text-muted-foreground">
-                                @{opponent.username}
-                            </div>
-                        </div>
-                    </Link>
-                </section>
+                {/* Compact match-info card: opponent + parameters in one
+                    Bybit-style key:value list. Pot is always shown so
+                    players don't have to mentally compute stake × 2.
+                    Winner payout is shown only during gameplay (Pending /
+                    Disputed / ManualReview) — Settled matches already
+                    break down pot/fee/payout in the SettlementSummary
+                    card, so repeating winner payout here would triple-up. */}
+                <MatchInfoCard
+                    opponent={opponent}
+                    stakeEach={match.listing.stake_amount}
+                    pot={pot}
+                    winnerPayout={
+                        match.status !== 'settled' ? winnerPayout : undefined
+                    }
+                    timeControl={match.listing.time_control}
+                />
 
-                {/* Match details — for reference */}
-                <section className="rounded-2xl border border-border/60 bg-card/60 p-6">
-                    <h2 className="mb-5 text-lg font-semibold text-foreground">
-                        Match details
-                    </h2>
-                    <dl className="grid gap-5 sm:grid-cols-3">
-                        <Stat
-                            icon={<Coins className="size-3.5" />}
-                            label="Stake (each)"
-                            value={`$${match.listing.stake_amount}`}
-                        />
-                        <Stat
-                            icon={<Trophy className="size-3.5" />}
-                            label="Pot"
-                            value={`$${pot}`}
-                            accent
-                        />
-                        <Stat
-                            icon={<Clock className="size-3.5" />}
-                            label="Time control"
-                            value={match.listing.time_control.join(', ')}
-                        />
-                    </dl>
-                </section>
+                <div className="mt-6">
+                    <MatchFaq />
+                </div>
 
                 {match.status === 'pending' && (
                     <p className="mt-8 text-center text-xs text-muted-foreground">
@@ -230,30 +217,45 @@ export default function MatchShow({ match }: MatchShowProps) {
                         and confirm the outcome.
                     </p>
                 )}
+                    </div>
+
+                    {/* Desktop right-rail chat. Sticky at top-28 (112px) so
+                        the panel docks immediately below the marquee strip
+                        (which is sticky at top-16, ~46px tall, ending around
+                        110px). Using top-24 like before would tuck the chat
+                        UNDER the marquee's z-40 band, causing the marquee
+                        text to overlap the chat header on scroll. Fixed
+                        600px height keeps the panel compact rather than
+                        dominating viewport; internal scroll handles message
+                        overflow. */}
+                    {auth.user && (
+                        <aside className="hidden lg:sticky lg:top-28 lg:block lg:h-[600px]">
+                            <ChatPanel
+                                messages={chat.messages}
+                                viewerId={auth.user.id}
+                                creator={match.creator}
+                                taker={match.taker}
+                                isReadOnly={chatIsReadOnly}
+                                isPending={chat.isPending}
+                                onSend={chat.send}
+                            />
+                        </aside>
+                    )}
+                </div>
+
+                {/* Mobile floating "Chat" button + bottom-sheet drawer. */}
+                {auth.user && (
+                    <MobileChatTrigger
+                        messages={chat.messages}
+                        viewerId={auth.user.id}
+                        creator={match.creator}
+                        taker={match.taker}
+                        isReadOnly={chatIsReadOnly}
+                        isPending={chat.isPending}
+                        onSend={chat.send}
+                    />
+                )}
             </div>
         </SiteLayout>
-    );
-}
-
-interface StatProps {
-    icon: ReactNode;
-    label: string;
-    value: string;
-    accent?: boolean;
-}
-
-function Stat({ icon, label, value, accent }: StatProps): ReactNode {
-    return (
-        <div>
-            <dt className="inline-flex items-center gap-1.5 text-xs tracking-wide text-muted-foreground uppercase">
-                {icon}
-                {label}
-            </dt>
-            <dd
-                className={`mt-1.5 font-display text-xl font-bold ${accent ? 'text-gradient-primary' : 'text-foreground'}`}
-            >
-                {value}
-            </dd>
-        </div>
     );
 }

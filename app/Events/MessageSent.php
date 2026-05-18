@@ -43,6 +43,18 @@ class MessageSent implements ShouldBroadcast, ShouldDispatchAfterCommit
     }
 
     /**
+     * Use a stable event name for Echo listeners — without this the event
+     * broadcasts as its fully-qualified PHP class name
+     * (`App\\Events\\MessageSent`), coupling the frontend listener to the
+     * backend namespace. With it, the frontend listens to `.message.sent`
+     * (leading dot tells Echo to use the raw name, no auto-prefixing).
+     */
+    public function broadcastAs(): string
+    {
+        return 'message.sent';
+    }
+
+    /**
      * @return array<string, mixed>
      */
     public function broadcastWith(): array

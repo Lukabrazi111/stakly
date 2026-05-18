@@ -2,6 +2,7 @@
 
 namespace App\Actions\GameMatch;
 
+use App\Actions\Message\PostSystemMessageAction;
 use App\Enums\MatchStatus;
 use App\Models\GameMatch;
 use App\Services\Wallet;
@@ -22,6 +23,10 @@ use InvalidArgumentException;
  */
 class SettleDrawMatchAction
 {
+    public function __construct(
+        private readonly PostSystemMessageAction $postSystem,
+    ) {}
+
     public function handle(GameMatch $match): void
     {
         DB::transaction(function () use ($match) {
@@ -37,6 +42,11 @@ class SettleDrawMatchAction
 
             $this->refundBothStakes($locked);
             $this->markSettledAsDraw($locked);
+
+            $this->postSystem->handle(
+                $locked,
+                __('Match ended as a draw. Stakes refunded to both players.'),
+            );
         });
     }
 

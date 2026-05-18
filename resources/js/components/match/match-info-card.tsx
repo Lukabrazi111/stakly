@@ -1,0 +1,105 @@
+import { Link } from '@inertiajs/react';
+import { ChevronRight } from 'lucide-react';
+import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { useInitials } from '@/hooks/use-initials';
+import { show as userShow } from '@/routes/users';
+import type { MatchPlayer, TimeControl } from '@/types';
+
+interface MatchInfoCardProps {
+    opponent: MatchPlayer;
+    stakeEach: number;
+    pot: number;
+    timeControl: TimeControl[];
+    // Pre-computed `pot * (1 - fee_rate)`. Omitted (undefined) when the
+    // match is Settled — the SettlementSummary card already breaks down
+    // pot / fee / payout for resolved matches, so repeating the payout
+    // here would be a third surface for the same number. For Pending /
+    // Disputed / ManualReview the row gives players a concrete "what
+    // you'd take home if you win" figure rather than forcing pot × 0.9
+    // mental math.
+    winnerPayout?: number;
+}
+
+/**
+ * Compact match-parameters card. Bybit-style key:value rows: opponent
+ * (clickable to profile), stake-per-player, pot, optional winner payout
+ * (during gameplay), time control. Replaces the old separate "Your
+ * opponent" + "Match details" cards.
+ */
+export function MatchInfoCard({
+    opponent,
+    stakeEach,
+    pot,
+    timeControl,
+    winnerPayout,
+}: MatchInfoCardProps) {
+    const getInitials = useInitials();
+
+    return (
+        <section className="border-border/60 bg-card/60 rounded-2xl border">
+            <header className="border-border/60 border-b px-6 py-4">
+                <h2 className="text-foreground text-sm font-semibold">
+                    Match info
+                </h2>
+            </header>
+            <dl className="divide-border/60 divide-y">
+                <Link
+                    href={userShow(opponent.username).url}
+                    className="group hover:bg-primary/5 focus-visible:ring-primary flex items-center justify-between gap-3 px-6 py-4 transition-colors focus-visible:ring-2 focus-visible:outline-none"
+                >
+                    <dt className="text-muted-foreground text-sm">Opponent</dt>
+                    <dd className="flex items-center gap-2.5">
+                        <Avatar className="size-7">
+                            <AvatarFallback className="bg-gradient-primary text-primary-foreground text-[10px] font-semibold">
+                                {getInitials(opponent.name)}
+                            </AvatarFallback>
+                        </Avatar>
+                        <span className="text-foreground text-sm font-medium">
+                            {opponent.name}
+                        </span>
+                        <ChevronRight className="text-muted-foreground group-hover:text-primary size-4 transition-colors" />
+                    </dd>
+                </Link>
+
+                <Row label="Stake (each)" value={`$${stakeEach}`} />
+                <Row label="Pot" value={`$${pot}`} />
+                {winnerPayout !== undefined && (
+                    <Row
+                        label="Winner payout"
+                        value={`$${winnerPayout.toFixed(2)}`}
+                        accent
+                    />
+                )}
+                <Row label="Time control" value={timeControl.join(', ')} />
+            </dl>
+        </section>
+    );
+}
+
+function Row({
+    label,
+    value,
+    accent,
+}: {
+    label: string;
+    value: string;
+    // `accent` reserved for the winner-payout row — pink gradient brings
+    // attention to the "you'd take home this much" figure without
+    // shouting (it's still informational, not a CTA).
+    accent?: boolean;
+}) {
+    return (
+        <div className="flex items-center justify-between gap-3 px-6 py-4">
+            <dt className="text-muted-foreground text-sm">{label}</dt>
+            <dd
+                className={
+                    accent
+                        ? 'text-gradient-primary text-sm font-semibold'
+                        : 'text-foreground text-sm font-medium'
+                }
+            >
+                {value}
+            </dd>
+        </div>
+    );
+}

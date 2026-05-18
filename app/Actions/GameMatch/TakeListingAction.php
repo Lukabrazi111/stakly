@@ -2,6 +2,7 @@
 
 namespace App\Actions\GameMatch;
 
+use App\Actions\Message\PostSystemMessageAction;
 use App\Enums\ListingStatus;
 use App\Enums\MatchStatus;
 use App\Models\GameMatch;
@@ -36,6 +37,10 @@ use Illuminate\Support\Facades\DB;
  */
 class TakeListingAction
 {
+    public function __construct(
+        private readonly PostSystemMessageAction $postSystem,
+    ) {}
+
     public function handle(User $user, Listing $listing): GameMatch|string
     {
         return DB::transaction(function () use ($listing, $user) {
@@ -54,7 +59,14 @@ class TakeListingAction
             $this->escrowTakerStake($user, $locked);
             $this->markListingTaken($locked);
 
-            return $this->createMatch($locked, $user);
+            $match = $this->createMatch($locked, $user);
+
+            $this->postSystem->handle(
+                $match,
+                __('Match started. Play your game on chess.com or Lichess, then return here to confirm the outcome.'),
+            );
+
+            return $match;
         });
     }
 

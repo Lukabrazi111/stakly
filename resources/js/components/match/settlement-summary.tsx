@@ -80,7 +80,16 @@ export function SettlementSummary({
                         Match settled
                     </h2>
                     <p className="text-sm text-muted-foreground">
-                        {iAmWinner ? 'You won.' : `${winner.name} won.`}
+                        {iAmWinner ? (
+                            'You won.'
+                        ) : (
+                            <>
+                                <span className="text-foreground font-medium">
+                                    {winner.name}
+                                </span>{' '}
+                                <span>(@{winner.username})</span> won.
+                            </>
+                        )}
                     </p>
                 </div>
             </div>

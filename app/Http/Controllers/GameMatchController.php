@@ -11,6 +11,7 @@ use App\Http\Requests\GameMatch\ConfirmRequest;
 use App\Http\Requests\GameMatch\IndexMatchesRequest;
 use App\Http\Requests\GameMatch\TakeRequest;
 use App\Http\Resources\GameMatchResource;
+use App\Http\Resources\MessageResource;
 use App\Models\GameMatch;
 use App\Models\Listing;
 use Illuminate\Http\RedirectResponse;
@@ -24,6 +25,8 @@ use Spatie\QueryBuilder\QueryBuilder;
 class GameMatchController extends Controller
 {
     private const MATCHES_PER_PAGE = 12;
+
+    private const MESSAGES_PER_PAGE = 200;
 
     /**
      * Authenticated player's own matches — both as creator (via the related
@@ -132,8 +135,22 @@ class GameMatchController extends Controller
 
         abort_if(request()->user()->cannot('view', $match), 404);
 
+        // M8 Phase 2 — last 200 messages, chrono order. The composite
+        // (match_id, id) index makes this cheap; a busy match should not
+        // generate enough messages for pagination concerns in v1. If
+        // long-running disputes balloon over 200 we can add cursor
+        // pagination later — for now a flat slice keeps the frontend simple.
+        $messages = $match->messages()
+            ->with('user:id,name,username')
+            ->orderByDesc('id')
+            ->limit(self::MESSAGES_PER_PAGE)
+            ->get()
+            ->reverse()
+            ->values();
+
         return Inertia::render('match/show', [
             'match' => (new GameMatchResource($match))->resolve(),
+            'messages' => MessageResource::collection($messages),
         ]);
     }
 

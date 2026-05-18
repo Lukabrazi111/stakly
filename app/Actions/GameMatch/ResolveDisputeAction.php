@@ -2,6 +2,7 @@
 
 namespace App\Actions\GameMatch;
 
+use App\Actions\Message\PostSystemMessageAction;
 use App\Enums\GameApiConfidence;
 use App\Enums\MatchStatus;
 use App\Models\GameMatch;
@@ -35,6 +36,7 @@ class ResolveDisputeAction
     public function __construct(
         private readonly SettleMatchAction $settle,
         private readonly SettleDrawMatchAction $settleDraw,
+        private readonly PostSystemMessageAction $postSystem,
     ) {}
 
     public function handle(GameMatch $match): void
@@ -97,18 +99,25 @@ class ResolveDisputeAction
         if ($result->confidence === GameApiConfidence::Unknown) {
             $match->update(['status' => MatchStatus::ManualReview]);
 
+            $this->postSystem->handle(
+                $match,
+                __('Game API could not determine a winner. Match flagged for admin review — your stakes stay in escrow until resolved.'),
+            );
+
             return;
         }
 
         if ($result->confidence === GameApiConfidence::Drawn) {
             // Nested DB::transaction composes via savepoint — atomic with the
-            // outer audit-trail update.
+            // outer audit-trail update. `SettleDrawMatchAction` posts its own
+            // "Match ended as a draw" system message.
             $this->settleDraw->handle($match);
 
             return;
         }
 
-        // Confirmed → winner-based settlement.
+        // Confirmed → winner-based settlement. `SettleMatchAction` posts its
+        // own "Match settled. {name} wins." system message.
         $winner = $this->resolveWinner($match, $result);
 
         $this->settle->handle($match, $winner);

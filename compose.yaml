@@ -87,6 +87,25 @@ services:
         depends_on:
             - laravel.test
             - redis
+    queue:
+        # `ShouldBroadcast` events (and other queued jobs) need a worker to
+        # actually fire. Without this container the `jobs` table fills up and
+        # broadcasts never reach Reverb. `queue:listen` (not `queue:work`)
+        # reloads code per job so dev edits to event classes pick up without
+        # a manual worker restart.
+        image: 'sail-8.5/app'
+        command: 'php artisan queue:listen --tries=1 --timeout=0'
+        environment:
+            WWWUSER: '${WWWUSER}'
+            LARAVEL_SAIL: 1
+        volumes:
+            - '.:/var/www/html'
+        networks:
+            - sail
+        depends_on:
+            - laravel.test
+            - pgsql
+            - redis
 networks:
     sail:
         driver: bridge
