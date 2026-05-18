@@ -27,7 +27,7 @@ export default function UserShow({
                         matches={matchHistory.data}
                         profileUserId={user.id}
                     />
-                    <LinkedAccountsSection />
+                    <LinkedAccountsSection user={user} />
                 </div>
             </div>
         </SiteLayout>

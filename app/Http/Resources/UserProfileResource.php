@@ -35,6 +35,13 @@ class UserProfileResource extends JsonResource
             // Always null in v1 — frontend falls back to a gradient-initials
             // avatar via `useInitials()`. Upload flow lands post-MVP.
             'avatar' => null,
+            // Verified linked external accounts (M8 Phase 1). Null when not
+            // linked — the username column is only populated after successful
+            // bio-code verification (pending state lives in
+            // `pending_verification_*` and is NEVER exposed publicly). Frontend
+            // renders these on the profile's "Linked accounts" section.
+            'chess_com_username' => $this->chess_com_username,
+            'lichess_username' => $this->lichess_username,
         ];
     }
 }

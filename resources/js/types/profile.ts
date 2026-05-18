@@ -20,6 +20,11 @@ export interface UserProfile {
     // Always `null` in v1 — frontend falls back to the gradient-initials
     // avatar via `useInitials()`. Upload flow lands post-MVP.
     avatar: string | null;
+    // Verified external game-account usernames (M8 Phase 1). `null` when not
+    // linked. Pending verification state is NEVER exposed here — these fields
+    // are only populated after the bio-code flow completes.
+    chess_com_username: string | null;
+    lichess_username: string | null;
 }
 
 export interface ProfileStats {

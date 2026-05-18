@@ -121,16 +121,16 @@ The API is no longer the primary truth source — it's a smart link-previewer in
 
 > Estimates are focused solo dev time, not calendar time. Each phase ships something usable; commit per phase.
 
-**Phase 1 — Linked accounts foundation (chess.com + Lichess)** (~3-4 days)
+**Phase 1 — Linked accounts foundation (chess.com + Lichess)** ✅ shipped 2026-05-18
 
-- [ ] Schema migration on `users`: `chess_com_username`, `chess_com_verified_at`, `lichess_username`, `lichess_verified_at`, `pending_verification_provider`, `pending_verification_username`, `pending_verification_code`, `pending_verification_expires_at`.
-- [ ] Action: `RequestLinkVerificationAction` — generates 16-char random code, stores pending columns, returns code for UI display.
-- [ ] Action: `VerifyLinkedAccountAction` — calls provider profile API, parses target field, matches code, marks `*_verified_at = now()`, clears pending columns.
-- [ ] Services: `App\Services\Provider\ChessComProfileClient` + `LichessProfileClient` (`Http::fake()`-able). chess.com requires User-Agent header with contact email.
-- [ ] New settings tab `/settings/linked-accounts` (alongside Profile / Security / Appearance).
-- [ ] Profile section `LinkedAccountsSection` binds real data (username + verified badge); existing "Not linked" placeholder is replaced.
-- [ ] Throttle middleware on verify endpoint (`throttle:6,1`).
-- [ ] Tests with `Http::fake()` for both providers (happy path, expired code, mismatched code, API 404, API 500, rate limit).
+- [x] Schema migration on `users`: `chess_com_username`, `chess_com_verified_at`, `lichess_username`, `lichess_verified_at`, `pending_verification_provider`, `pending_verification_username`, `pending_verification_code`, `pending_verification_expires_at`.
+- [x] Action: `RequestLinkVerificationAction` — generates 16-char random code, stores pending columns, returns code for UI display.
+- [x] Action: `VerifyLinkedAccountAction` — calls provider profile API, parses target field, matches code, marks `*_verified_at = now()`, clears pending columns.
+- [x] Services: `App\Services\Provider\ChessComProfileClient` + `LichessProfileClient` (`Http::fake()`-able). chess.com requires User-Agent header with contact email.
+- [x] New settings tab `/settings/linked-accounts` (alongside Profile / Security / Appearance).
+- [x] Profile section `LinkedAccountsSection` binds real data (username + verified badge); existing "Not linked" placeholder is replaced.
+- [x] Throttle middleware on verify endpoint (`throttle:6,1`).
+- [x] Tests with `Http::fake()` for both providers (happy path, expired code, mismatched code, API 404, API 500, rate limit). 36 tests / 402 total / 2075 assertions.
 
 **Locked decisions** (Phase 1):
 - **Bio-code target field**: chess.com `name` (public display name — chess.com's public JSON exposes this; their "About" bio is NOT in the public API). Lichess `profile.bio` (proper 400-char bio field). Users see "paste this code in your display name on chess.com" / "paste this code in your bio on Lichess." The chess.com clobber UX is acceptable since it's a one-time-per-provider action.
@@ -139,20 +139,22 @@ The API is no longer the primary truth source — it's a smart link-previewer in
 
 **Phase 2 — Reverb infrastructure + chat schema + text chat** (~3-4 days)
 
-- [ ] Add `reverb` service to `compose.yaml` (port 8080).
+- [ ] Add `reverb` service to `compose.yaml` (port 8080). Free, self-hosted, Redis-backed (we already run Redis); `.env` swap to Pusher possible later if scale demands.
 - [ ] Composer: `laravel/reverb` + `@laravel/echo` + `pusher-js` client.
 - [ ] Schema: `messages` table (id, match_id FK, user_id FK nullable, type [text/image/link/system], content text, attachments_json, created_at), indexed by `match_id`.
 - [ ] Model: `App\Models\Message` + factory + `match` / `user` relations. `UPDATED_AT = null` (immutable — keep dispute logs honest).
-- [ ] Action: `SendMessageAction` — validates participant (via existing `GameMatchPolicy`), validates rate limit, persists, broadcasts `MessageSent` event.
+- [ ] Action: `SendMessageAction` — validates participant (via existing `GameMatchPolicy`), validates rate limit, validates match status (rejects on `Settled` / `ManualReview` — chat locks after settlement), persists, broadcasts `MessageSent` event.
 - [ ] Event: `MessageSent` broadcasts to `match.{id}` **private** channel.
 - [ ] Channel auth in `routes/channels.php`: only the two match participants subscribe.
-- [ ] React: `MatchChatPanel` component in match `show.tsx` (message list + input).
-- [ ] Tests: rate limit hit, channel auth (non-participant rejected), persistence, broadcast event fired.
+- [ ] React: `MatchChatPanel` as a **right-side panel** on `match/show.tsx` — Bybit-style compact column (~360px) sitting alongside match details on desktop. Mobile: hidden by default, opens as a bottom-sheet drawer via a floating "Chat (N)" button with unread count. Input pinned to bottom, scrollable list above. Reference screenshot: `images-examples/bybit-chat-layout.png` (saved 2026-05-18).
+- [ ] Read-only state after settle: chat input hides + "This match is settled — chat is read-only." footer note appears. History stays scrollable.
+- [ ] Tests: rate limit hit, channel auth (non-participant rejected), persistence, broadcast event fired, post-settle send 403s.
 
 **Locked decisions** (Phase 2):
 - **Reverb over Pusher**: free, Laravel-team built, Redis-backed (we have Redis), `.env` swap to Pusher possible if we hit scale issues.
 - **Private channel scope**: only the two match participants subscribe. Admin reads via Filament dashboard (M12), not via channel subscription.
-- **Chat stays open after settle**: GG wishes, rematch suggestions are common. Cheap to keep open. Stops only if match is in `ManualReview` (admin can lock if abuse).
+- **Chat locks after settlement** (decided 2026-05-18). Once status is `Settled` (winner OR draw refund) OR `ManualReview`, chat becomes read-only. Reasoning: post-resolution messages add abuse surface (evidence pollution by losers, harassment) without product value — match is over, both players move on. Audit trail stays viewable. Original "keep it open for GG / rematch" idea reversed because the failure mode (one party adds messages after losing) is more impactful than the lost value (GG wishes happen on the other player's profile anyway). `Pending` / `Disputed` keep chat open. Frontend hides input; backend `SendMessageAction` rejects with 403.
+- **Right-side panel layout** (decided 2026-05-18). Bybit's P2P chat reference (`images-examples/bybit-chat-layout.png`) — compact column to the right of match details on desktop, bottom-sheet on mobile. Match info stays the primary surface; chat is co-visible but not dominant. Avoids the modal-hijack anti-pattern.
 - **Messages are immutable**: no edit, no delete. Dispute review depends on truthful logs.
 - **System message type**: posted by `SendMessageAction` with `user_id = null` and `type = system`. Cannot be impersonated. Used in Phase 5 for dispute prompts.
 
