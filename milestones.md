@@ -133,7 +133,7 @@ The API is no longer the primary truth source — it's a smart link-previewer in
 - [x] Tests with `Http::fake()` for both providers (happy path, expired code, mismatched code, API 404, API 500, rate limit). 36 tests / 402 total / 2075 assertions.
 
 **Locked decisions** (Phase 1):
-- **Bio-code target field**: chess.com `name` (public display name — chess.com's public JSON exposes this; their "About" bio is NOT in the public API). Lichess `profile.bio` (proper 400-char bio field). Users see "paste this code in your display name on chess.com" / "paste this code in your bio on Lichess." The chess.com clobber UX is acceptable since it's a one-time-per-provider action.
+- **Bio-code target field**: chess.com `location` (public, free-text, rarely set by default — chess.com's public JSON exposes it). Lichess `profile.bio` (proper 400-char bio field). Switched from the original `name` (display name) plan during implementation: `name` is the player's identity in lobbies and live games, so clobbering it for a 15-min verification window is needlessly disruptive. `location` is equally verifiable via the public API but invisible-by-default to anyone not viewing the profile page. Users see "paste this code in your Location on chess.com" / "paste this code in your bio on Lichess."
 - **Both providers from Phase 1**. The shared flow + symmetric UI cost almost nothing to add the second provider. Players who play only on one platform aren't locked out.
 - **Verification is immutable until unlinked**. Re-verifying isn't required unless the user unlinks and relinks.
 
@@ -157,6 +157,8 @@ The API is no longer the primary truth source — it's a smart link-previewer in
 - **Right-side panel layout** (decided 2026-05-18). Bybit's P2P chat reference (`images-examples/bybit-chat-layout.png`) — compact column to the right of match details on desktop, bottom-sheet on mobile. Match info stays the primary surface; chat is co-visible but not dominant. Avoids the modal-hijack anti-pattern.
 - **Messages are immutable**: no edit, no delete. Dispute review depends on truthful logs.
 - **System message type**: posted by `SendMessageAction` with `user_id = null` and `type = system`. Cannot be impersonated. Used in Phase 5 for dispute prompts.
+- **Content cap = 2000 chars** (decided 2026-05-18). Enforced in `SendMessageAction` validation. Covers regular chat (typical message < 200 chars) with headroom for Phase 5's paste-PGN evidence. Lichess PGN exports for a 40-move game are ~1.5–1.8 KB; 2000 is comfortable. Above this, the user should host externally and paste a link (Phase 4 link cards). DB column is `text` (no Postgres-level cap); the Action is the single enforcement point.
+- **Send semantics**: Enter sends, Shift+Enter inserts newline. Standard chat UX.
 
 **Phase 3 — File uploads + plain link cards** (~2-3 days)
 

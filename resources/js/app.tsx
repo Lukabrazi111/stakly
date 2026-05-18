@@ -1,4 +1,5 @@
 import { createInertiaApp } from '@inertiajs/react';
+import { configureEcho } from '@laravel/echo-react';
 import { AuthModalProvider } from '@/components/auth/auth-modal-provider';
 import { Toaster } from '@/components/ui/sonner';
 import { TooltipProvider } from '@/components/ui/tooltip';
@@ -8,6 +9,13 @@ import SettingsLayout from '@/layouts/settings/layout';
 import SiteLayout from '@/layouts/site-layout';
 
 const appName = import.meta.env.VITE_APP_NAME || 'Laravel';
+
+// Configure Echo for Reverb broadcasts. Reads VITE_REVERB_* from env. Called
+// once at app boot so any component using `useEcho()` from `@laravel/echo-react`
+// gets a ready-to-go singleton.
+configureEcho({
+    broadcaster: 'reverb',
+});
 
 createInertiaApp({
     title: (title) => (title ? `${title} - ${appName}` : appName),

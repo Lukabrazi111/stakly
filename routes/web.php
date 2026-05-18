@@ -4,6 +4,7 @@ use App\Http\Controllers\ActiveModeController;
 use App\Http\Controllers\GameMatchController;
 use App\Http\Controllers\HomeController;
 use App\Http\Controllers\ListingController;
+use App\Http\Controllers\MessageController;
 use App\Http\Controllers\UserController;
 use App\Http\Controllers\WalletController;
 use Illuminate\Support\Facades\Route;
@@ -51,6 +52,11 @@ Route::middleware(['auth', 'verified'])->group(function () {
     // M6 Phase 4 — escalate to game-API resolution. Either participant can
     // open a dispute during Pending; the API winner is authoritative.
     Route::post('/matches/{match}/dispute', [GameMatchController::class, 'openDispute'])->name('matches.openDispute');
+
+    // M8 Phase 2 — chat messages on a match. Participant-only (404 for
+    // non-participants, matching the show convention). Rate limit + status
+    // gate live inside `SendMessageAction`.
+    Route::post('/matches/{match}/messages', [MessageController::class, 'store'])->name('matches.messages.store');
 });
 
 Route::get('/listings/{listing}', [ListingController::class, 'show'])->name('listings.show');
