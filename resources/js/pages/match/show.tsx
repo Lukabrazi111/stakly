@@ -230,7 +230,7 @@ export default function MatchShow({ match, messages }: MatchShowProps) {
                         dominating viewport; internal scroll handles message
                         overflow. */}
                     {auth.user && (
-                        <aside className="hidden lg:sticky lg:top-28 lg:block lg:h-[600px]">
+                        <aside className="hidden lg:sticky lg:top-28 lg:block lg:h-[750px]">
                             <ChatPanel
                                 messages={chat.messages}
                                 viewerId={auth.user.id}
