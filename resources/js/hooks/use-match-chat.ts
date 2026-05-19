@@ -77,10 +77,20 @@ export function useMatchChat(
                     }
                 }
 
-                // 2) Dedup by server id — covers a redundant broadcast
-                //    arriving twice (e.g. dev StrictMode double-subscribe).
-                if (prev.some((m) => m.id === payload.id)) {
-                    return prev;
+                // 2) Replace by server id — the queued link-preview
+                //    fetcher re-broadcasts the same message id with
+                //    populated `attachments` once OG metadata lands. The
+                //    bubble updates in place (no scroll, no reorder).
+                //    Also covers a redundant broadcast arriving twice
+                //    (e.g. dev StrictMode double-subscribe) — replacing
+                //    with identical payload is a no-op render.
+                const existingIdx = prev.findIndex((m) => m.id === payload.id);
+
+                if (existingIdx !== -1) {
+                    const next = [...prev];
+                    next[existingIdx] = payload;
+
+                    return next;
                 }
 
                 // 3) Append — normal new message from the opponent, or a

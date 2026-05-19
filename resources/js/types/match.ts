@@ -68,10 +68,23 @@ export interface ChatImageAttachment {
     thumb_url: string;
 }
 
-// Phase 4 link cards (OG preview + verified-game-evidence). Reserved.
+// Slice 2 link cards — Open Graph / Twitter / oEmbed preview shaped by
+// the `App\Jobs\FetchLinkMetadataJob` queued fetcher. `image_url` points
+// at the authenticated `link-images.show` route; the browser pulls bytes
+// from Stakly so third-party hosts never see participant IPs.
+//
+// Title is required (the fetcher rejects pages with no title because a
+// card identical to the plain URL is noise). The rest are optional —
+// thin metadata (a robots-blocked tweet, a Reddit thread with no
+// description) still renders a useful card.
 export interface ChatLinkAttachment {
     type: 'link';
-    [key: string]: unknown;
+    url: string;
+    canonical_url: string | null;
+    title: string;
+    description: string | null;
+    site_name: string | null;
+    image_url: string | null;
 }
 
 export type ChatAttachment = ChatImageAttachment | ChatLinkAttachment;

@@ -1,11 +1,16 @@
-import { Loader2, Megaphone, RotateCw, TriangleAlert, X } from 'lucide-react';
+import { Link as LinkIcon, Loader2, Megaphone, RotateCw, TriangleAlert, X } from 'lucide-react';
 import { useState } from 'react';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { useInitials } from '@/hooks/use-initials';
 import { cn } from '@/lib/utils';
-import type { ChatImageAttachment, ChatMessage, MatchPlayer } from '@/types';
+import type {
+    ChatImageAttachment,
+    ChatLinkAttachment,
+    ChatMessage,
+    MatchPlayer,
+} from '@/types';
 
 interface ChatMessageBubbleProps {
     message: ChatMessage;
@@ -39,6 +44,10 @@ export function ChatMessageBubble({
     const images = message.attachments.filter(
         (attachment): attachment is ChatImageAttachment =>
             attachment.type === 'image',
+    );
+    const links = message.attachments.filter(
+        (attachment): attachment is ChatLinkAttachment =>
+            attachment.type === 'link',
     );
     const hasContent = (message.content ?? '').length > 0;
     const isPending = Boolean(message.pending);
@@ -95,6 +104,10 @@ export function ChatMessageBubble({
                         {message.content}
                     </div>
                 )}
+
+                {links.map((link) => (
+                    <LinkCard key={link.url} link={link} isOwn={isOwn} />
+                ))}
 
                 {isFailed && message.correlation_id ? (
                     <FailedFooter
@@ -166,6 +179,70 @@ function ImageAttachment({ image, isOwn }: ImageAttachmentProps) {
                 </DialogContent>
             </Dialog>
         </>
+    );
+}
+
+interface LinkCardProps {
+    link: ChatLinkAttachment;
+    isOwn: boolean;
+}
+
+/**
+ * OG/Twitter/oEmbed unfurl card rendered below the chat bubble's text
+ * content. Whole card is one anchor so the browser handles middle-click,
+ * Cmd-click, drag-to-bookmark, etc. naturally — no nested interactive
+ * elements that compete for click semantics.
+ *
+ * The image (when present) comes from `link-images.show`, the
+ * authenticated proxy route. We set `width`/`height` to the rendered
+ * size (not the natural image size) because OG images are highly
+ * variable and we want a fixed-aspect-ratio tile, not flex-based image
+ * sizing that shifts layout on bytes-arrived.
+ */
+function LinkCard({ link, isOwn }: LinkCardProps) {
+    const hostname = link.site_name ?? safeHostname(link.canonical_url ?? link.url);
+
+    return (
+        <a
+            href={link.url}
+            target="_blank"
+            rel="noopener noreferrer nofollow"
+            className={cn(
+                'group border-border/60 bg-card/80 hover:border-primary/40 focus-visible:border-primary/60 focus-visible:ring-primary/40 focus-visible:ring-offset-background flex w-full max-w-[320px] gap-3 overflow-hidden rounded-2xl border p-2.5 transition-all duration-200 hover:shadow-glow-sm focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none',
+                isOwn ? 'rounded-br-md' : 'rounded-bl-md',
+            )}
+        >
+            {link.image_url ? (
+                <img
+                    src={link.image_url}
+                    alt=""
+                    width={64}
+                    height={64}
+                    loading="lazy"
+                    className="bg-muted size-16 shrink-0 rounded-lg object-cover"
+                />
+            ) : (
+                <div className="bg-muted/60 text-muted-foreground/60 flex size-16 shrink-0 items-center justify-center rounded-lg">
+                    <LinkIcon className="size-5" />
+                </div>
+            )}
+
+            <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+                <h4 className="text-foreground group-hover:text-primary line-clamp-2 text-sm font-semibold leading-snug transition-colors">
+                    {link.title}
+                </h4>
+                {link.description && (
+                    <p className="text-muted-foreground line-clamp-2 text-xs leading-snug">
+                        {link.description}
+                    </p>
+                )}
+                {hostname && (
+                    <span className="text-muted-foreground/70 mt-auto truncate pt-0.5 text-[10px] tracking-wide uppercase">
+                        {hostname}
+                    </span>
+                )}
+            </div>
+        </a>
     );
 }
 
@@ -278,6 +355,23 @@ function SystemBubble({ content }: { content: string }) {
             </div>
         </div>
     );
+}
+
+/**
+ * Pull the hostname off a URL string for the link-card footer. Falls
+ * back to null on malformed input rather than throwing — a broken URL
+ * shouldn't break the bubble render.
+ */
+function safeHostname(url: string | null): string | null {
+    if (!url) {
+        return null;
+    }
+
+    try {
+        return new URL(url).hostname;
+    } catch {
+        return null;
+    }
 }
 
 /**

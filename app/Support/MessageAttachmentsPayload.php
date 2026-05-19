@@ -76,9 +76,16 @@ class MessageAttachmentsPayload
     }
 
     /**
-     * Phase 4 link cards. `attachments_json` is reserved as `null` until the
-     * OG fetcher / verified-game-evidence pipeline lands in Slice 2 / Phase 4.
-     * For Slice 1 this always returns an empty list.
+     * Slice 2 link cards. The raw `attachments_json` stores `image_path`
+     * (relative path on the private `local` disk); the frontend wants
+     * `image_url` (the authenticated route the browser can fetch). The
+     * translation happens here so the frontend has a uniform shape and
+     * the storage side stays disk-relative.
+     *
+     * Same `absolute: false` reasoning as `imageEntries` — the queue
+     * worker that runs `MessageSent::broadcastWith` and the web request
+     * that runs `MessageResource::toArray` both produce these payloads;
+     * relative URLs sidestep any `APP_URL` ↔ request-host drift.
      *
      * @return list<array<string, mixed>>
      */
@@ -90,6 +97,39 @@ class MessageAttachmentsPayload
             return [];
         }
 
-        return array_values($raw);
+        $entries = [];
+
+        foreach ($raw as $item) {
+            if (! is_array($item)) {
+                continue;
+            }
+
+            if (($item['type'] ?? null) !== 'link') {
+                continue;
+            }
+
+            $imageUrl = null;
+
+            if (! empty($item['image_path'])) {
+                $filename = basename((string) $item['image_path']);
+                $imageUrl = route(
+                    'link-images.show',
+                    ['filename' => $filename],
+                    absolute: false,
+                );
+            }
+
+            $entries[] = [
+                'type' => 'link',
+                'url' => $item['url'] ?? null,
+                'canonical_url' => $item['canonical_url'] ?? null,
+                'title' => $item['title'] ?? null,
+                'description' => $item['description'] ?? null,
+                'site_name' => $item['site_name'] ?? null,
+                'image_url' => $imageUrl,
+            ];
+        }
+
+        return $entries;
     }
 }

@@ -5,9 +5,11 @@ namespace App\Actions\Message;
 use App\Enums\MatchStatus;
 use App\Enums\MessageType;
 use App\Events\MessageSent;
+use App\Jobs\FetchLinkMetadataJob;
 use App\Models\GameMatch;
 use App\Models\Message;
 use App\Models\User;
+use App\Support\SsrfGuard;
 use Illuminate\Http\Exceptions\ThrottleRequestsException;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
@@ -57,6 +59,14 @@ class SendMessageAction
 
     private const UPLOAD_WINDOW_SECONDS = 30;
 
+    /**
+     * Hard cap on how many URLs we'll unfurl per message. The fetch job
+     * is queued so the response stays fast, but every extra URL is
+     * another outbound HTTP fetch + possible image proxy + persisted
+     * card. Five is generous for normal chat and still bounds abuse.
+     */
+    private const MAX_URLS_PER_MESSAGE = 5;
+
     public function handle(
         User $user,
         GameMatch $match,
@@ -94,6 +104,20 @@ class SendMessageAction
             // with the broadcast-confirmed one. Not persisted to DB; the
             // broadcast event echoes it back in the payload.
             MessageSent::dispatch($message, $correlationId);
+
+            // Phase 3 Slice 2 — queue OG metadata extraction for any URLs
+            // in the content. The job runs after this transaction commits
+            // (ShouldDispatchAfterCommit) so it sees the inserted row;
+            // when it eventually appends link cards to attachments_json it
+            // re-dispatches MessageSent so the frontend can swap the
+            // plain-link bubble for the enriched one in place.
+            if ($content !== null) {
+                $urls = self::extractLinkUrls($content);
+
+                if (count($urls) > 0) {
+                    FetchLinkMetadataJob::dispatch($message, $urls);
+                }
+            }
 
             return $message;
         });
@@ -199,5 +223,53 @@ class SendMessageAction
     public static function uploadRateLimitKey(User $user): string
     {
         return 'chat-upload:'.$user->id;
+    }
+
+    /**
+     * Pull http(s) URLs out of message content for the OG metadata
+     * fetcher. Returns a de-duplicated, capped list of URLs that passed
+     * the cheap pre-flight SSRF check (raw `http://10.0.0.1/`-style
+     * literals never make it to the job queue).
+     *
+     * Trailing punctuation (.,!?;:'")] etc.) is stripped because chat
+     * sentences put URLs next to punctuation — `look at https://foo.com.`
+     * should detect `https://foo.com`, not `https://foo.com.` which would
+     * 404 at the provider.
+     *
+     * Exposed as a static helper (rather than buried in the dispatch
+     * block) so the URL-detection rules are testable in isolation —
+     * Slice 2 tests cover the regex without spinning a queue worker.
+     *
+     * @return list<string>
+     */
+    public static function extractLinkUrls(string $content): array
+    {
+        preg_match_all('#https?://[^\s<>"\']+#i', $content, $matches);
+
+        $urls = [];
+
+        foreach ($matches[0] as $raw) {
+            $url = rtrim($raw, ".,;:!?'\"()[]{}");
+
+            // Cheap pre-flight only — full DNS-based SSRF check runs inside
+            // the queued worker before each outbound fetch. Doing the DNS
+            // lookup here would stall the request behind one resolver call
+            // per URL.
+            if (! SsrfGuard::isPlausiblySafe($url)) {
+                continue;
+            }
+
+            if (in_array($url, $urls, true)) {
+                continue;
+            }
+
+            $urls[] = $url;
+
+            if (count($urls) >= self::MAX_URLS_PER_MESSAGE) {
+                break;
+            }
+        }
+
+        return $urls;
     }
 }

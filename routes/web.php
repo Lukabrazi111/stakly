@@ -3,6 +3,7 @@
 use App\Http\Controllers\ActiveModeController;
 use App\Http\Controllers\GameMatchController;
 use App\Http\Controllers\HomeController;
+use App\Http\Controllers\LinkImageController;
 use App\Http\Controllers\ListingController;
 use App\Http\Controllers\MessageController;
 use App\Http\Controllers\UserController;
@@ -67,6 +68,14 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('/matches/{match}/messages/{message}/attachments/{media}', [MessageController::class, 'attachment'])
         ->whereNumber('media')
         ->name('matches.messages.attachment');
+
+    // M8 Phase 3 Slice 2 — authenticated streaming of cached link-preview
+    // images. Filename is hash-addressed (sha256-of-source-url.ext); the
+    // controller hard-rejects anything outside the expected shape so the
+    // segment can't be used as a path-traversal vector.
+    Route::get('/link-images/{filename}', [LinkImageController::class, 'show'])
+        ->where('filename', '[a-f0-9]{64}\.(jpg|png|webp|gif)')
+        ->name('link-images.show');
 });
 
 Route::get('/listings/{listing}', [ListingController::class, 'show'])->name('listings.show');

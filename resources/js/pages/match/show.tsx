@@ -92,12 +92,12 @@ export default function MatchShow({ match, messages }: MatchShowProps) {
         <SiteLayout>
             <Head title={`Match #${match.id}`} />
 
-            <div className="mx-auto max-w-6xl px-4 py-10 md:px-6 md:py-14">
+            <div className="mx-auto max-w-7xl px-4 py-10 md:px-6 md:py-14">
                 <div className="mb-6">
                     <BackLink fallback={listingShow(match.listing.id).url} />
                 </div>
 
-                <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_360px] lg:gap-6">
+                <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_460px] lg:gap-6">
                     <div className="min-w-0">
 
                 {/* Stack on mobile, row on sm: so neither truncates at 375px */}
