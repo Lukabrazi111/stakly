@@ -36,8 +36,9 @@ export default function MatchShow({ match, messages }: MatchShowProps) {
     // the desktop right-rail and the mobile bottom-sheet renders below. The
     // viewer is one of the two participants; the hook trusts that (the
     // backend rejects non-participants from both the POST endpoint and the
-    // channel auth callback).
-    const chat = useMatchChat(match.id, messages.data);
+    // channel auth callback). viewerId feeds the hook's optimistic-UI
+    // injection so the sender sees their own bubble immediately.
+    const chat = useMatchChat(match.id, messages.data, auth.user?.id ?? null);
     const chatIsReadOnly =
         match.status === 'settled' || match.status === 'manual_review';
 
@@ -238,6 +239,9 @@ export default function MatchShow({ match, messages }: MatchShowProps) {
                                 isReadOnly={chatIsReadOnly}
                                 isPending={chat.isPending}
                                 onSend={chat.send}
+                                onRetry={chat.retry}
+                                onDismiss={chat.dismiss}
+                                uploadProgress={chat.uploadProgress}
                             />
                         </aside>
                     )}
@@ -253,6 +257,9 @@ export default function MatchShow({ match, messages }: MatchShowProps) {
                         isReadOnly={chatIsReadOnly}
                         isPending={chat.isPending}
                         onSend={chat.send}
+                        onRetry={chat.retry}
+                        onDismiss={chat.dismiss}
+                        uploadProgress={chat.uploadProgress}
                     />
                 )}
             </div>

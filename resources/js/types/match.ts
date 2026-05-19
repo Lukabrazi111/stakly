@@ -48,17 +48,63 @@ export interface Match {
 // payloads share this shape so the component can append from either source.
 export type ChatMessageType = 'text' | 'system';
 
+// Image attachment entry. Both URLs point at the authenticated streaming
+// route — clients receive image bytes by following the URL, not by getting
+// raw bytes inline. `thumb_url` returns the ~400px preview rendered in the
+// bubble; `url` returns the original for the lightbox.
+//
+// `width` / `height` are the original image dimensions captured at upload
+// time. When both are present, the bubble sets aspect-ratio on the <img>
+// so chat history scroll doesn't shift when a run of images loads.
+export interface ChatImageAttachment {
+    type: 'image';
+    media_id: number;
+    name: string;
+    mime: string;
+    size: number;
+    width: number | null;
+    height: number | null;
+    url: string;
+    thumb_url: string;
+}
+
+// Phase 4 link cards (OG preview + verified-game-evidence). Reserved.
+export interface ChatLinkAttachment {
+    type: 'link';
+    [key: string]: unknown;
+}
+
+export type ChatAttachment = ChatImageAttachment | ChatLinkAttachment;
+
 export interface ChatMessage {
     id: number;
     match_id: number;
     // Null for system messages (no human author).
     user_id: number | null;
     type: ChatMessageType;
-    content: string;
-    // Reserved for Phase 3 (image uploads) / Phase 4 (link cards). Always
-    // null for text/system messages in Phase 2.
-    attachments: Record<string, unknown> | null;
+    // Null for image-only messages (a screenshot with no caption is a valid send).
+    content: string | null;
+    // Mixed-source list — image entries come from Spatie Media (Slice 1),
+    // link entries from `attachments_json` (Slice 2). Empty array (not null)
+    // when there are no attachments — matches `MessageAttachmentsPayload`.
+    attachments: ChatAttachment[];
+    // Echo of the client-generated UUID that the sender sent with the POST.
+    // The sender's frontend matches its optimistic pending bubble to the
+    // broadcast-confirmed one by this id. Always null on initial-load
+    // resource serialization (the correlation only lives in the broadcast).
+    correlation_id?: string | null;
     created_at: string | null;
+    // Client-side only — present on locally-injected optimistic bubbles, not
+    // on server-sourced messages. The broadcast handler clears `pending` and
+    // `failed` when it replaces the optimistic entry; the retry handler
+    // toggles `failed`. Optional + boolean so server-sourced messages stay
+    // type-clean (these fields are absent on those).
+    pending?: boolean;
+    failed?: boolean;
+    // Local-only mirror of the queued file used to render the optimistic
+    // bubble while the upload is in flight. Replaced by the broadcast's
+    // `attachments` entries when the server confirms.
+    optimistic_file?: { name: string; preview_url: string; size: number };
 }
 
 export interface MatchShowProps {

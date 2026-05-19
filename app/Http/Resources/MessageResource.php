@@ -3,6 +3,7 @@
 namespace App\Http\Resources;
 
 use App\Models\Message;
+use App\Support\MessageAttachmentsPayload;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -13,6 +14,9 @@ use Illuminate\Http\Resources\Json\JsonResource;
  * from the `match.creator` / `match.taker` props by matching `user_id` —
  * embedding the user object here would be redundant for the two-participant
  * universe of a single match.
+ *
+ * `attachments` is built via `MessageAttachmentsPayload` so the initial-load
+ * and broadcast paths share one source of truth. See that class for shape.
  *
  * @mixin Message
  */
@@ -29,7 +33,7 @@ class MessageResource extends JsonResource
             'user_id' => $this->user_id,
             'type' => $this->type->value,
             'content' => $this->content,
-            'attachments' => $this->attachments_json,
+            'attachments' => MessageAttachmentsPayload::forMessage($this->resource),
             'created_at' => $this->created_at?->toIso8601String(),
         ];
     }

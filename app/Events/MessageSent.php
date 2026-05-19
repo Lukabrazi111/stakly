@@ -3,6 +3,7 @@
 namespace App\Events;
 
 use App\Models\Message;
+use App\Support\MessageAttachmentsPayload;
 use Illuminate\Broadcasting\InteractsWithSockets;
 use Illuminate\Broadcasting\PrivateChannel;
 use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
@@ -30,7 +31,16 @@ class MessageSent implements ShouldBroadcast, ShouldDispatchAfterCommit
 {
     use Dispatchable, InteractsWithSockets, SerializesModels;
 
-    public function __construct(public Message $message) {}
+    /**
+     * @param  ?string  $correlationId  Client-generated UUID echoed back in the
+     *                                  broadcast payload so the sender's frontend can match an optimistic
+     *                                  pending bubble with the broadcast-confirmed message and replace it.
+     *                                  Null for system messages and for any send that didn't supply one.
+     */
+    public function __construct(
+        public Message $message,
+        public ?string $correlationId = null,
+    ) {}
 
     /**
      * @return array<int, PrivateChannel>
@@ -59,13 +69,20 @@ class MessageSent implements ShouldBroadcast, ShouldDispatchAfterCommit
      */
     public function broadcastWith(): array
     {
+        // The queue worker that runs broadcastWith re-hydrates `$this->message`
+        // from the DB without eager-loaded media. `loadMissing` covers that
+        // path without re-querying when the in-memory model already has it
+        // (synchronous broadcasts inside the same request, tests).
+        $this->message->loadMissing('media');
+
         return [
             'id' => $this->message->id,
             'match_id' => $this->message->match_id,
             'user_id' => $this->message->user_id,
             'type' => $this->message->type->value,
             'content' => $this->message->content,
-            'attachments' => $this->message->attachments_json,
+            'attachments' => MessageAttachmentsPayload::forMessage($this->message),
+            'correlation_id' => $this->correlationId,
             'created_at' => $this->message->created_at?->toIso8601String(),
         ];
     }

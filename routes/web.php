@@ -57,6 +57,16 @@ Route::middleware(['auth', 'verified'])->group(function () {
     // non-participants, matching the show convention). Rate limit + status
     // gate live inside `SendMessageAction`.
     Route::post('/matches/{match}/messages', [MessageController::class, 'store'])->name('matches.messages.store');
+
+    // M8 Phase 3 Slice 1 — authenticated streaming of chat image attachments.
+    // Files live on the private `local` disk and are never served directly
+    // by the web server; every fetch re-checks the match `view` policy. The
+    // `{media}` segment is the integer media id (resolved manually inside
+    // the controller against the message's media collection — see comments
+    // there for the scope-check rationale).
+    Route::get('/matches/{match}/messages/{message}/attachments/{media}', [MessageController::class, 'attachment'])
+        ->whereNumber('media')
+        ->name('matches.messages.attachment');
 });
 
 Route::get('/listings/{listing}', [ListingController::class, 'show'])->name('listings.show');

@@ -49,8 +49,10 @@ return new class extends Migration
             $table->string('type', 16);
 
             // text (not varchar) — chat content is unbounded at the DB level;
-            // the Action enforces the 2000-char product cap.
-            $table->text('content');
+            // the Action enforces the 2000-char product cap. Nullable since
+            // M8 Phase 3 Slice 1: an image-only message (screenshot with no
+            // caption) is a valid chat post.
+            $table->text('content')->nullable();
 
             // Reserved for Phase 3 (image uploads) and Phase 4 (link cards
             // including verified-game evidence). jsonb (not json) for `@>`

@@ -140,8 +140,13 @@ class GameMatchController extends Controller
         // generate enough messages for pagination concerns in v1. If
         // long-running disputes balloon over 200 we can add cursor
         // pagination later — for now a flat slice keeps the frontend simple.
+        //
+        // `media` eager-loaded for the Phase 3 Slice 1 image attachments —
+        // without it, `MessageAttachmentsPayload::forMessage` would N+1 across
+        // every message that has an image (or even ones that don't, since
+        // `getMedia` calls the relation).
         $messages = $match->messages()
-            ->with('user:id,name,username')
+            ->with(['user:id,name,username', 'media'])
             ->orderByDesc('id')
             ->limit(self::MESSAGES_PER_PAGE)
             ->get()

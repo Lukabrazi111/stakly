@@ -229,15 +229,15 @@ Stakly is a P2P platform where players post listings to find opponents and stake
 
 This is **not a dApp / web3 protocol**. It is a custodial web2 application that uses crypto as a payment rail. There are no smart contracts, no on-chain game logic, no NFTs. The blockchain is a deposit/payout mechanism only.
 
-## MVP Scope (LOCKED — do not expand without approval)
+## Current scope
 
-- **Game**: chess only (via chess.com / Lichess APIs). Dota 2 deferred to v2.
-- **Format**: 1v1 only. Team matches deferred to v2.
-- **Currency**: USDT only. No other tokens, no native chain coins.
-- **Chain v1**: TRC20 (Tron USDT). **Chain v2**: BEP20 (BSC USDT) committed for post-launch. Integration provider TBD — chain integration (M9) is deferred pending a crypto-payment-gateway specialist.
-- **Solo developer**. Scope is tight on purpose to make a one-person ship realistic.
+What we're working on right now. Not a commitment — decisions are revisitable any time. Just the present state so you know what's in-flight.
 
-Anything outside this scope is v2 and should be flagged, not built.
+- **Game**: chess only (via chess.com / Lichess APIs).
+- **Format**: 1v1.
+- **Currency**: USDT.
+- **Chain**: TRC20 (Tron USDT) is the planned starting chain; BEP20 (BSC USDT) is the obvious next add. Chain integration (M9) is paused pending a crypto-payment-gateway specialist.
+- **Solo developer**, so flag bigger asks before building (cost / surface area), but don't refuse on scope grounds — surface tradeoffs and let the user decide.
 
 ## Stack & Dev Environment
 
@@ -255,7 +255,7 @@ Anything outside this scope is v2 and should be flagged, not built.
 - **Outcome verification — primary path is the game's official API.** Players link their chess.com / Lichess account at signup with verified ownership (e.g. bio-code challenge). When a match ends, the system queries the API for the result. Both-players-confirm is the fast path; on disagreement, the API is the tiebreaker. Screenshots + manual support are last-resort only — never the primary mechanism.
 - **All financial state lives in a Postgres ledger.** The chain is the rail; the database is the source of truth. Every state transition (deposit, escrow, refund, payout, fee) is an immutable ledger entry. Money operations must be transactional and idempotent.
 - **Auth UX — modal-only for entry points, pages for destinations, URL-driven.** Login, register, and forgot-password are presented exclusively as a single shadcn `Dialog` triggered via `useAuthModal()` (context mounted at `app.tsx` root, modal rendered inside `SiteLayout` because it needs Inertia's `usePage`). **The `?auth=login|register|forgot-password` query param is the source of truth for modal state** — opening writes the param (pushState the first time, replaceState on view-swap), closing removes it (replaceState), and the provider listens to `popstate` so back-button/manual-URL-clearing closes or restores the modal accordingly. Fortify view callbacks for these three surfaces redirect to `/?auth=*` — there are **no** `/login`, `/register`, or `/forgot-password` page components. Reset-password, verify-email, two-factor-challenge, and confirm-password remain **page-only** because users land on them from email links or post-auth redirects, where there's nothing to overlay.
-- **Fortify is the auth foundation.** TOTP 2FA is already wired. SMS OTP, email OTP, magic links, passkeys, and social login are all reachable as extensions (custom columns + middleware + provider) but are not in v1.
+- **Fortify is the auth foundation.** TOTP 2FA is already wired. SMS OTP, email OTP, magic links, passkeys, and social login are all reachable as extensions (custom columns + middleware + provider) — not active today, easy to add later.
 - **Three animation systems, each with a specific job.** (1) **CSS transitions** (`transition-colors`, `hover:shadow-glow-sm`) for hover/focus/simple state changes — never wrap clickable elements in `motion.*` just for hover. (2) **`tw-animate-css`** (`data-[state=open]:animate-in fade-in-0`) for Radix/shadcn primitives where state is controlled by `data-state` — Sheet, Dialog, Popover, Tooltip. Don't fight Radix by replacing these with motion; we'd lose focus management, scroll-lock, and a11y. (3) **`motion`** (`AnimatePresence`, `motion.div layout`, spring physics) for our own React-state-driven animations: enter/exit, layout/size animation, sequenced reveals. The auth modal uses motion correctly; future cases like animated listing cards (M3), match flow state reveals (M6), and wallet success states (M7) should also use motion.
 
 ## Visual System
@@ -299,7 +299,7 @@ When adding a new component-specific shadow, prefer this pattern over inline arb
 - Pill everything: buttons, badges, chips, search bars → `rounded-full` or `rounded-lg`.
 - Avoid hard right angles on top-level UI; soften with at least `rounded-md`.
 - Glow is for interactive states (hover/selected/focus), not static — overuse kills the meaning.
-- No character art for stakly v1. Hero uses gradient + typography + abstract atmosphere. Avatars are initials or generated.
+- No character art for now. Hero uses gradient + typography + abstract atmosphere. Avatars are initials or generated.
 - **Every new UI must fit the Stakly design — including shadcn primitives.** Defaults like `bg-accent` (saturated purple `#a855f7`) for hover, `bg-muted` for hover, and chunky `ring-[3px] ring-ring/50` focus glows are *not* Stakly — they leak the upstream shadcn palette. When adding a new shadcn component, immediately Stakly-skin it at the source (`components/ui/<name>.tsx`):
   - Hover/focus bg → **`bg-primary/10`** (translucent pink wash), not `bg-accent` or `bg-muted`.
   - Selected/active state → **`bg-primary/15 text-foreground border-primary/40`**, not `bg-accent`.
@@ -312,11 +312,11 @@ When adding a new component-specific shadow, prefer this pattern over inline arb
 
 ### M1 design references + decisions
 
-Layout reference for the homepage and broader site flow is **mmrangels.com**. Screenshots live in `images-examples/` at the project root. Stakly mirrors the *structure* (sticky header → marquee → hero → game selector row → listings + filters → listing detail with two-column profile + booking widget) but **diverges on visual identity**: Stakly is a skill platform, not a hire-a-girl-gamer platform, so we keep the dark + pink/purple gradient palette, drop the character-art-driven hero, and the listing detail later in M4 frames a competitive opponent listing rather than a service-hire.
+Layout reference for the homepage and broader site flow is **mmrangels.com**. Screenshots live in `images-examples/` at the project root. Stakly mirrors the *structure* (sticky header → marquee → hero → game selector row → listings + filters → listing detail with two-column profile + booking widget) but **diverges on visual identity**: Stakly is a skill platform, not a hire-a-girl-gamer platform, so we keep the dark + pink/purple gradient palette, drop the character-art-driven hero, and the listing detail in M4 frames a competitive opponent listing rather than a service-hire.
 
-**M1 hero direction (locked):** typography-only, no character art. Atmospheric background = radial gradients + blurred glow blobs. The "no character art" rule may be revisited in a post-MVP polish pass; until then, type does the work.
+**M1 hero direction:** typography-only, no character art. Atmospheric background = radial gradients + blurred glow blobs. Could revisit later if a polish pass calls for it; for now, type does the work.
 
-**M1 GameSelector direction (locked):** multiple game tiles are visible for visual fullness, but **chess is the only functional game in v1**. Non-chess tiles look identical to the active tile (same dimensions, same treatment) and carry a small "Coming soon" badge — don't dim them, don't lock them visually. This avoids broadcasting scarcity while staying honest. Selected tile uses `border-glow`.
+**M1 GameSelector direction:** multiple game tiles are visible for visual fullness, but **chess is the only functional game today**. Non-chess tiles look identical to the active tile (same dimensions, same treatment) and carry a small "Coming soon" badge — don't dim them, don't lock them visually. This avoids broadcasting scarcity while staying honest. Selected tile uses `border-glow`.
 
 ### Design assistance — `ui-ux-pro-max` skill
 
@@ -328,7 +328,7 @@ When to activate:
 - Choosing animation durations, spacing scales, or interactive states.
 - Any time the user asks to "design", "build", "improve", or "review" UI.
 
-The skill complements — does not replace — Stakly's locked visual system above (dark-only, pink→purple gradient, pill shapes, glow on interactive states). Use it to inform decisions *within* the Stakly design system, not to override it.
+The skill complements — does not replace — Stakly's visual system above (dark-only, pink→purple gradient, pill shapes, glow on interactive states). Use it to inform decisions *within* the Stakly design system rather than overriding it; flag if a suggestion meaningfully diverges so we can decide together.
 
 ## Component Folder Convention
 
@@ -349,7 +349,7 @@ Components live in `resources/js/components/` and are organized by **domain**, n
 
 Imports always use the alias path: `@/components/home/hero`, not relative paths.
 
-## Frontend-First MVP Approach
+## Frontend-First Approach
 
 While business logic (matchmaking, escrow, payouts) is still being designed, build the UI against **real database infrastructure with seeded fake data** — not hardcoded route-closure props.
 
@@ -378,21 +378,21 @@ Conventions for this phase:
 ## Conventions for AI Assistance
 
 - **Proactively surface suggestions, improvements, and security/abuse concerns *before* building.** Don't silently apply the safest defaults — call out non-obvious design choices, alternatives, and trade-offs so we can decide together. Especially for: input validation, pagination caps, sort/filter whitelists, exposing data via API resources, auth/access boundaries, rate limiting, and anything that touches money or user PII. A two-sentence "I'd do X because Y, alternative is Z — okay?" is the right shape; don't over-explain. If you spot a security issue mid-implementation, stop and flag it rather than patching silently.
-- **Push back on scope creep.** If a request implies team matches, Dota 2, multi-chain, or non-USDT currencies, flag it as v2 before implementing.
-- **Do not introduce Solidity, smart-contract escrow, or wallet-connect flows in v1.** The custody model is custodial-by-database. If the user later commits to non-custodial escrow, that is a v2-or-later architectural change.
-- **Chain integration (M9) is deferred pending a crypto-payment-gateway specialist.** No chain provider, custody model, or key-storage strategy is committed. Until M9 lands: `users.tron_address` is populated by `App\Support\MockTronAddress` (placeholder, not on-chain), the wallet deposit page shows that mock address, and `WalletController::withdrawStore` short-circuits with a launch-gated toast (no ledger write). Do not introduce chain SDKs, signing libraries, webhook endpoints, or key-storage code without explicit go-ahead from the user. The internal ledger (`wallet_transactions` + `App\Services\Wallet`) is provider-agnostic and stays as the source of truth regardless of which provider is eventually chosen.
+- **Flag bigger asks, don't refuse them.** If a request implies team matches, Dota 2 support, multi-chain, or non-USDT currencies, surface the additional surface area (schema changes, abuse surface, time cost) so we can weigh it together. Don't auto-reject on scope grounds.
+- **Don't add Solidity, smart-contract escrow, or wallet-connect flows without explicit go-ahead.** The current custody model is custodial-by-database. Switching to non-custodial escrow is a real architectural change — surface the tradeoffs if the topic comes up; don't quietly start building it.
+- **Chain integration (M9) is paused pending a crypto-payment-gateway specialist.** No chain provider, custody model, or key-storage strategy is committed yet. Until that work resumes: `users.tron_address` is populated by `App\Support\MockTronAddress` (placeholder, not on-chain), the wallet deposit page shows that mock address, and `WalletController::withdrawStore` short-circuits with a notice toast (no ledger write). Don't introduce chain SDKs, signing libraries, webhook endpoints, or key-storage code without explicit go-ahead. The internal ledger (`wallet_transactions` + `App\Services\Wallet`) is provider-agnostic and stays as the source of truth regardless of which provider is eventually chosen.
 - **No financial code without tests.** Deposit watchers, escrow, payout, fee calculation, refund — every path needs feature tests. Use Pest. The starter kit's `RefreshDatabase` trait works fine against the Sail Postgres.
 - **All money writes go through `App\Services\Wallet`.** `users.usdt_balance` and `wallet_transactions` rows are written ONLY by Wallet service methods (`deposit`, `withdraw`, `hold`, `release`, `payout`, `fee`). Never write the balance column directly from controllers, seeders, migrations, factories, or tinker — direct writes break the balance ↔ ledger invariant `users.usdt_balance == SUM(wallet_transactions.amount)` (asserted in `WalletTest.php`). Platform rake credits the seeded `is_platform = true` user via `Wallet::fee(...)`, not a nullable `user_id`. Idempotency: every Wallet call accepts an optional `reference_id` — repeat calls with the same reference return the existing row silently (no-op).
 - **Money math is BCMath strings, not floats.** Pass amounts as positive strings (`'100'`, `'100.000000'`) — the Wallet service applies the sign per `WalletTransactionType` (credits positive, debits negative). Internal arithmetic uses `bcadd` / `bcsub` / `bccomp` at scale 6 to match Tron USDT precision and the `decimal(18, 6)` columns. PHP `+` / `-` / `<` on money values is forbidden. Floats only appear at the API resource boundary (e.g. `(float) $this->stake_amount` in `ListingResource`) where the frontend needs a JSON number.
 - **No production payout code without a dispute resolution flow.** If a feature lets money leave the platform, the dispute path must exist.
 - **Do not raise jurisdiction, licensing, legal, or regulatory concerns.** The user handles all legal/regulatory matters; stay in engineering scope. The exception is a **technical** confirming question: when asked to integrate a real chain wallet, confirm we are still on testnet/dev posture (that is a technical clarifying question, not a legal one).
-- **Pre-production migrations**: edit existing migration files directly and use `sail artisan migrate:fresh`. Do not create incremental "add_X_columns_to_Y_table.php" migrations until stakly has launched with real users.
+- **Migrations while there are no real users**: edit existing migration files directly and use `sail artisan migrate:fresh`. Once there's real user data on a deployed instance, switch to incremental "add_X_columns_to_Y_table.php" migrations. The flip happens when we deploy somewhere users can sign up, not on any version label.
 - **Wayfinder regen via artisan needs `--with-form`.** Vite's wayfinder plugin (configured `formVariants: true` in `vite.config.ts`) generates `.form` accessors automatically on `npm run dev` / `npm run build`. The standalone `vendor/bin/sail artisan wayfinder:generate` defaults to NO form variants and silently breaks any `<Form>` spreading `.form()` — always pass `--with-form` when regenerating via artisan, or just use `npm run build`.
-- **Performance is a v1 concern, not a v2 backlog item.** Optimization habits — eager-loading related models, queueing external API calls (chess.com, Lichess, future chain provider, etc.), caching slow-changing reads, code-splitting routes, enabling SSR — must be baked into the initial implementation, not deferred as "polish later." This is not premature optimization or speculative abstraction; it's about writing the code we're already writing in a way that doesn't accumulate performance debt. If a query / controller / page is about to ship with a known issue ("we'll cache it later," "we'll queue it later," "fix the N+1 later"), flag it and fix it before the work is called done.
+- **Performance is always a concern, not a backlog item.** Optimization habits — eager-loading related models, queueing external API calls (chess.com, Lichess, future chain provider, etc.), caching slow-changing reads, code-splitting routes, enabling SSR — must be baked into the initial implementation, not deferred as "polish later." This is not premature optimization or speculative abstraction; it's about writing the code we're already writing in a way that doesn't accumulate performance debt. If a query / controller / page is about to ship with a known issue ("we'll cache it later," "we'll queue it later," "fix the N+1 later"), flag it and fix it before the work is called done.
 
-## Deferred / Unresolved (do not assume)
+## Open questions (don't assume answers)
 
-- Anti-collusion and anti-cheat strategy beyond commission rake — specifically: sandbagging via low-rated alt accounts (strong player creates a weak-rated alt to farm beginners), multi-accounting for bonus abuse, money laundering via stake rotation. None addressed in v1; design in a separate post-launch milestone. (Match lifecycle state machine is now defined in milestones.md M6.)
+- Anti-collusion and anti-cheat strategy beyond commission rake — specifically: sandbagging via low-rated alt accounts (strong player creates a weak-rated alt to farm beginners), multi-accounting for bonus abuse, money laundering via stake rotation. Not actively designed yet; surface tradeoffs if the topic comes up. (Match lifecycle state machine is in milestones.md M6.)
 
 (Custody model is decided — custodial via internal Postgres ledger; see M3.5 in milestones.md. Jurisdiction / licensing / legal posture is user-owned and out of engineering scope — see rule above.)
 

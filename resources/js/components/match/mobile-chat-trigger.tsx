@@ -18,7 +18,10 @@ interface MobileChatTriggerProps {
     taker: MatchPlayer;
     isReadOnly: boolean;
     isPending: boolean;
-    onSend: (content: string) => void;
+    onSend: (content: string, file: File | null) => void;
+    onRetry: (correlationId: string) => void;
+    onDismiss: (correlationId: string) => void;
+    uploadProgress: number | null;
 }
 
 /**
@@ -39,6 +42,9 @@ export function MobileChatTrigger({
     isReadOnly,
     isPending,
     onSend,
+    onRetry,
+    onDismiss,
+    uploadProgress,
 }: MobileChatTriggerProps) {
     const [open, setOpen] = useState(false);
 
@@ -103,6 +109,9 @@ export function MobileChatTrigger({
                             isReadOnly={isReadOnly}
                             isPending={isPending}
                             onSend={onSend}
+                            onRetry={onRetry}
+                            onDismiss={onDismiss}
+                            uploadProgress={uploadProgress}
                             bare
                         />
                     </div>

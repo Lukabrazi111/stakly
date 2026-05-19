@@ -1,6 +1,6 @@
 # Stakly Milestones
 
-Frontend-first MVP. Build UI against real DB infrastructure + seeded fake data; backend logic (escrow, payouts, on-chain integration) lands per page once the UI is validated.
+Frontend-first build. UI against real DB infrastructure + seeded fake data; backend logic (escrow, payouts, on-chain integration) lands per page once the UI is validated. Milestones are work-chunk labels, not version commitments — decisions inside any of them are revisitable.
 
 ## Phases (map)
 
@@ -14,20 +14,20 @@ Frontend-first MVP. Build UI against real DB infrastructure + seeded fake data; 
 - **M6** — Match Flow (mock) ✅
 - **M7** — Wallet UI ✅
 - **M11** — Controller Refactor to Actions Pattern ✅
-- **M8** — Match Chat + Linked Accounts **← in progress** (Phases 1–2 ✅; Phases 3, 4, 4b, 5 next)
+- **M8** — Match Chat + Linked Accounts **← in progress** (Phases 1–2 ✅; Phase 3 Slice 1 ✅; Phase 3 Slice 2, Phase 4, 4b, 5 next)
 - **M10** — Mutual Match Cancellation
 - **M12** — Filament admin panel + chat-driven dispute resolution
 - **M13** — Chat anti-abuse + moderation
-- **M14** — Automated outcome adapters (post-launch optimization)
-- **M9** — Chain Integration [deferred — pending crypto-payment-gateway specialist]
+- **M14** — Automated outcome adapters (volume-triggered optimization)
+- **M9** — Chain Integration [paused — pending crypto-payment-gateway specialist]
 
-> Only the active milestone keeps a detailed task list. Shipped milestones are one-paragraph summaries — the code is the source of truth for "how it works." Future milestones expand when started.
+> Only the active milestone keeps a detailed task list. Shipped milestones are one-paragraph summaries — the code is the source of truth for "how it works." Future milestones expand when started. Any of this can shift — flag the change, update the doc.
 
 ---
 
-## Locked architectural decisions
+## Architectural decisions
 
-These rules survive past their originating milestone and apply to all future work.
+Decisions made earlier that have shaped a lot of code downstream. Not locked — revisit if the situation changes, just expect a ripple of refactor when you do.
 
 - **Money writes only through `App\Services\Wallet`** (M3.5). `users.usdt_balance` and `wallet_transactions` are written ONLY by Wallet service methods. The invariant `users.usdt_balance == SUM(wallet_transactions.amount)` is asserted in `WalletTest.php`. Direct writes from controllers / seeders / migrations / factories / tinker break this.
 - **Money math is BCMath strings, never floats** (M3.5). Internal arithmetic at scale 6 via `bcadd` / `bcsub` / `bccomp`. Floats only appear at the API resource boundary.
@@ -37,7 +37,7 @@ These rules survive past their originating milestone and apply to all future wor
 - **`ManualReview` is admin-resolved out-of-band**, not in player chat (M6 Phase 7). Admin reads via Filament dashboard (M12); no admin-in-chat.
 - **Snapshot, don't link**, when a relationship needs to survive identity changes. Linked-account usernames are denormalized onto `game_matches` at match creation so a mid-match unlink doesn't break dispute resolution (M8).
 - **`is_platform = true` users are never user-facing** (M3.5 + M5). Filtered from profile show, wallet UI, listing pages.
-- **No chain code, no smart contracts in v1** (project-wide). Custodial via internal Postgres ledger; chain integration is M9, deferred to a specialist.
+- **No chain code or smart contracts right now** (project-wide). Custodial via internal Postgres ledger; chain integration is M9, paused for a specialist.
 
 ---
 
@@ -45,7 +45,7 @@ These rules survive past their originating milestone and apply to all future wor
 
 ### M1 — Design Foundation + Homepage ✅
 
-Stakly's dark + pink/purple gradient visual system shipped: design tokens, Bricolage + Inter fonts, gradient `Button` variant + `pill` size, `MarqueeStrip`, `SiteHeader`, `SiteFooter`, `SiteLayout`, `MobileMenu`. Homepage renders Hero (typography-only, no character art), `GameSelector` (chess + 8 "Soon" tiles), `HowItWorks`. **Locked**: dark-only design; Stakly-skin shadcn primitives at the source (`components/ui/<name>.tsx`), never per-usage; pink hover at `bg-primary/10`, focus ring at `ring-2 ring-primary/25`.
+Stakly's dark + pink/purple gradient visual system shipped: design tokens, Bricolage + Inter fonts, gradient `Button` variant + `pill` size, `MarqueeStrip`, `SiteHeader`, `SiteFooter`, `SiteLayout`, `MobileMenu`. Homepage renders Hero (typography-only, no character art), `GameSelector` (chess + 8 "Soon" tiles), `HowItWorks`. **Decisions**: dark-only design; Stakly-skin shadcn primitives at the source (`components/ui/<name>.tsx`), never per-usage; pink hover at `bg-primary/10`, focus ring at `ring-2 ring-primary/25`.
 
 ### M2 — Auth Flow ✅
 
@@ -57,7 +57,7 @@ Settings rendered inside `SiteLayout` with inline pill-tabs sub-nav (Profile / S
 
 ### M3 — Listings Index ✅
 
-Public marketplace `/listings`: filterable / sortable / paginated grid (12/page, server-controlled). Featured strip on `/` shows top 4 ending-soon. PII-safe `ListingResource`. Bybit-inspired filter bar + popover/sheet via `useIsMobile()`. Smart-ellipsis pagination with `Skeleton` loading rows. Game + currency registries in `config/`. **69 tests / 434 assertions.** **Locked**: project-wide URL contract via Spatie query-builder (`?filter[stake_max]=100&sort=ending_soon&page=2`); `$redirect = '/listings'` for graceful share-link UX; `lib/listings-query.ts` centralizes URL building.
+Public marketplace `/listings`: filterable / sortable / paginated grid (12/page, server-controlled). Featured strip on `/` shows top 4 ending-soon. PII-safe `ListingResource`. Bybit-inspired filter bar + popover/sheet via `useIsMobile()`. Smart-ellipsis pagination with `Skeleton` loading rows. Game + currency registries in `config/`. **69 tests / 434 assertions.** **Decisions**: project-wide URL contract via Spatie query-builder (`?filter[stake_max]=100&sort=ending_soon&page=2`); `$redirect = '/listings'` for graceful share-link UX; `lib/listings-query.ts` centralizes URL building.
 
 ### M3.5 — Wallet / Ledger Foundation ✅
 
@@ -65,11 +65,11 @@ Append-only Postgres ledger (`wallet_transactions`) is the source of truth for e
 
 ### M4 — Listing Detail + Create Flow ✅
 
-First end-to-end money flow. Public listing detail (`/listings/{id}`), auth-gated create form, owner-only cancel — wired to real `Wallet::hold` on create, `Wallet::release` on cancel, both transactional + idempotent. Multi-select `time_control` and `language` (jsonb + `AsEnumCollection` + `whereJsonContains`). Owner-only `App\Policies\ListingPolicy::cancel`. **110 tests / 655 assertions.** **Locked**: duration dropdown (not datetime picker); insufficient-balance validated twice (request + `Wallet::hold` exception); detail page renders for any status (no 404 on stale share links); stake precision pinned at `decimal:0,2`; hybrid build order (backend skeleton → frontend → backend hardening → tests).
+First end-to-end money flow. Public listing detail (`/listings/{id}`), auth-gated create form, owner-only cancel — wired to real `Wallet::hold` on create, `Wallet::release` on cancel, both transactional + idempotent. Multi-select `time_control` and `language` (jsonb + `AsEnumCollection` + `whereJsonContains`). Owner-only `App\Policies\ListingPolicy::cancel`. **110 tests / 655 assertions.** **Decisions**: duration dropdown (not datetime picker); insufficient-balance validated twice (request + `Wallet::hold` exception); detail page renders for any status (no 404 on stale share links); stake precision pinned at `decimal:0,2`; hybrid build order (backend skeleton → frontend → backend hardening → tests).
 
 ### M5 — User Profile ✅
 
-Public read-only profiles at `/users/{username}`. `username` + `bio` columns, `UserController` + `UserProfileResource` (whitelist, no PII), 5 profile components. Auto-generated usernames via `Str::slug($name)` + collision-safe suffix loop. Reserved-username list (`'user'` reserved). Strict ASCII Latin name validation. Profile entry points via two interior `<Link>`s on each listing row/card. **147 tests / 822 assertions.** **Locked**: `username` derived at registration, immutable in v1; `is_platform = true` users 404 on profile show.
+Public read-only profiles at `/users/{username}`. `username` + `bio` columns, `UserController` + `UserProfileResource` (whitelist, no PII), 5 profile components. Auto-generated usernames via `Str::slug($name)` + collision-safe suffix loop. Reserved-username list (`'user'` reserved). Strict ASCII Latin name validation. Profile entry points via two interior `<Link>`s on each listing row/card. **147 tests / 822 assertions.** **Decisions**: `username` derived at registration, immutable for now (revisit if there's a user need); `is_platform = true` users 404 on profile show.
 
 ### M6 — Match Flow (mock) ✅
 
@@ -91,15 +91,15 @@ Match.Disputed --[game-API can't determine]--> Match.ManualReview (terminal — 
 
 Phases 1–7 shipped: schema + policies, take + match creation, confirm UI + settlement + Inertia polling, mock game-API dispute path, listings/profile/wallet integration, listings management + Active Mode + scoped Player Hub sidebar, `Drawn` outcome, timeout resolver. **366 tests / 1969 assertions.**
 
-**Locked**: 10% platform fee (`config/stakly.php` `platform_fee_rate`); 4h confirmation timeout; 1:1 listing→match; participant-only match visibility; single-confirmer rule honors the claim (Won → confirmer wins, Lost → opponent wins, Drawn → game-API arbitrates); platform does NOT pocket stakes on no-show; `MatchSettlement` service deleted in M11 — settlement lives in `app/Actions/GameMatch/`.
+**Decisions**: 10% platform fee (`config/stakly.php` `platform_fee_rate`); 4h confirmation timeout; 1:1 listing→match; participant-only match visibility; single-confirmer rule honors the claim (Won → confirmer wins, Lost → opponent wins, Drawn → game-API arbitrates); platform does NOT pocket stakes on no-show; `MatchSettlement` service deleted in M11 — settlement lives in `app/Actions/GameMatch/`.
 
 ### M7 — Wallet UI ✅
 
-Four pages: `/wallet` (hero balance + 3 action cards + recent activity), `/wallet/deposit` (TRC20 mock address + QR + network warning), `/wallet/withdraw` (validating form, short-circuited POST), `/wallet/history` (filter chips + paginated rows). `BalanceChip` in `SiteHeader` desktop + inline balance in `MobileMenu`. `users.tron_address` (varchar 34 unique) generated at registration via `App\Support\MockTronAddress`. Semantic transaction colors. **193 tests / 1039 assertions.** **Locked**: multi-page (not tabbed); spendable balance only in UI (held derivable from ledger); mock TRC20 addresses until M9; withdrawal short-circuits with launch-gated toast (no ledger write); `abort_if($user->is_platform, 403)` on every wallet method.
+Four pages: `/wallet` (hero balance + 3 action cards + recent activity), `/wallet/deposit` (TRC20 mock address + QR + network warning), `/wallet/withdraw` (validating form, short-circuited POST), `/wallet/history` (filter chips + paginated rows). `BalanceChip` in `SiteHeader` desktop + inline balance in `MobileMenu`. `users.tron_address` (varchar 34 unique) generated at registration via `App\Support\MockTronAddress`. Semantic transaction colors. **193 tests / 1039 assertions.** **Decisions**: multi-page (not tabbed); spendable balance only in UI (held derivable from ledger); mock TRC20 addresses until M9; withdrawal short-circuits with launch-gated toast (no ledger write); `abort_if($user->is_platform, 403)` on every wallet method.
 
 ### M11 — Controller Refactor to Actions Pattern ✅ (shipped 2026-05-17)
 
-Business logic moved from controllers + commands into `app/Actions/<Domain>/` classes. `app/Actions/Listing/`: `Create`, `Cancel`, `Expire`. `app/Actions/GameMatch/`: `TakeListing`, `ConfirmOutcome`, `OpenDispute`, `SettleMatch`, `SettleDrawMatch`, `ResolveDispute`, `ResolveMatchTimeout`. Controllers + artisan commands shrink to thin HTTP/CLI adapters with method-injection. Old `App\Services\MatchSettlement` deleted. CLAUDE.md gained an "Actions pattern" subsection. **All 366 / 1969 tests still pass.** **Locked**: plain PHP classes, no package, no Repositories; `handle()` method; method-injection; Wallet + GameApi stay as primitives; pure queries (read-only index/show) stay in controllers.
+Business logic moved from controllers + commands into `app/Actions/<Domain>/` classes. `app/Actions/Listing/`: `Create`, `Cancel`, `Expire`. `app/Actions/GameMatch/`: `TakeListing`, `ConfirmOutcome`, `OpenDispute`, `SettleMatch`, `SettleDrawMatch`, `ResolveDispute`, `ResolveMatchTimeout`. Controllers + artisan commands shrink to thin HTTP/CLI adapters with method-injection. Old `App\Services\MatchSettlement` deleted. CLAUDE.md gained an "Actions pattern" subsection. **All 366 / 1969 tests still pass.** **Decisions**: plain PHP classes, no package, no Repositories; `handle()` method; method-injection; Wallet + GameApi stay as primitives; pure queries (read-only index/show) stay in controllers.
 
 ---
 
@@ -133,7 +133,7 @@ The API is no longer the primary truth source — it's a smart link-previewer in
 - [x] Throttle middleware on verify endpoint (`throttle:6,1`).
 - [x] Tests with `Http::fake()` for both providers (happy path, expired code, mismatched code, API 404, API 500, rate limit). 36 tests / 402 total / 2075 assertions.
 
-**Locked decisions** (Phase 1):
+**Decisions** (Phase 1):
 - **Bio-code target field**: chess.com `location` (public, free-text, rarely set by default — chess.com's public JSON exposes it). Lichess `profile.bio` (proper 400-char bio field). Switched from the original `name` (display name) plan during implementation: `name` is the player's identity in lobbies and live games, so clobbering it for a 15-min verification window is needlessly disruptive. `location` is equally verifiable via the public API but invisible-by-default to anyone not viewing the profile page. Users see "paste this code in your Location on chess.com" / "paste this code in your bio on Lichess."
 - **Both providers from Phase 1**. The shared flow + symmetric UI cost almost nothing to add the second provider. Players who play only on one platform aren't locked out.
 - **Verification is immutable until unlinked**. Re-verifying isn't required unless the user unlinks and relinks.
@@ -164,7 +164,7 @@ The API is no longer the primary truth source — it's a smart link-previewer in
 - [x] `MatchFaq` — 6 Stakly-specific Q&As via shadcn `Accordion` (Stakly-skinned at the source: dropped upstream `hover:underline` + `ring-[3px]`, swapped to text-color hover + `ring-2 ring-primary/25`, added `cursor-pointer`).
 - [x] `SettlementSummary` enriched: opponent's `@handle` shown inline next to name in loser-view subtitle.
 
-**Locked decisions** (Phase 2):
+**Decisions** (Phase 2):
 
 - **Reverb over Pusher**: free, Laravel-team built, Redis-backed, `.env` swap to Pusher possible if we hit scale issues.
 - **Private channel scope**: only the two match participants subscribe. Admin reads via Filament dashboard (M12), not via channel subscription.
@@ -179,16 +179,43 @@ The API is no longer the primary truth source — it's a smart link-previewer in
 
 **Test count after Phase 2**: 442 tests / 2186 assertions (up from 406 / 2090).
 
-**Phase 3 — File uploads + plain link cards** (~2-3 days)
+**Phase 3 Slice 1 — Image attachments** ✅ shipped 2026-05-19 (+ polish pass 2026-05-19: optimistic UI, paste-to-upload, image dimensions)
 
-- [ ] Storage: local disk for dev (`storage/app/public/match-attachments`) with S3-ready abstraction via Laravel's filesystem driver.
-- [ ] Upload route: `POST /matches/{match}/messages/attachment`, validates image-only (`mimetypes:image/jpeg,image/png,image/webp`), max 5MB.
+- [x] Spatie Media Library on `App\Models\Message` — `match-attachments` collection on the private `local` disk, ~400px contain-fit `thumb` conversion (`nonQueued`, `keepOriginalImageFormat`).
+- [x] `StoreMessageRequest` extended: `content` and `file` are mutually-optional (`required_without` pair) so image-only messages, caption-only messages, and image+caption all validate. File: `image`, `mimes:jpeg,jpg,png,webp`, `max:5120`.
+- [x] `SendMessageAction` accepts `?UploadedFile`, pre-processes via `Spatie\Image\Image::load()->save()` to strip EXIF on the original, attaches via `addMedia(...)->toMediaCollection(...)` inside the message-creation `DB::transaction`.
+- [x] Second sliding-window rate limit bucket — `chat-upload:{user_id}` at 5/30s, hit only when a file is present. Text bucket (`chat:{user_id}` at 10/10s) unchanged. Each attachment-bearing send hits both.
+- [x] Authenticated streaming route — `GET /matches/{match}/messages/{message}/attachments/{media}`, `?conversion=thumb` returns the preview, anything else returns the original. Re-checks `view` policy + scope (message belongs to match, media belongs to message). 404 on every miss. `Cache-Control: private, max-age=31536000, immutable` overridden post-`prepare()` because Symfony's `BinaryFileResponse` stamps `public` otherwise.
+- [x] `App\Support\MessageAttachmentsPayload::forMessage` — single source of truth for the `attachments` array shape consumed by `MessageResource` (initial load) and `MessageSent::broadcastWith` (live). Empty array when no attachments (never null) so the frontend type stays `ChatAttachment[]`.
+- [x] `messages.content` migration nullable — image-only messages need a null caption.
+- [x] React: paperclip file picker + drag-and-drop overlay on `ChatPanel`, preview strip with progress bar (Inertia `onProgress`), thumbnail in `ChatMessageBubble` opening shadcn `Dialog` lightbox on click.
+- [x] Tests: 14 new in `AttachmentUploadTest` (happy path, image-only, caption-only with file, validation rejects, status gate, upload rate limit, broadcast payload) + 10 in `AttachmentStreamingTest` (participant + non-participant + guest + unverified, cross-match / cross-message / nonexistent media, thumb conversion). 466 / 2250 (up from 442 / 2186).
+
+**Polish pass (same day):**
+
+- [x] **Optimistic UI**: `useMatchChat.send` injects a `pending: true` bubble immediately with a client-generated `correlation_id` (UUID); broadcast echoes the id back; on arrival, the pending bubble is replaced in place (preserving order). On error, the bubble flips to `failed: true` and renders inline Retry + Dismiss controls. The original `File` is held in a ref so retry can re-POST without asking the user to re-pick.
+- [x] **Paste-to-upload**: `onPaste` handler on the chat textarea — copying a screenshot and pressing Cmd/Ctrl+V queues the image straight into the file slot (no `<img>` data-URL fallback).
+- [x] **Image dimensions in payload**: `SendMessageAction` captures `width` / `height` via `Spatie\Image\Image` during the EXIF strip pre-process, persists as Media custom properties, surfaces through `MessageAttachmentsPayload`. The bubble sets `width` / `height` attributes on the `<img>` so the browser reserves the right box before bytes arrive — no scroll-shift when chat history loads.
+- [x] Tests: +4 (correlation echo round-trip, null when omitted, malformed rejected, dimensions in broadcast payload). 470 / 2258.
+
+**Decisions** (Phase 3 Slice 1):
+- **Single multipart endpoint, not two-endpoint.** Initial sketch called for `POST /messages/attachment` followed by `POST /messages` referencing the upload. Spatie's `addMedia` attaches to an existing model — a separate upload endpoint needs orphan-Media cleanup or temp-storage tokens, both extra moving parts. Browser-side `XMLHttpRequest.upload.onprogress` (which Inertia exposes via `onProgress`) gives the user upload-progress UI without needing the two-step flow.
+- **Spatie Media Library, not raw Storage.** Already installed since M3 (the `media` table came in with the M3 migration). Polymorphic relation, cascade-cleanup on `Message` delete, automatic conversions, disk abstraction (S3-ready by `MEDIA_DISK` env swap).
+- **Private `local` disk + authenticated streaming route, not public disk + UUID paths.** Files live at `storage/app/private/<model_id>/<uuid>.jpg` — not webserver-accessible. Every fetch passes the same `view` policy gate as the match page. The cost is one DB query per image view; the win is that a leaked URL out of the chat doesn't expose the image to outsiders. For a money platform whose chat is sometimes literal dispute evidence, the trade is right.
+- **EXIF stripped on upload** via `Spatie\Image\Image::load()->save()` re-encode before `addMedia`. Phone screenshots carry GPS / device / capture-time metadata; not useful to the opponent, real privacy attack surface. The thumbnail conversion strips again on its own re-encode, so both the inline preview and the lightbox original land EXIF-free.
+- **`attachments_json` reserved for non-binary metadata, Media for binaries.** Image entries come from Spatie Media; Slice 2 link cards (OG previews + Phase 4 verified-game cards) will populate `attachments_json`. `MessageAttachmentsPayload` composes both into a unified `attachments` array for the frontend.
+- **Two rate-limit buckets**: text 10/10s, upload 5/30s. Attachment-bearing sends consume both. Different orders of magnitude of server cost deserve different protections; alternating text + uploads doesn't bypass either limit.
+- **Empty content allowed when there's a file.** `messages.content` was made nullable; a screenshot-with-no-caption is a valid chat post.
+- **One attachment per message right now.** Multi-file batching is an easy follow-up if real usage calls for it; for the screenshot-in-dispute case, a series of single-image messages reads fine.
+
+**Phase 3 Slice 2 — Plain link cards** (~1-2 days, follow-up)
+
 - [ ] Link detection: regex in `SendMessageAction` finds URLs in message content, dispatches queued `FetchLinkMetadataJob`.
-- [ ] `FetchLinkMetadataJob`: fetches Open Graph `<title>` + `<image>` + canonical URL, caches result (1h TTL), updates message's `attachments_json`.
-- [ ] React: file picker in chat input; image render with lightbox in message list; link cards with OG preview.
+- [ ] `FetchLinkMetadataJob`: fetches Open Graph `<title>` + `<image>` + canonical URL, caches result (1h TTL), updates message's `attachments_json`. SSRF guard: deny private IP ranges, cap fetch size, hard timeout.
+- [ ] React: link card render in `ChatMessageBubble` reading from the `link`-typed entries in the unified `attachments` array.
 
-**Locked decisions** (Phase 3):
-- **Image-only uploads**: PDFs, videos, generic files are rejected. Screenshots are the only file type we want for v1. Videos hosted externally and posted as links.
+**Decisions** (Phase 3):
+- **Image-only uploads today**: PDFs, videos, and other files are rejected at the validation layer. Screenshots are the primary use case; videos can come in via Slice 2 link cards (YouTube/Streamable/etc.). If real users push for inline short video later, the Media Library setup absorbs it cheaply — add `video/mp4` to the accepted MIME list, lift the size cap, add a `<video>` branch in the bubble.
 - **5MB cap**: balances screenshot quality vs storage/bandwidth.
 - **OG fetch is queued**: don't block chat send waiting for `<title>` of pasted URL; render plain link card immediately, swap to enriched card when fetch completes.
 
@@ -196,7 +223,7 @@ The API is no longer the primary truth source — it's a smart link-previewer in
 
 The big payoff of having linked accounts: Lichess game URLs in chat become trusted evidence cards.
 
-- [ ] Schema additions: `creator_provider_username` + `taker_provider_username` on `game_matches` (snapshot at match creation — see "snapshot don't link" locked decision).
+- [ ] Schema additions: `creator_provider_username` + `taker_provider_username` on `game_matches` (snapshot at match creation — see "snapshot don't link" architectural decision).
 - [ ] Update `TakeListingAction`: populate snapshot from `match.taker->lichess_username` + `match.listing.user->lichess_username` if linked (mirror for chess.com when Phase 4b lands).
 - [ ] URL pattern detection in `SendMessageAction`: Lichess game URLs (`lichess.org/{8-char-id}` and longer-form export URLs).
 - [ ] Service: `LichessGameClient` calls `GET /api/game/{gameId}` (returns JSON with player usernames + result).
@@ -204,10 +231,10 @@ The big payoff of having linked accounts: Lichess game URLs in chat become trust
 - [ ] React: enriched card component shows winner + time control + game ID + "Verified via Lichess" green check.
 - [ ] Tests: verified happy path, mismatched usernames, game not found, API error.
 
-**Locked decisions** (Phase 4):
+**Decisions** (Phase 4):
 - **Lichess first**. Lichess has direct game-by-ID lookup (`GET /api/game/{id}`); chess.com requires archive paging + eventual-consistency retries. Building Lichess first shakes out the architecture on the easier API. chess.com enrichment follows in Phase 4b.
 - **Cross-check usernames against snapshot, not live link**. Even if a player unlinks mid-match, snapshot survives. Prevents "unlink to escape match" abuse.
-- **Verification is binary**: verified ✓ or not. We don't try to handle "verified but with caveat" in v1 — that's for chat-mediated discussion with admin.
+- **Verification is binary**: verified ✓ or not. We don't try to handle "verified but with caveat" — that's for chat-mediated discussion with admin.
 
 **Phase 4b — Smart link enrichment for chess.com** (~3-4 days, follow-up to Phase 4)
 
@@ -226,19 +253,19 @@ The big payoff of having linked accounts: Lichess game URLs in chat become trust
 - [ ] React: system message variant (visually distinct, no user attribution).
 - [ ] `/listings` filter chip: filter by platform (chess.com / Lichess).
 
-**Locked decisions** (Phase 5):
+**Decisions** (Phase 5):
 - **Linking is required to create or take listings.** Players without a verified account can't participate. This is a real UX gate — but without it, dispute resolution is impossible (admin has nothing to cross-check).
 - **Dispute evidence prompt is non-blocking**: players can dispute without submitting evidence — chat itself is the evidence record. The prompt nudges, doesn't gate.
 - **Platform column default `chess_com`**: existing seeded listings stay valid. New listings pick at creation.
 
-### Out of scope for M8
+### Not in M8
 
-- **Filament admin panel** — M12. Until M12 ships, disputes still resolve via the existing `MockGameApi` path. Chat is *additive* in M8, not replacing dispute resolution yet.
-- **chess.com smart link enrichment** — Phase 4b (post-Phase 4 follow-up; lands inside M8 or rolls to M12 depending on Lichess velocity).
-- **Auto-resolution without admin**: even with a verified evidence card, M12 admin clicks to confirm. M14 adds the auto-path when adapters are mature at scale.
+- **Filament admin panel** — M12. Until that lands, disputes still resolve via the existing `MockGameApi` path. Chat is *additive* in M8, not replacing dispute resolution yet.
+- **chess.com smart link enrichment** — Phase 4b (follow-up to Phase 4).
+- **Auto-resolution without admin** — M14, once adapters are battle-tested.
 - **Chat anti-abuse** (off-platform deal detection, rate limits beyond basic, report-user, blocked words) — M13.
-- **Voice / video chat** — v2 if ever.
-- **Read receipts, typing indicators, message reactions, edit/delete, mentions, DMs** — v2.
+- **Voice / video chat in-app** — not on the table; links to externally-hosted clips cover the use case via Slice 2.
+- **Read receipts, typing indicators, message reactions, edit/delete, mentions, DMs** — none of these today. Open if a real user pulls for one.
 
 ---
 
@@ -248,7 +275,7 @@ The fourth resolution path for a Pending match. Today a match has three exits: b
 
 The UX models Bybit's order-cancellation pattern: when one player requests cancellation, the other sees an inline accept/reject banner at the top of the match page. On accept the match transitions to `Cancelled`, both stakes are refunded via `Wallet::release`, and a system message in chat narrates the resolution.
 
-### Locked decisions (pre-design)
+### Decisions (pre-design)
 
 - **Pending only.** Once a match flips to `Disputed` (game-API has been invoked) or `Settled` (money's moved), cancellation is off the table. From those states the dispute / settlement path is the only exit.
 - **One open request at a time per match.** A second request before the first resolves is rejected at the controller with a toast: "There's already an open cancellation request."
@@ -287,7 +314,7 @@ The UX models Bybit's order-cancellation pattern: when one player requests cance
 - [ ] Pest coverage: happy path (request → accept), reject path, cooldown enforcement, double-request rejection, status guards (no-cancel from Settled / Disputed / ManualReview), wallet refunds + ledger conservation, broadcast events fired.
 - [ ] Wallet ledger conservation per cancelled match: `-A_stake + -B_stake + +A_release + +B_release = 0` (same as draw settlement).
 
-### Out of scope
+### Not in M10
 
 - **Unilateral cancellation** (one player cancels without consent). The only one-sided exit during Pending remains "open dispute" — the API decides.
 - **Partial refund / negotiated split.** Cancellation refunds both stakes equally; players who want to split unequally should play it out or dispute.
@@ -322,9 +349,9 @@ Pulled forward from "pre-launch gate" because chat-first dispute resolution requ
 - [ ] `MockGameApi` retained for the existing test suite (tests still call it via service binding); production binding switches to a null-driver that no-ops or to the real Lichess adapter once M14 lands.
 - [ ] Migration of the conceptual model: `Disputed` becomes "waiting for admin or API," `ManualReview` becomes the truly-irrecoverable terminal state (locked, money frozen pending refund-or-payout decision).
 
-### Out of scope for M12
+### Not in M12
 
-- Real-time admin notifications (email / push when new dispute opens) — Filament's default polling is fine for launch.
+- Real-time admin notifications (email / push when new dispute opens) — Filament's default polling is fine to start.
 - Bulk resolution actions — one match at a time.
 - Auto-resolution from M8 Phase 4 verified cards (admin still clicks to confirm). M14 adds the auto-path.
 
@@ -356,23 +383,23 @@ Chat is the highest-abuse-surface feature on the platform. M13 builds the polici
 
 ---
 
-## M14 — Automated outcome adapters (post-launch optimization)
+## M14 — Automated outcome adapters
 
 When dispute volume justifies automation, swap from "every dispute → admin reviews" to "supported-game disputes → API auto-resolves, falls through to admin only on Unknown."
 
 Builds on M8 Phase 4 / 4b (Lichess + chess.com link clients): the adapter is the same HTTP client, just invoked from `ResolveDisputeAction` instead of only from `SendMessageAction` link-paste detection. Result confidence maps to `MatchOutcome` (Won/Lost/Drawn) and `GameApiConfidence` (Confirmed → auto-settle, Drawn → auto-refund, Unknown → fall to admin).
 
-Order: Lichess adapter (extends `LichessGameClient` from M8 Phase 4), then chess.com (extends `ChessComGameClient` from M8 Phase 4b), then Dota 2 OpenDota (when Dota 2 listings are real).
+Order: Lichess adapter (extends `LichessGameClient` from M8 Phase 4), then chess.com (extends `ChessComGameClient` from M8 Phase 4b), then Dota 2 OpenDota (if/when Dota 2 listings are real).
 
-Trigger: deferred until M12 admin path is at scale and the volume justifies automation. Likely post-launch.
+Trigger: M12 admin path is in use and dispute volume justifies the engineering. Pull forward sooner if a class of disputes shows it'd be obviously easier to auto-resolve.
 
 ---
 
 ## M9 — Chain Integration
 
-**Deferred — pending crypto-payment-gateway specialist.**
+**Paused — pending crypto-payment-gateway specialist.**
 
-Real on-chain TRC20 USDT deposits and withdrawals. Provider, custody model, key management, gas strategy, and architecture all TBD — to be designed with a specialist developer joining the project later.
+Real on-chain TRC20 USDT deposits and withdrawals. Provider, custody model, key management, gas strategy, and architecture all TBD — to be designed with a specialist developer joining the project later. Resume when that person is on board, or sooner if the user decides to own this themselves.
 
 The platform layers below are deliberately provider-agnostic and won't change when chain integration lands:
 
@@ -384,24 +411,23 @@ Live questions for the specialist: **provider** (Tatum / Fireblocks / BitGo / Co
 
 ---
 
-## Pre-launch gate — Custody + Jurisdiction (BLOCKER)
+## Open questions before real money flows
 
-Real on-chain integration is gated by these blockers. **Do not proceed without explicit go-ahead.** Once Stakly accepts a single real deposit, it's operating a regulated money-handling business and the engineering becomes hard to unwind.
+Engineering can keep moving on everything else; these are the topics worth surfacing before Stakly accepts a real deposit. Legal/jurisdiction is user-owned and out of engineering scope, but flagged here for completeness.
 
-Required answers before mainnet wiring:
-1. **Custody model committed** — TBD with M9 specialist. Internal ledger is provider-agnostic.
-2. **Jurisdiction committed** — where Stakly is registered + license path (Curaçao / Malta / US state-by-state / testnet-only).
-3. **Chain + provider committed** — TRC20 (Tron USDT) chain remains v1. Provider TBD with specialist.
-4. **Key storage in production** — depends on custody model decision.
+1. **Custody model** — TBD with the chain specialist (M9). Internal ledger is provider-agnostic so this decision doesn't gate ledger work.
+2. **Jurisdiction** — where Stakly is registered + license path. User-owned.
+3. **Chain + provider** — TRC20 (Tron USDT) is the planned starting chain; provider TBD with specialist.
+4. **Key storage** — depends on custody model.
 5. **Incident response plan** — hot-wallet compromise procedure, user notification template, insurance.
-6. **Terms of Service + dispute resolution policy** drafted.
-7. **KYC/AML** — required? threshold? provider?
+6. **Terms of Service + dispute resolution policy.** User-owned.
+7. **KYC/AML** — required? threshold? provider? User-owned.
 
 > Stakly is **crypto-end-to-end** (USDT in, USDT out, USDT-denominated platform revenue). No fiat-banking touchpoint for users.
 
-### App-level hardening (deferred from dev)
+### Small follow-ups noticed in passing
 
-Small code-level cleanups noticed during M3–M4 development. Not blocking until first non-developer touches the platform.
+Tiny cleanups noticed during earlier work. Worth doing before non-developers touch the platform — not blocking any current slice.
 
-- **Platform user credentials.** Seeder currently creates `platform@stakly.internal` via the default `UserFactory` (`Hash::make('password')` + `email_verified_at = now()`). Pre-launch: override seeder to use `Hash::make(bin2hex(random_bytes(32)))` and set `email_verified_at = null`. Add `Fortify::authenticateUsing(...)` hook in `FortifyServiceProvider` that rejects `is_platform = true` users — defense in depth.
+- **Platform user credentials.** Seeder currently creates `platform@stakly.internal` via the default `UserFactory` (`Hash::make('password')` + `email_verified_at = now()`). Tighten: override seeder to use `Hash::make(bin2hex(random_bytes(32)))` and set `email_verified_at = null`. Add `Fortify::authenticateUsing(...)` hook in `FortifyServiceProvider` that rejects `is_platform = true` users — defense in depth.
 - **Marquee copy.** `resources/js/layouts/site-layout.tsx` `defaultMarqueeItems` currently has `STAKLY30 30% off` promo and other aspirational claims. Replace with honest copy before any user-facing surface.
