@@ -14,11 +14,12 @@ Frontend-first build. UI against real DB infrastructure + seeded fake data; back
 - **M6** — Match Flow (mock) ✅
 - **M7** — Wallet UI ✅
 - **M11** — Controller Refactor to Actions Pattern ✅
-- **M8** — Match Chat + Linked Accounts **← in progress** (Phases 1–2 ✅; Phase 3 Slice 1 ✅; Phase 3 Slice 2, Phase 4, 4b, 5 next)
+- **M8** — Match Chat + Linked Accounts **← in progress** (Phases 1–2 ✅; Phase 3 Slice 1 ✅; Phase 3 Slice 2 ✅; Phase 4, 4b, 5 next)
 - **M10** — Mutual Match Cancellation
 - **M12** — Filament admin panel + chat-driven dispute resolution
 - **M13** — Chat anti-abuse + moderation
 - **M14** — Automated outcome adapters (volume-triggered optimization)
+- **M15** — Multi-game expansion (FACEIT, OpenDota, Riot adapters)
 - **M9** — Chain Integration [paused — pending crypto-payment-gateway specialist]
 
 > Only the active milestone keeps a detailed task list. Shipped milestones are one-paragraph summaries — the code is the source of truth for "how it works." Future milestones expand when started. Any of this can shift — flag the change, update the doc.
@@ -38,6 +39,7 @@ Decisions made earlier that have shaped a lot of code downstream. Not locked —
 - **Snapshot, don't link**, when a relationship needs to survive identity changes. Linked-account usernames are denormalized onto `game_matches` at match creation so a mid-match unlink doesn't break dispute resolution (M8).
 - **`is_platform = true` users are never user-facing** (M3.5 + M5). Filtered from profile show, wallet UI, listing pages.
 - **No chain code or smart contracts right now** (project-wide). Custodial via internal Postgres ledger; chain integration is M9, paused for a specialist.
+- **Strongest anti-cheat per game** (M8 + M15). Stakly only takes stakes on matches played on the strongest available anti-cheat platform for the relevant game. The verification provider (who tells us the result) and the anti-cheat platform (where the match must be played) are conceptually separate — sometimes the same vendor (FACEIT for CS2, Riot for Valorant), sometimes different (Steam-ranked Dota 2 verified via OpenDota). Per-game adapter pattern via `LinkedAccountProvider` enum + `ProfileClient` interface + `listings.platform` column. Adding a new game = new enum cases + new clients + new platform value; no new architectural shape.
 
 ---
 
@@ -208,11 +210,23 @@ The API is no longer the primary truth source — it's a smart link-previewer in
 - **Empty content allowed when there's a file.** `messages.content` was made nullable; a screenshot-with-no-caption is a valid chat post.
 - **One attachment per message right now.** Multi-file batching is an easy follow-up if real usage calls for it; for the screenshot-in-dispute case, a series of single-image messages reads fine.
 
-**Phase 3 Slice 2 — Plain link cards** (~1-2 days, follow-up)
+**Phase 3 Slice 2 — Plain link cards** ✅ shipped 2026-05-19
 
-- [ ] Link detection: regex in `SendMessageAction` finds URLs in message content, dispatches queued `FetchLinkMetadataJob`.
-- [ ] `FetchLinkMetadataJob`: fetches Open Graph `<title>` + `<image>` + canonical URL, caches result (1h TTL), updates message's `attachments_json`. SSRF guard: deny private IP ranges, cap fetch size, hard timeout.
-- [ ] React: link card render in `ChatMessageBubble` reading from the `link`-typed entries in the unified `attachments` array.
+- [x] Link detection: `SendMessageAction::extractLinkUrls` finds http(s) URLs in content (trims trailing punctuation, dedups, caps at 5), passes through `SsrfGuard::isPlausiblySafe` pre-flight (no DNS on the request path), dispatches one `FetchLinkMetadataJob` per message.
+- [x] `App\Jobs\FetchLinkMetadataJob` (`ShouldQueueAfterCommit`, single try): per-URL `SsrfGuard::isUrlSafe` (DNS-resolved), oscarotero/embed extraction through `App\Support\SafeHttpClient` (PSR-18 wrapper around the library's CurlClient — disables curl-level redirects, walks the chain manually with per-hop SSRF check, strips Authorization/Cookie on cross-host hops, caps at 3 redirects), proxies OG images (separate manual-redirect Http fetch + size cap + MIME whitelist + Spatie\Image re-encode for EXIF strip) to `link-images/{sha256}.{ext}` on the private `local` disk, race-safe `lockForUpdate` append to `attachments_json`, re-broadcasts `MessageSent` so the bubble updates in place.
+- [x] `App\Http\Controllers\LinkImageController` + auth-gated `/link-images/{filename}` route. Filename regex `[a-f0-9]{64}\.(jpg|png|webp|gif)` rejects path traversal; `Cache-Control: private, max-age=31536000, immutable`.
+- [x] `MessageAttachmentsPayload::linkEntries` shapes the persisted `attachments_json` entries into the API contract (`type, url, canonical_url, title, description, site_name, image_url`); image URLs go through `route(..., absolute: false)` so worker-built broadcasts and request-built resource payloads stay in lockstep.
+- [x] `useMatchChat` dedup-by-id → **replace-by-id** so the re-broadcast (with link cards populated) swaps the bubble in place — no scroll, no reorder.
+- [x] React: `LinkCard` component in `ChatMessageBubble` — Slack/Discord-style unfurl, 64px square thumbnail left, title + description + site name right, whole-card anchor with `noopener noreferrer nofollow`, Stakly pink-glow hover.
+- [x] Tests: +55 (`SsrfGuardTest`, `LinkExtractionTest`, `LinkPreviewDispatchTest`, `FetchLinkMetadataJobTest`, `LinkImageStreamingTest`). 525 / 2338.
+
+**Decisions** (Phase 3 Slice 2):
+- **Proxy images, don't embed direct.** Mirrors Slice 1's auth-streamed pattern and matches what Slack / Discord / WhatsApp do — third-party hosts never see participant IPs, EXIF is stripped on re-encode, MIME is validated, size is capped. The cost is one new auth route + ~200KB cached per unique image.
+- **Any http(s) URL gets unfurled, not chess-domain allowlist.** SSRF is the real defense; an allowlist is belt-and-suspenders that limits the value of the feature (YouTube clip of a disputed game wouldn't get a card). General-purpose covers coordination + dispute-evidence both.
+- **Per-hop SSRF, not just initial URL.** Library defaults follow 10 curl-level redirects with SSL verify OFF. A malicious `https://shortener.com/x` → `http://169.254.169.254/...` chain would bypass an initial-URL check; the PSR-18 wrapper SSRF-checks every Location.
+- **Split `SsrfGuard::isPlausiblySafe` (no DNS, request-path) vs `isUrlSafe` (DNS-resolved, worker-path).** Doing DNS on the chat-send request would block message delivery on one resolver call per URL — moved to the queued worker, kept the cheap literal-IP-range check on the request path.
+- **Cache results by URL hash for 1h, not persistent.** Link previews are nice-to-have; if Redis flushes, the next paste re-fetches. No DB table for cache.
+- **Single try, fail silently.** Logged via `Log::info`; missing card is acceptable; throwing would put dead URLs at the head of the failed-jobs queue forever.
 
 **Decisions** (Phase 3):
 - **Image-only uploads today**: PDFs, videos, and other files are rejected at the validation layer. Screenshots are the primary use case; videos can come in via Slice 2 link cards (YouTube/Streamable/etc.). If real users push for inline short video later, the Media Library setup absorbs it cheaply — add `video/mp4` to the accepted MIME list, lift the size cap, add a `<video>` branch in the bubble.
@@ -387,11 +401,45 @@ Chat is the highest-abuse-surface feature on the platform. M13 builds the polici
 
 When dispute volume justifies automation, swap from "every dispute → admin reviews" to "supported-game disputes → API auto-resolves, falls through to admin only on Unknown."
 
-Builds on M8 Phase 4 / 4b (Lichess + chess.com link clients): the adapter is the same HTTP client, just invoked from `ResolveDisputeAction` instead of only from `SendMessageAction` link-paste detection. Result confidence maps to `MatchOutcome` (Won/Lost/Drawn) and `GameApiConfidence` (Confirmed → auto-settle, Drawn → auto-refund, Unknown → fall to admin).
-
-Order: Lichess adapter (extends `LichessGameClient` from M8 Phase 4), then chess.com (extends `ChessComGameClient` from M8 Phase 4b), then Dota 2 OpenDota (if/when Dota 2 listings are real).
+Builds on the per-game verification clients from M8 (chess.com / Lichess) and M15 (FACEIT / OpenDota / Riot): each adapter is the same HTTP client the chat link-card enrichment uses, just invoked from `ResolveDisputeAction` instead of only from `SendMessageAction` link-paste detection. Result confidence maps to `MatchOutcome` (Won/Lost/Drawn) and `GameApiConfidence` (Confirmed → auto-settle, Drawn → auto-refund, Unknown → fall to admin).
 
 Trigger: M12 admin path is in use and dispute volume justifies the engineering. Pull forward sooner if a class of disputes shows it'd be obviously easier to auto-resolve.
+
+---
+
+## M15 — Multi-game expansion
+
+The multi-game realization of M8's per-provider adapter pattern. Where M8 builds chess (chess.com + Lichess), M15 brings every other game Stakly eventually supports — each game arriving as its own adapter following the same shape. Phases intentionally left open; scope and ordering to be decided with the lead dev before any work starts.
+
+The trust pitch this milestone earns: **Stakly only takes stakes on matches played on the strongest available anti-cheat platform for that game.** Per-game catalog:
+
+| Game     | Played on (anti-cheat)                            | Verification API                                      |
+| -------- | ------------------------------------------------- | ----------------------------------------------------- |
+| Chess    | chess.com or Lichess (native fair-play detection) | chess.com / Lichess (shipped in M8)                   |
+| CS2      | FACEIT (FACEIT AC required)                       | FACEIT Data API                                       |
+| Dota 2   | FACEIT Hub or Steam ranked                        | FACEIT (if played there) or OpenDota (Steam matches)  |
+| Valorant | Ranked Valorant (Vanguard required)               | Riot Games API                                        |
+| LoL      | Ranked LoL (Vanguard rolling out)                 | Riot Games API                                        |
+
+Games without a usable anti-cheat platform AND a verification API (Fortnite, Apex, COD, FIFA, fighting games, mobile games) are out of scope until either changes — not because they're impossible, but because the trust pitch doesn't hold for them.
+
+**Architectural composition** — no new shapes are needed:
+
+- `LinkedAccountProvider` enum gains `Faceit`, `Riot`, possibly `Steam` (for the OpenDota / Steam-ranked Dota 2 path).
+- New `ProfileClient` implementations: `FaceitProfileClient`, `RiotProfileClient` (likely split per region), `SteamProfileClient`. Bio-code paste flow per provider where the platform exposes an editable profile field; OAuth where available (FACEIT and Riot both expose it — cleaner UX, requires app approval).
+- `Game` enum gains `Cs2`, `Dota2`, `Valorant`, `Lol`.
+- `listings.platform` (M8 Phase 5) expands its allowed values to include the new platforms.
+- New game-result clients (`FaceitGameClient`, `OpenDotaGameClient`, `RiotGameClient`) mirror M8's `LichessGameClient` / `ChessComGameClient` — first wired into chat link-card enrichment, later into the auto-resolver via M14.
+- Webhooks where the provider supports them (FACEIT match-completed, Riot match-end) reduce polling cost when M14 lands.
+
+**Cross-cutting smurf / sandbag defense** — FACEIT-class anti-cheat solves "no aimbots in CS2" but does not solve "experienced player hides behind a fresh account." That second threat is mitigated by Stakly's verified-rating system: bio-code linked accounts carry rating history; listings can require a minimum rating (`listings.skill_min`, already in the schema). Both layers need to be in place for the trust pitch to actually hold.
+
+### Not in M15
+
+- Auto-resolution from those adapters — that's M14, gated on volume.
+- Filament admin moderation surfaces for the new game types — covered by M12 once it lands.
+- Marketing / homepage copy for the anti-cheat trust pitch — separate from engineering scope; revisit alongside the existing marquee-copy cleanup.
+- Aggregator-as-a-service (PandaScore / Bayes / Abios) — considered and parked. Reconsider only if the per-game maintenance burden gets painful and revenue can absorb the monthly cost.
 
 ---
 
