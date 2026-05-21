@@ -34,7 +34,7 @@ const steps: Step[] = [
 
 export function HowItWorks() {
     return (
-        <section id="how-it-works" className="scroll-mt-20">
+        <section id="how-it-works" className="scroll-mt-28">
             <div className="mx-auto max-w-7xl px-4 py-20 md:py-28">
                 <div className="mx-auto max-w-2xl text-center">
                     <p className="text-muted-foreground mb-3 text-xs tracking-widest uppercase">

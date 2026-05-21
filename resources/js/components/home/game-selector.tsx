@@ -10,18 +10,32 @@ import {
     Target,
     Trophy,
 } from 'lucide-react';
-import { useState } from 'react';
 import { cn } from '@/lib/utils';
 
-interface Game {
-    id: string;
+// Tile ids — superset of the backend `Game` enum because the selector
+// shows "Coming soon" tiles for games that aren't wired up yet. Only
+// `chess` currently matches an `App\Enums\Game` case; the rest are
+// frontend-only placeholders until the corresponding backend support lands.
+export type GameTileId =
+    | 'chess'
+    | 'dota2'
+    | 'lol'
+    | 'cs2'
+    | 'valorant'
+    | 'apex'
+    | 'rocket-league'
+    | 'overwatch'
+    | 'fortnite';
+
+interface GameTile {
+    id: GameTileId;
     name: string;
     icon: LucideIcon;
     tint: string;
     comingSoon: boolean;
 }
 
-const games: Game[] = [
+export const GAME_TILES: readonly GameTile[] = [
     {
         id: 'chess',
         name: 'Chess',
@@ -85,10 +99,14 @@ const games: Game[] = [
         tint: 'from-violet-500/70 to-fuchsia-500/70',
         comingSoon: true,
     },
-];
+] as const;
 
-export function GameSelector() {
-    const [selectedId, setSelectedId] = useState('chess');
+interface Props {
+    selectedId: GameTileId;
+    onSelect: (id: GameTileId) => void;
+}
+
+export function GameSelector({ selectedId, onSelect }: Props) {
 
     return (
         <section className="relative">
@@ -108,11 +126,17 @@ export function GameSelector() {
                 </div>
 
                 <div
-                    className="-mx-4 flex snap-x snap-mandatory [scrollbar-width:none] gap-4 overflow-x-auto px-6 py-5 pb-6 [&::-webkit-scrollbar]:hidden"
+                    // Mobile: -mx-4 + px-6 lets the row bleed to the screen
+                    // edges so the partially-clipped next tile signals
+                    // "scroll right for more". Desktop: mx-0 + px-0 keeps
+                    // the row within the parent's px-4 column so the first
+                    // tile aligns horizontally with the section heading
+                    // and the FeaturedListings cards below.
+                    className="-mx-4 flex snap-x snap-mandatory [scrollbar-width:none] gap-4 overflow-x-auto px-6 py-5 pb-6 md:mx-0 md:px-0 [&::-webkit-scrollbar]:hidden"
                     role="listbox"
                     aria-label="Game selector"
                 >
-                    {games.map((game) => {
+                    {GAME_TILES.map((game) => {
                         const isSelected = game.id === selectedId;
                         const Icon = game.icon;
 
@@ -122,23 +146,29 @@ export function GameSelector() {
                                 type="button"
                                 role="option"
                                 aria-selected={isSelected}
-                                onClick={() => setSelectedId(game.id)}
+                                onClick={() => onSelect(game.id)}
                                 className={cn(
-                                    'group relative shrink-0 cursor-pointer snap-start overflow-hidden rounded-2xl border-2 transition duration-200 ease-out',
+                                    'group relative shrink-0 cursor-pointer snap-start overflow-hidden rounded-2xl border-2 bg-card transition duration-200 ease-out',
                                     'h-44 w-36 md:h-52 md:w-40',
                                     'focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none',
+                                    // Hover lift + glow apply universally — selected tiles
+                                    // get the same interactive feedback so the user knows
+                                    // the tile is still actionable (e.g. re-selecting to
+                                    // refresh the panel).
+                                    'hover:-translate-y-1 hover:shadow-glow-sm motion-reduce:hover:translate-y-0',
+                                    // Selected = ONLY the border color changes. No
+                                    // glow shadow, no lift at rest, no gradient
+                                    // brightness bump, no icon scale — keeps the
+                                    // selected state quiet and lets hover do the talking.
                                     isSelected
-                                        ? '-translate-y-1 border-glow motion-reduce:translate-y-0'
-                                        : 'border-border/60 bg-card hover:-translate-y-1 hover:border-primary/60 hover:shadow-glow-sm motion-reduce:hover:translate-y-0',
+                                        ? 'border-primary'
+                                        : 'border-border/60 hover:border-primary/60',
                                 )}
                             >
                                 <div
                                     className={cn(
-                                        'absolute inset-0 bg-gradient-to-br opacity-60 transition-opacity',
+                                        'absolute inset-0 bg-gradient-to-br opacity-60 transition-opacity group-hover:opacity-80',
                                         game.tint,
-                                        isSelected
-                                            ? 'opacity-90'
-                                            : 'group-hover:opacity-80',
                                     )}
                                 />
                                 <div className="absolute inset-0 bg-gradient-to-b from-background/10 via-background/40 to-background" />
@@ -151,10 +181,7 @@ export function GameSelector() {
 
                                 <div className="relative flex h-full flex-col items-center justify-end gap-2 p-4">
                                     <Icon
-                                        className={cn(
-                                            'size-10 text-foreground/90 transition-transform',
-                                            isSelected && 'scale-110',
-                                        )}
+                                        className="size-10 text-foreground/90"
                                         strokeWidth={1.5}
                                     />
                                     <span className="line-clamp-1 font-display text-sm font-bold tracking-tight text-foreground">
