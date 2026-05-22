@@ -48,6 +48,11 @@ class GameMatch extends Model
         'settled_at',
         'api_response',
         'api_resolved_at',
+        'cancelled_at',
+        'cancellation_requested_by',
+        'cancellation_requested_at',
+        'cancellation_rejected_at',
+        'cancellation_reason',
     ];
 
     protected function casts(): array
@@ -60,6 +65,9 @@ class GameMatch extends Model
             'settled_at' => 'datetime',
             'api_response' => 'array',
             'api_resolved_at' => 'datetime',
+            'cancelled_at' => 'datetime',
+            'cancellation_requested_at' => 'datetime',
+            'cancellation_rejected_at' => 'datetime',
         ];
     }
 

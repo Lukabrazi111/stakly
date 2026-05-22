@@ -6,7 +6,12 @@
 import type { GameId } from '@/config/games';
 import type { ListingPlatform, Paginator, TimeControl } from '@/types/listings';
 
-export type MatchStatus = 'pending' | 'disputed' | 'settled' | 'manual_review';
+export type MatchStatus =
+    | 'pending'
+    | 'disputed'
+    | 'settled'
+    | 'manual_review'
+    | 'cancelled';
 
 // `drawn` is a self-reported outcome submitted via the third button in
 // `ConfirmButtons`. Both players claiming `drawn` settles as a draw —

@@ -215,15 +215,21 @@ class SendMessageAction
 
     /**
      * Status guard. Chat is read-only after a match resolves — Settled
-     * (winner or draw refund) AND ManualReview both lock new sends. Disputed
-     * stays open because the chat is the evidence record. Pending is the
-     * default-open state.
+     * (winner or draw refund), ManualReview, AND Cancelled all lock new
+     * sends. Disputed stays open because the chat is the evidence record.
+     * Pending is the default-open state.
      */
     private function assertChatIsOpen(GameMatch $match): void
     {
-        if ($match->status === MatchStatus::Settled || $match->status === MatchStatus::ManualReview) {
+        $closedStatuses = [
+            MatchStatus::Settled,
+            MatchStatus::ManualReview,
+            MatchStatus::Cancelled,
+        ];
+
+        if (in_array($match->status, $closedStatuses, strict: true)) {
             throw ValidationException::withMessages([
-                'content' => __('This match is settled — chat is read-only.'),
+                'content' => __('This match has ended — chat is read-only.'),
             ]);
         }
     }

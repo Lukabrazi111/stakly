@@ -18,6 +18,14 @@ use App\Models\User;
 class GameMatchPolicy
 {
     /**
+     * Cooldown applied to a player after their cancellation request is
+     * rejected — prevents spam-cancel-request as a coercion tactic
+     * ("cancel or I'll keep asking"). 30 minutes is short enough that an
+     * honest follow-up request after fresh context still works.
+     */
+    private const CANCEL_REQUEST_COOLDOWN_MINUTES = 30;
+
+    /**
      * Only the two participants can view a match. Non-participants get a 404
      * at the controller layer (not 403) to avoid leaking match existence.
      */
@@ -44,6 +52,55 @@ class GameMatchPolicy
     {
         return $this->isParticipant($user, $match)
             && $match->status === MatchStatus::Pending;
+    }
+
+    /**
+     * Only participants can request mutual cancellation, and only while
+     * Pending. Additionally blocks if:
+     *
+     *   - An open request already exists on the match (one in flight at a
+     *     time — second request gets a "there's already a request open"
+     *     toast at the controller).
+     *   - THIS user previously requested and got rejected within the last
+     *     30 minutes (per-user cooldown — Bob being rejected doesn't gate
+     *     Alice from requesting).
+     */
+    public function requestCancellation(User $user, GameMatch $match): bool
+    {
+        if (! $this->isParticipant($user, $match)) {
+            return false;
+        }
+
+        if ($match->status !== MatchStatus::Pending) {
+            return false;
+        }
+
+        if ($match->cancellation_requested_at !== null) {
+            return false;
+        }
+
+        return ! $this->isInCooldown($user, $match);
+    }
+
+    /**
+     * Per-user cooldown check. Returns true iff this user previously
+     * requested cancellation and the rejection timestamp is still inside
+     * the cooldown window. A different user being mid-cooldown does not
+     * affect this user (cooldown is keyed on `cancellation_requested_by`).
+     */
+    private function isInCooldown(User $user, GameMatch $match): bool
+    {
+        if ($match->cancellation_requested_by !== $user->id) {
+            return false;
+        }
+
+        if ($match->cancellation_rejected_at === null) {
+            return false;
+        }
+
+        return $match->cancellation_rejected_at
+            ->addMinutes(self::CANCEL_REQUEST_COOLDOWN_MINUTES)
+            ->isFuture();
     }
 
     /**

@@ -70,4 +70,47 @@ class GameMatchFactory extends Factory
             'dispute_opened_at' => now(),
         ]);
     }
+
+    /**
+     * Terminal Cancelled state — both stakes refunded out-of-band by
+     * `AcceptCancellationAction` in real flow. Factory sets the columns
+     * mechanically; tests that need a real ledger should drive the Action
+     * instead.
+     */
+    public function cancelled(?User $requester = null): static
+    {
+        return $this->state(fn () => [
+            'status' => MatchStatus::Cancelled,
+            'cancelled_at' => now(),
+            'cancellation_requested_by' => $requester?->id ?? User::factory(),
+            'cancellation_requested_at' => now(),
+        ]);
+    }
+
+    /**
+     * Pending match with an open cancellation request from `$requester`.
+     * Use for testing the accept/reject paths without driving the full
+     * request Action.
+     */
+    public function withCancellationRequest(User $requester, ?string $reason = null): static
+    {
+        return $this->state(fn () => [
+            'cancellation_requested_by' => $requester->id,
+            'cancellation_requested_at' => now(),
+            'cancellation_reason' => $reason,
+        ]);
+    }
+
+    /**
+     * Pending match where `$requester` previously requested cancellation
+     * and was rejected `$ago` minutes ago. Use for cooldown tests.
+     */
+    public function withRejectedCancellation(User $requester, int $minutesAgo = 5): static
+    {
+        return $this->state(fn () => [
+            'cancellation_requested_by' => $requester->id,
+            'cancellation_requested_at' => null,
+            'cancellation_rejected_at' => now()->subMinutes($minutesAgo),
+        ]);
+    }
 }

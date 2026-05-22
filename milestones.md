@@ -14,9 +14,9 @@ Frontend-first build. UI against real DB infrastructure + seeded fake data; back
 - **M6** — Match Flow (mock) ✅
 - **M7** — Wallet UI ✅
 - **M11** — Controller Refactor to Actions Pattern ✅
-- **M8** — Match Chat + Linked Accounts **← in progress** (Phases 1–2 ✅; Phase 3 Slice 1+2 ✅; Phase 4 + 4b ✅; Phase 5 Slice A+B ✅; **Phase 5 Slice C** next)
+- **M8** — Match Chat + Linked Accounts ✅ (all phases shipped — Phase 5 Slice C closed it out 2026-05-22)
 - **M14 Slice A** — `ChessGameApi` card arbitration ✅ (pulled forward from full M14)
-- **M10** — Mutual Match Cancellation
+- **M10** — Mutual Match Cancellation **← next**
 - **M12** — Filament admin panel + chat-driven dispute resolution
 - **M13** — Chat anti-abuse + moderation
 - **M14** — Automated outcome adapters (volume-triggered optimization; Slice A shipped)
@@ -89,6 +89,8 @@ Match.Pending --[both confirm different]--> Match.Disputed
 Match.Pending --[one confirms, 4h passes]--> Match.Settled (claim honored)
 Match.Pending --[neither confirms, 4h passes]--> Match.Disputed
 Match.Pending --[either opens dispute]--> Match.Disputed
+Match.Pending --[one requests cancel, opponent accepts]--> Match.Cancelled (refund both, no fee — M10)
+Match.Pending --[one requests cancel, opponent rejects]--> Match.Pending (30min cooldown on requester — M10)
 Match.Disputed --[game-API returns winner]--> Match.Settled
 Match.Disputed --[game-API can't determine]--> Match.ManualReview (terminal — admin resolves out-of-band)
 ```
@@ -107,7 +109,7 @@ Business logic moved from controllers + commands into `app/Actions/<Domain>/` cl
 
 ---
 
-## M8 — Match Chat + Linked Accounts **← in progress**
+## M8 — Match Chat + Linked Accounts ✅
 
 The architectural keystone for multi-game support. Stakly is multi-game by vision (chess now, Dota 2 / CS2 / others later). API-only outcome verification locks us to games with good APIs. **Chat with structured dispute evidence works universally** — admin reads chat + uploaded evidence and decides, with API verification appearing as an *enriched evidence card* when a player pastes a supported game URL. Linked accounts power both the chat enrichment (M8 Phase 4 + 4b) and the eventual full automated adapters (M14).
 
@@ -208,22 +210,21 @@ Frontend: create form picker (shown when user has multiple linked providers; aut
 - **Permissive gate (Slice A) was a stepping stone**, immediately superseded by platform-specific. The two-slice approach kept the diff understandable.
 - **Default to `chess_com`** for the column. Pre-existing seeded listings stay valid (default value). Fresh listings pick at creation.
 
-**Phase 5 Slice C — Manual dispute opening + match-page closeout** (~1 day, pending)
+**Phase 5 Slice C — Match-page dispute UX polish** ✅ shipped 2026-05-22
 
-Match-page polish slice closing the dispute UX. Today's only path to `Disputed` is the auto-dispute when both players confirm Won — a player who suspects cheating or whose opponent disappeared has no UI to flag it. Adds a "Report a problem" button (manual dispute open), a chat prompt explaining what evidence to submit, and a small capability indicator on the happy path.
+The existing `OpenDisputeButton` + `OpenDisputeAction` (already wired in M11) re-skinned with mild Bybit-style entry copy: trigger now reads "Report a problem"; confirmation modal sharpens to "An admin will review and decide who gets the pot." Gate widened to always-visible during `Pending` (was previously gated on at least one confirm) so ghosting and pre-play cheating concerns can be reported symmetrically with confirm-disagreement.
 
-- [ ] **"Report a problem" button** on the match page when match is `Pending`. Hidden in `Settled` / `Disputed` / `ManualReview`. Confirmation modal (shadcn `AlertDialog`) with strong language: "Are you sure? An admin will review and decide who gets the pot."
-- [ ] **`OpenDisputeAction` extended** — audit the existing M11 Action. Add participant + `Pending`-status gate, idempotent re-run, post the dispute prompt system message. New `POST /matches/{match}/report` controller endpoint + policy method (`GameMatchPolicy::report`).
-- [ ] **Dispute prompt system message** — posted on entering `Disputed` from either path: manual report-a-problem OR auto-dispute (`ConfirmOutcomeAction::resolveBothConfirmed`, which already posts a conflict-narration message — the prompt adds the call-to-action). Copy: "Submit evidence in chat — screenshot, game URL, or PGN. An admin will review."
-- [ ] **React system message variant** — dispute-toned border + warning icon. Detection via a new `{type: 'dispute_prompt'}` attachment entry on the system message (mirrors how `game_card` attachments differentiate Phase 4 cards).
-- [ ] **Match page capability indicator** — small badge near `MatchInfoCard`: "Outcome auto-verifies via Lichess" / "Outcome auto-verifies via chess.com" depending on `listing.platform`. Copy is now legitimately accurate since `ChessGameApi` reads chess cards.
+`ResolveDisputeAction::flipToManualReview` (extracted helper) posts a second system message after the existing "Game API could not determine a winner…" narration: "Submit evidence in chat — screenshot, game URL, or PGN. An admin will review." The follow-up carries a `{type: 'dispute_prompt'}` attachment marker (shipped through `MessageAttachmentsPayload::disputePromptEntries`) which the React `SystemBubble` reads to render a warning-toned variant (warning border + `TriangleAlert` icon) instead of the default muted `Megaphone` treatment. Single insertion point in `ResolveDispute` covers both manual `OpenDisputeAction` and auto-dispute (`ConfirmOutcomeAction::resolveBothConfirmed`) paths since both flow through it.
+
+`MatchInfoCard` gains a "Verification" row: `ShieldCheck` icon + "Auto via Lichess" / "Auto via chess.com" depending on `listing.platform`. Required adding `platform` to the listing column projection in `GameMatchController` + `UserController` (otherwise the `select` drops it and the resource crashes) and surfacing it through `GameMatchResource` + new `MatchListing.platform` TS field.
 
 **Decisions**:
 
-- **"Report a problem", not "Open dispute"**. Bybit-style mild wording at the entry point avoids escalating tone before the user has actually decided. The confirmation modal uses stronger language ("An admin will review and decide who gets the pot") since the user is past the soft-prompt point.
-- **Pending-only for the first cut**. Once a match is `Settled` the button is hidden. Re-opening a settled match means clawing back funds from the winner — operationally heavier, not built until we see real "I clicked Lost by mistake" or "I never got the notification" cases.
-- **No `/listings` platform filter chip** (dropped from original Slice C scope). Keeping mixed Lichess + chess.com listings visible — with disabled "Link {platform} to take" CTAs on listings the user can't take — converts unlinked users into linked accounts. Hiding the listings hides the link-acquisition prompt.
-- **Same dispute prompt on both manual and auto-dispute paths**. The conflict-narration message ("Players' confirmations conflict. Resolving via the game record.") explains the past; the prompt explains the future. Even if `ChessGameApi` settles the auto-dispute seconds later, the prompt is harmless and useful as dispute-log context if the case falls through to `ManualReview`.
+- **"Report a problem", not "Open dispute"**. Bybit-style mild wording avoids escalating tone at the entry point. The confirmation modal uses stronger language since the user is past the soft-prompt point.
+- **Pending-only for the first cut**. Once a match is `Settled` the button is hidden. Post-settle disputes mean clawing back from a winner who may have already withdrawn — operationally heavier, deferred until M12 ships an admin panel that can resolve them. The full retrospective path is a Bybit-style 24h cooling-off where settled payouts aren't withdrawable for ~24h and either party can dispute → `ManualReview` without clawback (money was never spendable in the window). The Pending button covers the *acute* case (catch problems before money moves); cooling-off is the *retrospective* case for M12.
+- **Always-visible during `Pending`** (was gated on confirm). Covers "we disagree," "opponent ghosted," and "I think they cheated" symmetrically. Spurious reports cost nothing — `ResolveDispute` → API → `Unknown` → `ManualReview`; admin reviews, no money moves prematurely.
+- **Evidence prompt fires on `ManualReview` entry, not every `Disputed` flip**. If `ChessGameApi` resolves the dispute within seconds (the typical happy path on chess), an earlier "submit evidence" prompt would be contradictory — match settles via the API anyway. Gating on `ManualReview` keeps the prompt always action-relevant.
+- **No `/listings` platform filter chip** (dropped from the original Slice C scope). Keeping mixed Lichess + chess.com listings visible — with disabled "Link {platform} to take" CTAs on listings the user can't take — converts unlinked users into linked accounts. Hiding the listings hides the link-acquisition prompt.
 
 ### Not in M8
 

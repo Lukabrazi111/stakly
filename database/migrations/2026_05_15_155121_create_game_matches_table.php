@@ -10,9 +10,11 @@ return new class extends Migration
      * Match between two players for a single Taken listing. 1:1 with the
      * listing — enforced at the DB level via UNIQUE on `listing_id`.
      *
-     * State machine (full diagram in milestones.md M6):
+     * State machine (full diagram in milestones.md M6 + M10):
      *   Pending → Settled (both confirm same winner, or one confirms + 4h timeout)
      *   Pending → Disputed (mismatch, dispute opened, or 4h timeout with no confirmations)
+     *   Pending → Cancelled (one player requests cancellation, the other accepts —
+     *                        both stakes refunded, no fee)
      *   Disputed → Settled (game-API returned a winner)
      *   Disputed → ManualReview (game-API couldn't determine — terminal, admin
      *                            resolves manually post-launch)
@@ -74,6 +76,31 @@ return new class extends Migration
             // ManualReview matches and for debugging disputed settlements.
             $table->jsonb('api_response')->nullable();
             $table->timestamp('api_resolved_at')->nullable();
+
+            // Cancellation metadata (M10 — mutual match cancellation).
+            //
+            //   No request:      all cols null.
+            //   Open request:    cancellation_requested_by + ..._requested_at set;
+            //                    others null.
+            //   Rejected:        cancellation_requested_by (the rejected requester,
+            //                    kept for cooldown enforcement) + ..._rejected_at
+            //                    set; ..._requested_at + ..._reason cleared.
+            //   Cancelled:       cancelled_at set; status → Cancelled; request cols
+            //                    preserved as historical audit trail.
+            //
+            // 30-min cooldown after rejection: the same user can't re-request
+            // until `cancellation_rejected_at + 30 minutes < now`. Enforced
+            // in `GameMatchPolicy::requestCancellation`. Request expires
+            // alongside the match's 4h confirmation window — the regular
+            // timeout resolver runs if neither side responds in time.
+            $table->timestamp('cancelled_at')->nullable();
+            $table->foreignId('cancellation_requested_by')
+                ->nullable()
+                ->constrained('users')
+                ->nullOnDelete();
+            $table->timestamp('cancellation_requested_at')->nullable();
+            $table->timestamp('cancellation_rejected_at')->nullable();
+            $table->string('cancellation_reason', 200)->nullable();
 
             $table->timestamps();
 

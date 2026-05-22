@@ -165,3 +165,74 @@ test('non-participant cannot open dispute even on Pending', function () {
 
     expect($stranger->can('openDispute', $match))->toBeFalse();
 });
+
+// ─── Policy: requestCancellation (Pending + no open + past cooldown) ────────
+
+test('participant can request cancellation on a fresh Pending match', function () {
+    $match = GameMatch::factory()->create();
+
+    expect($match->taker->can('requestCancellation', $match))->toBeTrue()
+        ->and($match->listing->user->can('requestCancellation', $match))->toBeTrue();
+});
+
+test('participant cannot request cancellation on non-Pending', function (string $factoryState) {
+    $match = GameMatch::factory()->{$factoryState}()->create();
+
+    expect($match->taker->can('requestCancellation', $match))->toBeFalse()
+        ->and($match->listing->user->can('requestCancellation', $match))->toBeFalse();
+})->with(['disputed', 'settled', 'manualReview', 'cancelled']);
+
+test('non-participant cannot request cancellation even on Pending', function () {
+    $match = GameMatch::factory()->create();
+    $stranger = User::factory()->create();
+
+    expect($stranger->can('requestCancellation', $match))->toBeFalse();
+});
+
+test('cannot request cancellation when an open request already exists', function () {
+    $match = GameMatch::factory()->create();
+    $match = $match->fresh();  // reload to bind taker relation
+    $match->update([
+        'cancellation_requested_by' => $match->taker_user_id,
+        'cancellation_requested_at' => now(),
+    ]);
+
+    expect($match->fresh()->taker->can('requestCancellation', $match->fresh()))->toBeFalse()
+        ->and($match->fresh()->listing->user->can('requestCancellation', $match->fresh()))->toBeFalse();
+});
+
+test('requester is in cooldown for 30 min after their request is rejected', function () {
+    $match = GameMatch::factory()->create();
+    // Simulate a rejected request from the taker 10 min ago — still inside cooldown.
+    $match->update([
+        'cancellation_requested_by' => $match->taker_user_id,
+        'cancellation_requested_at' => null,
+        'cancellation_rejected_at' => now()->subMinutes(10),
+    ]);
+
+    expect($match->fresh()->taker->can('requestCancellation', $match->fresh()))->toBeFalse();
+});
+
+test('requester can re-request after cooldown expires (31 min)', function () {
+    $match = GameMatch::factory()->create();
+    $match->update([
+        'cancellation_requested_by' => $match->taker_user_id,
+        'cancellation_requested_at' => null,
+        'cancellation_rejected_at' => now()->subMinutes(31),
+    ]);
+
+    expect($match->fresh()->taker->can('requestCancellation', $match->fresh()))->toBeTrue();
+});
+
+test('cooldown is per-user — the OTHER participant can request immediately after a rejection', function () {
+    $match = GameMatch::factory()->create();
+    // Taker was rejected 5 min ago; creator should still be free to request.
+    $match->update([
+        'cancellation_requested_by' => $match->taker_user_id,
+        'cancellation_requested_at' => null,
+        'cancellation_rejected_at' => now()->subMinutes(5),
+    ]);
+
+    $creator = $match->fresh()->listing->user;
+    expect($creator->can('requestCancellation', $match->fresh()))->toBeTrue();
+});

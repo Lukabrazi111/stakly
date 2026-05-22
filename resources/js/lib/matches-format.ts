@@ -11,6 +11,7 @@ export const matchStatusLabel: Record<MatchStatus, string> = {
     disputed: 'Disputed',
     settled: 'Settled',
     manual_review: 'Manual review',
+    cancelled: 'Cancelled',
 };
 
 /**
@@ -22,6 +23,7 @@ export const matchStatusTone: Record<MatchStatus, string> = {
     disputed: 'border-destructive/40 bg-destructive/10 text-destructive',
     settled: 'border-success/40 bg-success/10 text-success',
     manual_review: 'border-muted-foreground/40 bg-muted text-muted-foreground',
+    cancelled: 'border-muted-foreground/40 bg-muted text-muted-foreground',
 };
 
 /**

@@ -20,6 +20,7 @@ const STATUS_LABEL: Record<MatchStatus, string> = {
     disputed: 'Disputed — under review',
     settled: 'Settled',
     manual_review: 'Manual review',
+    cancelled: 'Cancelled — stakes refunded',
 };
 
 const STATUS_TONE: Record<MatchStatus, string> = {
@@ -27,6 +28,7 @@ const STATUS_TONE: Record<MatchStatus, string> = {
     disputed: 'border-destructive/40 bg-destructive/10 text-destructive',
     settled: 'border-success/40 bg-success/10 text-success',
     manual_review: 'border-muted-foreground/40 bg-muted text-muted-foreground',
+    cancelled: 'border-muted-foreground/40 bg-muted text-muted-foreground',
 };
 
 export default function MatchShow({ match, messages }: MatchShowProps) {
@@ -40,7 +42,9 @@ export default function MatchShow({ match, messages }: MatchShowProps) {
     // injection so the sender sees their own bubble immediately.
     const chat = useMatchChat(match.id, messages.data, auth.user?.id ?? null);
     const chatIsReadOnly =
-        match.status === 'settled' || match.status === 'manual_review';
+        match.status === 'settled' ||
+        match.status === 'manual_review' ||
+        match.status === 'cancelled';
 
     const isCreator = auth.user?.id === match.creator.id;
     const opponent = isCreator ? match.taker : match.creator;
