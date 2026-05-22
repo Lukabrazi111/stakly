@@ -3,10 +3,12 @@
 namespace App\Actions\GameMatch;
 
 use App\Actions\Message\PostSystemMessageAction;
+use App\Enums\LinkedAccountProvider;
 use App\Enums\ListingStatus;
 use App\Enums\MatchStatus;
 use App\Models\GameMatch;
 use App\Models\Listing;
+use App\Models\MatchProviderSnapshot;
 use App\Models\User;
 use App\Services\Wallet;
 use Illuminate\Support\Facades\DB;
@@ -120,10 +122,70 @@ class TakeListingAction
 
     private function createMatch(Listing $listing, User $taker): GameMatch
     {
-        return GameMatch::create([
+        $match = GameMatch::create([
             'listing_id' => $listing->id,
             'taker_user_id' => $taker->id,
             'status' => MatchStatus::Pending,
         ]);
+
+        $this->snapshotProviderAccounts($match, $listing->user, $taker);
+
+        return $match;
+    }
+
+    /**
+     * One `match_provider_snapshots` row per (side, provider) where the
+     * player has a verified link. Mid-match unlinks can't strip these —
+     * smart-link enrichment (M8 Phase 4) cross-checks against the snapshot,
+     * not against the live user record. Unverified-but-set columns on the
+     * user (e.g. left over from a never-completed verification flow) are
+     * deliberately skipped: an unverified handle can't anchor an evidence
+     * card.
+     *
+     * Batch insert via the model query builder so all rows land in a single
+     * SQL statement. Timestamps are set explicitly because `insert()`
+     * bypasses Eloquent's auto-timestamping. The outer `DB::transaction` in
+     * `handle()` covers atomicity — a failed insert here rolls back the
+     * match + escrow hold + listing flip.
+     */
+    private function snapshotProviderAccounts(GameMatch $match, User $creator, User $taker): void
+    {
+        $rows = [];
+        $now = now();
+
+        foreach ([GameMatch::SIDE_CREATOR => $creator, GameMatch::SIDE_TAKER => $taker] as $side => $user) {
+            foreach (LinkedAccountProvider::cases() as $provider) {
+                $username = $this->verifiedUsername($user, $provider);
+
+                if ($username === null) {
+                    continue;
+                }
+
+                $rows[] = [
+                    'match_id' => $match->id,
+                    'side' => $side,
+                    'provider' => $provider->value,
+                    'username' => $username,
+                    'created_at' => $now,
+                    'updated_at' => $now,
+                ];
+            }
+        }
+
+        if (count($rows) > 0) {
+            MatchProviderSnapshot::insert($rows);
+        }
+    }
+
+    private function verifiedUsername(User $user, LinkedAccountProvider $provider): ?string
+    {
+        $key = $provider->value;
+        $verifiedAt = $user->{"{$key}_verified_at"};
+
+        if ($verifiedAt === null) {
+            return null;
+        }
+
+        return $user->{"{$key}_username"};
     }
 }

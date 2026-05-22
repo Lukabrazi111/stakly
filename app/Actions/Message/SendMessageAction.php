@@ -5,6 +5,7 @@ namespace App\Actions\Message;
 use App\Enums\MatchStatus;
 use App\Enums\MessageType;
 use App\Events\MessageSent;
+use App\Jobs\FetchLichessGameMetadataJob;
 use App\Jobs\FetchLinkMetadataJob;
 use App\Models\GameMatch;
 use App\Models\Message;
@@ -105,22 +106,59 @@ class SendMessageAction
             // broadcast event echoes it back in the payload.
             MessageSent::dispatch($message, $correlationId);
 
-            // Phase 3 Slice 2 — queue OG metadata extraction for any URLs
-            // in the content. The job runs after this transaction commits
-            // (ShouldDispatchAfterCommit) so it sees the inserted row;
-            // when it eventually appends link cards to attachments_json it
-            // re-dispatches MessageSent so the frontend can swap the
-            // plain-link bubble for the enriched one in place.
+            // Phase 3 Slice 2 + Phase 4 paste path — queue URL enrichment.
+            // Lichess game URLs branch to FetchLichessGameMetadataJob
+            // (verified evidence card with snapshot cross-check). Everything
+            // else stays on the generic OG fetcher. A single message can
+            // dispatch BOTH job types if it carries a mix.
+            //
+            // Each job runs ShouldQueueAfterCommit so it sees the inserted
+            // row; on success each re-dispatches MessageSent so the frontend
+            // can swap the plain-link bubble for the enriched one in place.
             if ($content !== null) {
-                $urls = self::extractLinkUrls($content);
-
-                if (count($urls) > 0) {
-                    FetchLinkMetadataJob::dispatch($message, $urls);
-                }
+                $this->dispatchUrlEnrichmentJobs($message, $content);
             }
 
             return $message;
         });
+    }
+
+    /**
+     * Partition the URLs in $content into (Lichess game URLs → verified
+     * card pipeline) vs (everything else → generic OG fetcher), then
+     * dispatch each pipeline if it has work.
+     */
+    private function dispatchUrlEnrichmentJobs(Message $message, string $content): void
+    {
+        $urls = self::extractLinkUrls($content);
+
+        if (count($urls) === 0) {
+            return;
+        }
+
+        $lichessGameIds = [];
+        $otherUrls = [];
+
+        foreach ($urls as $url) {
+            $gameId = self::extractLichessGameId($url);
+
+            if ($gameId !== null) {
+                $lichessGameIds[] = $gameId;
+            } else {
+                $otherUrls[] = $url;
+            }
+        }
+
+        if (count($otherUrls) > 0) {
+            FetchLinkMetadataJob::dispatch($message, $otherUrls);
+        }
+
+        // One job per game ID — paste path is one-card-per-game, and the
+        // outer URL list is already capped at MAX_URLS_PER_MESSAGE so the
+        // fan-out is bounded.
+        foreach (array_unique($lichessGameIds) as $gameId) {
+            FetchLichessGameMetadataJob::dispatch($message, $gameId);
+        }
     }
 
     /**
@@ -271,5 +309,46 @@ class SendMessageAction
         }
 
         return $urls;
+    }
+
+    /**
+     * If $url is a Lichess game URL, return the 8–12 char game ID; otherwise
+     * null. Lichess uses single-segment paths for game IDs
+     * (`lichess.org/{id}`), an optional `/embed/{id}` wrapper for embeds,
+     * and post-id suffixes for color (`/white`) and move anchors (`#5`).
+     *
+     * The same length window catches a handful of reserved Lichess paths
+     * (`training`, `analysis`, `streamer`, `practice`, `tournament`). An
+     * explicit denylist excludes them — without it, `lichess.org/training`
+     * would be misrouted to the game-card pipeline.
+     */
+    public static function extractLichessGameId(string $url): ?string
+    {
+        // Delimiter is `~` (not `#`) because the pattern contains a literal
+        // `#` inside the trailing character class — `#`-delimited would
+        // close the regex early and silently misparse.
+        if (! preg_match(
+            '~^https?://(?:www\.)?lichess\.org/(?:embed/)?([a-zA-Z0-9]{8,12})(?:[/?#]|$)~i',
+            $url,
+            $matches,
+        )) {
+            return null;
+        }
+
+        $candidate = $matches[1];
+
+        static $reservedPaths = [
+            'training',
+            'analysis',
+            'streamer',
+            'practice',
+            'tournament',
+        ];
+
+        if (in_array(strtolower($candidate), $reservedPaths, true)) {
+            return null;
+        }
+
+        return $candidate;
     }
 }

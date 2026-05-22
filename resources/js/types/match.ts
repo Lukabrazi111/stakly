@@ -87,7 +87,46 @@ export interface ChatLinkAttachment {
     image_url: string | null;
 }
 
-export type ChatAttachment = ChatImageAttachment | ChatLinkAttachment;
+// Phase 4 verified-game evidence card. Two source paths produce identical
+// shape:
+//   - `source: 'paste'`      — user pasted a Lichess game URL into chat;
+//                              `FetchLichessGameMetadataJob` resolved it.
+//   - `source: 'auto_fetch'` — `ConfirmOutcomeAction` triggered
+//                              `AutoFetchLichessGameJob` on the first
+//                              confirm; posted as a system message.
+//
+// `verified: true` iff both game players' Lichess usernames matched the
+// match's snapshotted handles. Auto-fetch is always verified by
+// construction (search is username-anchored); paste can be either,
+// depending on whether the URL belongs to a game between this match's
+// players.
+//
+// `winner_color` is `null` on draw/aborted; `winner_username` mirrors that
+// (null when no winner). `status` is the raw Lichess status — frontend
+// maps it to human copy (`mate` → "by checkmate", `resign` → "by
+// resignation", etc.).
+export interface ChatGameCardAttachment {
+    type: 'game_card';
+    provider: 'lichess';
+    source: 'paste' | 'auto_fetch';
+    game_id: string;
+    url: string;
+    verified: boolean;
+    white_username: string | null;
+    black_username: string | null;
+    winner_color: 'white' | 'black' | null;
+    winner_username: string | null;
+    status: string | null;
+    speed: string | null;
+    variant: string | null;
+    rated: boolean;
+    played_at: string | null;
+}
+
+export type ChatAttachment =
+    | ChatImageAttachment
+    | ChatLinkAttachment
+    | ChatGameCardAttachment;
 
 export interface ChatMessage {
     id: number;

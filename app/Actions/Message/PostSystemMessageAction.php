@@ -28,13 +28,20 @@ use App\Models\Message;
  */
 class PostSystemMessageAction
 {
-    public function handle(GameMatch $match, string $content): Message
+    /**
+     * @param  list<array<string, mixed>>|null  $attachments  Optional structured
+     *                                                        payload appended to `attachments_json`. Phase 4 auto-fetch posts
+     *                                                        game-card system messages this way (text describes the event,
+     *                                                        attachment is the verified card the frontend renders).
+     */
+    public function handle(GameMatch $match, string $content, ?array $attachments = null): Message
     {
         $message = Message::create([
             'match_id' => $match->id,
             'user_id' => null,
             'type' => MessageType::System,
             'content' => $content,
+            'attachments_json' => $attachments,
         ]);
 
         MessageSent::dispatch($message);

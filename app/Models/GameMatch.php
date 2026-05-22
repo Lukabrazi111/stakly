@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\LinkedAccountProvider;
 use App\Enums\MatchOutcome;
 use App\Enums\MatchStatus;
 use Database\Factories\GameMatchFactory;
@@ -23,6 +24,17 @@ class GameMatch extends Model
 {
     /** @use HasFactory<GameMatchFactory> */
     use HasFactory;
+
+    /**
+     * Two valid `side` values on `match_provider_snapshots`. Kept as string
+     * constants (not a PHP enum) because there's no business logic on the
+     * value beyond "creator vs taker" and we don't want to import an enum
+     * just to read a single snapshot row. Promote to an enum if a future
+     * team-match shape introduces additional roles.
+     */
+    public const SIDE_CREATOR = 'creator';
+
+    public const SIDE_TAKER = 'taker';
 
     protected $fillable = [
         'listing_id',
@@ -79,6 +91,38 @@ class GameMatch extends Model
     public function messages(): HasMany
     {
         return $this->hasMany(Message::class, 'match_id');
+    }
+
+    /**
+     * Snapshot of each player's verified external accounts at match
+     * creation time (M8 Phase 4). Populated by `TakeListingAction`. Read by
+     * the smart-link enrichment jobs + `ConfirmOutcomeAction` auto-fetch
+     * gate. See `App\Models\MatchProviderSnapshot`.
+     */
+    public function providerSnapshots(): HasMany
+    {
+        return $this->hasMany(MatchProviderSnapshot::class, 'match_id');
+    }
+
+    /**
+     * Lookup helper for the smart-link jobs: "what username did the
+     * {side} player verify for {provider} at match creation?" Returns
+     * null when no snapshot exists for that slot — caller treats that as
+     * "this side isn't linked for this provider."
+     *
+     * Reads from the loaded `providerSnapshots` collection if it's
+     * already eager-loaded; otherwise triggers a lazy load (one query).
+     * Job handlers call `loadMissing('providerSnapshots')` at entry to
+     * keep call-site code clean.
+     */
+    public function snapshotUsername(string $side, LinkedAccountProvider $provider): ?string
+    {
+        return $this->providerSnapshots
+            ->first(
+                fn (MatchProviderSnapshot $snapshot) => $snapshot->side === $side
+                    && $snapshot->provider === $provider,
+            )
+            ?->username;
     }
 
     /**

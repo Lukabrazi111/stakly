@@ -30,6 +30,7 @@ class MessageAttachmentsPayload
         return [
             ...self::imageEntries($message),
             ...self::linkEntries($message),
+            ...self::gameCardEntries($message),
         ];
     }
 
@@ -127,6 +128,57 @@ class MessageAttachmentsPayload
                 'description' => $item['description'] ?? null,
                 'site_name' => $item['site_name'] ?? null,
                 'image_url' => $imageUrl,
+            ];
+        }
+
+        return $entries;
+    }
+
+    /**
+     * Phase 4 verified-game cards. The raw `attachments_json` entry written
+     * by `FetchLichessGameMetadataJob` (paste path) or `AutoFetchLichessGameJob`
+     * (auto-fetch path) is already in API shape — no URL rewriting needed —
+     * so this filter is a near-passthrough. Any new fields surface to the
+     * frontend by adding them here; missing fields default to `null` so an
+     * older persisted entry without a newer field doesn't 500 the page.
+     *
+     * @return list<array<string, mixed>>
+     */
+    private static function gameCardEntries(Message $message): array
+    {
+        $raw = $message->attachments_json;
+
+        if (! is_array($raw) || $raw === []) {
+            return [];
+        }
+
+        $entries = [];
+
+        foreach ($raw as $item) {
+            if (! is_array($item)) {
+                continue;
+            }
+
+            if (($item['type'] ?? null) !== 'game_card') {
+                continue;
+            }
+
+            $entries[] = [
+                'type' => 'game_card',
+                'provider' => $item['provider'] ?? null,
+                'source' => $item['source'] ?? null,
+                'game_id' => $item['game_id'] ?? null,
+                'url' => $item['url'] ?? null,
+                'verified' => (bool) ($item['verified'] ?? false),
+                'white_username' => $item['white_username'] ?? null,
+                'black_username' => $item['black_username'] ?? null,
+                'winner_color' => $item['winner_color'] ?? null,
+                'winner_username' => $item['winner_username'] ?? null,
+                'status' => $item['status'] ?? null,
+                'speed' => $item['speed'] ?? null,
+                'variant' => $item['variant'] ?? null,
+                'rated' => (bool) ($item['rated'] ?? false),
+                'played_at' => $item['played_at'] ?? null,
             ];
         }
 

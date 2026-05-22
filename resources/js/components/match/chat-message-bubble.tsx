@@ -1,4 +1,14 @@
-import { Link as LinkIcon, Loader2, Megaphone, RotateCw, TriangleAlert, X } from 'lucide-react';
+import {
+    BadgeCheck,
+    Crown,
+    ExternalLink,
+    Link as LinkIcon,
+    Loader2,
+    Megaphone,
+    RotateCw,
+    TriangleAlert,
+    X,
+} from 'lucide-react';
 import { useState } from 'react';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
@@ -6,6 +16,7 @@ import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { useInitials } from '@/hooks/use-initials';
 import { cn } from '@/lib/utils';
 import type {
+    ChatGameCardAttachment,
     ChatImageAttachment,
     ChatLinkAttachment,
     ChatMessage,
@@ -34,8 +45,18 @@ export function ChatMessageBubble({
     onRetry,
     onDismiss,
 }: ChatMessageBubbleProps) {
+    const gameCards = message.attachments.filter(
+        (attachment): attachment is ChatGameCardAttachment =>
+            attachment.type === 'game_card',
+    );
+
     if (message.type === 'system') {
-        return <SystemBubble content={message.content ?? ''} />;
+        return (
+            <SystemBubble
+                content={message.content ?? ''}
+                gameCards={gameCards}
+            />
+        );
     }
 
     const isOwn = message.user_id === viewerId;
@@ -107,6 +128,14 @@ export function ChatMessageBubble({
 
                 {links.map((link) => (
                     <LinkCard key={link.url} link={link} isOwn={isOwn} />
+                ))}
+
+                {gameCards.map((card) => (
+                    <GameCardAttachment
+                        key={`${card.game_id}-${card.source}`}
+                        card={card}
+                        isOwn={isOwn}
+                    />
                 ))}
 
                 {isFailed && message.correlation_id ? (
@@ -346,15 +375,196 @@ function SenderAvatar({ name }: { name: string }) {
     );
 }
 
-function SystemBubble({ content }: { content: string }) {
+interface SystemBubbleProps {
+    content: string;
+    gameCards: ChatGameCardAttachment[];
+}
+
+function SystemBubble({ content, gameCards }: SystemBubbleProps) {
     return (
-        <div className="flex justify-center">
+        <div className="flex flex-col items-center gap-2">
             <div className="border-border/60 bg-muted/40 text-muted-foreground inline-flex max-w-[92%] items-start gap-2 rounded-lg border px-3 py-2 text-xs">
                 <Megaphone className="mt-0.5 size-3.5 shrink-0" />
                 <span className="text-left">{content}</span>
             </div>
+            {gameCards.map((card) => (
+                <GameCardAttachment
+                    key={`${card.game_id}-${card.source}`}
+                    card={card}
+                    // System cards aren't tied to a sender so isOwn doesn't
+                    // apply — false renders the symmetric (not own-aligned)
+                    // corner radius.
+                    isOwn={false}
+                />
+            ))}
         </div>
     );
+}
+
+interface GameCardAttachmentProps {
+    card: ChatGameCardAttachment;
+    isOwn: boolean;
+}
+
+/**
+ * Phase 4 verified-game evidence card. Same chat-card visual family as
+ * `LinkCard` — pill border, Stakly-skinned hover glow — with a chess
+ * provenance tile on the left and structured game metadata on the right.
+ *
+ * The verified badge is colour + icon (not colour alone) per the
+ * accessibility rule — colour-blind users still see the BadgeCheck
+ * affordance.
+ */
+function GameCardAttachment({ card, isOwn }: GameCardAttachmentProps) {
+    const winnerLabel = describeWinner(card);
+    const speedLabel = card.speed ? capitalize(card.speed) : null;
+
+    return (
+        <a
+            href={card.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label={`Open Lichess game ${card.game_id}`}
+            className={cn(
+                'group border-border/60 bg-card/80 hover:border-primary/40 focus-visible:border-primary/60 focus-visible:ring-primary/40 focus-visible:ring-offset-background flex w-full max-w-[320px] cursor-pointer flex-col gap-2 overflow-hidden rounded-2xl border p-3 transition-all duration-200 hover:shadow-glow-sm focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none',
+                isOwn ? 'rounded-br-md' : 'rounded-bl-md',
+            )}
+        >
+            <div className="flex items-center justify-between gap-2">
+                <div className="flex min-w-0 items-center gap-2">
+                    <span className="from-primary/40 to-accent/40 bg-gradient-to-br text-foreground inline-flex size-8 shrink-0 items-center justify-center rounded-lg">
+                        <Crown className="size-4" strokeWidth={1.75} />
+                    </span>
+                    <div className="flex min-w-0 flex-col">
+                        <span className="text-foreground text-xs font-semibold tracking-tight">
+                            Lichess game
+                        </span>
+                        <span className="text-muted-foreground/80 truncate text-[10px] tracking-wide uppercase">
+                            {[speedLabel, card.rated ? 'Rated' : 'Casual']
+                                .filter(Boolean)
+                                .join(' · ')}
+                        </span>
+                    </div>
+                </div>
+                {card.verified ? (
+                    <span className="bg-success/15 text-success inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold tracking-wide uppercase">
+                        <BadgeCheck className="size-3" strokeWidth={2} />
+                        Verified
+                    </span>
+                ) : (
+                    <span className="border-border/60 text-muted-foreground inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold tracking-wide uppercase">
+                        Unverified
+                    </span>
+                )}
+            </div>
+
+            {(card.white_username || card.black_username) && (
+                <div className="flex items-center gap-2 text-xs">
+                    <PlayerBadge
+                        username={card.white_username}
+                        color="white"
+                        isWinner={card.winner_color === 'white'}
+                    />
+                    <span className="text-muted-foreground/60 text-[10px] tracking-wide uppercase">
+                        vs
+                    </span>
+                    <PlayerBadge
+                        username={card.black_username}
+                        color="black"
+                        isWinner={card.winner_color === 'black'}
+                    />
+                </div>
+            )}
+
+            {winnerLabel && (
+                <p className="text-foreground text-xs leading-snug">
+                    {winnerLabel}
+                </p>
+            )}
+
+            <div className="text-muted-foreground/70 group-hover:text-primary mt-auto inline-flex items-center gap-1 text-[10px] tracking-wide uppercase transition-colors">
+                lichess.org
+                <ExternalLink className="size-3" />
+            </div>
+        </a>
+    );
+}
+
+interface PlayerBadgeProps {
+    username: string | null;
+    color: 'white' | 'black';
+    isWinner: boolean;
+}
+
+function PlayerBadge({ username, color, isWinner }: PlayerBadgeProps) {
+    return (
+        <span
+            className={cn(
+                'inline-flex min-w-0 items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-medium',
+                isWinner
+                    ? 'bg-success/15 text-success'
+                    : 'bg-muted/60 text-muted-foreground',
+            )}
+        >
+            <span
+                aria-hidden
+                className={cn(
+                    'size-2 shrink-0 rounded-full',
+                    color === 'white'
+                        ? 'border-border/80 border bg-white'
+                        : 'bg-foreground/80',
+                )}
+            />
+            <span className="truncate">{username ?? '—'}</span>
+        </span>
+    );
+}
+
+/**
+ * Map raw Lichess `status` + winner to human chat copy.
+ *   mate / resign / outoftime / timeout / cheat → "<winner> won by ..."
+ *   draw / stalemate                            → "Drawn ..."
+ *   aborted / other                             → null (no winner line)
+ */
+function describeWinner(card: ChatGameCardAttachment): string | null {
+    const status = card.status;
+    const winner = card.winner_username;
+
+    if (winner && status) {
+        const reason = {
+            mate: 'by checkmate',
+            resign: 'by resignation',
+            outoftime: 'on time',
+            timeout: 'on time',
+            cheat: 'by cheat report',
+        }[status];
+
+        if (reason) {
+            return `${winner} won ${reason}.`;
+        }
+
+        if (winner) {
+            return `${winner} won.`;
+        }
+    }
+
+    if (status === 'draw' || status === 'stalemate') {
+        return status === 'stalemate' ? 'Drawn by stalemate.' : 'Drawn.';
+    }
+
+    if (status === 'aborted') {
+        return 'Game aborted.';
+    }
+
+    return null;
+}
+
+function capitalize(value: string): string {
+    if (value.length === 0) {
+        return value;
+    }
+
+    return value.charAt(0).toUpperCase() + value.slice(1);
 }
 
 /**

@@ -1,6 +1,7 @@
 <?php
 
 use App\Enums\MatchStatus;
+use App\Jobs\FetchLichessGameMetadataJob;
 use App\Jobs\FetchLinkMetadataJob;
 use App\Models\GameMatch;
 use App\Models\Listing;
@@ -106,4 +107,76 @@ test('image-only message (no content) does not dispatch the job', function () {
         ->assertRedirect();
 
     Bus::assertNotDispatched(FetchLinkMetadataJob::class);
+});
+
+// ─── Phase 4 — Lichess game URL routing ─────────────────────────────────────
+
+test('lichess game URL dispatches the verified-card job, not the OG fetcher', function () {
+    [$creator, , $match] = linkPreviewMatch();
+    Bus::fake([FetchLinkMetadataJob::class, FetchLichessGameMetadataJob::class]);
+
+    $this->actingAs($creator)
+        ->post("/matches/{$match->id}/messages", [
+            'content' => 'gg https://lichess.org/abcdefgh/white',
+        ])
+        ->assertRedirect();
+
+    $message = Message::query()->where('match_id', $match->id)->firstOrFail();
+
+    Bus::assertDispatched(
+        FetchLichessGameMetadataJob::class,
+        fn (FetchLichessGameMetadataJob $job) => $job->message->is($message)
+            && $job->gameId === 'abcdefgh',
+    );
+    Bus::assertNotDispatched(FetchLinkMetadataJob::class);
+});
+
+test('mixed URLs in one message: lichess goes to verified job, others to OG fetcher', function () {
+    [$creator, , $match] = linkPreviewMatch();
+    Bus::fake([FetchLinkMetadataJob::class, FetchLichessGameMetadataJob::class]);
+
+    $this->actingAs($creator)
+        ->post("/matches/{$match->id}/messages", [
+            'content' => 'see https://lichess.org/abcdefgh and https://example.com/x',
+        ])
+        ->assertRedirect();
+
+    Bus::assertDispatched(
+        FetchLichessGameMetadataJob::class,
+        fn (FetchLichessGameMetadataJob $job) => $job->gameId === 'abcdefgh',
+    );
+    Bus::assertDispatched(
+        FetchLinkMetadataJob::class,
+        fn (FetchLinkMetadataJob $job) => $job->urls === ['https://example.com/x'],
+    );
+});
+
+test('duplicate lichess URLs in one message dispatch the job once per game ID', function () {
+    [$creator, , $match] = linkPreviewMatch();
+    Bus::fake([FetchLichessGameMetadataJob::class]);
+
+    $this->actingAs($creator)
+        ->post("/matches/{$match->id}/messages", [
+            'content' => 'https://lichess.org/abcdefgh and again https://lichess.org/abcdefgh#5',
+        ])
+        ->assertRedirect();
+
+    Bus::assertDispatchedTimes(FetchLichessGameMetadataJob::class, 1);
+});
+
+test('lichess non-game URL (e.g. /training) routes to the OG fetcher', function () {
+    [$creator, , $match] = linkPreviewMatch();
+    Bus::fake([FetchLinkMetadataJob::class, FetchLichessGameMetadataJob::class]);
+
+    $this->actingAs($creator)
+        ->post("/matches/{$match->id}/messages", [
+            'content' => 'puzzle prep https://lichess.org/training',
+        ])
+        ->assertRedirect();
+
+    Bus::assertNotDispatched(FetchLichessGameMetadataJob::class);
+    Bus::assertDispatched(
+        FetchLinkMetadataJob::class,
+        fn (FetchLinkMetadataJob $job) => $job->urls === ['https://lichess.org/training'],
+    );
 });

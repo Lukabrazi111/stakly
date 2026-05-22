@@ -1,5 +1,6 @@
 <?php
 
+use App\Enums\LinkedAccountProvider;
 use App\Enums\ListingStatus;
 use App\Enums\MatchStatus;
 use App\Enums\WalletTransactionType;
@@ -270,6 +271,136 @@ test('a retried POST after a successful take hits the race-lost branch (no doubl
     // Balance and match count unchanged from after the first take.
     expect((string) $taker->fresh()->usdt_balance)->toBe('400.000000')
         ->and(GameMatch::count())->toBe(1);
+});
+
+// ─── Linked-account snapshot (M8 Phase 4 — "snapshot, don't link") ──────────
+
+test('match creation snapshots each side\'s verified external usernames', function () {
+    // Both players verified on both providers — the most-populated case.
+    // Snapshot rows must mirror the live `users.{provider}_username`
+    // values at match creation. After a mid-match unlink, the snapshot
+    // remains the cross-check anchor for paste-path + auto-fetch.
+    $creator = User::factory()
+        ->active()
+        ->withLichess('alice-lichess')
+        ->withChessCom('alice-chesscom')
+        ->create();
+    Wallet::deposit($creator, '500', reference: "test:deposit:creator:{$creator->id}");
+
+    $listing = Listing::factory()->open()->for($creator)->state([
+        'stake_amount' => '100',
+    ])->create();
+    Wallet::hold(
+        user: $creator,
+        amount: '100',
+        listing: $listing,
+        reference: "listing-create:{$listing->id}",
+    );
+
+    $taker = User::factory()
+        ->withLichess('bob-lichess')
+        ->withChessCom('bob-chesscom')
+        ->create();
+    Wallet::deposit($taker, '500', reference: "test:deposit:taker:{$taker->id}");
+
+    $this->actingAs($taker)->postJson("/listings/{$listing->id}/take")->assertRedirect();
+
+    $match = GameMatch::query()->where('listing_id', $listing->id)->firstOrFail();
+
+    expect($match->snapshotUsername(GameMatch::SIDE_CREATOR, LinkedAccountProvider::Lichess))->toBe('alice-lichess')
+        ->and($match->snapshotUsername(GameMatch::SIDE_CREATOR, LinkedAccountProvider::ChessCom))->toBe('alice-chesscom')
+        ->and($match->snapshotUsername(GameMatch::SIDE_TAKER, LinkedAccountProvider::Lichess))->toBe('bob-lichess')
+        ->and($match->snapshotUsername(GameMatch::SIDE_TAKER, LinkedAccountProvider::ChessCom))->toBe('bob-chesscom')
+        // Insertion count: 2 sides × 2 providers, all populated.
+        ->and($match->providerSnapshots()->count())->toBe(4);
+});
+
+test('match creation inserts NO snapshot rows when neither side has verified accounts', function () {
+    // No linked accounts on either side — the auto-fetch path will skip
+    // silently and any pasted URL will fail the cross-check (rendering a
+    // plain link card via the OG fetcher fallback).
+    [, $listing] = openListingWithCreator();
+    $taker = takerWithBalance();
+
+    $this->actingAs($taker)->postJson("/listings/{$listing->id}/take")->assertRedirect();
+
+    $match = GameMatch::query()->where('listing_id', $listing->id)->firstOrFail();
+
+    expect($match->providerSnapshots()->count())->toBe(0)
+        ->and($match->snapshotUsername(GameMatch::SIDE_CREATOR, LinkedAccountProvider::Lichess))->toBeNull()
+        ->and($match->snapshotUsername(GameMatch::SIDE_TAKER, LinkedAccountProvider::Lichess))->toBeNull();
+});
+
+test('match creation snapshots only the verified provider per side', function () {
+    // Asymmetric verification — creator only Lichess, taker only chess.com.
+    // This proves the snapshot is per-(side, provider), not a blanket copy.
+    // Smart-link enrichment for a Lichess URL would only have the creator's
+    // side to cross-check; a chess.com URL would only have the taker's. Card
+    // verification logic in Phase 4 / 4b reads both ends; missing-one-side
+    // is a soft fail that still renders an unverified card.
+    $creator = User::factory()
+        ->active()
+        ->withLichess('alice-lichess')
+        ->create();
+    Wallet::deposit($creator, '500', reference: "test:deposit:creator:{$creator->id}");
+
+    $listing = Listing::factory()->open()->for($creator)->state([
+        'stake_amount' => '100',
+    ])->create();
+    Wallet::hold(
+        user: $creator,
+        amount: '100',
+        listing: $listing,
+        reference: "listing-create:{$listing->id}",
+    );
+
+    $taker = User::factory()->withChessCom('bob-chesscom')->create();
+    Wallet::deposit($taker, '500', reference: "test:deposit:taker:{$taker->id}");
+
+    $this->actingAs($taker)->postJson("/listings/{$listing->id}/take")->assertRedirect();
+
+    $match = GameMatch::query()->where('listing_id', $listing->id)->firstOrFail();
+
+    expect($match->snapshotUsername(GameMatch::SIDE_CREATOR, LinkedAccountProvider::Lichess))->toBe('alice-lichess')
+        ->and($match->snapshotUsername(GameMatch::SIDE_CREATOR, LinkedAccountProvider::ChessCom))->toBeNull()
+        ->and($match->snapshotUsername(GameMatch::SIDE_TAKER, LinkedAccountProvider::Lichess))->toBeNull()
+        ->and($match->snapshotUsername(GameMatch::SIDE_TAKER, LinkedAccountProvider::ChessCom))->toBe('bob-chesscom')
+        // Only two slots populated, not four.
+        ->and($match->providerSnapshots()->count())->toBe(2);
+});
+
+test('match creation does NOT snapshot an unverified-but-set username', function () {
+    // Verification state matters: a `lichess_username` row value with a
+    // null `lichess_verified_at` is treated as "not linked" for evidence
+    // purposes. Otherwise a user could set arbitrary usernames in their
+    // profile and have them snapshotted onto match rows as anchors for
+    // dispute cards. The DB-level unique on `users.lichess_username`
+    // technically allows setting the column via tinker even without
+    // going through the verification flow — defense in depth.
+    $creator = User::factory()->active()->create();
+    // Direct attribute set bypassing the verification flow:
+    $creator->lichess_username = 'unverified-handle';
+    $creator->save();
+    Wallet::deposit($creator, '500', reference: "test:deposit:creator:{$creator->id}");
+
+    $listing = Listing::factory()->open()->for($creator)->state([
+        'stake_amount' => '100',
+    ])->create();
+    Wallet::hold(
+        user: $creator,
+        amount: '100',
+        listing: $listing,
+        reference: "listing-create:{$listing->id}",
+    );
+
+    $taker = takerWithBalance();
+
+    $this->actingAs($taker)->postJson("/listings/{$listing->id}/take")->assertRedirect();
+
+    $match = GameMatch::query()->where('listing_id', $listing->id)->firstOrFail();
+
+    expect($match->snapshotUsername(GameMatch::SIDE_CREATOR, LinkedAccountProvider::Lichess))->toBeNull()
+        ->and($match->providerSnapshots()->count())->toBe(0);
 });
 
 // ─── BCMath round-trip on the taker hold ────────────────────────────────────

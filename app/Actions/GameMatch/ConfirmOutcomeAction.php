@@ -3,8 +3,10 @@
 namespace App\Actions\GameMatch;
 
 use App\Actions\Message\PostSystemMessageAction;
+use App\Enums\LinkedAccountProvider;
 use App\Enums\MatchOutcome;
 use App\Enums\MatchStatus;
+use App\Jobs\AutoFetchLichessGameJob;
 use App\Models\GameMatch;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
@@ -46,7 +48,9 @@ class ConfirmOutcomeAction
 
     public function handle(User $user, GameMatch $match, MatchOutcome $newOutcome): string
     {
-        $resolution = DB::transaction(function () use ($match, $user, $newOutcome) {
+        $wasFirstConfirm = false;
+
+        $resolution = DB::transaction(function () use ($match, $user, $newOutcome, &$wasFirstConfirm) {
             $locked = GameMatch::query()
                 ->with(['listing.user', 'taker'])
                 ->lockForUpdate()
@@ -61,6 +65,14 @@ class ConfirmOutcomeAction
             if ($this->isSameOutcome($locked, $user, $newOutcome)) {
                 return 'no-change';
             }
+
+            // Capture the zero→one transition BEFORE writing the outcome.
+            // True iff both confirmation columns are null at lock time —
+            // this user's write is about to make them one-and-null. M8
+            // Phase 4 auto-fetch triggers off this specific transition so
+            // we don't re-query Lichess on every confirm change.
+            $wasFirstConfirm = $locked->creator_confirmed_outcome === null
+                && $locked->taker_confirmed_outcome === null;
 
             $this->recordOutcome($locked, $user, $newOutcome);
 
@@ -87,7 +99,33 @@ class ConfirmOutcomeAction
             $resolution = $this->postDisputeResolutionSentinel($match->fresh());
         }
 
+        // Phase 4 auto-fetch — fires once per match on the zero→one confirm
+        // transition, gated on both Lichess username snapshots being present.
+        // Dispatched OUTSIDE the transaction so the system "X confirmed"
+        // message is durable before the worker runs and the job's idempotency
+        // check sees a consistent view of the chat. The job is also
+        // `ShouldQueueAfterCommit` as belt-and-suspenders.
+        if ($wasFirstConfirm) {
+            $fresh = $match->fresh('providerSnapshots');
+
+            if ($this->canAutoFetch($fresh)) {
+                AutoFetchLichessGameJob::dispatch($fresh);
+            }
+        }
+
         return $resolution;
+    }
+
+    /**
+     * Auto-fetch needs BOTH snapshotted Lichess usernames — single-sided
+     * verification can't yield a verified card. Snapshotted (not live) per
+     * the "snapshot, don't link" decision: a mid-match unlink can't strip
+     * the anchor.
+     */
+    private function canAutoFetch(GameMatch $match): bool
+    {
+        return $match->snapshotUsername(GameMatch::SIDE_CREATOR, LinkedAccountProvider::Lichess) !== null
+            && $match->snapshotUsername(GameMatch::SIDE_TAKER, LinkedAccountProvider::Lichess) !== null;
     }
 
     private function isSameOutcome(GameMatch $match, User $user, MatchOutcome $newOutcome): bool

@@ -233,22 +233,40 @@ The API is no longer the primary truth source — it's a smart link-previewer in
 - **5MB cap**: balances screenshot quality vs storage/bandwidth.
 - **OG fetch is queued**: don't block chat send waiting for `<title>` of pasted URL; render plain link card immediately, swap to enriched card when fetch completes.
 
-**Phase 4 — Smart link enrichment for Lichess** (~2-3 days)
+**Phase 4 — Smart link enrichment for Lichess** ✅ shipped 2026-05-22
 
-The big payoff of having linked accounts: Lichess game URLs in chat become trusted evidence cards.
+The big payoff of having linked accounts: Lichess games surface as trusted evidence cards in chat — either auto-posted when players confirm, or pasted manually by a player anytime. Hybrid by design.
 
-- [ ] Schema additions: `creator_provider_username` + `taker_provider_username` on `game_matches` (snapshot at match creation — see "snapshot don't link" architectural decision).
-- [ ] Update `TakeListingAction`: populate snapshot from `match.taker->lichess_username` + `match.listing.user->lichess_username` if linked (mirror for chess.com when Phase 4b lands).
-- [ ] URL pattern detection in `SendMessageAction`: Lichess game URLs (`lichess.org/{8-char-id}` and longer-form export URLs).
-- [ ] Service: `LichessGameClient` calls `GET /api/game/{gameId}` (returns JSON with player usernames + result).
-- [ ] Cross-check: fetched game's player usernames must match the match's snapshot columns (case-insensitive). If they match → "verified" card. If they don't match → plain link card with subtle "could not verify" hint visible only to the pasting user.
-- [ ] React: enriched card component shows winner + time control + game ID + "Verified via Lichess" green check.
-- [ ] Tests: verified happy path, mismatched usernames, game not found, API error.
+Two complementary paths, both producing the same `type: 'game_card'` attachment shape so the frontend has one renderer:
 
-**Decisions** (Phase 4):
-- **Lichess first**. Lichess has direct game-by-ID lookup (`GET /api/game/{id}`); chess.com requires archive paging + eventual-consistency retries. Building Lichess first shakes out the architecture on the easier API. chess.com enrichment follows in Phase 4b.
+- **Manual paste**: a player pastes a Lichess game URL in chat. System fetches by game ID, cross-checks player usernames against the snapshot, renders a verified card. The escape hatch for "auto-fetch picked the wrong game," chess.com games (covered by 4b), or players without linked accounts.
+- **Auto-fetch on first confirm**: when the first player hits Confirm, system queries Lichess for recent games between the two snapshotted usernames. If exactly one decisive game exists in the match's time window, post it as a verified card via a system message — visible to both players and admin. No yes/no vote.
+
+Outcome resolution is unchanged. Players still Confirm Won/Lost/Drawn — that's the only binding signal. Cards are evidence the admin sees if a dispute lands. Auto-settle stays gated to M14.
+
+### Tasks
+
+- [x] **Schema**: `match_provider_snapshots` sibling table on `game_matches` (one row per (match, side, provider) — `id`, `match_id` FK cascade, `side` ('creator'|'taker'), `provider` (`LinkedAccountProvider` enum value), `username`, timestamps; UNIQUE `(match_id, side, provider)`, index `(provider, username)`). Sibling table rather than flat columns on `game_matches` so per-provider identifier shape can grow as M15 adds multi-identifier games (CS2 Steam+Faceit, Riot ID + region, etc.) without migrating the wide `game_matches` table. Initial design used 4 flat columns (`{side}_{provider}_username` × 4); refactored to the sibling table mid-Phase 4 once we agreed CS2 was the next adapter — the multi-identifier problem made the flat shape a near-term liability.
+- [x] **`TakeListingAction`**: inserts one `match_provider_snapshots` row per (side, provider) where the player has a verified link, via a `snapshotProviderAccounts()` private helper that iterates `LinkedAccountProvider::cases()` and checks `{provider}_verified_at` non-null on each user. Batch insert (single SQL) inside the existing match-create transaction. Unverified-but-set columns are deliberately not snapshotted.
+- [x] **`LichessGameClient` service**: `fetchGame(string $id)` for the paste path, `searchGamesBetween(string $userA, string $userB, CarbonInterface $since)` for auto-fetch. Both `Http::fake()`-able. Lichess ndjson parsed line-by-line; bot/AI opponents (`players.{color}.user` missing) surface as empty string so cross-check fails cleanly.
+- [x] **URL detection in `SendMessageAction`**: `extractLichessGameId(url)` static helper recognises `lichess.org/{8-12 alphanumeric}` with optional `/embed/` wrapper, color (`/white` `/black`), and anchor (`#5`) suffixes. Explicit denylist for reserved Lichess paths in the same length window (`training`, `analysis`, `streamer`, `practice`, `tournament`). Lichess game URLs dispatch one `FetchLichessGameMetadataJob` per ID; non-Lichess URLs continue through the OG fetcher. Mixed messages dispatch both job types.
+- [x] **`FetchLichessGameMetadataJob`**: fetches by ID, cross-checks both player usernames against the snapshot via `$match->snapshotUsername(side, provider)` (case-insensitive, order-independent), appends `type: 'game_card'` with `verified: true|false`, re-broadcasts `MessageSent`. Eager-loads `providerSnapshots` at job entry. Mirrors `FetchLinkMetadataJob`'s row-lock-append pattern. Unverified games still render a card (with an "Unverified" pill) so the admin sees that the URL resolved to a real game.
+- [x] **`AutoFetchLichessGameJob` + `ConfirmOutcomeAction` wiring**: `ConfirmOutcomeAction` captures the zero→one confirm transition via a `&$wasFirstConfirm` reference inside the locked transaction; dispatches AFTER commit when both Lichess snapshot rows are present (`canAutoFetch()` checks via `snapshotUsername()`). Job runs `searchGamesBetween`, filters to decisive games (mate/resign/outoftime/timeout/cheat), posts a system-message card via `PostSystemMessageAction` only when EXACTLY one candidate exists. Idempotency via Postgres `whereJsonContains('attachments_json', [['source' => 'auto_fetch']])` scoped to system messages.
+- [x] **`PostSystemMessageAction`**: extended to accept `?array $attachments = null` so auto-fetch can post a system-message-with-card in one call. Existing callers (text-only system messages) pass two args; the new path passes three.
+- [x] **`MessageAttachmentsPayload::gameCardEntries`**: filters `type: 'game_card'` entries from `attachments_json` into the API shape. Near-passthrough — no URL rewriting needed since the entry was already API-shaped at write time.
+- [x] **React**: `ChatGameCardAttachment` TS type extends the `ChatAttachment` union. `GameCardAttachment` component mirrors `LinkCard`'s visual family (Stakly-skinned pill border, hover glow) with a Crown chess tile, success-toned verified badge (color + `BadgeCheck` icon for a11y), per-player badges with winner highlighting, and a `lichess.org` link footer. `ChatMessageBubble` renders cards for both `text` (paste) and `system` (auto-fetch) messages; `SystemBubble` was extended to optionally render cards below the centered text pill.
+- [x] **Tests**: +65 (snapshot population on TakeListing × 4; LichessGameClient `Http::fake` happy/404/5xx/429/malformed/draw/aborted/AI-opponent × 8 + ndjson × 6; URL detection variants × 19; dispatch routing × 4; paste-path job verified/swapped-colors/case-insensitive/snapshot-missing/no-match/one-side/404/5xx/concurrent × 9; auto-fetch job happy/zero/multiple/non-decisive/mixed/5xx/missing-snapshot/idempotent/paste-doesnt-block × 8; first-confirm dispatch fires/missing-snapshots/second-confirm/no-change/changed-outcome × 6). **525 / 2338 → 590 / 2495.**
+
+### Decisions (Phase 4)
+
+- **Lichess first**. Lichess has both direct game-by-ID lookup AND searchable games-between-users; chess.com requires archive paging + eventual-consistency retries. Lichess shakes out both architectures on the easier API. chess.com enrichment follows in Phase 4b.
+- **Hybrid: auto-fetch + manual paste, not either/or**. Auto-fetch is convenience for the common case (linked players who played on Lichess). Paste is the escape hatch (auto-fetch picked wrong, no linked accounts, chess.com play). Both produce identical card shape — single renderer, single audit trail.
+- **Auto-fetch is evidence, not a vote**. No "Is this your game?" yes/no buttons on the auto-card. Players continue to use the existing Confirm Won/Lost/Drawn — that remains the only binding signal. The "one says yes, one says no" disagreement axis is eliminated by not creating it.
+- **Auto-fetch never auto-settles**. Even when the API-fetched game shows a clear winner that disagrees with players' confirms, the player consensus still wins (or dispute path arbitrates). API-only settlement is M14 territory, gated on real dispute volume.
+- **Game-picking heuristic: single decisive game in window or skip**. Auto-fetch's window is `match.created_at → now`. If 0 candidates: skip. If multiple: skip and let a player paste the right URL. No "best guess" — wrong-game evidence is worse than no evidence.
+- **Auto-fetch fires once per match**. Dispatched on the first confirm transition (zero confirms → one confirm) to avoid re-querying on confirm-changes. Job-level idempotency check via `attachments_json` membership.
 - **Cross-check usernames against snapshot, not live link**. Even if a player unlinks mid-match, snapshot survives. Prevents "unlink to escape match" abuse.
-- **Verification is binary**: verified ✓ or not. We don't try to handle "verified but with caveat" — that's for chat-mediated discussion with admin.
+- **Verification is binary**: verified ✓ or not. No "verified but with caveat" — caveats are for chat-mediated discussion with admin.
 
 **Phase 4b — Smart link enrichment for chess.com** (~3-4 days, follow-up to Phase 4)
 
@@ -423,7 +441,7 @@ The trust pitch this milestone earns: **Stakly only takes stakes on matches play
 
 Games without a usable anti-cheat platform AND a verification API (Fortnite, Apex, COD, FIFA, fighting games, mobile games) are out of scope until either changes — not because they're impossible, but because the trust pitch doesn't hold for them.
 
-**Architectural composition** — no new shapes are needed:
+**Architectural composition** — mostly the existing shapes, with one schema migration called out below:
 
 - `LinkedAccountProvider` enum gains `Faceit`, `Riot`, possibly `Steam` (for the OpenDota / Steam-ranked Dota 2 path).
 - New `ProfileClient` implementations: `FaceitProfileClient`, `RiotProfileClient` (likely split per region), `SteamProfileClient`. Bio-code paste flow per provider where the platform exposes an editable profile field; OAuth where available (FACEIT and Riot both expose it — cleaner UX, requires app approval).
@@ -431,6 +449,17 @@ Games without a usable anti-cheat platform AND a verification API (Fortnite, Ape
 - `listings.platform` (M8 Phase 5) expands its allowed values to include the new platforms.
 - New game-result clients (`FaceitGameClient`, `OpenDotaGameClient`, `RiotGameClient`) mirror M8's `LichessGameClient` / `ChessComGameClient` — first wired into chat link-card enrichment, later into the auto-resolver via M14.
 - Webhooks where the provider supports them (FACEIT match-completed, Riot match-end) reduce polling cost when M14 lands.
+
+**`match_provider_snapshots` table — extending to non-chess identifiers** (refactor landed in M8 Phase 4):
+
+The sibling table that holds linked-account snapshots is already in place (`match_provider_snapshots`, see M8 Phase 4 task list). Today each row is `(match_id, side, provider, username)` — sufficient for chess.com + Lichess. When CS2 / Dota 2 / Valorant land, each will need additional identifier columns: Steam ID (uint64 — likely `string(20)`), Faceit player ID (uuid), Riot ID region (varchar 4), maybe MMR at snapshot for sandbag-detection surfaces.
+
+Two ways to extend:
+
+1. **Add nullable columns per identifier** as each game adapter ships (`steam_id`, `faceit_id`, `riot_region`, `mmr_at_snapshot`, etc.). Type-safe, query-friendly, but the table accumulates per-game-specific columns. Probably fine — Stakly's planned game catalog tops out at ~6-7 providers, so the column count stays manageable.
+2. **Add a `provider_data` JSONB column** alongside `username` to carry the variable-shape per-provider extras. Schema stays narrow; per-provider parsing happens in the adapter. Cost is no DB-level uniqueness on those extras.
+
+Decide per-adapter when the first non-chess one ships. The current `username` column is sized 64 to cover Riot IDs (`name#tag`, 16+5 chars) and Steam vanity URLs (up to 32) without a length migration.
 
 **Cross-cutting smurf / sandbag defense** — FACEIT-class anti-cheat solves "no aimbots in CS2" but does not solve "experienced player hides behind a fresh account." That second threat is mitigated by Stakly's verified-rating system: bio-code linked accounts carry rating history; listings can require a minimum rating (`listings.skill_min`, already in the schema). Both layers need to be in place for the trust pitch to actually hold.
 

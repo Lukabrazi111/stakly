@@ -66,6 +66,34 @@ function platformUser(): User
 }
 
 /**
+ * Realistic Lichess game-export JSON fixture, trimmed to the fields
+ * `LichessGameClient` parses. Captured from a real
+ * `lichess.org/game/export/{id}` response. Used by the client tests AND
+ * by the Phase 4 paste-path / auto-fetch job tests.
+ *
+ * @param  array<string, mixed>  $overrides
+ * @return array<string, mixed>
+ */
+function lichessGameFixture(array $overrides = []): array
+{
+    return array_merge([
+        'id' => 'a1b2c3d4',
+        'rated' => true,
+        'variant' => 'standard',
+        'speed' => 'blitz',
+        'perf' => 'blitz',
+        'createdAt' => 1_716_000_000_000,
+        'lastMoveAt' => 1_716_000_180_000,
+        'status' => 'mate',
+        'winner' => 'white',
+        'players' => [
+            'white' => ['user' => ['name' => 'alice-lichess', 'id' => 'alice-lichess']],
+            'black' => ['user' => ['name' => 'bob-lichess', 'id' => 'bob-lichess']],
+        ],
+    ], $overrides);
+}
+
+/**
  * Resolve the bound `GameApi` singleton, asserting it's the mock driver.
  * Tests that exercise dispute resolution use this to call `forceWinner` /
  * `forceUnknown` without going through the container themselves.
