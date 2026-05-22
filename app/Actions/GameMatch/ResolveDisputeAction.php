@@ -97,12 +97,7 @@ class ResolveDisputeAction
     private function dispatchOnConfidence(GameMatch $match, GameApiResult $result): void
     {
         if ($result->confidence === GameApiConfidence::Unknown) {
-            $match->update(['status' => MatchStatus::ManualReview]);
-
-            $this->postSystem->handle(
-                $match,
-                __('Game API could not determine a winner. Match flagged for admin review — your stakes stay in escrow until resolved.'),
-            );
+            $this->flipToManualReview($match);
 
             return;
         }
@@ -121,6 +116,30 @@ class ResolveDisputeAction
         $winner = $this->resolveWinner($match, $result);
 
         $this->settle->handle($match, $winner);
+    }
+
+    /**
+     * Unknown-confidence resolution: lock the match in `ManualReview` and
+     * post two system messages — first narrating why we're here, then a
+     * `dispute_prompt`-marked call-to-action telling players what evidence
+     * to submit for the admin review (M12). The marker attachment lets
+     * the React `SystemBubble` render a visually distinct warning variant
+     * for the prompt without changing copy detection.
+     */
+    private function flipToManualReview(GameMatch $match): void
+    {
+        $match->update(['status' => MatchStatus::ManualReview]);
+
+        $this->postSystem->handle(
+            $match,
+            __('Game API could not determine a winner. Match flagged for admin review — your stakes stay in escrow until resolved.'),
+        );
+
+        $this->postSystem->handle(
+            $match,
+            __('Submit evidence in chat — screenshot, game URL, or PGN. An admin will review.'),
+            [['type' => 'dispute_prompt']],
+        );
     }
 
     /**

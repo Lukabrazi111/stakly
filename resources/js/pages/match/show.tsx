@@ -141,23 +141,18 @@ export default function MatchShow({ match, messages }: MatchShowProps) {
                             myConfirmedOutcome={myConfirmedOutcome}
                             opponentConfirmedOutcome={opponentConfirmedOutcome}
                         />
-                        {/* Escape hatch — visible once EITHER player has
-                            claimed something. Originally this was gated on
-                            the viewer having claimed first ("structurally
-                            weird to dispute without your own claim"), but
-                            that left the viewer trapped if the opponent
-                            lied first: their only paths were to mirror the
-                            lie (settles to liar) or claim Draw / mirror back
-                            and indirectly trigger dispute. With the wider
-                            gate, the viewer can challenge a bad-faith claim
-                            directly. While neither player has claimed yet,
-                            the button stays hidden — nothing to dispute. */}
-                        {(myConfirmedOutcome !== null ||
-                            opponentConfirmedOutcome !== null) && (
-                            <div className="mt-5 flex justify-center border-t border-border/60 pt-5">
-                                <OpenDisputeButton matchId={match.id} />
-                            </div>
-                        )}
+                        {/* Report-a-problem — always visible during
+                            Pending. Covers "we disagree on outcome,"
+                            "opponent ghosted before play," and "I think
+                            they cheated" symmetrically. Previously gated
+                            on at least one player having confirmed, but
+                            that left ghosting victims stuck waiting for
+                            the 4h timeout. Spurious reports cost nothing
+                            (API search returns Unknown → ManualReview,
+                            admin reviews; no money moves prematurely). */}
+                        <div className="mt-5 flex justify-center border-t border-border/60 pt-5">
+                            <OpenDisputeButton matchId={match.id} />
+                        </div>
                     </section>
                 )}
 
@@ -206,6 +201,7 @@ export default function MatchShow({ match, messages }: MatchShowProps) {
                         match.status !== 'settled' ? winnerPayout : undefined
                     }
                     timeControl={match.listing.time_control}
+                    platform={match.listing.platform}
                 />
 
                 <div className="mt-6">

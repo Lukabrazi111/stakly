@@ -14,15 +14,16 @@ Frontend-first build. UI against real DB infrastructure + seeded fake data; back
 - **M6** — Match Flow (mock) ✅
 - **M7** — Wallet UI ✅
 - **M11** — Controller Refactor to Actions Pattern ✅
-- **M8** — Match Chat + Linked Accounts **← in progress** (Phases 1–2 ✅; Phase 3 Slice 1 ✅; Phase 3 Slice 2 ✅; Phase 4, 4b, 5 next)
+- **M8** — Match Chat + Linked Accounts **← in progress** (Phases 1–2 ✅; Phase 3 Slice 1+2 ✅; Phase 4 + 4b ✅; Phase 5 Slice A+B ✅; **Phase 5 Slice C** next)
+- **M14 Slice A** — `ChessGameApi` card arbitration ✅ (pulled forward from full M14)
 - **M10** — Mutual Match Cancellation
 - **M12** — Filament admin panel + chat-driven dispute resolution
 - **M13** — Chat anti-abuse + moderation
-- **M14** — Automated outcome adapters (volume-triggered optimization)
+- **M14** — Automated outcome adapters (volume-triggered optimization; Slice A shipped)
 - **M15** — Multi-game expansion (FACEIT, OpenDota, Riot adapters)
 - **M9** — Chain Integration [paused — pending crypto-payment-gateway specialist]
 
-> Only the active milestone keeps a detailed task list. Shipped milestones are one-paragraph summaries — the code is the source of truth for "how it works." Future milestones expand when started. Any of this can shift — flag the change, update the doc.
+> Only the active milestone (M8) keeps a detailed task list. Shipped phases are one-paragraph summaries — the code is the source of truth for "how it works." Decisions worth surviving in the doc go in the per-phase `Decisions` blocks. Future milestones expand when started. Any of this can shift — flag the change, update the doc.
 
 ---
 
@@ -36,10 +37,11 @@ Decisions made earlier that have shaped a lot of code downstream. Not locked —
 - **Actions pattern** (M11). Business logic lives in `app/Actions/<Domain>/<Verb><Noun>Action.php` with a `handle()` method, container-injected. Controllers and commands are thin adapters. `App\Services\Wallet` and `App\Services\GameApi\*` stay as primitives, not Actions. Decompose long `handle()` bodies into private helpers so `handle()` reads like a recipe of high-level steps.
 - **`MatchStatus` state machine guard** (M6 Phase 7). `SettleMatchAction` / `SettleDrawMatchAction` no-op on `Settled` (idempotency), proceed on `Pending` / `Disputed`, throw on `ManualReview` or unknown. Future admin tools resolving `ManualReview` must use a different path.
 - **`ManualReview` is admin-resolved out-of-band**, not in player chat (M6 Phase 7). Admin reads via Filament dashboard (M12); no admin-in-chat.
-- **Snapshot, don't link**, when a relationship needs to survive identity changes. Linked-account usernames are denormalized onto `game_matches` at match creation so a mid-match unlink doesn't break dispute resolution (M8).
+- **Snapshot, don't link** when a relationship needs to survive identity changes (M8 Phase 4). Linked-account usernames are denormalized onto the sibling `match_provider_snapshots` table at match creation so a mid-match unlink doesn't break dispute resolution. Sibling table (not flat columns on `game_matches`) so per-provider identifier shape can grow with multi-identifier games (M15) without re-migrating the wide table.
+- **One arbitration driver per game family** (M14 Slice A). `ChessGameApi` handles both Lichess and chess.com cards via the card's `provider` discriminator. M15 game adapters (FACEIT, Riot, etc.) each get their own sibling driver. No multi-provider chain wrappers — the card carries its own provider field.
 - **`is_platform = true` users are never user-facing** (M3.5 + M5). Filtered from profile show, wallet UI, listing pages.
 - **No chain code or smart contracts right now** (project-wide). Custodial via internal Postgres ledger; chain integration is M9, paused for a specialist.
-- **Strongest anti-cheat per game** (M8 + M15). Stakly only takes stakes on matches played on the strongest available anti-cheat platform for the relevant game. The verification provider (who tells us the result) and the anti-cheat platform (where the match must be played) are conceptually separate — sometimes the same vendor (FACEIT for CS2, Riot for Valorant), sometimes different (Steam-ranked Dota 2 verified via OpenDota). Per-game adapter pattern via `LinkedAccountProvider` enum + `ProfileClient` interface + `listings.platform` column. Adding a new game = new enum cases + new clients + new platform value; no new architectural shape.
+- **Strongest anti-cheat per game** (M8 + M15). Stakly only takes stakes on matches played on the strongest available anti-cheat platform for the relevant game. The verification provider (who tells us the result) and the anti-cheat platform (where the match must be played) are conceptually separate — sometimes the same vendor (FACEIT for CS2, Riot for Valorant), sometimes different (Steam-ranked Dota 2 verified via OpenDota). Per-game adapter pattern via `LinkedAccountProvider` enum + `ProfileClient` interface + `listings.platform` column.
 
 ---
 
@@ -51,7 +53,7 @@ Stakly's dark + pink/purple gradient visual system shipped: design tokens, Brico
 
 ### M2 — Auth Flow ✅
 
-Modal-only auth (`?auth=*` URL-driven), page-only destinations for reset/2FA/confirm, email verification via `MustVerifyEmail`, `ProfileMenu` + mobile account card, Inertia v3 flash + Stakly-styled Sonner toasts, custom Fortify response bindings (register / verify / resend / forgot-password / password-reset → `/?auth=login` with toast), reset-token guard, `ThrottleVerificationSend` (1/min). **42 tests / 166 assertions.**
+Modal-only auth (`?auth=*` URL-driven), page-only destinations for reset/2FA/confirm, email verification via `MustVerifyEmail`, `ProfileMenu` + mobile account card, Inertia v3 flash + Stakly-styled Sonner toasts, custom Fortify response bindings (register / verify / resend / forgot-password / password-reset → `/?auth=login` with toast), reset-token guard, `ThrottleVerificationSend` (1/min).
 
 ### M2.5 — Pre-M3 polish ✅
 
@@ -59,19 +61,19 @@ Settings rendered inside `SiteLayout` with inline pill-tabs sub-nav (Profile / S
 
 ### M3 — Listings Index ✅
 
-Public marketplace `/listings`: filterable / sortable / paginated grid (12/page, server-controlled). Featured strip on `/` shows top 4 ending-soon. PII-safe `ListingResource`. Bybit-inspired filter bar + popover/sheet via `useIsMobile()`. Smart-ellipsis pagination with `Skeleton` loading rows. Game + currency registries in `config/`. **69 tests / 434 assertions.** **Decisions**: project-wide URL contract via Spatie query-builder (`?filter[stake_max]=100&sort=ending_soon&page=2`); `$redirect = '/listings'` for graceful share-link UX; `lib/listings-query.ts` centralizes URL building.
+Public marketplace `/listings`: filterable / sortable / paginated grid (12/page, server-controlled). Featured strip on `/` shows top 4 ending-soon. PII-safe `ListingResource`. Bybit-inspired filter bar + popover/sheet via `useIsMobile()`. Smart-ellipsis pagination with `Skeleton` loading rows. **Decisions**: project-wide URL contract via Spatie query-builder (`?filter[stake_max]=100&sort=ending_soon&page=2`); `$redirect = '/listings'` for graceful share-link UX; `lib/listings-query.ts` centralizes URL building.
 
 ### M3.5 — Wallet / Ledger Foundation ✅
 
-Append-only Postgres ledger (`wallet_transactions`) is the source of truth for every USDT balance change. `App\Services\Wallet` exposes 6 methods (`deposit`, `withdraw`, `hold`, `release`, `payout`, `fee`) plus `balanceFor`, all funnelling through a private `record()` that wraps `DB::transaction(...)` + `lockForUpdate()` on the user row. Idempotency via optional `reference_id`. BCMath strings throughout (scale 6, matching Tron USDT precision). Platform rake credits the seeded `is_platform = true` user. **86 tests / 493 assertions (17 wallet-specific).**
+Append-only Postgres ledger (`wallet_transactions`) is the source of truth for every USDT balance change. `App\Services\Wallet` exposes 6 methods (`deposit`, `withdraw`, `hold`, `release`, `payout`, `fee`) plus `balanceFor`, all funnelling through a private `record()` that wraps `DB::transaction(...)` + `lockForUpdate()` on the user row. Idempotency via optional `reference_id`. BCMath strings throughout (scale 6, matching Tron USDT precision). Platform rake credits the seeded `is_platform = true` user.
 
 ### M4 — Listing Detail + Create Flow ✅
 
-First end-to-end money flow. Public listing detail (`/listings/{id}`), auth-gated create form, owner-only cancel — wired to real `Wallet::hold` on create, `Wallet::release` on cancel, both transactional + idempotent. Multi-select `time_control` and `language` (jsonb + `AsEnumCollection` + `whereJsonContains`). Owner-only `App\Policies\ListingPolicy::cancel`. **110 tests / 655 assertions.** **Decisions**: duration dropdown (not datetime picker); insufficient-balance validated twice (request + `Wallet::hold` exception); detail page renders for any status (no 404 on stale share links); stake precision pinned at `decimal:0,2`; hybrid build order (backend skeleton → frontend → backend hardening → tests).
+First end-to-end money flow. Public listing detail (`/listings/{id}`), auth-gated create form, owner-only cancel — wired to real `Wallet::hold` on create, `Wallet::release` on cancel, both transactional + idempotent. Multi-select `time_control` and `language` (jsonb + `AsEnumCollection` + `whereJsonContains`). Owner-only `App\Policies\ListingPolicy::cancel`. **Decisions**: duration dropdown (not datetime picker); insufficient-balance validated twice (request + `Wallet::hold` exception); detail page renders for any status (no 404 on stale share links); stake precision pinned at `decimal:0,2`.
 
 ### M5 — User Profile ✅
 
-Public read-only profiles at `/users/{username}`. `username` + `bio` columns, `UserController` + `UserProfileResource` (whitelist, no PII), 5 profile components. Auto-generated usernames via `Str::slug($name)` + collision-safe suffix loop. Reserved-username list (`'user'` reserved). Strict ASCII Latin name validation. Profile entry points via two interior `<Link>`s on each listing row/card. **147 tests / 822 assertions.** **Decisions**: `username` derived at registration, immutable for now (revisit if there's a user need); `is_platform = true` users 404 on profile show.
+Public read-only profiles at `/users/{username}`. `username` + `bio` columns, `UserController` + `UserProfileResource` (whitelist, no PII), 5 profile components. Auto-generated usernames via `Str::slug($name)` + collision-safe suffix loop. Reserved-username list (`'user'` reserved). Strict ASCII Latin name validation. **Decisions**: `username` derived at registration, immutable for now (revisit if there's a user need); `is_platform = true` users 404 on profile show.
 
 ### M6 — Match Flow (mock) ✅
 
@@ -91,23 +93,23 @@ Match.Disputed --[game-API returns winner]--> Match.Settled
 Match.Disputed --[game-API can't determine]--> Match.ManualReview (terminal — admin resolves out-of-band)
 ```
 
-Phases 1–7 shipped: schema + policies, take + match creation, confirm UI + settlement + Inertia polling, mock game-API dispute path, listings/profile/wallet integration, listings management + Active Mode + scoped Player Hub sidebar, `Drawn` outcome, timeout resolver. **366 tests / 1969 assertions.**
+Phases 1–7 shipped: schema + policies, take + match creation, confirm UI + settlement + Inertia polling, mock game-API dispute path, listings/profile/wallet integration, listings management + Active Mode + scoped Player Hub sidebar, `Drawn` outcome, timeout resolver.
 
 **Decisions**: 10% platform fee (`config/stakly.php` `platform_fee_rate`); 4h confirmation timeout; 1:1 listing→match; participant-only match visibility; single-confirmer rule honors the claim (Won → confirmer wins, Lost → opponent wins, Drawn → game-API arbitrates); platform does NOT pocket stakes on no-show; `MatchSettlement` service deleted in M11 — settlement lives in `app/Actions/GameMatch/`.
 
 ### M7 — Wallet UI ✅
 
-Four pages: `/wallet` (hero balance + 3 action cards + recent activity), `/wallet/deposit` (TRC20 mock address + QR + network warning), `/wallet/withdraw` (validating form, short-circuited POST), `/wallet/history` (filter chips + paginated rows). `BalanceChip` in `SiteHeader` desktop + inline balance in `MobileMenu`. `users.tron_address` (varchar 34 unique) generated at registration via `App\Support\MockTronAddress`. Semantic transaction colors. **193 tests / 1039 assertions.** **Decisions**: multi-page (not tabbed); spendable balance only in UI (held derivable from ledger); mock TRC20 addresses until M9; withdrawal short-circuits with launch-gated toast (no ledger write); `abort_if($user->is_platform, 403)` on every wallet method.
+Four pages: `/wallet` (hero balance + 3 action cards + recent activity), `/wallet/deposit` (TRC20 mock address + QR + network warning), `/wallet/withdraw` (validating form, short-circuited POST), `/wallet/history` (filter chips + paginated rows). `BalanceChip` in `SiteHeader` desktop + inline balance in `MobileMenu`. `users.tron_address` (varchar 34 unique) generated at registration via `App\Support\MockTronAddress`. **Decisions**: multi-page (not tabbed); spendable balance only in UI (held derivable from ledger); mock TRC20 addresses until M9; withdrawal short-circuits with launch-gated toast (no ledger write); `abort_if($user->is_platform, 403)` on every wallet method.
 
 ### M11 — Controller Refactor to Actions Pattern ✅ (shipped 2026-05-17)
 
-Business logic moved from controllers + commands into `app/Actions/<Domain>/` classes. `app/Actions/Listing/`: `Create`, `Cancel`, `Expire`. `app/Actions/GameMatch/`: `TakeListing`, `ConfirmOutcome`, `OpenDispute`, `SettleMatch`, `SettleDrawMatch`, `ResolveDispute`, `ResolveMatchTimeout`. Controllers + artisan commands shrink to thin HTTP/CLI adapters with method-injection. Old `App\Services\MatchSettlement` deleted. CLAUDE.md gained an "Actions pattern" subsection. **All 366 / 1969 tests still pass.** **Decisions**: plain PHP classes, no package, no Repositories; `handle()` method; method-injection; Wallet + GameApi stay as primitives; pure queries (read-only index/show) stay in controllers.
+Business logic moved from controllers + commands into `app/Actions/<Domain>/` classes. Listing: `Create`, `Cancel`, `Expire`. GameMatch: `TakeListing`, `ConfirmOutcome`, `OpenDispute`, `SettleMatch`, `SettleDrawMatch`, `ResolveDispute`, `ResolveMatchTimeout`. Controllers + artisan commands shrink to thin HTTP/CLI adapters with method-injection. Old `App\Services\MatchSettlement` deleted. **Decisions**: plain PHP classes, no package, no Repositories; `handle()` method; method-injection; Wallet + GameApi stay as primitives; pure queries (read-only index/show) stay in controllers.
 
 ---
 
 ## M8 — Match Chat + Linked Accounts **← in progress**
 
-The architectural keystone for multi-game support. Stakly is multi-game by vision (chess now, Dota 2 / CS2 / others later). API-only outcome verification locks us to games with good APIs. **Chat with structured dispute evidence works universally** — admin reads chat + uploaded evidence and decides, with API verification appearing as an *enriched evidence card* when a player pastes a supported game URL. Linked accounts power both the chat enrichment (M8 Phase 4) and the eventual full automated adapters (M14).
+The architectural keystone for multi-game support. Stakly is multi-game by vision (chess now, Dota 2 / CS2 / others later). API-only outcome verification locks us to games with good APIs. **Chat with structured dispute evidence works universally** — admin reads chat + uploaded evidence and decides, with API verification appearing as an *enriched evidence card* when a player pastes a supported game URL. Linked accounts power both the chat enrichment (M8 Phase 4 + 4b) and the eventual full automated adapters (M14).
 
 The API is no longer the primary truth source — it's a smart link-previewer inside chat. Players coordinate and resolve via chat; admin moderates; API verification is an *accelerator*, not a *requirement*.
 
@@ -117,7 +119,7 @@ The API is no longer the primary truth source — it's a smart link-previewer in
 - **Bio-code TTL**: 15 min. **Verify rate limit**: 6/min per user.
 - **Chat retention**: forever (auditable for disputes). Indexed by `match_id`.
 - **File upload**: 5MB max, image-only (screenshots). Videos hosted externally + posted as links.
-- **Chat message rate limit**: 10 messages / 10s per user.
+- **Chat message rate limit**: 10 messages / 10s per user. Upload: 5/30s.
 - **Per-game API capability**: indicator on match page ("Outcome can be auto-verified via Lichess" vs "Manual review only").
 
 ### Phases
@@ -126,225 +128,110 @@ The API is no longer the primary truth source — it's a smart link-previewer in
 
 **Phase 1 — Linked accounts foundation (chess.com + Lichess)** ✅ shipped 2026-05-18
 
-- [x] Schema migration on `users`: `chess_com_username`, `chess_com_verified_at`, `lichess_username`, `lichess_verified_at`, `pending_verification_provider`, `pending_verification_username`, `pending_verification_code`, `pending_verification_expires_at`.
-- [x] Action: `RequestLinkVerificationAction` — generates 16-char random code, stores pending columns, returns code for UI display.
-- [x] Action: `VerifyLinkedAccountAction` — calls provider profile API, parses target field, matches code, marks `*_verified_at = now()`, clears pending columns.
-- [x] Services: `App\Services\Provider\ChessComProfileClient` + `LichessProfileClient` (`Http::fake()`-able). chess.com requires User-Agent header with contact email.
-- [x] New settings tab `/settings/linked-accounts` (alongside Profile / Security / Appearance).
-- [x] Profile section `LinkedAccountsSection` binds real data (username + verified badge); existing "Not linked" placeholder is replaced.
-- [x] Throttle middleware on verify endpoint (`throttle:6,1`).
-- [x] Tests with `Http::fake()` for both providers (happy path, expired code, mismatched code, API 404, API 500, rate limit). 36 tests / 402 total / 2075 assertions.
+Bio-code paste verification for both providers in one slice. Schema: `users.{provider}_username` + `{provider}_verified_at` + `pending_verification_{provider, username, code, expires_at}`. Actions: `RequestLinkVerificationAction` (generates 16-char code) + `VerifyLinkedAccountAction` (calls provider profile API, matches code, marks verified). Services: `ChessComProfileClient` + `LichessProfileClient` (`Http::fake()`-able, chess.com needs UA header). Settings tab `/settings/linked-accounts` + `LinkedAccountsSection` on profile. Throttle middleware (`throttle:6,1`).
 
-**Decisions** (Phase 1):
-- **Bio-code target field**: chess.com `location` (public, free-text, rarely set by default — chess.com's public JSON exposes it). Lichess `profile.bio` (proper 400-char bio field). Switched from the original `name` (display name) plan during implementation: `name` is the player's identity in lobbies and live games, so clobbering it for a 15-min verification window is needlessly disruptive. `location` is equally verifiable via the public API but invisible-by-default to anyone not viewing the profile page. Users see "paste this code in your Location on chess.com" / "paste this code in your bio on Lichess."
-- **Both providers from Phase 1**. The shared flow + symmetric UI cost almost nothing to add the second provider. Players who play only on one platform aren't locked out.
-- **Verification is immutable until unlinked**. Re-verifying isn't required unless the user unlinks and relinks.
+**Decisions**: bio-code target field is chess.com `location` (free-text, public, less disruptive than the player's `name` which is their lobby identity) + Lichess `profile.bio`. Both providers from day one — symmetric flow + UI costs almost nothing for the second. Verification is immutable until unlinked.
 
-**Phase 2 — Reverb infrastructure + chat schema + text chat** ✅ shipped 2026-05-18
+**Phase 2 — Reverb infrastructure + chat schema + text chat + lifecycle system messages** ✅ shipped 2026-05-18
 
-- [x] Add `reverb` service to `compose.yaml` (port 8080). Plus a `queue` service running `php artisan queue:listen` — `ShouldBroadcast` events route through the queue, without a worker broadcasts stall in the `jobs` table.
-- [x] Composer: `laravel/reverb`. NPM: `@laravel/echo-react` + `pusher-js` (React hooks layer rather than plain `laravel-echo` — `useEcho` handles cleanup on unmount).
-- [x] Schema: `messages` table with composite `(match_id, id)` index, `attachments_json` jsonb column reserved for Phase 3/4, immutable (no `updated_at`).
-- [x] Model: `App\Models\Message` + factory (`->system()` state) + `match` / `user` relations. `UPDATED_AT = null`.
-- [x] Action: `App\Actions\Message\SendMessageAction` — rate limit (10/10s via `RateLimiter`), status gate (Settled/ManualReview reject, Disputed allows as evidence record), content trim + 2000-char cap, persist + dispatch.
-- [x] Event: `App\Events\MessageSent` — `ShouldBroadcast` + `ShouldDispatchAfterCommit` (Laravel 13 split — no single `ShouldBroadcastAfterCommit` interface exists), `broadcastAs(): 'message.sent'` for a stable event name decoupled from PHP class path. Broadcasts to `match.{id}` private channel.
-- [x] Channel auth: extracted to `App\Broadcasting\MatchChannel::join(User, int): bool` (named class rather than inline closure) so the auth callback is directly unit-testable without going through `/broadcasting/auth` HTTP (test broadcasting connection is `null` which doesn't run callbacks).
-- [x] React: `MatchChatPanel` as a right-side panel on `match/show.tsx` — sticky at `top-28` (clears the marquee at `top-16` + ~46px), fixed `h-[600px]` compact height, internal message-list scroll. Mobile: bottom-sheet via `MobileChatTrigger` with floating "Chat" button + unread count. Echo subscription via `useMatchChat` hook called once in the page (single subscription serves both desktop + mobile renders).
-- [x] Read-only state when Settled / ManualReview: chat input replaced by "This match is settled — chat is read-only." footer.
-- [x] Tests: 22 in `SendMessageTest` (auth gates, validation, rate limit, status gate, broadcast assertion, `MatchChannel::join` direct callback tests) + 14 in `SystemMessageTest`.
+Reverb (port 8080) + dedicated queue service in `compose.yaml` so `ShouldBroadcast` events actually reach Reverb (a `database` queue without a worker would stall in `jobs`). Composer adds `laravel/reverb`; npm adds `@laravel/echo-react` + `pusher-js` (React hooks for auto-cleanup). New `messages` table with composite `(match_id, id)` index, `attachments_json` jsonb reserved for Phase 3/4, immutable (no `updated_at`). `SendMessageAction` enforces 10/10s rate + 2000-char cap + status gate (Settled/ManualReview reject sends, Disputed allows). `MessageSent` event (`ShouldBroadcast` + `ShouldDispatchAfterCommit`, `broadcastAs(): 'message.sent'`). Channel auth via named `App\Broadcasting\MatchChannel::join` for direct unit testing.
 
-**Lifecycle system messages** (shipped same slice — narrate state changes inline with chat):
+Match page redesigned around a right-side `MatchChatPanel` (sticky `h-[600px]` on desktop, bottom-sheet on mobile via `MobileChatTrigger`). `useMatchChat` hook is a single Echo subscription serving both renders. `MatchInfoCard` (Bybit-style key:value) replaces the old separate opponent + details cards; `MatchTimestamps` strip; `MatchFaq` (6 Q&As via shadcn Accordion).
 
-- [x] `App\Actions\Message\PostSystemMessageAction` — `type = system`, `user_id = null`, hard-coded so no HTTP path can produce one (un-impersonatable). Broadcasts via the same `MessageSent` event.
-- [x] Wired into 7 lifecycle Actions: `TakeListingAction` ("Match started"), `ConfirmOutcomeAction` ("Alice confirmed: Won"), `SettleMatchAction` ("Match settled. Alice wins $X"), `SettleDrawMatchAction` ("Match ended as a draw"), `OpenDisputeAction` ("Dispute opened by Alice"), `ResolveDisputeAction` Unknown branch ("Game API could not determine — admin review"), `ResolveMatchTimeoutAction` ("4-hour confirmation window expired").
-- [x] `SystemBubble` component visual: megaphone icon + muted background + centered, distinct from player message bubbles.
+Lifecycle system messages (same slice): `PostSystemMessageAction` (`type = system`, `user_id = null`, hard-coded — un-impersonatable) wired into 7 lifecycle Actions narrating state changes ("Match started", ":name confirmed: :outcome", "Match settled. :name wins $X", etc.). Same `MessageSent` broadcast as user messages.
 
-**Match page redesign** (shipped same slice):
+**Decisions**: Reverb over Pusher; private channel scope (only the two participants subscribe; admin reads via Filament M12); chat locks read-only after `Settled`/`ManualReview` (Pending/Disputed keep chat open); messages are immutable (dispute review depends on truthful logs); Enter sends, Shift+Enter inserts newline; 2000-char content cap covers regular chat + Phase 5 PGN paste evidence.
 
-- [x] `MatchInfoCard` (Bybit-style key:value list) replaces the old separate "Your opponent" + "Match details" cards. Rows: Opponent (clickable to profile, small avatar) → Stake (each) → Pot → Winner payout (gradient-accent, gameplay only — hidden when Settled since SettlementSummary already breaks it down) → Time control. Dropped redundant Pot duplication between settlement and details cards.
-- [x] `MatchTimestamps` — subtle metadata strip under the page subtitle showing absolute timestamps ("Started May 18, 2026, 09:12 PM · Finished May 18, 2026, 09:13 PM"). Locale-aware via `toLocaleString`.
-- [x] `MatchFaq` — 6 Stakly-specific Q&As via shadcn `Accordion` (Stakly-skinned at the source: dropped upstream `hover:underline` + `ring-[3px]`, swapped to text-color hover + `ring-2 ring-primary/25`, added `cursor-pointer`).
-- [x] `SettlementSummary` enriched: opponent's `@handle` shown inline next to name in loser-view subtitle.
+**Phase 3 Slice 1 — Image attachments** ✅ shipped 2026-05-19
 
-**Decisions** (Phase 2):
+Spatie Media Library on `App\Models\Message` (`match-attachments` collection, private `local` disk, ~400px contain-fit `thumb` conversion with `keepOriginalImageFormat`). `StoreMessageRequest` extended for image-or-caption-or-both. `SendMessageAction` pre-processes via `Spatie\Image\Image::load()->save()` to strip EXIF, attaches via Media Library inside the message-creation transaction. Second sliding-window rate-limit bucket: uploads 5/30s (text bucket unchanged at 10/10s). Authenticated streaming route `GET /matches/{match}/messages/{message}/attachments/{media}` (`?conversion=thumb` for preview, plain for original) re-checks the `view` policy. `App\Support\MessageAttachmentsPayload::forMessage` is the single source of truth for the `attachments` array shape consumed by both `MessageResource` (initial load) and `MessageSent::broadcastWith` (live).
 
-- **Reverb over Pusher**: free, Laravel-team built, Redis-backed, `.env` swap to Pusher possible if we hit scale issues.
-- **Private channel scope**: only the two match participants subscribe. Admin reads via Filament dashboard (M12), not via channel subscription.
-- **Queue worker is infrastructure, not optional**. `ShouldBroadcast` events are queued by default. With `QUEUE_CONNECTION=database` (production posture) and no worker, broadcasts stall in the `jobs` table and never reach Reverb. Solution: a dedicated `queue` service in `compose.yaml` running `php artisan queue:listen --tries=1 --timeout=0`. Same pattern as the `reverb` service — always running, no manual `composer run dev` orchestration needed.
-- **Chat locks after settlement** (decided 2026-05-18). Once status is `Settled` (winner OR draw refund) OR `ManualReview`, chat becomes read-only. Reasoning: post-resolution messages add abuse surface (evidence pollution by losers, harassment) without product value. Audit trail stays viewable. `Pending` / `Disputed` keep chat open. Frontend hides input; backend `SendMessageAction` rejects with 422.
-- **Right-side panel layout** (decided 2026-05-18). Compact column (`h-[600px]`, sticky `top-28`) to the right of match details on desktop, bottom-sheet on mobile. Match info stays the primary surface; chat is co-visible but not dominant.
-- **Messages are immutable**: no edit, no delete. Dispute review depends on truthful logs.
-- **System message type**: produced via `PostSystemMessageAction`, never the HTTP path. `user_id = null`, `type = system`. Cannot be impersonated.
-- **Content cap = 2000 chars**. Enforced in `SendMessageAction`. Covers regular chat + Phase 5 paste-PGN evidence (~1.5-1.8 KB for a 40-move Lichess export). DB column is `text` (no Postgres-level cap); the Action is the single enforcement point.
-- **Send semantics**: Enter sends, Shift+Enter inserts newline.
-- **Direct callback testing for channel auth**. Named class (`MatchChannel`) over inline closure so tests can invoke `->join()` directly. Avoids the test-env-only no-op of the `null` broadcaster.
+Same-day polish pass: optimistic UI with `correlation_id` round-trip + retry/dismiss on failure; paste-to-upload in the chat textarea; image `width`/`height` in payload so the browser reserves the box pre-load (no scroll-shift).
 
-**Test count after Phase 2**: 442 tests / 2186 assertions (up from 406 / 2090).
+React: paperclip + drag-drop overlay on `ChatPanel`, preview strip with progress, thumbnail in `ChatMessageBubble` opening a shadcn `Dialog` lightbox.
 
-**Phase 3 Slice 1 — Image attachments** ✅ shipped 2026-05-19 (+ polish pass 2026-05-19: optimistic UI, paste-to-upload, image dimensions)
-
-- [x] Spatie Media Library on `App\Models\Message` — `match-attachments` collection on the private `local` disk, ~400px contain-fit `thumb` conversion (`nonQueued`, `keepOriginalImageFormat`).
-- [x] `StoreMessageRequest` extended: `content` and `file` are mutually-optional (`required_without` pair) so image-only messages, caption-only messages, and image+caption all validate. File: `image`, `mimes:jpeg,jpg,png,webp`, `max:5120`.
-- [x] `SendMessageAction` accepts `?UploadedFile`, pre-processes via `Spatie\Image\Image::load()->save()` to strip EXIF on the original, attaches via `addMedia(...)->toMediaCollection(...)` inside the message-creation `DB::transaction`.
-- [x] Second sliding-window rate limit bucket — `chat-upload:{user_id}` at 5/30s, hit only when a file is present. Text bucket (`chat:{user_id}` at 10/10s) unchanged. Each attachment-bearing send hits both.
-- [x] Authenticated streaming route — `GET /matches/{match}/messages/{message}/attachments/{media}`, `?conversion=thumb` returns the preview, anything else returns the original. Re-checks `view` policy + scope (message belongs to match, media belongs to message). 404 on every miss. `Cache-Control: private, max-age=31536000, immutable` overridden post-`prepare()` because Symfony's `BinaryFileResponse` stamps `public` otherwise.
-- [x] `App\Support\MessageAttachmentsPayload::forMessage` — single source of truth for the `attachments` array shape consumed by `MessageResource` (initial load) and `MessageSent::broadcastWith` (live). Empty array when no attachments (never null) so the frontend type stays `ChatAttachment[]`.
-- [x] `messages.content` migration nullable — image-only messages need a null caption.
-- [x] React: paperclip file picker + drag-and-drop overlay on `ChatPanel`, preview strip with progress bar (Inertia `onProgress`), thumbnail in `ChatMessageBubble` opening shadcn `Dialog` lightbox on click.
-- [x] Tests: 14 new in `AttachmentUploadTest` (happy path, image-only, caption-only with file, validation rejects, status gate, upload rate limit, broadcast payload) + 10 in `AttachmentStreamingTest` (participant + non-participant + guest + unverified, cross-match / cross-message / nonexistent media, thumb conversion). 466 / 2250 (up from 442 / 2186).
-
-**Polish pass (same day):**
-
-- [x] **Optimistic UI**: `useMatchChat.send` injects a `pending: true` bubble immediately with a client-generated `correlation_id` (UUID); broadcast echoes the id back; on arrival, the pending bubble is replaced in place (preserving order). On error, the bubble flips to `failed: true` and renders inline Retry + Dismiss controls. The original `File` is held in a ref so retry can re-POST without asking the user to re-pick.
-- [x] **Paste-to-upload**: `onPaste` handler on the chat textarea — copying a screenshot and pressing Cmd/Ctrl+V queues the image straight into the file slot (no `<img>` data-URL fallback).
-- [x] **Image dimensions in payload**: `SendMessageAction` captures `width` / `height` via `Spatie\Image\Image` during the EXIF strip pre-process, persists as Media custom properties, surfaces through `MessageAttachmentsPayload`. The bubble sets `width` / `height` attributes on the `<img>` so the browser reserves the right box before bytes arrive — no scroll-shift when chat history loads.
-- [x] Tests: +4 (correlation echo round-trip, null when omitted, malformed rejected, dimensions in broadcast payload). 470 / 2258.
-
-**Decisions** (Phase 3 Slice 1):
-- **Single multipart endpoint, not two-endpoint.** Initial sketch called for `POST /messages/attachment` followed by `POST /messages` referencing the upload. Spatie's `addMedia` attaches to an existing model — a separate upload endpoint needs orphan-Media cleanup or temp-storage tokens, both extra moving parts. Browser-side `XMLHttpRequest.upload.onprogress` (which Inertia exposes via `onProgress`) gives the user upload-progress UI without needing the two-step flow.
-- **Spatie Media Library, not raw Storage.** Already installed since M3 (the `media` table came in with the M3 migration). Polymorphic relation, cascade-cleanup on `Message` delete, automatic conversions, disk abstraction (S3-ready by `MEDIA_DISK` env swap).
-- **Private `local` disk + authenticated streaming route, not public disk + UUID paths.** Files live at `storage/app/private/<model_id>/<uuid>.jpg` — not webserver-accessible. Every fetch passes the same `view` policy gate as the match page. The cost is one DB query per image view; the win is that a leaked URL out of the chat doesn't expose the image to outsiders. For a money platform whose chat is sometimes literal dispute evidence, the trade is right.
-- **EXIF stripped on upload** via `Spatie\Image\Image::load()->save()` re-encode before `addMedia`. Phone screenshots carry GPS / device / capture-time metadata; not useful to the opponent, real privacy attack surface. The thumbnail conversion strips again on its own re-encode, so both the inline preview and the lightbox original land EXIF-free.
-- **`attachments_json` reserved for non-binary metadata, Media for binaries.** Image entries come from Spatie Media; Slice 2 link cards (OG previews + Phase 4 verified-game cards) will populate `attachments_json`. `MessageAttachmentsPayload` composes both into a unified `attachments` array for the frontend.
-- **Two rate-limit buckets**: text 10/10s, upload 5/30s. Attachment-bearing sends consume both. Different orders of magnitude of server cost deserve different protections; alternating text + uploads doesn't bypass either limit.
-- **Empty content allowed when there's a file.** `messages.content` was made nullable; a screenshot-with-no-caption is a valid chat post.
-- **One attachment per message right now.** Multi-file batching is an easy follow-up if real usage calls for it; for the screenshot-in-dispute case, a series of single-image messages reads fine.
+**Decisions**: single multipart endpoint (not two-step upload-then-reference); Spatie Media over raw Storage; private disk + auth-streamed route (not public disk + UUID paths — money platform's chat is sometimes dispute evidence); EXIF stripped on upload; one attachment per message; image-only (PDFs/videos rejected); 5MB cap.
 
 **Phase 3 Slice 2 — Plain link cards** ✅ shipped 2026-05-19
 
-- [x] Link detection: `SendMessageAction::extractLinkUrls` finds http(s) URLs in content (trims trailing punctuation, dedups, caps at 5), passes through `SsrfGuard::isPlausiblySafe` pre-flight (no DNS on the request path), dispatches one `FetchLinkMetadataJob` per message.
-- [x] `App\Jobs\FetchLinkMetadataJob` (`ShouldQueueAfterCommit`, single try): per-URL `SsrfGuard::isUrlSafe` (DNS-resolved), oscarotero/embed extraction through `App\Support\SafeHttpClient` (PSR-18 wrapper around the library's CurlClient — disables curl-level redirects, walks the chain manually with per-hop SSRF check, strips Authorization/Cookie on cross-host hops, caps at 3 redirects), proxies OG images (separate manual-redirect Http fetch + size cap + MIME whitelist + Spatie\Image re-encode for EXIF strip) to `link-images/{sha256}.{ext}` on the private `local` disk, race-safe `lockForUpdate` append to `attachments_json`, re-broadcasts `MessageSent` so the bubble updates in place.
-- [x] `App\Http\Controllers\LinkImageController` + auth-gated `/link-images/{filename}` route. Filename regex `[a-f0-9]{64}\.(jpg|png|webp|gif)` rejects path traversal; `Cache-Control: private, max-age=31536000, immutable`.
-- [x] `MessageAttachmentsPayload::linkEntries` shapes the persisted `attachments_json` entries into the API contract (`type, url, canonical_url, title, description, site_name, image_url`); image URLs go through `route(..., absolute: false)` so worker-built broadcasts and request-built resource payloads stay in lockstep.
-- [x] `useMatchChat` dedup-by-id → **replace-by-id** so the re-broadcast (with link cards populated) swaps the bubble in place — no scroll, no reorder.
-- [x] React: `LinkCard` component in `ChatMessageBubble` — Slack/Discord-style unfurl, 64px square thumbnail left, title + description + site name right, whole-card anchor with `noopener noreferrer nofollow`, Stakly pink-glow hover.
-- [x] Tests: +55 (`SsrfGuardTest`, `LinkExtractionTest`, `LinkPreviewDispatchTest`, `FetchLinkMetadataJobTest`, `LinkImageStreamingTest`). 525 / 2338.
+Slack/Discord-style URL unfurling. `SendMessageAction::extractLinkUrls` extracts http(s) URLs (trims trailing punctuation, dedups, caps at 5, cheap pre-flight `SsrfGuard::isPlausiblySafe` with no DNS). `FetchLinkMetadataJob` (`ShouldQueueAfterCommit`, single try) per-URL `SsrfGuard::isUrlSafe` (DNS-resolved), oscarotero/embed extraction through `App\Support\SafeHttpClient` (PSR-18 wrapper around CurlClient — disables curl-level redirects, walks the chain manually with per-hop SSRF check, strips Authorization/Cookie on cross-host hops, 3-hop cap). OG images proxied via a separate manual-redirect fetch + size cap + MIME whitelist + Spatie\Image EXIF strip, stored at `link-images/{sha256}.{ext}` on the private `local` disk. `LinkImageController` + `/link-images/{filename}` route (`[a-f0-9]{64}\.(jpg|png|webp|gif)` regex rejects path traversal). `useMatchChat` dedup-by-id → replace-by-id so re-broadcast swaps the bubble in place (no scroll, no reorder). `LinkCard` React component for the unfurl.
 
-**Decisions** (Phase 3 Slice 2):
-- **Proxy images, don't embed direct.** Mirrors Slice 1's auth-streamed pattern and matches what Slack / Discord / WhatsApp do — third-party hosts never see participant IPs, EXIF is stripped on re-encode, MIME is validated, size is capped. The cost is one new auth route + ~200KB cached per unique image.
-- **Any http(s) URL gets unfurled, not chess-domain allowlist.** SSRF is the real defense; an allowlist is belt-and-suspenders that limits the value of the feature (YouTube clip of a disputed game wouldn't get a card). General-purpose covers coordination + dispute-evidence both.
-- **Per-hop SSRF, not just initial URL.** Library defaults follow 10 curl-level redirects with SSL verify OFF. A malicious `https://shortener.com/x` → `http://169.254.169.254/...` chain would bypass an initial-URL check; the PSR-18 wrapper SSRF-checks every Location.
-- **Split `SsrfGuard::isPlausiblySafe` (no DNS, request-path) vs `isUrlSafe` (DNS-resolved, worker-path).** Doing DNS on the chat-send request would block message delivery on one resolver call per URL — moved to the queued worker, kept the cheap literal-IP-range check on the request path.
-- **Cache results by URL hash for 1h, not persistent.** Link previews are nice-to-have; if Redis flushes, the next paste re-fetches. No DB table for cache.
-- **Single try, fail silently.** Logged via `Log::info`; missing card is acceptable; throwing would put dead URLs at the head of the failed-jobs queue forever.
+**Decisions**: proxy images (third-party hosts never see participant IPs, EXIF stripped); any http(s) URL gets unfurled (SSRF is the real defense, not an allowlist); per-hop SSRF (library follows curl-level redirects); split `SsrfGuard::isPlausiblySafe` (no DNS, request-path) vs `isUrlSafe` (DNS-resolved, worker-path); cache per URL for 1h; single try, fail silently.
 
-**Decisions** (Phase 3):
-- **Image-only uploads today**: PDFs, videos, and other files are rejected at the validation layer. Screenshots are the primary use case; videos can come in via Slice 2 link cards (YouTube/Streamable/etc.). If real users push for inline short video later, the Media Library setup absorbs it cheaply — add `video/mp4` to the accepted MIME list, lift the size cap, add a `<video>` branch in the bubble.
-- **5MB cap**: balances screenshot quality vs storage/bandwidth.
-- **OG fetch is queued**: don't block chat send waiting for `<title>` of pasted URL; render plain link card immediately, swap to enriched card when fetch completes.
+**Phase 4 — Smart link enrichment for Lichess (hybrid paste + auto-fetch)** ✅ shipped 2026-05-22
 
-**Phase 4 — Smart link enrichment for Lichess** ✅ shipped 2026-05-22
+Lichess games surface as evidence cards in chat via two complementary paths:
 
-The big payoff of having linked accounts: Lichess games surface as trusted evidence cards in chat — either auto-posted when players confirm, or pasted manually by a player anytime. Hybrid by design.
+- **Manual paste**: a player pastes a Lichess game URL. `FetchLichessGameMetadataJob` fetches by ID, cross-checks both player usernames against the match snapshot (case-insensitive, order-independent), renders verified or unverified card. Unverified URLs still render — the chat sees the game existed, the missing badge says "we can't confirm this is between the two match players."
+- **Auto-fetch on first confirm**: `ConfirmOutcomeAction` captures the zero→one confirm transition; `AutoFetchLichessGameJob` queries Lichess for recent games between snapshotted usernames since `match.created_at`. If EXACTLY one decisive game (mate/resign/outoftime/timeout/cheat), posts a verified card via `PostSystemMessageAction`. Zero or multiple candidates → silent skip (let the paste path cover ambiguous cases).
 
-Two complementary paths, both producing the same `type: 'game_card'` attachment shape so the frontend has one renderer:
+`LichessGameClient` (`fetchGame`, `searchGamesBetween` — ndjson) is `Http::fake()`-able. URL detection via `SendMessageAction::extractLichessGameId` (regex with `~` delimiter; explicit denylist for reserved Lichess paths in the 8-12 char window: `training`/`analysis`/`streamer`/`practice`/`tournament`). New sibling `match_provider_snapshots` table (one row per match × side × provider; UNIQUE `(match_id, side, provider)`, index `(provider, username)`) — replaces the originally-planned flat columns on `game_matches` so multi-identifier games (CS2 Steam+Faceit, Riot ID + region) drop in cleanly at M15 without re-migrating the wide table. `TakeListingAction::snapshotProviderAccounts` batch-inserts rows for each verified provider per side. `PostSystemMessageAction` extended with optional `?array $attachments` so auto-fetch posts text + card in one call. `MessageAttachmentsPayload::gameCardEntries` filters `type: 'game_card'` entries. Frontend `GameCardAttachment` component (Crown chess tile, success-toned verified badge + `BadgeCheck` icon for a11y, per-player badges with winner highlight, lichess.org footer link); `SystemBubble` extended to render cards below the centered text pill.
 
-- **Manual paste**: a player pastes a Lichess game URL in chat. System fetches by game ID, cross-checks player usernames against the snapshot, renders a verified card. The escape hatch for "auto-fetch picked the wrong game," chess.com games (covered by 4b), or players without linked accounts.
-- **Auto-fetch on first confirm**: when the first player hits Confirm, system queries Lichess for recent games between the two snapshotted usernames. If exactly one decisive game exists in the match's time window, post it as a verified card via a system message — visible to both players and admin. No yes/no vote.
+Same slice: `ConfirmOutcomeAction::resolveBothConfirmed` posts a "Players' confirmations conflict. Resolving via the game record." system message before flipping the match to `Disputed` — closes a UX gap where chat silently jumped from confirmation to settlement.
 
-Outcome resolution is unchanged. Players still Confirm Won/Lost/Drawn — that's the only binding signal. Cards are evidence the admin sees if a dispute lands. Auto-settle stays gated to M14.
+**Decisions**:
 
-### Tasks
-
-- [x] **Schema**: `match_provider_snapshots` sibling table on `game_matches` (one row per (match, side, provider) — `id`, `match_id` FK cascade, `side` ('creator'|'taker'), `provider` (`LinkedAccountProvider` enum value), `username`, timestamps; UNIQUE `(match_id, side, provider)`, index `(provider, username)`). Sibling table rather than flat columns on `game_matches` so per-provider identifier shape can grow as M15 adds multi-identifier games (CS2 Steam+Faceit, Riot ID + region, etc.) without migrating the wide `game_matches` table. Initial design used 4 flat columns (`{side}_{provider}_username` × 4); refactored to the sibling table mid-Phase 4 once we agreed CS2 was the next adapter — the multi-identifier problem made the flat shape a near-term liability.
-- [x] **`TakeListingAction`**: inserts one `match_provider_snapshots` row per (side, provider) where the player has a verified link, via a `snapshotProviderAccounts()` private helper that iterates `LinkedAccountProvider::cases()` and checks `{provider}_verified_at` non-null on each user. Batch insert (single SQL) inside the existing match-create transaction. Unverified-but-set columns are deliberately not snapshotted.
-- [x] **`LichessGameClient` service**: `fetchGame(string $id)` for the paste path, `searchGamesBetween(string $userA, string $userB, CarbonInterface $since)` for auto-fetch. Both `Http::fake()`-able. Lichess ndjson parsed line-by-line; bot/AI opponents (`players.{color}.user` missing) surface as empty string so cross-check fails cleanly.
-- [x] **URL detection in `SendMessageAction`**: `extractLichessGameId(url)` static helper recognises `lichess.org/{8-12 alphanumeric}` with optional `/embed/` wrapper, color (`/white` `/black`), and anchor (`#5`) suffixes. Explicit denylist for reserved Lichess paths in the same length window (`training`, `analysis`, `streamer`, `practice`, `tournament`). Lichess game URLs dispatch one `FetchLichessGameMetadataJob` per ID; non-Lichess URLs continue through the OG fetcher. Mixed messages dispatch both job types.
-- [x] **`FetchLichessGameMetadataJob`**: fetches by ID, cross-checks both player usernames against the snapshot via `$match->snapshotUsername(side, provider)` (case-insensitive, order-independent), appends `type: 'game_card'` with `verified: true|false`, re-broadcasts `MessageSent`. Eager-loads `providerSnapshots` at job entry. Mirrors `FetchLinkMetadataJob`'s row-lock-append pattern. Unverified games still render a card (with an "Unverified" pill) so the admin sees that the URL resolved to a real game.
-- [x] **`AutoFetchLichessGameJob` + `ConfirmOutcomeAction` wiring**: `ConfirmOutcomeAction` captures the zero→one confirm transition via a `&$wasFirstConfirm` reference inside the locked transaction; dispatches AFTER commit when both Lichess snapshot rows are present (`canAutoFetch()` checks via `snapshotUsername()`). Job runs `searchGamesBetween`, filters to decisive games (mate/resign/outoftime/timeout/cheat), posts a system-message card via `PostSystemMessageAction` only when EXACTLY one candidate exists. Idempotency via Postgres `whereJsonContains('attachments_json', [['source' => 'auto_fetch']])` scoped to system messages.
-- [x] **`PostSystemMessageAction`**: extended to accept `?array $attachments = null` so auto-fetch can post a system-message-with-card in one call. Existing callers (text-only system messages) pass two args; the new path passes three.
-- [x] **`MessageAttachmentsPayload::gameCardEntries`**: filters `type: 'game_card'` entries from `attachments_json` into the API shape. Near-passthrough — no URL rewriting needed since the entry was already API-shaped at write time.
-- [x] **React**: `ChatGameCardAttachment` TS type extends the `ChatAttachment` union. `GameCardAttachment` component mirrors `LinkCard`'s visual family (Stakly-skinned pill border, hover glow) with a Crown chess tile, success-toned verified badge (color + `BadgeCheck` icon for a11y), per-player badges with winner highlighting, and a `lichess.org` link footer. `ChatMessageBubble` renders cards for both `text` (paste) and `system` (auto-fetch) messages; `SystemBubble` was extended to optionally render cards below the centered text pill.
-- [x] **Tests**: +65 (snapshot population on TakeListing × 4; LichessGameClient `Http::fake` happy/404/5xx/429/malformed/draw/aborted/AI-opponent × 8 + ndjson × 6; URL detection variants × 19; dispatch routing × 4; paste-path job verified/swapped-colors/case-insensitive/snapshot-missing/no-match/one-side/404/5xx/concurrent × 9; auto-fetch job happy/zero/multiple/non-decisive/mixed/5xx/missing-snapshot/idempotent/paste-doesnt-block × 8; first-confirm dispatch fires/missing-snapshots/second-confirm/no-change/changed-outcome × 6). **525 / 2338 → 590 / 2495.**
-
-### Decisions (Phase 4)
-
-- **Lichess first**. Lichess has both direct game-by-ID lookup AND searchable games-between-users; chess.com requires archive paging + eventual-consistency retries. Lichess shakes out both architectures on the easier API. chess.com enrichment follows in Phase 4b.
-- **Hybrid: auto-fetch + manual paste, not either/or**. Auto-fetch is convenience for the common case (linked players who played on Lichess). Paste is the escape hatch (auto-fetch picked wrong, no linked accounts, chess.com play). Both produce identical card shape — single renderer, single audit trail.
-- **Auto-fetch is evidence, not a vote**. No "Is this your game?" yes/no buttons on the auto-card. Players continue to use the existing Confirm Won/Lost/Drawn — that remains the only binding signal. The "one says yes, one says no" disagreement axis is eliminated by not creating it.
-- **Auto-fetch never auto-settles**. Even when the API-fetched game shows a clear winner that disagrees with players' confirms, the player consensus still wins (or dispute path arbitrates). API-only settlement is M14 territory, gated on real dispute volume.
-- **Game-picking heuristic: single decisive game in window or skip**. Auto-fetch's window is `match.created_at → now`. If 0 candidates: skip. If multiple: skip and let a player paste the right URL. No "best guess" — wrong-game evidence is worse than no evidence.
-- **Auto-fetch fires once per match**. Dispatched on the first confirm transition (zero confirms → one confirm) to avoid re-querying on confirm-changes. Job-level idempotency check via `attachments_json` membership.
-- **Cross-check usernames against snapshot, not live link**. Even if a player unlinks mid-match, snapshot survives. Prevents "unlink to escape match" abuse.
-- **Verification is binary**: verified ✓ or not. No "verified but with caveat" — caveats are for chat-mediated discussion with admin.
+- **Snapshot, don't link**: cross-check usernames against the snapshot, not live link. A player unlinking mid-match can't strip the evidence anchor — prevents "unlink to escape match" abuse.
+- **Sibling snapshot table, not flat columns on `game_matches`**: chosen mid-slice once CS2 (multi-identifier) became the next adapter. Flat columns would have needed deprecation within weeks.
+- **Auto-fetch is evidence, not a vote**: no yes/no UI on cards. Player confirms Won/Lost/Drawn remain the only binding signal.
+- **Auto-fetch never auto-settles**: even when the API winner disagrees with player confirms, player consensus still wins (or dispute path arbitrates). M14 territory.
+- **Single decisive game in window or skip**: no "best guess" — wrong-game evidence is worse than no evidence. Auto-fetch fires once per match (zero→one confirm transition); idempotency via `attachments_json` membership check.
+- **Verification is binary** ✓ or not. No "verified but with caveat."
 
 **Phase 4b — Smart link enrichment for chess.com** ✅ shipped 2026-05-22
 
-- [x] **`ChessComGameClient`** + `ChessComGameResult` DTO. No direct game-by-id endpoint on chess.com — fetches the snapshotted player's monthly archive (`GET /pub/player/{username}/games/{YYYY}/{MM}`), filters by URL match (paste path) or opponent + since (auto-fetch). Queries current month + previous month to handle midnight-UTC games. Parses chess.com's per-side `result` strings into our shared decisive/draw model.
-- [x] **`FetchChessComGameMetadataJob`** — paste path. Picks a snapshotted chess.com username from the match as the archive to query (either side works since both archives carry the same game record). Mirror of the Lichess paste job for verified/unverified card branches.
-- [x] **`AutoFetchChessComGameJob`** — first-confirm auto-fetch. `$tries = 4` with explicit `release([5,15,45][attempt-1])` backoff on empty-archive results to outlast chess.com's 5-15s archive lag. Same single-decisive-in-window heuristic + idempotency as the Lichess job (`whereJsonContains` scoped to `provider: 'chess_com'`).
-- [x] **`ConfirmOutcomeAction` dispatch routing** — picks `AutoFetchLichessGameJob` or `AutoFetchChessComGameJob` based on `listing.platform`. Both still require the relevant provider's snapshot on both sides before dispatching.
-- [x] **`SendMessageAction::extractChessComGameUrl`** — recognises `chess.com/game/(live|daily)/{id}`, `chess.com/live/game/{id}` (legacy), and `chess.com/analysis/game/(live|daily)/{id}`. Routes matched URLs to `FetchChessComGameMetadataJob`; non-matches fall through to the existing Lichess/OG routing.
-- [x] **`LichessGameApi` renamed to `ChessGameApi`** — now provider-agnostic. Reads the card's `provider` field as a discriminator and looks up the right snapshot (Lichess or chess.com) to resolve the winner. Single arbitration driver handles both chess providers; M15 game adapters get their own drivers.
-- [x] **`config/stakly.php` default driver** flipped `'lichess'` → `'chess'`. Old `'lichess'` value removed from the `match` (no backward-compat shim because nothing has shipped yet that depends on the older value).
-- [x] **Frontend `describeWinner`** in `chat-message-bubble.tsx` extended with chess.com's vocabulary (`checkmated`, `resigned`, `abandoned`, `agreed`, `repetition`, etc.) alongside Lichess's (`mate`, `resign`, `outoftime`, etc.). One card renderer handles both providers.
-- [x] User-Agent header — reuses the existing `config('stakly.chess_com_user_agent')` (introduced in M8 Phase 1 for the profile client).
-- [x] Tests: +35. **641 / 2633.** Suite covers URL detection (15), client API contract (8), paste-path job verified/unverified/missing/empty-archive (4), auto-fetch happy/empty/missing-snapshot/idempotency (4), chess.com card arbitration via `ChessGameApi` (1), routing in `SendMessageAction` (2), `ConfirmOutcomeAction` dispatch picks correct job by `listing.platform` (1).
+Mirror of Phase 4 adapted to chess.com's archive-based API. `ChessComGameClient` + `ChessComGameResult` DTO: no direct game-by-id endpoint exists, so the client fetches the snapshotted player's monthly archive (`GET /pub/player/{username}/games/{YYYY}/{MM}`) and filters by URL match (paste path) or opponent + since (auto-fetch). Queries current month + previous month to handle midnight-UTC games. Parses chess.com's per-side `result` strings into the shared decisive/draw model.
 
-### Decisions (Phase 4b)
+`FetchChessComGameMetadataJob` (paste path) picks the creator's snapshotted chess.com username for archive lookup (either side works since both archives carry the same game record). `AutoFetchChessComGameJob` (first-confirm) has `$tries = 4` with explicit `release([5,15,45][attempt-1])` backoff on empty-archive results to outlast chess.com's 5-15s archive lag. URL detection via `SendMessageAction::extractChessComGameUrl` covers `chess.com/game/(live|daily)/{id}` + legacy `chess.com/live/game/{id}` + `chess.com/analysis/game/(live|daily)/{id}`.
 
-- **Sibling driver, not separate arbitration paths.** Originally Phase 4 shipped `LichessGameApi`; renaming to `ChessGameApi` and making it card-provider-aware avoids a parallel `ChessComGameApi` driver + chain wrapper. The card's `provider` field is enough discrimination.
-- **Retry-on-empty for chess.com only.** Lichess auto-fetch is one-shot because the Lichess API is real-time; chess.com archives lag a few seconds after game-end so the chess.com job releases with backoff (~65s total wait). Paste path is one-shot for both — the user can re-paste if they were too quick.
-- **Pick the creator's chess.com snapshot for paste-path archive queries.** Either side's archive works (game appears in both); we just need one. Convention: creator first.
+`ConfirmOutcomeAction::dispatchAutoFetch` routes by `listing.platform` to either `AutoFetchLichessGameJob` or `AutoFetchChessComGameJob` — both still require the relevant provider's snapshot on both sides. `LichessGameApi` renamed to `ChessGameApi` and made provider-agnostic (reads the card's `provider` field as a discriminator, looks up the matching snapshot). `config/stakly.php` default driver flipped `'lichess'` → `'chess'`. Frontend `describeWinner` extended with chess.com vocabulary (`checkmated`, `resigned`, `abandoned`, `agreed`, `repetition`, `50move`, etc.) alongside Lichess's (`mate`, `resign`, `outoftime`, etc.) — one card renderer handles both providers.
 
-**Phase 5 Slice B — Listing platform binding + tightened gates** ✅ shipped 2026-05-22 (partial)
+**Decisions**:
 
-The listing now carries a `platform` value (chess_com | lichess) and the take/create gates check the user is verified on THAT platform — Alice with only Lichess can't take Bob's chess.com listing because they have no shared playing surface. Replaces the permissive "any chess provider" check from Slice A. Polish items (match-page indicator, dispute prompt, filter chip) deferred — see "Phase 5 Slice C polish" below.
+- **Single arbitration driver (`ChessGameApi`) covers both chess providers** via the card's `provider` discriminator. No parallel `ChessComGameApi` driver + chain wrapper.
+- **Retry-on-empty for chess.com only**. Lichess auto-fetch is one-shot (real-time API); chess.com archives lag a few seconds, so the chess.com job releases with backoff (~65s total wait across 4 attempts).
+- **Paste-path picks the creator's chess.com snapshot for archive queries**. Either side's archive works (game appears in both); convention is creator first.
 
-- [x] **Migration**: `listings.platform` (varchar 16, default `'chess_com'`, cast to `LinkedAccountProvider`).
-- [x] **`Listing` model**: `platform` in fillable + cast. `ListingFactory` defaults to a 50/50 random platform; new `forLichess()` / `forChessCom()` states pin it.
-- [x] **`StoreListingRequest`**: `platform` required + enum-validated.
-- [x] **Create form picker** — shows when user has multiple linked providers, auto-selects when only one, the existing link-CTA notice handles zero. Toggle-group UI matching the time-control picker style.
-- [x] **Take-gate tightened**: `TakeListingAction` checks `$user->{$listing->platform->value}_verified_at !== null` (was: any chess provider).
-- [x] **Create-gate tightened**: `CreateListingAction` checks the picked platform.
-- [x] **Toast copy** in both controllers names the specific platform ("Link a Lichess account before taking this match" / "Link a chess.com account before posting a chess.com listing").
-- [x] **`HandleInertiaRequests`**: shares `auth.user.linked_platforms` (ordered list of verified providers) alongside the existing `has_chess_link` flag. Frontend uses it to decide platform-specific Take button copy + picker visibility.
-- [x] **Listing detail Take button**: new "Link {platform} to take" disabled branch + platform-named CTA link. Existing branches gated to ALSO require the matching platform.
-- [x] **`ListingResource`**: exposes `platform`.
-- [x] **Frontend types**: `ListingPlatform` type union, added to `Listing` interface and `auth.user.linked_platforms`.
-- [x] **`ListingSeeder`** chains `->withLichess()->withChessCom()` so seeded users participate in both halves of the marketplace.
-- [x] Tests: +6 platform-gate cases across create + take (cross-platform blocked, single-provider-only unlock, etc.). Existing happy-path tests updated to lock factories to matching platforms.
+**Phase 5 Slice A+B — Linked-account gates + `listings.platform` binding** ✅ shipped 2026-05-22
 
-**Phase 5 Slice C — Capability indicator + dispute prompt + filter chip** (~1 day, pending)
+Marketplace participation now requires a verified chess link. Take + create are blocked at both the Action layer (sentinel `'not_linked'`) and the UI layer (disabled CTAs with platform-named copy + redirect to `/settings/linked-accounts` on bypass). The listing now carries a `platform` value (chess_com | lichess) and the gates check the user is verified on THAT specific platform — Alice with only Lichess can't take Bob's chess.com listing because they have no shared playing surface.
 
-- [ ] Match page indicator: "Outcome can be auto-verified via Lichess" / chess.com / "Manual review only" depending on platform. (Auto-verification copy now legitimately accurate since `ChessGameApi` reads chess cards.)
-- [ ] On dispute open, `OpenDisputeAction` posts a system message in chat: "Dispute opened by {user}. Submit evidence — screenshot, game URL, or PGN. An admin will review."
-- [ ] React: system message variant (visually distinct, no user attribution).
-- [ ] `/listings` filter chip: filter by platform (chess.com / Lichess).
+Slice A shipped first as the permissive version (`User::hasVerifiedChessLink()` → any chess provider unlocks both create + take); Slice B immediately tightened the gates to per-platform once `listings.platform` landed. Both ship in the same commit window — the permissive check is now obsolete in the create + take Actions (they check the listing's specific platform), but `hasVerifiedChessLink()` remains as a convenience signal for the "has any link at all" UX surfaces (the unlinked-user landing notice on `/listings/create`).
 
-**Phase 5 Slice A — Take + create gate (permissive)** ✅ shipped 2026-05-22 (superseded by Slice B above)
+Backend: `listings.platform` migration (varchar 16, default `'chess_com'`, cast to `LinkedAccountProvider`). `Listing` model fillable + cast. `ListingFactory` defaults to 50/50 random platform + new `forLichess()` / `forChessCom()` states. `StoreListingRequest` validates `platform` as required + enum-member. `TakeListingAction` + `CreateListingAction` check `$user->{$listing->platform->value}_verified_at !== null`. Controllers map the sentinel to a redirect to `/settings/linked-accounts` with platform-named toast. `HandleInertiaRequests` shares `auth.user.has_chess_link` (any-link convenience) + `auth.user.linked_platforms` (ordered list, for per-platform UI). `ListingResource` exposes `platform`.
 
-- [x] `User::hasVerifiedChessLink(): bool` — "any verified chess provider" check (Lichess OR chess.com). Permissive on purpose: a single link unlocks both create AND take. Phase 5 Slice B (below) tightens to platform-specific once `listings.platform` lands.
-- [x] **Take-gate**: `TakeListingAction` returns `'not_linked'` sentinel when the taker has no verified provider. `GameMatchController::take` maps to a redirect → `/settings/linked-accounts` with info toast.
-- [x] **Create-gate**: `CreateListingAction` returns `'not_linked'` likewise. `ListingController::store` maps to the same redirect.
-- [x] **`HandleInertiaRequests`**: shares `auth.user.has_chess_link` (computed boolean) so the frontend can disable the Take button + swap the Create form for a notice card without re-checking `*_verified_at` timestamps.
-- [x] **`resources/js/pages/listings/show.tsx`**: new disabled "Link a chess account to take" button branch + CTA link below when `!has_chess_link`. Existing branches (own balance, owner inactive, etc.) gated to ALSO require a link so an unlinked viewer never sees the working Take.
-- [x] **`resources/js/pages/listings/create.tsx`**: early-return swaps the form for a notice card ("Link a chess account first") with a "Link chess.com or Lichess" CTA button.
-- [x] **Seeders**: `ListingSeeder` chains `->withLichess()` so seeded users pass the gate by default. Without this, no seeded test account could participate via HTTP.
-- [x] Tests: +5 (create-gate page renders notice / POST redirects + flash toast / chess.com-only unlocks create / take redirects + flash toast / chess.com-only unlocks take). Updated existing happy-path tests to chain `->withLichess()`. **604 / 2550.**
+Frontend: create form picker (shown when user has multiple linked providers; auto-selected when only one). Listing detail page Take button has a new disabled "Link {platform} to take" branch with CTA link; existing balance/owner-inactive branches gated to ALSO require the matching platform. `ListingSeeder` chains `->withLichess()->withChessCom()` so seeded users participate in both halves of the marketplace.
 
-**Phase 5 Slice B — Listing platform binding + dispute prompt + indicators** (~1-2 days, pending)
+**Decisions**:
 
-- [ ] Schema: `platform` column on `listings` (enum: `chess_com` / `lichess`, default `chess_com` for existing rows). Create form picker (visible only if user has linked accounts on multiple platforms).
-- [ ] **Tighten the take-gate to platform-specific**: `TakeListingAction` validates `$taker->{platform}_verified_at !== null` for the specific `listings.platform`, not "any chess provider." Same for `CreateListingAction` checking the picked platform.
-- [ ] Match page indicator: "Outcome can be auto-verified via Lichess" or "Auto-verification via chess.com coming soon" or "Manual review only" depending on game + listing platform.
-- [ ] On dispute open, `OpenDisputeAction` posts a system message in chat: "Dispute opened by {user}. Submit evidence — screenshot, game URL, or PGN. An admin will review."
-- [ ] React: system message variant (visually distinct, no user attribution).
-- [ ] `/listings` filter chip: filter by platform (chess.com / Lichess).
+- **Single platform per listing** beats multi-platform listings. Cross-platform players literally can't play each other; making them try and then explaining the failure at confirm time is worse UX than blocking the take.
+- **Permissive gate (Slice A) was a stepping stone**, immediately superseded by platform-specific. The two-slice approach kept the diff understandable.
+- **Default to `chess_com`** for the column. Pre-existing seeded listings stay valid (default value). Fresh listings pick at creation.
 
-**Decisions** (Phase 5):
-- **Linking is required to create or take listings.** Players without a verified account can't participate. This is a real UX gate — but without it, dispute resolution is impossible (admin has nothing to cross-check). Slice A ships the permissive "any chess provider" check; Slice B tightens to per-listing-platform.
-- **Dispute evidence prompt is non-blocking**: players can dispute without submitting evidence — chat itself is the evidence record. The prompt nudges, doesn't gate.
-- **Platform column default `chess_com`**: existing seeded listings stay valid. New listings pick at creation.
+**Phase 5 Slice C — Manual dispute opening + match-page closeout** (~1 day, pending)
+
+Match-page polish slice closing the dispute UX. Today's only path to `Disputed` is the auto-dispute when both players confirm Won — a player who suspects cheating or whose opponent disappeared has no UI to flag it. Adds a "Report a problem" button (manual dispute open), a chat prompt explaining what evidence to submit, and a small capability indicator on the happy path.
+
+- [ ] **"Report a problem" button** on the match page when match is `Pending`. Hidden in `Settled` / `Disputed` / `ManualReview`. Confirmation modal (shadcn `AlertDialog`) with strong language: "Are you sure? An admin will review and decide who gets the pot."
+- [ ] **`OpenDisputeAction` extended** — audit the existing M11 Action. Add participant + `Pending`-status gate, idempotent re-run, post the dispute prompt system message. New `POST /matches/{match}/report` controller endpoint + policy method (`GameMatchPolicy::report`).
+- [ ] **Dispute prompt system message** — posted on entering `Disputed` from either path: manual report-a-problem OR auto-dispute (`ConfirmOutcomeAction::resolveBothConfirmed`, which already posts a conflict-narration message — the prompt adds the call-to-action). Copy: "Submit evidence in chat — screenshot, game URL, or PGN. An admin will review."
+- [ ] **React system message variant** — dispute-toned border + warning icon. Detection via a new `{type: 'dispute_prompt'}` attachment entry on the system message (mirrors how `game_card` attachments differentiate Phase 4 cards).
+- [ ] **Match page capability indicator** — small badge near `MatchInfoCard`: "Outcome auto-verifies via Lichess" / "Outcome auto-verifies via chess.com" depending on `listing.platform`. Copy is now legitimately accurate since `ChessGameApi` reads chess cards.
+
+**Decisions**:
+
+- **"Report a problem", not "Open dispute"**. Bybit-style mild wording at the entry point avoids escalating tone before the user has actually decided. The confirmation modal uses stronger language ("An admin will review and decide who gets the pot") since the user is past the soft-prompt point.
+- **Pending-only for the first cut**. Once a match is `Settled` the button is hidden. Re-opening a settled match means clawing back funds from the winner — operationally heavier, not built until we see real "I clicked Lost by mistake" or "I never got the notification" cases.
+- **No `/listings` platform filter chip** (dropped from original Slice C scope). Keeping mixed Lichess + chess.com listings visible — with disabled "Link {platform} to take" CTAs on listings the user can't take — converts unlinked users into linked accounts. Hiding the listings hides the link-acquisition prompt.
+- **Same dispute prompt on both manual and auto-dispute paths**. The conflict-narration message ("Players' confirmations conflict. Resolving via the game record.") explains the past; the prompt explains the future. Even if `ChessGameApi` settles the auto-dispute seconds later, the prompt is harmless and useful as dispute-log context if the case falls through to `ManualReview`.
 
 ### Not in M8
 
-- **Filament admin panel** — M12. Until that lands, disputes still resolve via the existing `MockGameApi` path. Chat is *additive* in M8, not replacing dispute resolution yet.
-- **chess.com smart link enrichment** — Phase 4b (follow-up to Phase 4).
-- **Auto-resolution without admin** — M14, once adapters are battle-tested.
+- **Filament admin panel** — M12. Until that lands, disputes still resolve via the `ChessGameApi` → mock fallback path (M14 Slice A). Chat is *additive* in M8.
+- **Auto-resolution without admin oversight** — full M14, gated on adapter maturity + dispute volume signal.
 - **Chat anti-abuse** (off-platform deal detection, rate limits beyond basic, report-user, blocked words) — M13.
-- **Voice / video chat in-app** — not on the table; links to externally-hosted clips cover the use case via Slice 2.
-- **Read receipts, typing indicators, message reactions, edit/delete, mentions, DMs** — none of these today. Open if a real user pulls for one.
+- **Voice / video chat in-app** — not on the table; externally-hosted clips covered via Slice 2 link cards.
+- **Read receipts, typing indicators, message reactions, edit/delete, mentions, DMs** — none today. Open if a real user pulls for one.
 
 ---
 
@@ -468,19 +355,15 @@ When dispute volume justifies automation, swap from "every dispute → admin rev
 
 Builds on the per-game verification clients from M8 (chess.com / Lichess) and M15 (FACEIT / OpenDota / Riot): each adapter is the same HTTP client the chat link-card enrichment uses, just invoked from `ResolveDisputeAction` instead of only from `SendMessageAction` link-paste detection. Result confidence maps to `MatchOutcome` (Won/Lost/Drawn) and `GameApiConfidence` (Confirmed → auto-settle, Drawn → auto-refund, Unknown → fall to admin).
 
-Trigger: M12 admin path is in use and dispute volume justifies the engineering. Pull forward sooner if a class of disputes shows it'd be obviously easier to auto-resolve.
+Trigger for full M14: M12 admin path is in use and dispute volume justifies the engineering. Pull forward sooner if a class of disputes shows it'd be obviously easier to auto-resolve.
 
-**Slice A — Lichess card arbitration** ✅ shipped 2026-05-22 (pulled forward)
+**Slice A — Chess card arbitration** ✅ shipped 2026-05-22 (pulled forward)
 
-- [x] `App\Services\GameApi\LichessGameApi` implementing the `GameApi` interface. Reads the most-recent auto-fetched card (`source: 'auto_fetch'`) off the match's chat and returns the winner the card names with `Confirmed` confidence. Maps the card's `winner_username` to a Stakly `user_id` via the snapshotted Lichess handles (case-insensitive).
-- [x] Falls through to `MockGameApi` when no card exists (no Lichess-linked players, no decisive game in the auto-fetch search, race window between confirm and queue worker, paste-only card present), when the card's winner doesn't map to either snapshot (defensive — shouldn't happen but won't crash), or when the card is from a non-Lichess provider.
-- [x] `AppServiceProvider::bindGameApi`: new `'lichess'` driver case wrapping `MockGameApi` as the fallback. Both bindings resolve to the same `MockGameApi` singleton so test `forceWinner()` calls still affect the fall-through path.
-- [x] `config/stakly.php` default flipped `'mock'` → `'lichess'`.
-- [x] `tests/Pest.php`: `mockGameApi()` helper resolves `MockGameApi::class` directly so the wrapper's existence is invisible to tests that don't care.
-- [x] **`ConfirmOutcomeAction::resolveBothConfirmed`**: posts a "Players' confirmations conflict. Resolving via the game record." system message before flipping the match to `Disputed`. Closes a UX gap where the chat silently jumped from confirmation to settlement.
-- [x] Tests: +9 (`LichessGameApiTest` × 8: creator-winner / taker-winner / case-insensitive / no-card-falls-through / paste-only-card-ignored / unmappable-winner-fall-through / no-snapshots-fall-through / multiple-cards-most-recent; plus a feature test in `GameMatchConfirmTest` reproducing the original "both confirm Won → Lichess card wins regardless of mock" bug). **604 / 2550.**
+`App\Services\GameApi\ChessGameApi` implements `GameApi`. Reads the most-recent auto-fetched card (`source: 'auto_fetch'`) off the match's chat — provider-agnostic (handles both Lichess and chess.com via the card's `provider` field) — and returns the named winner with `Confirmed` confidence. Maps `winner_username` to a Stakly `user_id` via snapshotted handles (case-insensitive). Falls through to `MockGameApi` for no card, race window (auto-fetch hasn't completed), paste-only cards, or unmappable winners (defensive).
 
-**Slice A pulled forward from M14 proper because** the mock arbitration was paying the wrong player when a Lichess card showed a different winner — a visible "the system is broken" symptom every time a dispute hit during dev. Once chess.com adapter (Phase 4b) ships, the same pattern adds `ChessComGameApi` as a sibling driver. Full M14 (FACEIT, OpenDota, Riot, plus no-admin-fallback policy) still lives behind the original trigger: M12 admin path in use + dispute volume signal.
+`AppServiceProvider::bindGameApi` registers `MockGameApi` as its own concrete + binds `GameApi::class` to `ChessGameApi` (wrapping `MockGameApi` as fallback). `config/stakly.php` default driver: `'chess'`. `tests/Pest.php` `mockGameApi()` helper resolves `MockGameApi::class` directly so existing tests using `forceWinner()` keep working through the wrapper's fallback path.
+
+**Pulled forward from M14 proper because** the mock arbitration was paying the wrong player when a Lichess card showed a different winner — a visible "the system is broken" symptom every time a dispute hit during dev. Originally landed Lichess-only as `LichessGameApi`; Phase 4b extended to chess.com cards and renamed to `ChessGameApi`. Full M14 (FACEIT, OpenDota, Riot, plus no-admin-fallback policy) still lives behind the original trigger: M12 admin path in use + dispute volume signal.
 
 ---
 
@@ -500,18 +383,19 @@ The trust pitch this milestone earns: **Stakly only takes stakes on matches play
 
 Games without a usable anti-cheat platform AND a verification API (Fortnite, Apex, COD, FIFA, fighting games, mobile games) are out of scope until either changes — not because they're impossible, but because the trust pitch doesn't hold for them.
 
-**Architectural composition** — mostly the existing shapes, with one schema migration called out below:
+**Architectural composition** — mostly the existing shapes, with one extension called out below:
 
 - `LinkedAccountProvider` enum gains `Faceit`, `Riot`, possibly `Steam` (for the OpenDota / Steam-ranked Dota 2 path).
 - New `ProfileClient` implementations: `FaceitProfileClient`, `RiotProfileClient` (likely split per region), `SteamProfileClient`. Bio-code paste flow per provider where the platform exposes an editable profile field; OAuth where available (FACEIT and Riot both expose it — cleaner UX, requires app approval).
 - `Game` enum gains `Cs2`, `Dota2`, `Valorant`, `Lol`.
 - `listings.platform` (M8 Phase 5) expands its allowed values to include the new platforms.
 - New game-result clients (`FaceitGameClient`, `OpenDotaGameClient`, `RiotGameClient`) mirror M8's `LichessGameClient` / `ChessComGameClient` — first wired into chat link-card enrichment, later into the auto-resolver via M14.
+- New arbitration drivers per game family (sibling to `ChessGameApi`): `FaceitGameApi`, `RiotGameApi`, etc. Each reads its own provider's cards from chat.
 - Webhooks where the provider supports them (FACEIT match-completed, Riot match-end) reduce polling cost when M14 lands.
 
-**`match_provider_snapshots` table — extending to non-chess identifiers** (refactor landed in M8 Phase 4):
+**`match_provider_snapshots` table — extending to non-chess identifiers**:
 
-The sibling table that holds linked-account snapshots is already in place (`match_provider_snapshots`, see M8 Phase 4 task list). Today each row is `(match_id, side, provider, username)` — sufficient for chess.com + Lichess. When CS2 / Dota 2 / Valorant land, each will need additional identifier columns: Steam ID (uint64 — likely `string(20)`), Faceit player ID (uuid), Riot ID region (varchar 4), maybe MMR at snapshot for sandbag-detection surfaces.
+The sibling snapshot table that landed in M8 Phase 4 is already in place. Today each row is `(match_id, side, provider, username)` — sufficient for chess.com + Lichess. When CS2 / Dota 2 / Valorant land, each will need additional identifier columns: Steam ID (uint64 — likely `string(20)`), Faceit player ID (uuid), Riot ID region (varchar 4), maybe MMR at snapshot for sandbag-detection surfaces.
 
 Two ways to extend:
 

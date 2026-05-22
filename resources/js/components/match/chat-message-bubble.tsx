@@ -16,6 +16,7 @@ import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { useInitials } from '@/hooks/use-initials';
 import { cn } from '@/lib/utils';
 import type {
+    ChatDisputePromptAttachment,
     ChatGameCardAttachment,
     ChatImageAttachment,
     ChatLinkAttachment,
@@ -49,12 +50,17 @@ export function ChatMessageBubble({
         (attachment): attachment is ChatGameCardAttachment =>
             attachment.type === 'game_card',
     );
+    const isDisputePrompt = message.attachments.some(
+        (attachment): attachment is ChatDisputePromptAttachment =>
+            attachment.type === 'dispute_prompt',
+    );
 
     if (message.type === 'system') {
         return (
             <SystemBubble
                 content={message.content ?? ''}
                 gameCards={gameCards}
+                variant={isDisputePrompt ? 'dispute_prompt' : 'default'}
             />
         );
     }
@@ -378,13 +384,34 @@ function SenderAvatar({ name }: { name: string }) {
 interface SystemBubbleProps {
     content: string;
     gameCards: ChatGameCardAttachment[];
+    // `dispute_prompt` swaps the muted lifecycle styling for a warning
+    // variant — the message is a call-to-action ("submit evidence") that
+    // should stand out from neutral lifecycle narration.
+    variant?: 'default' | 'dispute_prompt';
 }
 
-function SystemBubble({ content, gameCards }: SystemBubbleProps) {
+function SystemBubble({
+    content,
+    gameCards,
+    variant = 'default',
+}: SystemBubbleProps) {
+    const isPrompt = variant === 'dispute_prompt';
+
     return (
         <div className="flex flex-col items-center gap-2">
-            <div className="border-border/60 bg-muted/40 text-muted-foreground inline-flex max-w-[92%] items-start gap-2 rounded-lg border px-3 py-2 text-xs">
-                <Megaphone className="mt-0.5 size-3.5 shrink-0" />
+            <div
+                className={cn(
+                    'inline-flex max-w-[92%] items-start gap-2 rounded-lg border px-3 py-2 text-xs',
+                    isPrompt
+                        ? 'border-warning/40 bg-warning/10 text-warning'
+                        : 'border-border/60 bg-muted/40 text-muted-foreground',
+                )}
+            >
+                {isPrompt ? (
+                    <TriangleAlert className="mt-0.5 size-3.5 shrink-0" />
+                ) : (
+                    <Megaphone className="mt-0.5 size-3.5 shrink-0" />
+                )}
                 <span className="text-left">{content}</span>
             </div>
             {gameCards.map((card) => (

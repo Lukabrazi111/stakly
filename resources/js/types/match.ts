@@ -4,7 +4,7 @@
 // - App\Enums\MatchStatus / MatchOutcome
 
 import type { GameId } from '@/config/games';
-import type { Paginator, TimeControl } from '@/types/listings';
+import type { ListingPlatform, Paginator, TimeControl } from '@/types/listings';
 
 export type MatchStatus = 'pending' | 'disputed' | 'settled' | 'manual_review';
 
@@ -23,6 +23,10 @@ export interface MatchListing {
     id: number;
     game: GameId;
     stake_amount: number;
+    // Platform binds outcome verification — the match auto-verifies via
+    // this provider's API when the dispute path runs. Surfaced in
+    // `MatchInfoCard` as a capability indicator.
+    platform: ListingPlatform;
     time_control: TimeControl[];
 }
 
@@ -123,10 +127,19 @@ export interface ChatGameCardAttachment {
     played_at: string | null;
 }
 
+// Phase 5 Slice C dispute-prompt marker. Posted by
+// `ResolveDisputeAction::flipToManualReview` alongside the "submit
+// evidence" system message. Carries no payload — its only job is to flip
+// the system bubble into the warning-toned variant.
+export interface ChatDisputePromptAttachment {
+    type: 'dispute_prompt';
+}
+
 export type ChatAttachment =
     | ChatImageAttachment
     | ChatLinkAttachment
-    | ChatGameCardAttachment;
+    | ChatGameCardAttachment
+    | ChatDisputePromptAttachment;
 
 export interface ChatMessage {
     id: number;

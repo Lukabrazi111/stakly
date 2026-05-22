@@ -31,6 +31,7 @@ class MessageAttachmentsPayload
             ...self::imageEntries($message),
             ...self::linkEntries($message),
             ...self::gameCardEntries($message),
+            ...self::disputePromptEntries($message),
         ];
     }
 
@@ -180,6 +181,40 @@ class MessageAttachmentsPayload
                 'rated' => (bool) ($item['rated'] ?? false),
                 'played_at' => $item['played_at'] ?? null,
             ];
+        }
+
+        return $entries;
+    }
+
+    /**
+     * M8 Phase 5 Slice C dispute-prompt markers. Written by
+     * `ResolveDisputeAction::flipToManualReview` alongside a "submit
+     * evidence" system message. The marker carries no fields beyond the
+     * type discriminator — its purpose is purely to signal the React
+     * `SystemBubble` to render the warning variant.
+     *
+     * @return list<array<string, mixed>>
+     */
+    private static function disputePromptEntries(Message $message): array
+    {
+        $raw = $message->attachments_json;
+
+        if (! is_array($raw) || $raw === []) {
+            return [];
+        }
+
+        $entries = [];
+
+        foreach ($raw as $item) {
+            if (! is_array($item)) {
+                continue;
+            }
+
+            if (($item['type'] ?? null) !== 'dispute_prompt') {
+                continue;
+            }
+
+            $entries[] = ['type' => 'dispute_prompt'];
         }
 
         return $entries;

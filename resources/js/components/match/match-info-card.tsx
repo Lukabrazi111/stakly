@@ -1,15 +1,19 @@
 import { Link } from '@inertiajs/react';
-import { ChevronRight } from 'lucide-react';
+import { ChevronRight, ShieldCheck } from 'lucide-react';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { useInitials } from '@/hooks/use-initials';
 import { show as userShow } from '@/routes/users';
-import type { MatchPlayer, TimeControl } from '@/types';
+import type { ListingPlatform, MatchPlayer, TimeControl } from '@/types';
 
 interface MatchInfoCardProps {
     opponent: MatchPlayer;
     stakeEach: number;
     pot: number;
     timeControl: TimeControl[];
+    // Match's bound chess provider — drives the capability-indicator row at
+    // the bottom of the card. Tells players where the outcome auto-verifies
+    // if a dispute is opened.
+    platform: ListingPlatform;
     // Pre-computed `pot * (1 - fee_rate)`. Omitted (undefined) when the
     // match is Settled — the SettlementSummary card already breaks down
     // pot / fee / payout for resolved matches, so repeating the payout
@@ -19,6 +23,11 @@ interface MatchInfoCardProps {
     // mental math.
     winnerPayout?: number;
 }
+
+const PLATFORM_LABEL: Record<ListingPlatform, string> = {
+    lichess: 'Lichess',
+    chess_com: 'chess.com',
+};
 
 /**
  * Compact match-parameters card. Bybit-style key:value rows: opponent
@@ -31,6 +40,7 @@ export function MatchInfoCard({
     stakeEach,
     pot,
     timeControl,
+    platform,
     winnerPayout,
 }: MatchInfoCardProps) {
     const getInitials = useInitials();
@@ -71,6 +81,25 @@ export function MatchInfoCard({
                     />
                 )}
                 <Row label="Time control" value={timeControl.join(', ')} />
+
+                {/* Capability indicator — tells players where the match
+                    auto-verifies if a dispute is opened. Mirrors the
+                    `listings.platform` binding from M8 Phase 5 Slice B,
+                    so the copy is always accurate (we only auto-verify
+                    on the platform the listing was created for). */}
+                <div className="flex items-center justify-between gap-3 px-6 py-4">
+                    <dt className="text-muted-foreground text-sm">
+                        Verification
+                    </dt>
+                    <dd className="text-foreground inline-flex items-center gap-1.5 text-sm font-medium">
+                        <ShieldCheck
+                            className="text-success size-4"
+                            strokeWidth={2}
+                            aria-hidden="true"
+                        />
+                        Auto via {PLATFORM_LABEL[platform]}
+                    </dd>
+                </div>
             </dl>
         </section>
     );

@@ -34,6 +34,11 @@ class GameMatchResource extends JsonResource
                 'id' => $this->listing->id,
                 'game' => $this->listing->game->value,
                 'stake_amount' => (float) $this->listing->stake_amount,
+                // Platform binds outcome verification: a Lichess listing
+                // is auto-verified via Lichess, a chess.com listing via
+                // chess.com. Frontend shows this in the capability
+                // indicator inside `MatchInfoCard`.
+                'platform' => $this->listing->platform->value,
                 'time_control' => $this->listing->time_control
                     ->map(fn ($tc) => $tc->value)
                     ->values()

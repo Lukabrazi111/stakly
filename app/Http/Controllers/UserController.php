@@ -74,7 +74,7 @@ class UserController extends Controller
             ->forParticipant($user->id)
             ->where('status', MatchStatus::Settled)
             ->with([
-                'listing:id,user_id,game,stake_amount,time_control,status',
+                'listing:id,user_id,game,stake_amount,platform,time_control,status',
                 'listing.user:id,name,username',
                 'taker:id,name,username',
                 'winner:id,name,username',

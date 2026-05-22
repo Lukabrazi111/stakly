@@ -47,7 +47,7 @@ class GameMatchController extends Controller
             GameMatch::query()
                 ->forParticipant($user->id)
                 ->with([
-                    'listing:id,user_id,game,stake_amount,time_control,status',
+                    'listing:id,user_id,game,stake_amount,platform,time_control,status',
                     'listing.user:id,name,username',
                     'taker:id,name,username',
                     'winner:id,name,username',
@@ -138,7 +138,7 @@ class GameMatchController extends Controller
     public function show(GameMatch $match): Response
     {
         $match->load([
-            'listing:id,user_id,game,stake_amount,time_control,status',
+            'listing:id,user_id,game,stake_amount,platform,time_control,status',
             'listing.user:id,name,username',
             'taker:id,name,username',
             'winner:id,name,username',

@@ -208,6 +208,26 @@ test('API "Unknown" confidence posts the "admin review" system message', functio
     expect($manualReviewMessage)->not->toBeNull();
 });
 
+test('API "Unknown" confidence also posts a dispute_prompt evidence call-to-action', function () {
+    [$creator, , , $match] = pendingMatch();
+    mockGameApi()->forceUnknown();
+
+    app(OpenDisputeAction::class)->handle($creator, $match);
+
+    // The Unknown branch fires two system messages: narration first, then
+    // the dispute prompt carrying a `dispute_prompt` attachment marker so
+    // the React `SystemBubble` renders a visually distinct warning variant.
+    $promptMessage = Message::query()
+        ->where('match_id', $match->id)
+        ->where('type', MessageType::System)
+        ->whereJsonContains('attachments_json', [['type' => 'dispute_prompt']])
+        ->first();
+
+    expect($promptMessage)->not->toBeNull()
+        ->and($promptMessage->content)->toContain('Submit evidence')
+        ->and($promptMessage->attachments_json)->toBe([['type' => 'dispute_prompt']]);
+});
+
 // ─── ResolveMatchTimeoutAction → "Confirmation window expired." ─────────────
 
 test('timeout resolution posts a "window expired" system message', function () {
