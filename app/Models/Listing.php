@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Enums\Game;
+use App\Enums\LinkedAccountProvider;
 use App\Enums\ListingStatus;
 use App\Enums\TimeControl;
 use Database\Factories\ListingFactory;
@@ -21,6 +22,7 @@ class Listing extends Model
     protected $fillable = [
         'user_id',
         'game',
+        'platform',
         'stake_amount',
         'skill_min',
         'skill_max',
@@ -35,6 +37,7 @@ class Listing extends Model
     {
         return [
             'game' => Game::class,
+            'platform' => LinkedAccountProvider::class,
             'stake_amount' => 'decimal:2',
             'skill_min' => 'integer',
             'skill_max' => 'integer',

@@ -21,6 +21,13 @@ export type User = {
     // re-checks via `TakeListingAction` / `CreateListingAction` — frontend
     // disable is convenience UX, not the only enforcement layer.
     has_chess_link: boolean;
+    // The verified chess providers the user has linked, ordered to match
+    // `App\Enums\LinkedAccountProvider`. Empty array iff `has_chess_link`
+    // is false. Used by the listing detail page to render
+    // platform-specific disabled-Take copy ("Link Lichess to take" vs
+    // "Link chess.com to take") and by the create form to show/hide the
+    // platform picker.
+    linked_platforms: Array<'chess_com' | 'lichess'>;
     created_at: string;
     updated_at: string;
     [key: string]: unknown;

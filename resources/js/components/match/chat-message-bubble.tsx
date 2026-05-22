@@ -521,35 +521,59 @@ function PlayerBadge({ username, color, isWinner }: PlayerBadgeProps) {
 }
 
 /**
- * Map raw Lichess `status` + winner to human chat copy.
- *   mate / resign / outoftime / timeout / cheat → "<winner> won by ..."
- *   draw / stalemate                            → "Drawn ..."
- *   aborted / other                             → null (no winner line)
+ * Map raw status + winner to human chat copy. Handles BOTH Lichess and
+ * chess.com vocabularies — they use different status strings for the
+ * same outcomes:
+ *   Lichess:   mate / resign / outoftime / timeout / cheat / draw / stalemate / aborted
+ *   chess.com: checkmated / resigned / timeout / abandoned / agreed / repetition / stalemate / etc.
+ *
+ * For chess.com, `status` is set to the LOSER's per-side `result` string
+ * by `ChessComGameClient::parseGame`. So a checkmate-win game has
+ * status='checkmated', a resignation has status='resigned', etc.
  */
 function describeWinner(card: ChatGameCardAttachment): string | null {
     const status = card.status;
     const winner = card.winner_username;
 
     if (winner && status) {
-        const reason = {
+        const reason: Record<string, string> = {
+            // Lichess vocabulary
             mate: 'by checkmate',
             resign: 'by resignation',
             outoftime: 'on time',
             timeout: 'on time',
             cheat: 'by cheat report',
-        }[status];
+            // chess.com vocabulary (loser's result string)
+            checkmated: 'by checkmate',
+            resigned: 'by resignation',
+            abandoned: 'by abandonment',
+            lose: '',
+        };
 
-        if (reason) {
-            return `${winner} won ${reason}.`;
+        const text = reason[status];
+
+        if (text !== undefined) {
+            return text === ''
+                ? `${winner} won.`
+                : `${winner} won ${text}.`;
         }
 
-        if (winner) {
-            return `${winner} won.`;
-        }
+        return `${winner} won.`;
     }
 
-    if (status === 'draw' || status === 'stalemate') {
-        return status === 'stalemate' ? 'Drawn by stalemate.' : 'Drawn.';
+    // Draw vocabulary — covers both providers.
+    const drawStatuses: Record<string, string> = {
+        draw: 'Drawn.',
+        stalemate: 'Drawn by stalemate.',
+        agreed: 'Drawn by agreement.',
+        repetition: 'Drawn by repetition.',
+        insufficient: 'Drawn — insufficient material.',
+        '50move': 'Drawn by 50-move rule.',
+        timevsinsufficient: 'Drawn — time vs insufficient material.',
+    };
+
+    if (status && status in drawStatuses) {
+        return drawStatuses[status];
     }
 
     if (status === 'aborted') {

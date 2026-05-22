@@ -9,7 +9,7 @@ use App\Models\Listing;
 use App\Models\MatchProviderSnapshot;
 use App\Models\Message;
 use App\Models\User;
-use App\Services\GameApi\LichessGameApi;
+use App\Services\GameApi\ChessGameApi;
 use App\Services\GameApi\MockGameApi;
 
 /**
@@ -22,11 +22,11 @@ use App\Services\GameApi\MockGameApi;
  * `forceWinner` on via `mockGameApi()`, so fall-through paths are
  * deterministic.
  */
-function lichessGameApi(): LichessGameApi
+function chessGameApi(): ChessGameApi
 {
     // Resolve via the container so the wrapped `MockGameApi` singleton is
     // the same instance the test's `mockGameApi()` helper returns.
-    return new LichessGameApi(app(MockGameApi::class));
+    return new ChessGameApi(app(MockGameApi::class));
 }
 
 function disputeMatch(?array $snapshots = null): array
@@ -93,11 +93,11 @@ test('auto-fetched card with creator winner returns creator user id', function (
     [$creator, , $match] = disputeMatch();
     postAutoFetchCard($match, 'alice-lichess');
 
-    $result = lichessGameApi()->getMatchResult($match);
+    $result = chessGameApi()->getMatchResult($match);
 
     expect($result->winner_user_id)->toBe($creator->id)
         ->and($result->confidence)->toBe(GameApiConfidence::Confirmed)
-        ->and($result->raw_response['driver'])->toBe('lichess')
+        ->and($result->raw_response['driver'])->toBe('chess')
         ->and($result->raw_response['mode'])->toBe('auto_fetched_card')
         ->and($result->raw_response['card']['winner_username'])->toBe('alice-lichess');
 });
@@ -106,7 +106,7 @@ test('auto-fetched card with taker winner returns taker user id', function () {
     [, $taker, $match] = disputeMatch();
     postAutoFetchCard($match, 'bob-lichess');
 
-    $result = lichessGameApi()->getMatchResult($match);
+    $result = chessGameApi()->getMatchResult($match);
 
     expect($result->winner_user_id)->toBe($taker->id)
         ->and($result->confidence)->toBe(GameApiConfidence::Confirmed);
@@ -118,7 +118,7 @@ test('winner-username match is case-insensitive', function () {
     // lowercase. Both should still resolve to creator.
     postAutoFetchCard($match, 'Alice-Lichess');
 
-    $result = lichessGameApi()->getMatchResult($match);
+    $result = chessGameApi()->getMatchResult($match);
 
     expect($result->winner_user_id)->toBe($creator->id);
 });
@@ -129,7 +129,7 @@ test('no card present → falls through to MockGameApi (forced winner honoured)'
     [$creator, , $match] = disputeMatch();
     mockGameApi()->forceWinner($creator->id);
 
-    $result = lichessGameApi()->getMatchResult($match);
+    $result = chessGameApi()->getMatchResult($match);
 
     expect($result->winner_user_id)->toBe($creator->id)
         ->and($result->raw_response['driver'])->toBe('mock');
@@ -156,7 +156,7 @@ test('paste-source card (no auto_fetch) is ignored → falls through to mock', f
         ]],
     ]);
 
-    $result = lichessGameApi()->getMatchResult($match);
+    $result = chessGameApi()->getMatchResult($match);
 
     expect($result->winner_user_id)->toBe($taker->id)
         ->and($result->raw_response['driver'])->toBe('mock');
@@ -171,7 +171,7 @@ test('card with unmappable winner_username → falls through to mock', function 
     // post-card-post (or a corrupt card) shouldn't crash arbitration.
     postAutoFetchCard($match, 'stranger-lichess');
 
-    $result = lichessGameApi()->getMatchResult($match);
+    $result = chessGameApi()->getMatchResult($match);
 
     expect($result->winner_user_id)->toBe($creator->id)
         ->and($result->raw_response['driver'])->toBe('mock');
@@ -185,13 +185,64 @@ test('match without snapshots → falls through to mock even if card present', f
     // unresolvable, mock takes over.
     postAutoFetchCard($match, 'alice-lichess');
 
-    $result = lichessGameApi()->getMatchResult($match);
+    $result = chessGameApi()->getMatchResult($match);
 
     expect($result->winner_user_id)->toBe($taker->id)
         ->and($result->raw_response['driver'])->toBe('mock');
 });
 
 // ─── Card-source filtering ─────────────────────────────────────────────────
+
+test('auto-fetched chess.com card resolves winner via the chess.com snapshot', function () {
+    // Reproduces the cross-provider arbitration path: a chess.com auto-card
+    // exists, ChessGameApi must read the chess.com snapshot (not Lichess) to
+    // map winner_username → user_id. Players are snapshotted on chess.com
+    // only — Lichess snapshot is empty.
+    $creator = User::factory()->withChessCom('alice-chesscom')->create();
+    $taker = User::factory()->withChessCom('bob-chesscom')->create();
+
+    $listing = Listing::factory()->taken()->forChessCom()->for($creator)->create();
+    $match = GameMatch::factory()->create([
+        'listing_id' => $listing->id,
+        'taker_user_id' => $taker->id,
+        'status' => MatchStatus::Pending,
+    ]);
+
+    MatchProviderSnapshot::create([
+        'match_id' => $match->id,
+        'side' => GameMatch::SIDE_CREATOR,
+        'provider' => LinkedAccountProvider::ChessCom,
+        'username' => 'alice-chesscom',
+    ]);
+    MatchProviderSnapshot::create([
+        'match_id' => $match->id,
+        'side' => GameMatch::SIDE_TAKER,
+        'provider' => LinkedAccountProvider::ChessCom,
+        'username' => 'bob-chesscom',
+    ]);
+
+    Message::create([
+        'match_id' => $match->id,
+        'user_id' => null,
+        'type' => MessageType::System,
+        'content' => 'Verified chess.com game record.',
+        'attachments_json' => [[
+            'type' => 'game_card',
+            'provider' => 'chess_com',
+            'source' => 'auto_fetch',
+            'game_id' => '55555555555',
+            'verified' => true,
+            'winner_username' => 'bob-chesscom',
+            'status' => 'resigned',
+        ]],
+    ]);
+
+    $result = chessGameApi()->getMatchResult($match->fresh(['listing', 'providerSnapshots']));
+
+    expect($result->winner_user_id)->toBe($taker->id)
+        ->and($result->confidence)->toBe(GameApiConfidence::Confirmed)
+        ->and($result->raw_response['card']['provider'])->toBe('chess_com');
+});
 
 test('multiple auto-fetched cards → uses the most recent one', function () {
     [, $taker, $match] = disputeMatch();
@@ -202,7 +253,7 @@ test('multiple auto-fetched cards → uses the most recent one', function () {
     // should normally prevent this, but defending against the case).
     postAutoFetchCard($match, 'bob-lichess');
 
-    $result = lichessGameApi()->getMatchResult($match);
+    $result = chessGameApi()->getMatchResult($match);
 
     expect($result->winner_user_id)->toBe($taker->id);
 });

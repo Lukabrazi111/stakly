@@ -31,13 +31,18 @@ import {
 import { show as matchShow } from '@/routes/matches';
 import { show as userShow } from '@/routes/users';
 import { deposit as walletDeposit } from '@/routes/wallet';
-import type { ListingShowProps, ListingStatus } from '@/types';
+import type { ListingPlatform, ListingShowProps, ListingStatus } from '@/types';
 
 const STATUS_LABEL: Record<ListingStatus, string> = {
     open: 'Open',
     taken: 'Taken',
     expired: 'Expired',
     cancelled: 'Cancelled',
+};
+
+const PLATFORM_LABEL: Record<ListingPlatform, string> = {
+    chess_com: 'chess.com',
+    lichess: 'Lichess',
 };
 
 const STATUS_TONE: Record<ListingStatus, string> = {
@@ -57,6 +62,13 @@ export default function ListingShow({ listing, match }: ListingShowProps) {
     const canCancel = isOwner && isOpen;
     const endingSoon = isEndingSoon(listing.expires_at);
     const hasEnoughBalance = (auth.user?.usdt_balance ?? 0) >= listing.stake_amount;
+    // M8 Phase 5 Slice B platform-specific take-gate: the viewer must have
+    // verified the LISTING'S platform, not just "any chess provider." A user
+    // with only chess.com linked can't take a Lichess listing because they
+    // literally couldn't play the match. Server re-checks via TakeListingAction.
+    const hasMatchingPlatform = Boolean(
+        auth.user?.linked_platforms?.includes(listing.platform),
+    );
     // Owner-inactive frontend gate (M6 Phase 6.5). Mirrors the server-side
     // check in `GameMatchController::take` — defense in depth, plus better
     // UX: the visitor sees up-front that this listing can't be taken right
@@ -247,7 +259,7 @@ export default function ListingShow({ listing, match }: ListingShowProps) {
                                     {isOpen
                                         && !isOwnerInactive
                                         && auth.user
-                                        && !auth.user.has_chess_link && (
+                                        && !hasMatchingPlatform && (
                                             <>
                                                 <Button
                                                     variant="gradient"
@@ -255,13 +267,15 @@ export default function ListingShow({ listing, match }: ListingShowProps) {
                                                     disabled
                                                     className="w-full"
                                                 >
-                                                    Link a chess account to take
+                                                    Link {PLATFORM_LABEL[listing.platform]} to take
                                                 </Button>
                                                 <Link
                                                     href={linkedAccountsEdit().url}
                                                     className="text-muted-foreground hover:text-foreground text-center text-xs transition-colors"
                                                 >
-                                                    Link chess.com or Lichess →
+                                                    {auth.user.has_chess_link
+                                                        ? `Link a ${PLATFORM_LABEL[listing.platform]} account →`
+                                                        : 'Link chess.com or Lichess →'}
                                                 </Link>
                                             </>
                                         )}
@@ -269,7 +283,7 @@ export default function ListingShow({ listing, match }: ListingShowProps) {
                                     {isOpen
                                         && !isOwnerInactive
                                         && auth.user
-                                        && auth.user.has_chess_link
+                                        && hasMatchingPlatform
                                         && hasEnoughBalance && (
                                         <Dialog
                                             open={takeOpen}
@@ -328,7 +342,7 @@ export default function ListingShow({ listing, match }: ListingShowProps) {
                                     {isOpen &&
                                         !isOwnerInactive &&
                                         auth.user &&
-                                        auth.user.has_chess_link &&
+                                        hasMatchingPlatform &&
                                         !hasEnoughBalance && (
                                             <>
                                                 <Button

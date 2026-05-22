@@ -9,31 +9,31 @@ use App\Models\GameMatch;
 use App\Models\Message;
 
 /**
- * Real-data dispute arbitration for chess matches with Lichess-verified
- * players. Reads the auto-fetched game card posted by
- * `AutoFetchLichessGameJob` into the match's chat and returns the winner
- * that card names.
+ * Real-data dispute arbitration for chess matches. Reads the auto-fetched
+ * card from the match's chat — regardless of provider (Lichess or
+ * chess.com) — and returns the winner the card names.
+ *
+ * The card's `provider` field is the discriminator: a `provider: 'lichess'`
+ * card uses the Lichess snapshot for cross-check, a `provider: 'chess_com'`
+ * card uses the chess.com snapshot. M15's per-game adapters (FACEIT,
+ * Riot, etc.) get their own arbitration drivers — this class is chess-only.
  *
  * Falls through to the injected `MockGameApi` fallback when:
- *   - No auto-fetch card exists (no Lichess-linked players, the
- *     single-decisive-game search returned zero or multiple candidates,
- *     or the queue worker hasn't processed the auto-fetch yet — race
- *     window during back-to-back confirms).
- *   - The card's winner_username doesn't resolve to either participant
- *     (defensive — auto-fetch already validates the snapshot match, but
- *     a snapshot mutated post-card-post shouldn't crash the dispute).
- *   - The provider is anything other than `lichess` (chess.com cards land
- *     in Phase 4b via its own driver; non-chess via M15 drivers).
+ *   - No auto-fetched card exists (race window / unlinked players / no
+ *     decisive game in the search / both jobs ran but found nothing).
+ *   - The card's winner_username doesn't map to either snapshotted handle
+ *     (defensive — auto-fetch validates upstream, but a snapshot mutated
+ *     post-card-post shouldn't crash arbitration).
  *
- * Confidence model: auto-fetched cards are always `Confirmed` because
- * `AutoFetchLichessGameJob` enforces single-decisive-game-in-window +
+ * Confidence model: auto-fetched cards are always `Confirmed` because the
+ * auto-fetch jobs already enforce single-decisive-game-in-window +
  * snapshot cross-check before posting. The card existing IS the
- * high-confidence signal — no further confidence math needed here.
+ * high-confidence signal.
  *
  * Idempotent: re-reading the same persisted card yields the same result,
  * so `ResolveDisputeAction`'s row-lock + status-guard re-entry is safe.
  */
-final class LichessGameApi implements GameApi
+final class ChessGameApi implements GameApi
 {
     public function __construct(
         private readonly MockGameApi $fallback,
@@ -57,7 +57,7 @@ final class LichessGameApi implements GameApi
             winner_user_id: $winnerUserId,
             confidence: GameApiConfidence::Confirmed,
             raw_response: [
-                'driver' => 'lichess',
+                'driver' => 'chess',
                 'mode' => 'auto_fetched_card',
                 'card' => $card,
             ],
@@ -65,9 +65,8 @@ final class LichessGameApi implements GameApi
     }
 
     /**
-     * Pull the most recent auto-fetched Lichess card off the match's chat.
-     * Per-match query (bounded by chat length) — index on `match_id` covers
-     * it.
+     * Pull the most recent auto-fetched chess card off the match's chat —
+     * either provider. Per-match query bounded by chat length.
      *
      * @return array<string, mixed>|null
      */
@@ -91,8 +90,13 @@ final class LichessGameApi implements GameApi
                 continue;
             }
 
-            if (($entry['source'] ?? null) === 'auto_fetch'
-                && ($entry['provider'] ?? null) === 'lichess') {
+            if (($entry['source'] ?? null) !== 'auto_fetch') {
+                continue;
+            }
+
+            $provider = $entry['provider'] ?? null;
+
+            if ($provider === 'lichess' || $provider === 'chess_com') {
                 return $entry;
             }
         }
@@ -101,10 +105,9 @@ final class LichessGameApi implements GameApi
     }
 
     /**
-     * Map the card's `winner_username` back to the Stakly user_id via the
-     * match's snapshotted Lichess handles. Case-insensitive — Lichess
-     * canonicalises usernames as lowercase but their JSON preserves the
-     * user's display case.
+     * Map the card's winner_username back to a Stakly user_id via the
+     * match's snapshotted handles for THE CARD'S PROVIDER. The card's
+     * `provider` field selects which side of the snapshot we read.
      *
      * @param  array<string, mixed>  $card
      */
@@ -116,16 +119,26 @@ final class LichessGameApi implements GameApi
             return null;
         }
 
+        $provider = match ($card['provider'] ?? null) {
+            'lichess' => LinkedAccountProvider::Lichess,
+            'chess_com' => LinkedAccountProvider::ChessCom,
+            default => null,
+        };
+
+        if ($provider === null) {
+            return null;
+        }
+
         $match->loadMissing('providerSnapshots', 'listing');
 
         $winnerLower = strtolower($winnerUsername);
 
-        $creatorSnap = $match->snapshotUsername(GameMatch::SIDE_CREATOR, LinkedAccountProvider::Lichess);
+        $creatorSnap = $match->snapshotUsername(GameMatch::SIDE_CREATOR, $provider);
         if ($creatorSnap !== null && strtolower($creatorSnap) === $winnerLower) {
             return $match->listing->user_id;
         }
 
-        $takerSnap = $match->snapshotUsername(GameMatch::SIDE_TAKER, LinkedAccountProvider::Lichess);
+        $takerSnap = $match->snapshotUsername(GameMatch::SIDE_TAKER, $provider);
         if ($takerSnap !== null && strtolower($takerSnap) === $winnerLower) {
             return $match->taker_user_id;
         }

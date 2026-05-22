@@ -2,6 +2,7 @@
 
 namespace App\Actions\Listing;
 
+use App\Enums\LinkedAccountProvider;
 use App\Models\Listing;
 use App\Models\User;
 use App\Services\Wallet;
@@ -34,17 +35,24 @@ class CreateListingAction
      */
     public function handle(User $user, array $data): Listing|string
     {
-        // Linked-account gate (M8 Phase 5). Runs before the transaction:
-        // it's a static user-state check, no DB write to wrap. Frontend
-        // hides the Create CTA when `has_chess_link === false`, so reaching
-        // here is either a stale-tab POST or a crafted request.
-        if (! $user->hasVerifiedChessLink()) {
+        // Platform-specific create-gate (M8 Phase 5 Slice B). The picked
+        // platform IS the platform the creator must be verified on — they
+        // can't post a Lichess listing without a verified Lichess account.
+        // Runs before the transaction: it's a static user-state check, no
+        // DB write to wrap. Frontend disables the picker option (and the
+        // submit) for unverified providers; reaching here means a stale
+        // tab or a crafted request.
+        $platform = LinkedAccountProvider::from($data['platform']);
+        $verifiedAtColumn = $platform->value.'_verified_at';
+
+        if ($user->{$verifiedAtColumn} === null) {
             return 'not_linked';
         }
 
-        return DB::transaction(function () use ($user, $data) {
+        return DB::transaction(function () use ($user, $data, $platform) {
             $listing = $user->listings()->create([
                 'game' => $data['game'],
+                'platform' => $platform,
                 'stake_amount' => $data['stake_amount'],
                 'skill_min' => $data['skill_min'] ?? null,
                 'skill_max' => $data['skill_max'] ?? null,

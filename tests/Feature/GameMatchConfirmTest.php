@@ -249,7 +249,7 @@ test('both confirm Won with Lichess card present → settles to card winner, ign
     // Reproduces the bug surfaced during real testing: previously both
     // claiming Won fell to MockGameApi → deterministic-by-parity winner
     // contradicted the Lichess card sitting RIGHT THERE in chat. With
-    // `LichessGameApi` bound as the default driver, the card wins.
+    // `ChessGameApi` bound as the default driver, the card wins.
     //
     // Forcing MockGameApi to the OTHER player makes the assertion stronger:
     // if the test passes, the card was actually consulted (not just
@@ -272,7 +272,7 @@ test('both confirm Won with Lichess card present → settles to card winner, ign
     ]);
 
     // Pretend the auto-fetch job ran and posted a card naming the TAKER
-    // as the Lichess winner. If LichessGameApi works, dispute resolves to
+    // as the Lichess winner. If ChessGameApi works, dispute resolves to
     // the taker — not whoever MockGameApi would have picked.
     Message::create([
         'match_id' => $match->id,
@@ -302,7 +302,7 @@ test('both confirm Won with Lichess card present → settles to card winner, ign
 
     expect($fresh->status)->toBe(MatchStatus::Settled)
         ->and($fresh->winner_user_id)->toBe($taker->id)
-        ->and($fresh->api_response['driver'])->toBe('lichess')
+        ->and($fresh->api_response['driver'])->toBe('chess')
         ->and($fresh->api_response['mode'])->toBe('auto_fetched_card');
 
     // Pot $200 - $20 fee = $180 to the taker. Creator's stake stays held.

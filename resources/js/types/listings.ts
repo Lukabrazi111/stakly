@@ -29,9 +29,15 @@ export interface ListingCreator {
     is_active_mode: boolean;
 }
 
+// The external provider the match must be played on (M8 Phase 5 Slice B).
+// Matches `App\Enums\LinkedAccountProvider` values. Taker must have THIS
+// platform verified to take the listing.
+export type ListingPlatform = 'chess_com' | 'lichess';
+
 export interface Listing {
     id: number;
     game: GameId;
+    platform: ListingPlatform;
     stake_amount: number;
     skill_min: number | null;
     skill_max: number | null;
@@ -118,6 +124,11 @@ export interface ListingCreateProps {
     durations: number[];
     activeListingsCount: number;
     maxActiveListings: number;
+    // M8 Phase 5 Slice B — the verified providers the user has linked.
+    // Empty array = no link; create form swaps to the link-CTA notice card.
+    // One = picker hidden, platform auto-selected.
+    // Two = picker shown so the user picks per listing.
+    linkedPlatforms: ListingPlatform[];
 }
 
 // Tab values for the /listings/mine page (M6 Phase 6.5).

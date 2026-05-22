@@ -51,7 +51,7 @@ test('taking a listing posts a "Match started" system message', function () {
     $creator = User::factory()->active()->withLichess()->create();
     Wallet::deposit($creator, '500', reference: "test:deposit:c:{$creator->id}");
 
-    $listing = Listing::factory()->open()->for($creator)->state(['stake_amount' => '100'])->create();
+    $listing = Listing::factory()->open()->forLichess()->for($creator)->state(['stake_amount' => '100'])->create();
     Wallet::hold(user: $creator, amount: '100', listing: $listing, reference: "listing-create:{$listing->id}");
 
     $taker = User::factory()->withLichess()->create();

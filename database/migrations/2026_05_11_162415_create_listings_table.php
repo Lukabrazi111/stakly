@@ -27,6 +27,17 @@ return new class extends Migration
             // v1 only chess; column kept for v2 (Dota etc.).
             $table->string('game')->default('chess');
 
+            // The external provider the match must be played on (M8 Phase 5
+            // Slice B). Values match `App\Enums\LinkedAccountProvider`
+            // ('chess_com' | 'lichess'). Default 'chess_com' so any pre-Slice-B
+            // seeded listing stays valid — fresh listings pick at creation
+            // via the create-form picker (when the creator has multiple
+            // verified providers; otherwise auto-selected to the one they
+            // have). The take-gate validates that the taker has THIS
+            // provider verified — players on different platforms can't
+            // share a match because they literally can't play each other.
+            $table->string('platform', 16)->default('chess_com');
+
             // USDT; 12,2 supports up to ~$10B per listing — far beyond any sane
             // single-match stake. Atomic-unit ledger lives in a separate
             // ledger table (M7) — this column is the display amount.

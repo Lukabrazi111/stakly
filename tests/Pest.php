@@ -93,13 +93,57 @@ function lichessGameFixture(array $overrides = []): array
 }
 
 /**
+ * Realistic chess.com monthly-archive game fixture, trimmed to the
+ * fields `ChessComGameClient` parses. Captured from a real
+ * `api.chess.com/pub/player/{user}/games/{YYYY}/{MM}` response. Wrap a
+ * list of these in `['games' => [...]]` to mimic the full archive shape.
+ *
+ * @param  array<string, mixed>  $overrides
+ * @return array<string, mixed>
+ */
+function chessComGameFixture(array $overrides = []): array
+{
+    return array_merge([
+        'url' => 'https://www.chess.com/game/live/12345678901',
+        'time_control' => '180',
+        'time_class' => 'blitz',
+        'rules' => 'chess',
+        'rated' => true,
+        'start_time' => 1_716_000_000,
+        'end_time' => 1_716_000_180,
+        'white' => [
+            'username' => 'alice-chesscom',
+            'rating' => 1500,
+            'result' => 'win',
+        ],
+        'black' => [
+            'username' => 'bob-chesscom',
+            'rating' => 1495,
+            'result' => 'checkmated',
+        ],
+    ], $overrides);
+}
+
+/**
+ * Wrap one or more `chessComGameFixture` payloads into the monthly
+ * archive shape chess.com returns.
+ *
+ * @param  list<array<string, mixed>>  $games
+ * @return array<string, mixed>
+ */
+function chessComArchiveFixture(array $games): array
+{
+    return ['games' => $games];
+}
+
+/**
  * Resolve the `MockGameApi` singleton directly. Tests that exercise
  * dispute resolution use this to call `forceWinner` / `forceUnknown`
  * without going through the public `GameApi` interface — which under the
- * default `lichess` driver is wrapped by `LichessGameApi`. Both bindings
+ * default `chess` driver is wrapped by `ChessGameApi`. Both bindings
  * resolve to the same `MockGameApi` instance (see `AppServiceProvider::bindGameApi`),
  * so a forced winner applied here is honoured by the wrapper's fallback
- * path when no Lichess card exists.
+ * path when no chess card exists.
  *
  * The singleton binding ensures forced state persists across the
  * controller call within the same test request.

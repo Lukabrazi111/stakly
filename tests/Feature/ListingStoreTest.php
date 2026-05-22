@@ -11,6 +11,9 @@ function validPayload(array $overrides = []): array
 {
     return array_merge([
         'game' => 'chess',
+        // Default to lichess so the payload matches the default
+        // `->withLichess()` user the helpers/tests construct.
+        'platform' => 'lichess',
         'stake_amount' => 100,
         'time_control' => ['blitz'],
         'region' => 'Global',
@@ -231,6 +234,8 @@ test('unlinked user hitting the create form sees the link-CTA notice instead of 
 });
 
 test('unlinked user POSTing /listings is redirected to linked-accounts settings with info toast', function () {
+    // Picks lichess as the platform (the validPayload default) — the gate
+    // should reject before the action runs.
     $user = User::factory()->create();
     Wallet::deposit($user, '500', reference: "test:deposit:{$user->id}");
 
@@ -239,24 +244,42 @@ test('unlinked user POSTing /listings is redirected to linked-accounts settings 
     $response->assertRedirect(route('linked-accounts.edit'));
     $response->assertInertiaFlash('toast', [
         'type' => 'info',
-        'message' => 'Link a chess.com or Lichess account before creating a listing.',
+        'message' => 'Link a Lichess account before posting a Lichess listing.',
     ]);
 
     expect(Listing::count())->toBe(0)
         ->and(WalletTransaction::where('type', WalletTransactionType::EscrowHold)->count())->toBe(0);
 });
 
-test('chess.com-linked user CAN create a listing (single-provider link unlocks the gate)', function () {
-    // Symmetric to Lichess — confirms the gate is "at least one verified
-    // chess provider", not "Lichess only".
+test('lichess-linked user trying to post a chess.com listing is gate-blocked (platform-specific)', function () {
+    // Cross-platform check: having one provider doesn't unlock the other.
+    // The user must verify the platform they're posting for.
+    $user = User::factory()->withLichess()->create();
+    Wallet::deposit($user, '500', reference: "test:deposit:{$user->id}");
+
+    $response = $this->actingAs($user)->postJson('/listings', validPayload([
+        'platform' => 'chess_com',
+    ]));
+
+    $response->assertRedirect(route('linked-accounts.edit'));
+    $response->assertInertiaFlash('toast', [
+        'type' => 'info',
+        'message' => 'Link a chess.com account before posting a chess.com listing.',
+    ]);
+
+    expect(Listing::count())->toBe(0);
+});
+
+test('chess.com-linked user CAN create a chess.com listing', function () {
     $user = User::factory()->withChessCom()->create();
     Wallet::deposit($user, '500', reference: "test:deposit:{$user->id}");
 
     $this->actingAs($user)
-        ->postJson('/listings', validPayload())
+        ->postJson('/listings', validPayload(['platform' => 'chess_com']))
         ->assertRedirect(route('listings.mine'));
 
-    expect(Listing::where('user_id', $user->id)->count())->toBe(1);
+    $listing = Listing::query()->where('user_id', $user->id)->firstOrFail();
+    expect($listing->platform->value)->toBe('chess_com');
 });
 
 // ─── Toast flash (light sanity check) ─────────────────────────────────────

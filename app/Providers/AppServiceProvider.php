@@ -2,8 +2,8 @@
 
 namespace App\Providers;
 
+use App\Services\GameApi\ChessGameApi;
 use App\Services\GameApi\GameApi;
-use App\Services\GameApi\LichessGameApi;
 use App\Services\GameApi\MockGameApi;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Date;
@@ -29,8 +29,8 @@ class AppServiceProvider extends ServiceProvider
      *
      * `MockGameApi` is also registered as its own concrete binding so tests
      * can resolve + force a winner without going through the public
-     * `GameApi` interface (which on the `lichess` driver is wrapped by
-     * `LichessGameApi`). Both bindings resolve to the SAME singleton
+     * `GameApi` interface (which on the `chess` driver is wrapped by
+     * `ChessGameApi`). Both bindings resolve to the SAME singleton
      * instance so a forced winner applied on either is visible to both.
      *
      * Adding a future 'chess_com' driver (Phase 4b) means a new case here
@@ -46,7 +46,7 @@ class AppServiceProvider extends ServiceProvider
 
             return match ($driver) {
                 'mock' => $app->make(MockGameApi::class),
-                'lichess' => new LichessGameApi($app->make(MockGameApi::class)),
+                'chess' => new ChessGameApi($app->make(MockGameApi::class)),
                 default => throw new InvalidArgumentException("Unknown game_api_driver: {$driver}"),
             };
         });

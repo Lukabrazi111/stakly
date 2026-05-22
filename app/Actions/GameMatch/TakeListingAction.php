@@ -48,12 +48,15 @@ class TakeListingAction
 
     public function handle(User $user, Listing $listing): GameMatch|string
     {
-        // Linked-account gate runs OUTSIDE the locked transaction: it's a
-        // static precondition on the user, no race window worth a row lock.
-        // Frontend disables the Take CTA when `has_chess_link === false`,
-        // so a request reaching this branch is either a stale-tab POST or
-        // a hand-crafted call.
-        if (! $user->hasVerifiedChessLink()) {
+        // Platform-specific take-gate (M8 Phase 5 Slice B). Taker must be
+        // verified on the listing's platform — players who only linked the
+        // other provider literally couldn't play each other on the right
+        // platform. Frontend disables the Take CTA with platform-named
+        // copy ("Link Lichess to take"); reaching here means a stale tab
+        // or a crafted call.
+        $verifiedAtColumn = $listing->platform->value.'_verified_at';
+
+        if ($user->{$verifiedAtColumn} === null) {
             return 'not_linked';
         }
 

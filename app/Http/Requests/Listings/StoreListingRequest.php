@@ -3,6 +3,7 @@
 namespace App\Http\Requests\Listings;
 
 use App\Enums\Game;
+use App\Enums\LinkedAccountProvider;
 use App\Enums\ListingStatus;
 use App\Enums\TimeControl;
 use App\Services\Wallet;
@@ -66,6 +67,11 @@ class StoreListingRequest extends FormRequest
     {
         return [
             'game' => ['required', 'string', Rule::enum(Game::class)],
+            // The provider the match must be played on (M8 Phase 5 Slice B).
+            // The create-gate (`CreateListingAction`) re-checks that the
+            // creator has the picked platform verified — defense in depth on
+            // top of this enum-membership check.
+            'platform' => ['required', 'string', Rule::enum(LinkedAccountProvider::class)],
             // `decimal:0,2` caps fractional digits to 2 — matches the
             // `decimal(12, 2)` listings column. Without this, a stake of
             // `100.456` would be held at full ledger precision (-100.456000)

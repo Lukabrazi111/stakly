@@ -28,19 +28,20 @@ return [
     | when the 4h timeout fires with no agreement).
     |
     | Supported:
-    |   - 'lichess' (default) — `LichessGameApi`. Reads the auto-fetched
-    |     Lichess card from chat (posted by `AutoFetchLichessGameJob` on the
-    |     first confirm) and returns the winner that card names. Falls
-    |     through to `MockGameApi` when no card exists — covers chess.com
-    |     matches (until Phase 4b), unlinked-player matches, and the race
-    |     window between confirm and auto-fetch completion.
+    |   - 'chess' (default) — `ChessGameApi`. Reads the auto-fetched
+    |     chess card from chat (posted by `AutoFetchLichessGameJob` or
+    |     `AutoFetchChessComGameJob` on the first confirm) and returns the
+    |     winner that card names. Provider-agnostic — handles BOTH Lichess
+    |     and chess.com cards via the card's `provider` discriminator.
+    |     Falls through to `MockGameApi` when no card exists (unlinked
+    |     players, race window between confirm and auto-fetch).
     |   - 'mock' — `MockGameApi` directly. Deterministic by `match.id`
     |     parity, no card reading. Useful for environments where real
-    |     Lichess shouldn't influence settlement.
+    |     chess APIs shouldn't influence settlement.
     |
     */
 
-    'game_api_driver' => env('STAKLY_GAME_API_DRIVER', 'lichess'),
+    'game_api_driver' => env('STAKLY_GAME_API_DRIVER', 'chess'),
 
     /*
     |--------------------------------------------------------------------------

@@ -20,7 +20,12 @@ import {
     mine as listingsMine,
     store as storeListing,
 } from '@/routes/listings';
-import type { ListingCreateProps, TimeControl } from '@/types';
+import type { ListingCreateProps, ListingPlatform, TimeControl } from '@/types';
+
+const PLATFORM_LABEL: Record<ListingPlatform, string> = {
+    chess_com: 'chess.com',
+    lichess: 'Lichess',
+};
 
 const TIME_CONTROL_OPTIONS: ReadonlyArray<[TimeControl, string]> = [
     ['blitz', 'Blitz'],
@@ -35,12 +40,20 @@ export default function ListingsCreate({
     durations,
     activeListingsCount,
     maxActiveListings,
+    linkedPlatforms,
 }: ListingCreateProps) {
     const { auth } = usePage().props;
     const hasChessLink = Boolean(auth.user?.has_chess_link);
     const atCap = activeListingsCount >= maxActiveListings;
+    // Default the picker to the user's first verified platform (chess.com
+    // comes first because it's alphabetically lower; either is fine when
+    // only one is linked). When both providers are linked, render the picker.
+    const defaultPlatform: ListingPlatform = linkedPlatforms[0] ?? 'chess_com';
+    const showPlatformPicker = linkedPlatforms.length > 1;
+
     const { data, setData, post, processing, errors } = useForm<{
         game: string;
+        platform: ListingPlatform;
         stake_amount: string;
         skill_min: string;
         skill_max: string;
@@ -50,6 +63,7 @@ export default function ListingsCreate({
         duration_hours: number;
     }>({
         game: 'chess',
+        platform: defaultPlatform,
         stake_amount: '',
         skill_min: '',
         skill_max: '',
@@ -180,6 +194,39 @@ export default function ListingsCreate({
                             </div>
                         </div>
                     </FormSection>
+
+                    {/* Platform — shown only when the user has both providers
+                        verified. Auto-selected to the only-linked one
+                        otherwise (silent). */}
+                    {showPlatformPicker && (
+                        <FormSection title="Platform">
+                            <ToggleGroup
+                                type="single"
+                                value={data.platform}
+                                onValueChange={(value) => {
+                                    if (value === 'chess_com' || value === 'lichess') {
+                                        setData('platform', value);
+                                    }
+                                }}
+                                className="grid grid-cols-2 gap-2"
+                            >
+                                {linkedPlatforms.map((p) => (
+                                    <ToggleGroupItem
+                                        key={p}
+                                        value={p}
+                                        className="data-[state=on]:border-primary data-[state=on]:bg-primary/10 data-[state=on]:text-foreground border-border/60 h-12 rounded-xl border"
+                                    >
+                                        {PLATFORM_LABEL[p]}
+                                    </ToggleGroupItem>
+                                ))}
+                            </ToggleGroup>
+                            <p className="text-muted-foreground mt-2 text-xs">
+                                Match outcome will be verified against{' '}
+                                {PLATFORM_LABEL[data.platform]}.
+                            </p>
+                            <InputError message={errors.platform} />
+                        </FormSection>
+                    )}
 
                     {/* Stake */}
                     <FormSection title="Stake">

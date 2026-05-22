@@ -23,13 +23,20 @@ class ListingSeeder extends Seeder
         // out-of-the-box — column default is `false`, so without this every
         // seeded listing would be hidden by `scopeOnPublicMarketplace`.
         //
-        // `->withLichess()` so seeded users pass the M8 Phase 5 take + create
-        // gates. Without it, no seeded test user could take a listing via the
-        // HTTP path (the gate redirects unlinked users to
-        // /settings/linked-accounts). The unique-slug auto-generation in
-        // `UserFactory::withLichess()` handles the DB unique constraint on
-        // `users.lichess_username` per row.
-        $users = User::factory()->count(20)->active()->withLichess()->create();
+        // `->withLichess()->withChessCom()` so seeded users pass the M8
+        // Phase 5 Slice B platform-specific take + create gates on BOTH
+        // platforms. The seeded `ListingFactory` randomises `platform`
+        // 50/50, so every seeded user must be able to participate on either
+        // side to keep the dev marketplace fully takeable. Unique-slug
+        // auto-generation in the `withLichess()` / `withChessCom()`
+        // factory states handles per-row DB uniqueness on the
+        // `users.{provider}_username` columns.
+        $users = User::factory()
+            ->count(20)
+            ->active()
+            ->withLichess()
+            ->withChessCom()
+            ->create();
 
         // Every marketplace user starts with $10,000 — comfortable headroom
         // so the open/taken listing holds below never trip

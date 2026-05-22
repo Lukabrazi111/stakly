@@ -6,6 +6,7 @@ use App\Actions\Message\PostSystemMessageAction;
 use App\Enums\LinkedAccountProvider;
 use App\Enums\MatchOutcome;
 use App\Enums\MatchStatus;
+use App\Jobs\AutoFetchChessComGameJob;
 use App\Jobs\AutoFetchLichessGameJob;
 use App\Models\GameMatch;
 use App\Models\User;
@@ -100,32 +101,42 @@ class ConfirmOutcomeAction
         }
 
         // Phase 4 auto-fetch — fires once per match on the zero→one confirm
-        // transition, gated on both Lichess username snapshots being present.
-        // Dispatched OUTSIDE the transaction so the system "X confirmed"
-        // message is durable before the worker runs and the job's idempotency
-        // check sees a consistent view of the chat. The job is also
-        // `ShouldQueueAfterCommit` as belt-and-suspenders.
+        // transition. Picks the right provider's job based on
+        // `listing.platform` (M8 Phase 5 Slice B): chess.com listings get
+        // the chess.com auto-fetch job, Lichess listings get the Lichess
+        // one. Dispatched OUTSIDE the transaction so the system "X confirmed"
+        // message is durable before the worker runs and the job's
+        // idempotency check sees a consistent view of the chat. Jobs are
+        // also `ShouldQueueAfterCommit` as belt-and-suspenders.
         if ($wasFirstConfirm) {
-            $fresh = $match->fresh('providerSnapshots');
+            $fresh = $match->fresh(['providerSnapshots', 'listing']);
 
-            if ($this->canAutoFetch($fresh)) {
-                AutoFetchLichessGameJob::dispatch($fresh);
-            }
+            $this->dispatchAutoFetch($fresh);
         }
 
         return $resolution;
     }
 
     /**
-     * Auto-fetch needs BOTH snapshotted Lichess usernames — single-sided
-     * verification can't yield a verified card. Snapshotted (not live) per
-     * the "snapshot, don't link" decision: a mid-match unlink can't strip
-     * the anchor.
+     * Pick the auto-fetch job for the listing's platform. Both jobs
+     * require the relevant provider's snapshot to be present on BOTH
+     * sides — otherwise we can't anchor a verified card, so skip silently.
      */
-    private function canAutoFetch(GameMatch $match): bool
+    private function dispatchAutoFetch(GameMatch $match): void
     {
-        return $match->snapshotUsername(GameMatch::SIDE_CREATOR, LinkedAccountProvider::Lichess) !== null
-            && $match->snapshotUsername(GameMatch::SIDE_TAKER, LinkedAccountProvider::Lichess) !== null;
+        $platform = $match->listing->platform;
+
+        $creatorSnap = $match->snapshotUsername(GameMatch::SIDE_CREATOR, $platform);
+        $takerSnap = $match->snapshotUsername(GameMatch::SIDE_TAKER, $platform);
+
+        if ($creatorSnap === null || $takerSnap === null) {
+            return;
+        }
+
+        match ($platform) {
+            LinkedAccountProvider::Lichess => AutoFetchLichessGameJob::dispatch($match),
+            LinkedAccountProvider::ChessCom => AutoFetchChessComGameJob::dispatch($match),
+        };
     }
 
     private function isSameOutcome(GameMatch $match, User $user, MatchOutcome $newOutcome): bool

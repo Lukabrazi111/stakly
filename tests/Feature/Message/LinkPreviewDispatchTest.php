@@ -1,6 +1,7 @@
 <?php
 
 use App\Enums\MatchStatus;
+use App\Jobs\FetchChessComGameMetadataJob;
 use App\Jobs\FetchLichessGameMetadataJob;
 use App\Jobs\FetchLinkMetadataJob;
 use App\Models\GameMatch;
@@ -162,6 +163,50 @@ test('duplicate lichess URLs in one message dispatch the job once per game ID', 
         ->assertRedirect();
 
     Bus::assertDispatchedTimes(FetchLichessGameMetadataJob::class, 1);
+});
+
+test('chess.com game URL dispatches FetchChessComGameMetadataJob, not the OG fetcher', function () {
+    [$creator, , $match] = linkPreviewMatch();
+    Bus::fake([FetchLinkMetadataJob::class, FetchChessComGameMetadataJob::class]);
+
+    $url = 'https://www.chess.com/game/live/12345678901';
+
+    $this->actingAs($creator)
+        ->post("/matches/{$match->id}/messages", [
+            'content' => "gg {$url}",
+        ])
+        ->assertRedirect();
+
+    Bus::assertDispatched(
+        FetchChessComGameMetadataJob::class,
+        fn (FetchChessComGameMetadataJob $job) => $job->gameUrl === $url,
+    );
+    Bus::assertNotDispatched(FetchLinkMetadataJob::class);
+});
+
+test('mixed Lichess + chess.com URLs each route to their own job', function () {
+    [$creator, , $match] = linkPreviewMatch();
+    Bus::fake([
+        FetchLichessGameMetadataJob::class,
+        FetchChessComGameMetadataJob::class,
+        FetchLinkMetadataJob::class,
+    ]);
+
+    $this->actingAs($creator)
+        ->post("/matches/{$match->id}/messages", [
+            'content' => 'lichess https://lichess.org/abcdefgh and chesscom https://www.chess.com/game/live/12345678901',
+        ])
+        ->assertRedirect();
+
+    Bus::assertDispatched(
+        FetchLichessGameMetadataJob::class,
+        fn (FetchLichessGameMetadataJob $job) => $job->gameId === 'abcdefgh',
+    );
+    Bus::assertDispatched(
+        FetchChessComGameMetadataJob::class,
+        fn (FetchChessComGameMetadataJob $job) => str_contains($job->gameUrl, '12345678901'),
+    );
+    Bus::assertNotDispatched(FetchLinkMetadataJob::class);
 });
 
 test('lichess non-game URL (e.g. /training) routes to the OG fetcher', function () {

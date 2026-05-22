@@ -2,6 +2,7 @@
 
 use App\Enums\LinkedAccountProvider;
 use App\Enums\MatchStatus;
+use App\Jobs\AutoFetchChessComGameJob;
 use App\Jobs\AutoFetchLichessGameJob;
 use App\Models\GameMatch;
 use App\Models\Listing;
@@ -32,7 +33,10 @@ function confirmDispatchMatch(?array $snapshots = null): array
     $taker = User::factory()->withLichess('bob-lichess')->create();
     Wallet::deposit($taker, '500', reference: "test:deposit:taker:{$taker->id}");
 
-    $listing = Listing::factory()->taken()->for($creator)->state([
+    // `->forLichess()` so the listing's platform matches the default
+    // Lichess snapshots. Dispatch chooses the job based on listing.platform
+    // (Phase 5 Slice B); the chess.com variant has its own test below.
+    $listing = Listing::factory()->taken()->forLichess()->for($creator)->state([
         'stake_amount' => '100',
     ])->create();
     Wallet::hold(
@@ -83,6 +87,53 @@ test('first confirm with both Lichess snapshots dispatches AutoFetchLichessGameJ
         AutoFetchLichessGameJob::class,
         fn (AutoFetchLichessGameJob $job) => $job->match->is($match),
     );
+});
+
+test('first confirm on a chess.com listing dispatches AutoFetchChessComGameJob', function () {
+    // Mirror of the Lichess dispatch test for the chess.com platform.
+    // Reproduces the M8 Phase 5 Slice B dispatch routing: listing.platform
+    // selects which auto-fetch job runs.
+    platformUser();
+
+    $creator = User::factory()->withChessCom('alice-chesscom')->create();
+    Wallet::deposit($creator, '500', reference: "test:deposit:creator:{$creator->id}");
+
+    $taker = User::factory()->withChessCom('bob-chesscom')->create();
+    Wallet::deposit($taker, '500', reference: "test:deposit:taker:{$taker->id}");
+
+    $listing = Listing::factory()->taken()->forChessCom()->for($creator)->state([
+        'stake_amount' => '100',
+    ])->create();
+    Wallet::hold(user: $creator, amount: '100', listing: $listing, reference: "listing-create:{$listing->id}");
+    Wallet::hold(user: $taker, amount: '100', listing: $listing, reference: "match-take:{$listing->id}");
+
+    $match = GameMatch::factory()->create([
+        'listing_id' => $listing->id,
+        'taker_user_id' => $taker->id,
+        'status' => MatchStatus::Pending,
+    ]);
+
+    MatchProviderSnapshot::create([
+        'match_id' => $match->id,
+        'side' => GameMatch::SIDE_CREATOR,
+        'provider' => LinkedAccountProvider::ChessCom,
+        'username' => 'alice-chesscom',
+    ]);
+    MatchProviderSnapshot::create([
+        'match_id' => $match->id,
+        'side' => GameMatch::SIDE_TAKER,
+        'provider' => LinkedAccountProvider::ChessCom,
+        'username' => 'bob-chesscom',
+    ]);
+
+    Bus::fake([AutoFetchChessComGameJob::class, AutoFetchLichessGameJob::class]);
+
+    $this->actingAs($creator)
+        ->postJson(route('matches.confirm', $match), ['outcome' => 'won'])
+        ->assertRedirect();
+
+    Bus::assertDispatched(AutoFetchChessComGameJob::class);
+    Bus::assertNotDispatched(AutoFetchLichessGameJob::class);
 });
 
 // ─── Negative: missing snapshots skip the dispatch ──────────────────────────

@@ -30,7 +30,10 @@ function openListingWithCreator(string $stake = '100', string $deposit = '500', 
     $creator = $factory->create();
     Wallet::deposit($creator, $deposit, reference: "test:deposit:creator:{$creator->id}");
 
-    $listing = Listing::factory()->open()->for($creator)->state([
+    // `->forLichess()` so the listing's platform matches the default
+    // Lichess-linked taker. Platform-specific gate (Slice B) requires
+    // taker to be verified on the LISTING'S platform, not just any.
+    $listing = Listing::factory()->open()->forLichess()->for($creator)->state([
         'stake_amount' => $stake,
     ])->create();
 
@@ -219,8 +222,10 @@ test('taking an open-but-past-expiry listing also hits the race-lost branch', fu
 
     // Open status but expires_at is in the past — listings:expire would flip
     // this to Expired on the next tick, but until it runs we should still
-    // refuse to take it.
-    $listing = Listing::factory()->open()->for($creator)->state([
+    // refuse to take it. `->forLichess()` keeps the listing on the same
+    // platform as the default Lichess-linked taker so the platform gate
+    // doesn't fire before the race-lost branch we're trying to exercise.
+    $listing = Listing::factory()->open()->forLichess()->for($creator)->state([
         'stake_amount' => '100',
         'expires_at' => now()->subMinutes(5),
     ])->create();
@@ -295,9 +300,10 @@ test('unlinked taker is redirected to linked-accounts settings with info toast',
     $response = $this->actingAs($taker)->postJson("/listings/{$listing->id}/take");
 
     $response->assertRedirect(route('linked-accounts.edit'));
+    // Listing is Lichess (helper default); copy names the specific platform.
     $response->assertInertiaFlash('toast', [
         'type' => 'info',
-        'message' => 'Link a chess.com or Lichess account before taking a match.',
+        'message' => 'Link a Lichess account before taking this match.',
     ]);
 
     // Listing untouched, no match created, balance unchanged.
@@ -311,8 +317,21 @@ test('unlinked taker is redirected to linked-accounts settings with info toast',
         )->toBe(0);
 });
 
-test('chess.com-linked taker CAN take a listing (single-provider link unlocks the gate)', function () {
-    [, $listing] = openListingWithCreator(stake: '100');
+test('chess.com-linked taker CAN take a chess.com listing', function () {
+    // Both sides linked + verified on chess.com — listing is chess.com,
+    // taker has chess.com, platform-specific gate passes.
+    $creator = User::factory()->active()->withChessCom()->create();
+    Wallet::deposit($creator, '500', reference: "test:deposit:creator:{$creator->id}");
+    $listing = Listing::factory()->open()->forChessCom()->for($creator)->state([
+        'stake_amount' => '100',
+    ])->create();
+    Wallet::hold(
+        user: $creator,
+        amount: '100',
+        listing: $listing,
+        reference: "listing-create:{$listing->id}",
+    );
+
     $taker = User::factory()->withChessCom()->create();
     Wallet::deposit($taker, '500', reference: "test:deposit:taker:{$taker->id}");
 
@@ -321,6 +340,36 @@ test('chess.com-linked taker CAN take a listing (single-provider link unlocks th
     $match = GameMatch::query()->where('listing_id', $listing->id)->firstOrFail();
     $response->assertRedirect(route('matches.show', $match));
     expect($listing->fresh()->status)->toBe(ListingStatus::Taken);
+});
+
+test('lichess-linked taker is gate-blocked from a chess.com listing (platform-specific)', function () {
+    // The cross-platform case the user originally asked about — a Lichess-
+    // linked taker cannot take a chess.com listing even though they have
+    // SOME chess link. They'd need to verify chess.com first.
+    $creator = User::factory()->active()->withChessCom()->create();
+    Wallet::deposit($creator, '500', reference: "test:deposit:creator:{$creator->id}");
+    $listing = Listing::factory()->open()->forChessCom()->for($creator)->state([
+        'stake_amount' => '100',
+    ])->create();
+    Wallet::hold(
+        user: $creator,
+        amount: '100',
+        listing: $listing,
+        reference: "listing-create:{$listing->id}",
+    );
+
+    $taker = User::factory()->withLichess()->create();
+    Wallet::deposit($taker, '500', reference: "test:deposit:taker:{$taker->id}");
+
+    $response = $this->actingAs($taker)->postJson("/listings/{$listing->id}/take");
+
+    $response->assertRedirect(route('linked-accounts.edit'));
+    $response->assertInertiaFlash('toast', [
+        'type' => 'info',
+        'message' => 'Link a chess.com account before taking this match.',
+    ]);
+
+    expect(GameMatch::count())->toBe(0);
 });
 
 // ─── Linked-account snapshot (M8 Phase 4 — "snapshot, don't link") ──────────
@@ -371,19 +420,22 @@ test('match creation snapshots each side\'s verified external usernames', functi
 // writer ever runs). See the new gate tests above for the redirect behavior.
 
 test('match creation snapshots only the verified provider per side', function () {
-    // Asymmetric verification — creator only Lichess, taker only chess.com.
-    // This proves the snapshot is per-(side, provider), not a blanket copy.
-    // Smart-link enrichment for a Lichess URL would only have the creator's
-    // side to cross-check; a chess.com URL would only have the taker's. Card
-    // verification logic in Phase 4 / 4b reads both ends; missing-one-side
-    // is a soft fail that still renders an unverified card.
+    // Asymmetric verification — creator has BOTH providers, taker has only
+    // Lichess. Listing is Lichess so the take-gate passes (both have Lichess);
+    // the chess.com snapshot on the taker is correctly SKIPPED. Proves
+    // snapshot is per-(side, provider), not a blanket copy.
+    //
+    // Previously this test used creator-Lichess-only vs taker-chess.com-only
+    // — that asymmetric pair can no longer share a match under the
+    // Phase 5 Slice B platform-specific gate (they have no common platform).
     $creator = User::factory()
         ->active()
         ->withLichess('alice-lichess')
+        ->withChessCom('alice-chesscom')
         ->create();
     Wallet::deposit($creator, '500', reference: "test:deposit:creator:{$creator->id}");
 
-    $listing = Listing::factory()->open()->for($creator)->state([
+    $listing = Listing::factory()->open()->forLichess()->for($creator)->state([
         'stake_amount' => '100',
     ])->create();
     Wallet::hold(
@@ -393,7 +445,7 @@ test('match creation snapshots only the verified provider per side', function ()
         reference: "listing-create:{$listing->id}",
     );
 
-    $taker = User::factory()->withChessCom('bob-chesscom')->create();
+    $taker = User::factory()->withLichess('bob-lichess')->create();
     Wallet::deposit($taker, '500', reference: "test:deposit:taker:{$taker->id}");
 
     $this->actingAs($taker)->postJson("/listings/{$listing->id}/take")->assertRedirect();
@@ -401,11 +453,12 @@ test('match creation snapshots only the verified provider per side', function ()
     $match = GameMatch::query()->where('listing_id', $listing->id)->firstOrFail();
 
     expect($match->snapshotUsername(GameMatch::SIDE_CREATOR, LinkedAccountProvider::Lichess))->toBe('alice-lichess')
-        ->and($match->snapshotUsername(GameMatch::SIDE_CREATOR, LinkedAccountProvider::ChessCom))->toBeNull()
-        ->and($match->snapshotUsername(GameMatch::SIDE_TAKER, LinkedAccountProvider::Lichess))->toBeNull()
-        ->and($match->snapshotUsername(GameMatch::SIDE_TAKER, LinkedAccountProvider::ChessCom))->toBe('bob-chesscom')
-        // Only two slots populated, not four.
-        ->and($match->providerSnapshots()->count())->toBe(2);
+        ->and($match->snapshotUsername(GameMatch::SIDE_CREATOR, LinkedAccountProvider::ChessCom))->toBe('alice-chesscom')
+        ->and($match->snapshotUsername(GameMatch::SIDE_TAKER, LinkedAccountProvider::Lichess))->toBe('bob-lichess')
+        // Taker hasn't verified chess.com — snapshot slot stays null.
+        ->and($match->snapshotUsername(GameMatch::SIDE_TAKER, LinkedAccountProvider::ChessCom))->toBeNull()
+        // 3 slots populated (2 creator + 1 taker), not 4.
+        ->and($match->providerSnapshots()->count())->toBe(3);
 });
 
 test('match creation does NOT snapshot an unverified-but-set username on the OTHER provider', function () {
@@ -427,7 +480,10 @@ test('match creation does NOT snapshot an unverified-but-set username on the OTH
     $creator->save();
     Wallet::deposit($creator, '500', reference: "test:deposit:creator:{$creator->id}");
 
-    $listing = Listing::factory()->open()->for($creator)->state([
+    // Lock the listing to Lichess — matches the default Lichess-linked
+    // takerWithBalance() so the take-gate passes and the snapshot logic
+    // we're testing actually runs.
+    $listing = Listing::factory()->open()->forLichess()->for($creator)->state([
         'stake_amount' => '100',
     ])->create();
     Wallet::hold(

@@ -268,25 +268,72 @@ Outcome resolution is unchanged. Players still Confirm Won/Lost/Drawn — that's
 - **Cross-check usernames against snapshot, not live link**. Even if a player unlinks mid-match, snapshot survives. Prevents "unlink to escape match" abuse.
 - **Verification is binary**: verified ✓ or not. No "verified but with caveat" — caveats are for chat-mediated discussion with admin.
 
-**Phase 4b — Smart link enrichment for chess.com** (~3-4 days, follow-up to Phase 4)
+**Phase 4b — Smart link enrichment for chess.com** ✅ shipped 2026-05-22
 
-- [ ] Service: `ChessComGameClient`. Strategy: parse chess.com URL for game ID, fetch the player's monthly archive (`GET /pub/player/{username}/games/{YYYY}/{MM}`), filter for matching game ID. Query current month + previous month to handle midnight UTC boundary.
-- [ ] Eventual consistency: 3-retry queued job with backoff (5s / 15s / 45s) for games not yet in archive.
-- [ ] User-Agent header per chess.com guidelines (contact email).
-- [ ] Archive response is cached aggressively to avoid double-fetching during retries.
-- [ ] Cross-check logic mirrors Phase 4 (snapshot column comparison).
+- [x] **`ChessComGameClient`** + `ChessComGameResult` DTO. No direct game-by-id endpoint on chess.com — fetches the snapshotted player's monthly archive (`GET /pub/player/{username}/games/{YYYY}/{MM}`), filters by URL match (paste path) or opponent + since (auto-fetch). Queries current month + previous month to handle midnight-UTC games. Parses chess.com's per-side `result` strings into our shared decisive/draw model.
+- [x] **`FetchChessComGameMetadataJob`** — paste path. Picks a snapshotted chess.com username from the match as the archive to query (either side works since both archives carry the same game record). Mirror of the Lichess paste job for verified/unverified card branches.
+- [x] **`AutoFetchChessComGameJob`** — first-confirm auto-fetch. `$tries = 4` with explicit `release([5,15,45][attempt-1])` backoff on empty-archive results to outlast chess.com's 5-15s archive lag. Same single-decisive-in-window heuristic + idempotency as the Lichess job (`whereJsonContains` scoped to `provider: 'chess_com'`).
+- [x] **`ConfirmOutcomeAction` dispatch routing** — picks `AutoFetchLichessGameJob` or `AutoFetchChessComGameJob` based on `listing.platform`. Both still require the relevant provider's snapshot on both sides before dispatching.
+- [x] **`SendMessageAction::extractChessComGameUrl`** — recognises `chess.com/game/(live|daily)/{id}`, `chess.com/live/game/{id}` (legacy), and `chess.com/analysis/game/(live|daily)/{id}`. Routes matched URLs to `FetchChessComGameMetadataJob`; non-matches fall through to the existing Lichess/OG routing.
+- [x] **`LichessGameApi` renamed to `ChessGameApi`** — now provider-agnostic. Reads the card's `provider` field as a discriminator and looks up the right snapshot (Lichess or chess.com) to resolve the winner. Single arbitration driver handles both chess providers; M15 game adapters get their own drivers.
+- [x] **`config/stakly.php` default driver** flipped `'lichess'` → `'chess'`. Old `'lichess'` value removed from the `match` (no backward-compat shim because nothing has shipped yet that depends on the older value).
+- [x] **Frontend `describeWinner`** in `chat-message-bubble.tsx` extended with chess.com's vocabulary (`checkmated`, `resigned`, `abandoned`, `agreed`, `repetition`, etc.) alongside Lichess's (`mate`, `resign`, `outoftime`, etc.). One card renderer handles both providers.
+- [x] User-Agent header — reuses the existing `config('stakly.chess_com_user_agent')` (introduced in M8 Phase 1 for the profile client).
+- [x] Tests: +35. **641 / 2633.** Suite covers URL detection (15), client API contract (8), paste-path job verified/unverified/missing/empty-archive (4), auto-fetch happy/empty/missing-snapshot/idempotency (4), chess.com card arbitration via `ChessGameApi` (1), routing in `SendMessageAction` (2), `ConfirmOutcomeAction` dispatch picks correct job by `listing.platform` (1).
 
-**Phase 5 — Listing platform binding + capability badge + dispute evidence prompt** (~2-3 days)
+### Decisions (Phase 4b)
+
+- **Sibling driver, not separate arbitration paths.** Originally Phase 4 shipped `LichessGameApi`; renaming to `ChessGameApi` and making it card-provider-aware avoids a parallel `ChessComGameApi` driver + chain wrapper. The card's `provider` field is enough discrimination.
+- **Retry-on-empty for chess.com only.** Lichess auto-fetch is one-shot because the Lichess API is real-time; chess.com archives lag a few seconds after game-end so the chess.com job releases with backoff (~65s total wait). Paste path is one-shot for both — the user can re-paste if they were too quick.
+- **Pick the creator's chess.com snapshot for paste-path archive queries.** Either side's archive works (game appears in both); we just need one. Convention: creator first.
+
+**Phase 5 Slice B — Listing platform binding + tightened gates** ✅ shipped 2026-05-22 (partial)
+
+The listing now carries a `platform` value (chess_com | lichess) and the take/create gates check the user is verified on THAT platform — Alice with only Lichess can't take Bob's chess.com listing because they have no shared playing surface. Replaces the permissive "any chess provider" check from Slice A. Polish items (match-page indicator, dispute prompt, filter chip) deferred — see "Phase 5 Slice C polish" below.
+
+- [x] **Migration**: `listings.platform` (varchar 16, default `'chess_com'`, cast to `LinkedAccountProvider`).
+- [x] **`Listing` model**: `platform` in fillable + cast. `ListingFactory` defaults to a 50/50 random platform; new `forLichess()` / `forChessCom()` states pin it.
+- [x] **`StoreListingRequest`**: `platform` required + enum-validated.
+- [x] **Create form picker** — shows when user has multiple linked providers, auto-selects when only one, the existing link-CTA notice handles zero. Toggle-group UI matching the time-control picker style.
+- [x] **Take-gate tightened**: `TakeListingAction` checks `$user->{$listing->platform->value}_verified_at !== null` (was: any chess provider).
+- [x] **Create-gate tightened**: `CreateListingAction` checks the picked platform.
+- [x] **Toast copy** in both controllers names the specific platform ("Link a Lichess account before taking this match" / "Link a chess.com account before posting a chess.com listing").
+- [x] **`HandleInertiaRequests`**: shares `auth.user.linked_platforms` (ordered list of verified providers) alongside the existing `has_chess_link` flag. Frontend uses it to decide platform-specific Take button copy + picker visibility.
+- [x] **Listing detail Take button**: new "Link {platform} to take" disabled branch + platform-named CTA link. Existing branches gated to ALSO require the matching platform.
+- [x] **`ListingResource`**: exposes `platform`.
+- [x] **Frontend types**: `ListingPlatform` type union, added to `Listing` interface and `auth.user.linked_platforms`.
+- [x] **`ListingSeeder`** chains `->withLichess()->withChessCom()` so seeded users participate in both halves of the marketplace.
+- [x] Tests: +6 platform-gate cases across create + take (cross-platform blocked, single-provider-only unlock, etc.). Existing happy-path tests updated to lock factories to matching platforms.
+
+**Phase 5 Slice C — Capability indicator + dispute prompt + filter chip** (~1 day, pending)
+
+- [ ] Match page indicator: "Outcome can be auto-verified via Lichess" / chess.com / "Manual review only" depending on platform. (Auto-verification copy now legitimately accurate since `ChessGameApi` reads chess cards.)
+- [ ] On dispute open, `OpenDisputeAction` posts a system message in chat: "Dispute opened by {user}. Submit evidence — screenshot, game URL, or PGN. An admin will review."
+- [ ] React: system message variant (visually distinct, no user attribution).
+- [ ] `/listings` filter chip: filter by platform (chess.com / Lichess).
+
+**Phase 5 Slice A — Take + create gate (permissive)** ✅ shipped 2026-05-22 (superseded by Slice B above)
+
+- [x] `User::hasVerifiedChessLink(): bool` — "any verified chess provider" check (Lichess OR chess.com). Permissive on purpose: a single link unlocks both create AND take. Phase 5 Slice B (below) tightens to platform-specific once `listings.platform` lands.
+- [x] **Take-gate**: `TakeListingAction` returns `'not_linked'` sentinel when the taker has no verified provider. `GameMatchController::take` maps to a redirect → `/settings/linked-accounts` with info toast.
+- [x] **Create-gate**: `CreateListingAction` returns `'not_linked'` likewise. `ListingController::store` maps to the same redirect.
+- [x] **`HandleInertiaRequests`**: shares `auth.user.has_chess_link` (computed boolean) so the frontend can disable the Take button + swap the Create form for a notice card without re-checking `*_verified_at` timestamps.
+- [x] **`resources/js/pages/listings/show.tsx`**: new disabled "Link a chess account to take" button branch + CTA link below when `!has_chess_link`. Existing branches (own balance, owner inactive, etc.) gated to ALSO require a link so an unlinked viewer never sees the working Take.
+- [x] **`resources/js/pages/listings/create.tsx`**: early-return swaps the form for a notice card ("Link a chess account first") with a "Link chess.com or Lichess" CTA button.
+- [x] **Seeders**: `ListingSeeder` chains `->withLichess()` so seeded users pass the gate by default. Without this, no seeded test account could participate via HTTP.
+- [x] Tests: +5 (create-gate page renders notice / POST redirects + flash toast / chess.com-only unlocks create / take redirects + flash toast / chess.com-only unlocks take). Updated existing happy-path tests to chain `->withLichess()`. **604 / 2550.**
+
+**Phase 5 Slice B — Listing platform binding + dispute prompt + indicators** (~1-2 days, pending)
 
 - [ ] Schema: `platform` column on `listings` (enum: `chess_com` / `lichess`, default `chess_com` for existing rows). Create form picker (visible only if user has linked accounts on multiple platforms).
-- [ ] Take-gate: `TakeListingAction` validates `$taker->{platform}_verified_at !== null` (must have linked + verified the relevant platform to take). `StoreListingRequest` validates creator likewise.
+- [ ] **Tighten the take-gate to platform-specific**: `TakeListingAction` validates `$taker->{platform}_verified_at !== null` for the specific `listings.platform`, not "any chess provider." Same for `CreateListingAction` checking the picked platform.
 - [ ] Match page indicator: "Outcome can be auto-verified via Lichess" or "Auto-verification via chess.com coming soon" or "Manual review only" depending on game + listing platform.
 - [ ] On dispute open, `OpenDisputeAction` posts a system message in chat: "Dispute opened by {user}. Submit evidence — screenshot, game URL, or PGN. An admin will review."
 - [ ] React: system message variant (visually distinct, no user attribution).
 - [ ] `/listings` filter chip: filter by platform (chess.com / Lichess).
 
 **Decisions** (Phase 5):
-- **Linking is required to create or take listings.** Players without a verified account can't participate. This is a real UX gate — but without it, dispute resolution is impossible (admin has nothing to cross-check).
+- **Linking is required to create or take listings.** Players without a verified account can't participate. This is a real UX gate — but without it, dispute resolution is impossible (admin has nothing to cross-check). Slice A ships the permissive "any chess provider" check; Slice B tightens to per-listing-platform.
 - **Dispute evidence prompt is non-blocking**: players can dispute without submitting evidence — chat itself is the evidence record. The prompt nudges, doesn't gate.
 - **Platform column default `chess_com`**: existing seeded listings stay valid. New listings pick at creation.
 
@@ -422,6 +469,18 @@ When dispute volume justifies automation, swap from "every dispute → admin rev
 Builds on the per-game verification clients from M8 (chess.com / Lichess) and M15 (FACEIT / OpenDota / Riot): each adapter is the same HTTP client the chat link-card enrichment uses, just invoked from `ResolveDisputeAction` instead of only from `SendMessageAction` link-paste detection. Result confidence maps to `MatchOutcome` (Won/Lost/Drawn) and `GameApiConfidence` (Confirmed → auto-settle, Drawn → auto-refund, Unknown → fall to admin).
 
 Trigger: M12 admin path is in use and dispute volume justifies the engineering. Pull forward sooner if a class of disputes shows it'd be obviously easier to auto-resolve.
+
+**Slice A — Lichess card arbitration** ✅ shipped 2026-05-22 (pulled forward)
+
+- [x] `App\Services\GameApi\LichessGameApi` implementing the `GameApi` interface. Reads the most-recent auto-fetched card (`source: 'auto_fetch'`) off the match's chat and returns the winner the card names with `Confirmed` confidence. Maps the card's `winner_username` to a Stakly `user_id` via the snapshotted Lichess handles (case-insensitive).
+- [x] Falls through to `MockGameApi` when no card exists (no Lichess-linked players, no decisive game in the auto-fetch search, race window between confirm and queue worker, paste-only card present), when the card's winner doesn't map to either snapshot (defensive — shouldn't happen but won't crash), or when the card is from a non-Lichess provider.
+- [x] `AppServiceProvider::bindGameApi`: new `'lichess'` driver case wrapping `MockGameApi` as the fallback. Both bindings resolve to the same `MockGameApi` singleton so test `forceWinner()` calls still affect the fall-through path.
+- [x] `config/stakly.php` default flipped `'mock'` → `'lichess'`.
+- [x] `tests/Pest.php`: `mockGameApi()` helper resolves `MockGameApi::class` directly so the wrapper's existence is invisible to tests that don't care.
+- [x] **`ConfirmOutcomeAction::resolveBothConfirmed`**: posts a "Players' confirmations conflict. Resolving via the game record." system message before flipping the match to `Disputed`. Closes a UX gap where the chat silently jumped from confirmation to settlement.
+- [x] Tests: +9 (`LichessGameApiTest` × 8: creator-winner / taker-winner / case-insensitive / no-card-falls-through / paste-only-card-ignored / unmappable-winner-fall-through / no-snapshots-fall-through / multiple-cards-most-recent; plus a feature test in `GameMatchConfirmTest` reproducing the original "both confirm Won → Lichess card wins regardless of mock" bug). **604 / 2550.**
+
+**Slice A pulled forward from M14 proper because** the mock arbitration was paying the wrong player when a Lichess card showed a different winner — a visible "the system is broken" symptom every time a dispute hit during dev. Once chess.com adapter (Phase 4b) ships, the same pattern adds `ChessComGameApi` as a sibling driver. Full M14 (FACEIT, OpenDota, Riot, plus no-admin-fallback policy) still lives behind the original trigger: M12 admin path in use + dispute volume signal.
 
 ---
 

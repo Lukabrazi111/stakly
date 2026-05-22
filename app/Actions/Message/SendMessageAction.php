@@ -5,6 +5,7 @@ namespace App\Actions\Message;
 use App\Enums\MatchStatus;
 use App\Enums\MessageType;
 use App\Events\MessageSent;
+use App\Jobs\FetchChessComGameMetadataJob;
 use App\Jobs\FetchLichessGameMetadataJob;
 use App\Jobs\FetchLinkMetadataJob;
 use App\Models\GameMatch;
@@ -124,9 +125,13 @@ class SendMessageAction
     }
 
     /**
-     * Partition the URLs in $content into (Lichess game URLs → verified
-     * card pipeline) vs (everything else → generic OG fetcher), then
-     * dispatch each pipeline if it has work.
+     * Partition the URLs in $content into three buckets:
+     *   - Lichess game URLs    → `FetchLichessGameMetadataJob` (verified card)
+     *   - chess.com game URLs  → `FetchChessComGameMetadataJob` (verified card)
+     *   - Everything else      → generic OG fetcher
+     *
+     * Each bucket gets its own dispatch. A message with mixed URLs fans out
+     * to multiple jobs.
      */
     private function dispatchUrlEnrichmentJobs(Message $message, string $content): void
     {
@@ -137,27 +142,40 @@ class SendMessageAction
         }
 
         $lichessGameIds = [];
+        $chessComGameUrls = [];
         $otherUrls = [];
 
         foreach ($urls as $url) {
-            $gameId = self::extractLichessGameId($url);
+            $lichessId = self::extractLichessGameId($url);
+            if ($lichessId !== null) {
+                $lichessGameIds[] = $lichessId;
 
-            if ($gameId !== null) {
-                $lichessGameIds[] = $gameId;
-            } else {
-                $otherUrls[] = $url;
+                continue;
             }
+
+            $chessComUrl = self::extractChessComGameUrl($url);
+            if ($chessComUrl !== null) {
+                $chessComGameUrls[] = $chessComUrl;
+
+                continue;
+            }
+
+            $otherUrls[] = $url;
         }
 
         if (count($otherUrls) > 0) {
             FetchLinkMetadataJob::dispatch($message, $otherUrls);
         }
 
-        // One job per game ID — paste path is one-card-per-game, and the
+        // One job per game ID/URL — paste path is one-card-per-game, and the
         // outer URL list is already capped at MAX_URLS_PER_MESSAGE so the
         // fan-out is bounded.
         foreach (array_unique($lichessGameIds) as $gameId) {
             FetchLichessGameMetadataJob::dispatch($message, $gameId);
+        }
+
+        foreach (array_unique($chessComGameUrls) as $url) {
+            FetchChessComGameMetadataJob::dispatch($message, $url);
         }
     }
 
@@ -350,5 +368,27 @@ class SendMessageAction
         }
 
         return $candidate;
+    }
+
+    /**
+     * If $url is a chess.com game URL, return the URL unchanged for the
+     * paste-path fetcher; otherwise null. chess.com canonical formats:
+     *   - `chess.com/game/live/{numeric_id}`
+     *   - `chess.com/game/daily/{numeric_id}`
+     *   - `chess.com/live/game/{numeric_id}`              (legacy redirect)
+     *   - `chess.com/analysis/game/(live|daily)/{id}`    (analysis view)
+     *
+     * Numeric ID is the canonical game identifier. The fetcher takes a URL
+     * (not just ID) because the chess.com Published Data API doesn't expose
+     * a get-by-id endpoint — it queries per-user archives and matches by URL.
+     */
+    public static function extractChessComGameUrl(string $url): ?string
+    {
+        $matches = preg_match(
+            '~^https?://(?:www\.)?chess\.com/(?:analysis/)?(?:game/(?:live|daily)|live/game)/\d+~i',
+            $url,
+        );
+
+        return $matches === 1 ? $url : null;
     }
 }

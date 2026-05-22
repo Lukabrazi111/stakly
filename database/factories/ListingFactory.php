@@ -3,6 +3,7 @@
 namespace Database\Factories;
 
 use App\Enums\Game;
+use App\Enums\LinkedAccountProvider;
 use App\Enums\ListingStatus;
 use App\Enums\TimeControl;
 use App\Models\Listing;
@@ -39,6 +40,13 @@ class ListingFactory extends Factory
             // branch override via `->for(User::factory()->inactive()->create())`.
             'user_id' => User::factory()->active(),
             'game' => Game::Chess,
+            // 50/50 platform split so the dev marketplace shows both. Tests
+            // wanting a specific platform chain `->forLichess()` /
+            // `->forChessCom()` below.
+            'platform' => $this->faker->randomElement([
+                LinkedAccountProvider::ChessCom,
+                LinkedAccountProvider::Lichess,
+            ]),
             'stake_amount' => $stake,
             'skill_min' => $skillMin,
             'skill_max' => $skillMax,
@@ -106,5 +114,15 @@ class ListingFactory extends Factory
         return $this->state(fn () => [
             'stake_amount' => $this->faker->randomElement([5, 10, 15, 20]),
         ]);
+    }
+
+    public function forLichess(): static
+    {
+        return $this->state(fn () => ['platform' => LinkedAccountProvider::Lichess]);
+    }
+
+    public function forChessCom(): static
+    {
+        return $this->state(fn () => ['platform' => LinkedAccountProvider::ChessCom]);
     }
 }

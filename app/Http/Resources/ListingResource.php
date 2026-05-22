@@ -22,6 +22,11 @@ class ListingResource extends JsonResource
         return [
             'id' => $this->id,
             'game' => $this->game->value,
+            // M8 Phase 5 Slice B — the platform the match must be played on
+            // (chess_com | lichess). Take button copy on the frontend reads
+            // this to disable + label "Link {platform} to take" when the
+            // viewer hasn't verified the right provider.
+            'platform' => $this->platform->value,
             'stake_amount' => (float) $this->stake_amount,
             'skill_min' => $this->skill_min,
             'skill_max' => $this->skill_max,

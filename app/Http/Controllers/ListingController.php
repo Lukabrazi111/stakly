@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Actions\Listing\CancelListingAction;
 use App\Actions\Listing\CreateListingAction;
 use App\Enums\Game;
+use App\Enums\LinkedAccountProvider;
 use App\Enums\ListingStatus;
 use App\Exceptions\InsufficientBalanceException;
 use App\Http\Requests\Listings\IndexListingsRequest;
@@ -123,6 +124,17 @@ class ListingController extends Controller
             ->where('status', ListingStatus::Open)
             ->count();
 
+        // Surface the user's verified-provider set so the create form can
+        // (a) hide the platform picker entirely when they only have one
+        // verified provider (auto-selected), (b) show the picker when they
+        // have multiple, (c) swap the form for the link-CTA notice when
+        // they have zero (handled by the existing `has_chess_link` flag in
+        // shared auth.user props).
+        $linkedPlatforms = array_values(array_filter([
+            $user->lichess_verified_at !== null ? 'lichess' : null,
+            $user->chess_com_verified_at !== null ? 'chess_com' : null,
+        ]));
+
         return Inertia::render('listings/create', [
             'balance' => Wallet::balanceFor($user),
             'regions' => StoreListingRequest::REGIONS,
@@ -130,6 +142,7 @@ class ListingController extends Controller
             'durations' => StoreListingRequest::DURATION_HOURS,
             'activeListingsCount' => $activeCount,
             'maxActiveListings' => StoreListingRequest::MAX_ACTIVE_LISTINGS,
+            'linkedPlatforms' => $linkedPlatforms,
         ]);
     }
 
@@ -202,9 +215,13 @@ class ListingController extends Controller
         }
 
         if ($result === 'not_linked') {
+            $platform = LinkedAccountProvider::from($request->validated('platform'));
+
             Inertia::flash('toast', [
                 'type' => 'info',
-                'message' => __('Link a chess.com or Lichess account before creating a listing.'),
+                'message' => __('Link a :platform account before posting a :platform listing.', [
+                    'platform' => $platform->displayName(),
+                ]),
             ]);
 
             return to_route('linked-accounts.edit');

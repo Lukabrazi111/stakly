@@ -53,13 +53,20 @@ class HandleInertiaRequests extends Middleware
                     ...$user->toArray(),
                     'usdt_balance' => (float) $user->usdt_balance,
                     'is_active_mode' => (bool) $user->is_active_mode,
-                    // M8 Phase 5 take-gate + create-gate: marketplace
-                    // participation (taking AND creating listings) requires
-                    // at least one verified chess provider. Computed here
-                    // so the frontend doesn't have to inspect both
-                    // `*_verified_at` timestamps; a single boolean is the
-                    // right shape for "should this CTA be disabled?"
+                    // M8 Phase 5 Slice A take-gate + create-gate (permissive
+                    // "any chess provider" check). Slice B uses
+                    // `linked_platforms` below for per-listing-platform UI.
                     'has_chess_link' => $user->hasVerifiedChessLink(),
+                    // M8 Phase 5 Slice B — the verified chess providers the
+                    // user has linked. Frontend reads this to render
+                    // platform-specific Take button copy on the listing
+                    // detail page and to show/hide the create-form platform
+                    // picker. Listed in the order the LinkedAccountProvider
+                    // enum defines.
+                    'linked_platforms' => array_values(array_filter([
+                        $user->chess_com_verified_at !== null ? 'chess_com' : null,
+                        $user->lichess_verified_at !== null ? 'lichess' : null,
+                    ])),
                 ] : null,
             ],
             'status' => fn () => $request->session()->get('status'),
