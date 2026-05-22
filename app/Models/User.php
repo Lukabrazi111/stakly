@@ -95,4 +95,19 @@ class User extends Authenticatable implements MustVerifyEmail
     {
         return $this->hasMany(GameMatch::class, 'taker_user_id');
     }
+
+    /**
+     * Has the user verified at least one chess provider account? Gates both
+     * sides of marketplace participation (M8 Phase 5 take-gate +
+     * create-gate). Permissive — one link unlocks both create and take —
+     * because today every listing is chess and any verified chess link is
+     * sufficient to support evidence resolution. Phase 5's
+     * `listings.platform` column tightens this to "verified on the
+     * listing's specific platform."
+     */
+    public function hasVerifiedChessLink(): bool
+    {
+        return $this->lichess_verified_at !== null
+            || $this->chess_com_verified_at !== null;
+    }
 }

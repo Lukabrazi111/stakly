@@ -22,7 +22,14 @@ class ListingSeeder extends Seeder
         // `->active()` so the seeded marketplace dataset is publicly visible
         // out-of-the-box — column default is `false`, so without this every
         // seeded listing would be hidden by `scopeOnPublicMarketplace`.
-        $users = User::factory()->count(20)->active()->create();
+        //
+        // `->withLichess()` so seeded users pass the M8 Phase 5 take + create
+        // gates. Without it, no seeded test user could take a listing via the
+        // HTTP path (the gate redirects unlinked users to
+        // /settings/linked-accounts). The unique-slug auto-generation in
+        // `UserFactory::withLichess()` handles the DB unique constraint on
+        // `users.lichess_username` per row.
+        $users = User::factory()->count(20)->active()->withLichess()->create();
 
         // Every marketplace user starts with $10,000 — comfortable headroom
         // so the open/taken listing holds below never trip

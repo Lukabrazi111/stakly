@@ -17,8 +17,11 @@ use Illuminate\Support\Facades\DB;
  * Takes an open listing: escrows the taker's stake and creates the match
  * row, all inside one `DB::transaction` with a row lock on the listing.
  *
- * Three sentinel returns the controller maps to user-facing flows:
+ * Four sentinel returns the controller maps to user-facing flows:
  *   - `GameMatch` instance → success; controller redirects to match page.
+ *   - `'not_linked'`       → taker has no verified chess provider account
+ *                            (M8 Phase 5 take-gate). Controller redirects
+ *                            to /settings/linked-accounts with CTA toast.
  *   - `'race_lost'`        → listing state changed between page load + submit
  *                            (Taken / Expired / Cancelled / past-expiry).
  *                            Controller redirects to listing with info toast.
@@ -45,6 +48,15 @@ class TakeListingAction
 
     public function handle(User $user, Listing $listing): GameMatch|string
     {
+        // Linked-account gate runs OUTSIDE the locked transaction: it's a
+        // static precondition on the user, no race window worth a row lock.
+        // Frontend disables the Take CTA when `has_chess_link === false`,
+        // so a request reaching this branch is either a stale-tab POST or
+        // a hand-crafted call.
+        if (! $user->hasVerifiedChessLink()) {
+            return 'not_linked';
+        }
+
         return DB::transaction(function () use ($listing, $user) {
             $locked = Listing::query()->lockForUpdate()->findOrFail($listing->id);
 

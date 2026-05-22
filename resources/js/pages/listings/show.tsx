@@ -22,6 +22,7 @@ import {
     formatTimeRemaining,
     isEndingSoon,
 } from '@/lib/listings-format';
+import { edit as linkedAccountsEdit } from '@/routes/linked-accounts';
 import {
     cancel as cancelRoute,
     index as listingsIndex,
@@ -243,7 +244,33 @@ export default function ListingShow({ listing, match }: ListingShowProps) {
                                         </>
                                     )}
 
-                                    {isOpen && !isOwnerInactive && auth.user && hasEnoughBalance && (
+                                    {isOpen
+                                        && !isOwnerInactive
+                                        && auth.user
+                                        && !auth.user.has_chess_link && (
+                                            <>
+                                                <Button
+                                                    variant="gradient"
+                                                    size="pill"
+                                                    disabled
+                                                    className="w-full"
+                                                >
+                                                    Link a chess account to take
+                                                </Button>
+                                                <Link
+                                                    href={linkedAccountsEdit().url}
+                                                    className="text-muted-foreground hover:text-foreground text-center text-xs transition-colors"
+                                                >
+                                                    Link chess.com or Lichess →
+                                                </Link>
+                                            </>
+                                        )}
+
+                                    {isOpen
+                                        && !isOwnerInactive
+                                        && auth.user
+                                        && auth.user.has_chess_link
+                                        && hasEnoughBalance && (
                                         <Dialog
                                             open={takeOpen}
                                             onOpenChange={setTakeOpen}
@@ -301,6 +328,7 @@ export default function ListingShow({ listing, match }: ListingShowProps) {
                                     {isOpen &&
                                         !isOwnerInactive &&
                                         auth.user &&
+                                        auth.user.has_chess_link &&
                                         !hasEnoughBalance && (
                                             <>
                                                 <Button

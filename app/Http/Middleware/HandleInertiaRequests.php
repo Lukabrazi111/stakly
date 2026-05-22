@@ -53,6 +53,13 @@ class HandleInertiaRequests extends Middleware
                     ...$user->toArray(),
                     'usdt_balance' => (float) $user->usdt_balance,
                     'is_active_mode' => (bool) $user->is_active_mode,
+                    // M8 Phase 5 take-gate + create-gate: marketplace
+                    // participation (taking AND creating listings) requires
+                    // at least one verified chess provider. Computed here
+                    // so the frontend doesn't have to inspect both
+                    // `*_verified_at` timestamps; a single boolean is the
+                    // right shape for "should this CTA be disabled?"
+                    'has_chess_link' => $user->hasVerifiedChessLink(),
                 ] : null,
             ],
             'status' => fn () => $request->session()->get('status'),

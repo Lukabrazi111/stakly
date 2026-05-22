@@ -194,11 +194,20 @@ class ListingController extends Controller
     public function store(StoreListingRequest $request, CreateListingAction $action): RedirectResponse
     {
         try {
-            $action->handle($request->user(), $request->validated());
+            $result = $action->handle($request->user(), $request->validated());
         } catch (InsufficientBalanceException) {
             throw ValidationException::withMessages([
                 'stake_amount' => __('Stake exceeds your available balance.'),
             ]);
+        }
+
+        if ($result === 'not_linked') {
+            Inertia::flash('toast', [
+                'type' => 'info',
+                'message' => __('Link a chess.com or Lichess account before creating a listing.'),
+            ]);
+
+            return to_route('linked-accounts.edit');
         }
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Listing created.')]);

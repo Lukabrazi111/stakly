@@ -92,6 +92,15 @@ class GameMatchController extends Controller
             ]);
         }
 
+        if ($result === 'not_linked') {
+            Inertia::flash('toast', [
+                'type' => 'info',
+                'message' => __('Link a chess.com or Lichess account before taking a match.'),
+            ]);
+
+            return to_route('linked-accounts.edit');
+        }
+
         if ($result === 'owner_inactive') {
             Inertia::flash('toast', [
                 'type' => 'info',

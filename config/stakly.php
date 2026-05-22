@@ -24,18 +24,23 @@ return [
     |--------------------------------------------------------------------------
     |
     | Which `App\Services\GameApi\GameApi` implementation to bind. Used by
-    | `MatchSettlement::resolveDispute` to verify outcomes when players
-    | disagree (or when the 4h timeout fires with no agreement).
+    | `ResolveDisputeAction` to verify outcomes when players disagree (or
+    | when the 4h timeout fires with no agreement).
     |
-    | v1: 'mock' only — `MockGameApi` returns deterministic results from
-    | match.id, with test helpers for the ManualReview branch. Real
-    | chess.com / Lichess adapters land in M8.
-    |
-    | Supported: 'mock'
+    | Supported:
+    |   - 'lichess' (default) — `LichessGameApi`. Reads the auto-fetched
+    |     Lichess card from chat (posted by `AutoFetchLichessGameJob` on the
+    |     first confirm) and returns the winner that card names. Falls
+    |     through to `MockGameApi` when no card exists — covers chess.com
+    |     matches (until Phase 4b), unlinked-player matches, and the race
+    |     window between confirm and auto-fetch completion.
+    |   - 'mock' — `MockGameApi` directly. Deterministic by `match.id`
+    |     parity, no card reading. Useful for environments where real
+    |     Lichess shouldn't influence settlement.
     |
     */
 
-    'game_api_driver' => env('STAKLY_GAME_API_DRIVER', 'mock'),
+    'game_api_driver' => env('STAKLY_GAME_API_DRIVER', 'lichess'),
 
     /*
     |--------------------------------------------------------------------------

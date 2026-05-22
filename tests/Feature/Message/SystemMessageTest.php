@@ -48,13 +48,13 @@ function systemMessageCount(GameMatch $match): int
 // ─── TakeListingAction → "Match started." ───────────────────────────────────
 
 test('taking a listing posts a "Match started" system message', function () {
-    $creator = User::factory()->active()->create();
+    $creator = User::factory()->active()->withLichess()->create();
     Wallet::deposit($creator, '500', reference: "test:deposit:c:{$creator->id}");
 
     $listing = Listing::factory()->open()->for($creator)->state(['stake_amount' => '100'])->create();
     Wallet::hold(user: $creator, amount: '100', listing: $listing, reference: "listing-create:{$listing->id}");
 
-    $taker = User::factory()->create();
+    $taker = User::factory()->withLichess()->create();
     Wallet::deposit($taker, '500', reference: "test:deposit:t:{$taker->id}");
 
     $match = app(TakeListingAction::class)->handle($taker, $listing);

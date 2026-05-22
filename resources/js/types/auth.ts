@@ -14,6 +14,13 @@ export type User = {
     // Open listings are hidden from the marketplace + public profile views.
     // Toggled via /listings/mine page. Default true.
     is_active_mode: boolean;
+    // True iff the user has at least one verified chess provider account
+    // (chess.com OR Lichess). Gates marketplace participation: a `false`
+    // here disables the Take CTA on listings and the Create CTA on the
+    // listings page, both with a CTA to /settings/linked-accounts. Server
+    // re-checks via `TakeListingAction` / `CreateListingAction` — frontend
+    // disable is convenience UX, not the only enforcement layer.
+    has_chess_link: boolean;
     created_at: string;
     updated_at: string;
     [key: string]: unknown;

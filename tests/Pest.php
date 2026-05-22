@@ -1,7 +1,6 @@
 <?php
 
 use App\Models\User;
-use App\Services\GameApi\GameApi;
 use App\Services\GameApi\MockGameApi;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -94,24 +93,24 @@ function lichessGameFixture(array $overrides = []): array
 }
 
 /**
- * Resolve the bound `GameApi` singleton, asserting it's the mock driver.
- * Tests that exercise dispute resolution use this to call `forceWinner` /
- * `forceUnknown` without going through the container themselves.
+ * Resolve the `MockGameApi` singleton directly. Tests that exercise
+ * dispute resolution use this to call `forceWinner` / `forceUnknown`
+ * without going through the public `GameApi` interface — which under the
+ * default `lichess` driver is wrapped by `LichessGameApi`. Both bindings
+ * resolve to the same `MockGameApi` instance (see `AppServiceProvider::bindGameApi`),
+ * so a forced winner applied here is honoured by the wrapper's fallback
+ * path when no Lichess card exists.
  *
- * The singleton-binding in `AppServiceProvider` ensures forced state
- * persists across the controller call within the same test request.
+ * The singleton binding ensures forced state persists across the
+ * controller call within the same test request.
  */
 function mockGameApi(): MockGameApi
 {
-    $api = app(GameApi::class);
-
-    if (! $api instanceof MockGameApi) {
-        throw new RuntimeException('Expected MockGameApi singleton, got '.$api::class);
-    }
+    $mock = app(MockGameApi::class);
 
     // Reset between calls — singleton means state from a prior test in the
     // same process could otherwise bleed in. Cheap belt-and-suspenders.
-    $api->reset();
+    $mock->reset();
 
-    return $api;
+    return $mock;
 }

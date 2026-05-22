@@ -183,7 +183,18 @@ class ConfirmOutcomeAction
             return 'settled';
         }
 
-        // Real disagreement — game-API arbitrates.
+        // Real disagreement — game-API arbitrates. Narrate the auto-dispute
+        // explicitly so the chat doesn't jump silently from "Bob confirmed:
+        // Won" straight to "Match settled. {name} wins". Posting the system
+        // message before the status flip keeps it ordered ahead of any
+        // settlement message ResolveDisputeAction → SettleMatchAction will
+        // emit a moment later (when the mock arbitrates synchronously inside
+        // the same request).
+        $this->postSystem->handle(
+            $match,
+            __('Players\' confirmations conflict. Resolving via the game record.'),
+        );
+
         $match->update([
             'status' => MatchStatus::Disputed,
             'dispute_opened_at' => now(),

@@ -1,10 +1,14 @@
 <?php
 
+use App\Enums\LinkedAccountProvider;
 use App\Enums\MatchOutcome;
 use App\Enums\MatchStatus;
+use App\Enums\MessageType;
 use App\Enums\WalletTransactionType;
 use App\Models\GameMatch;
 use App\Models\Listing;
+use App\Models\MatchProviderSnapshot;
+use App\Models\Message;
 use App\Models\User;
 use App\Models\WalletTransaction;
 use App\Services\Wallet;
@@ -239,6 +243,102 @@ test('both confirm Won → auto-dispute → API resolves to creator', function (
     // Pot = $200, fee = $20 (10%), winner payout = $180.
     expect((string) $creator->fresh()->usdt_balance)->toBe('580.000000');
     expect((string) $taker->fresh()->usdt_balance)->toBe('400.000000');
+});
+
+test('both confirm Won with Lichess card present → settles to card winner, ignoring MockGameApi', function () {
+    // Reproduces the bug surfaced during real testing: previously both
+    // claiming Won fell to MockGameApi → deterministic-by-parity winner
+    // contradicted the Lichess card sitting RIGHT THERE in chat. With
+    // `LichessGameApi` bound as the default driver, the card wins.
+    //
+    // Forcing MockGameApi to the OTHER player makes the assertion stronger:
+    // if the test passes, the card was actually consulted (not just
+    // coincidentally agreeing with the mock).
+    [$creator, $taker, , $match] = pendingMatch(stake: '100');
+
+    // Snapshot Lichess accounts on the match (TakeListingAction normally
+    // does this; pendingMatch's bare-bones factory doesn't).
+    MatchProviderSnapshot::create([
+        'match_id' => $match->id,
+        'side' => GameMatch::SIDE_CREATOR,
+        'provider' => LinkedAccountProvider::Lichess,
+        'username' => 'alice-lichess',
+    ]);
+    MatchProviderSnapshot::create([
+        'match_id' => $match->id,
+        'side' => GameMatch::SIDE_TAKER,
+        'provider' => LinkedAccountProvider::Lichess,
+        'username' => 'bob-lichess',
+    ]);
+
+    // Pretend the auto-fetch job ran and posted a card naming the TAKER
+    // as the Lichess winner. If LichessGameApi works, dispute resolves to
+    // the taker — not whoever MockGameApi would have picked.
+    Message::create([
+        'match_id' => $match->id,
+        'user_id' => null,
+        'type' => MessageType::System,
+        'content' => 'Verified Lichess game record.',
+        'attachments_json' => [[
+            'type' => 'game_card',
+            'provider' => 'lichess',
+            'source' => 'auto_fetch',
+            'game_id' => 'abcdefgh',
+            'verified' => true,
+            'winner_username' => 'bob-lichess',
+            'status' => 'mate',
+        ]],
+    ]);
+
+    // Force mock to creator — the opposite of what the card says. If the
+    // card path runs, taker wins; if mock falls through, creator wins.
+    // The test asserting taker wins proves the card path took priority.
+    mockGameApi()->forceWinner($creator->id);
+
+    $this->actingAs($creator)->postJson(route('matches.confirm', $match), ['outcome' => 'won']);
+    $this->actingAs($taker)->postJson(route('matches.confirm', $match), ['outcome' => 'won']);
+
+    $fresh = $match->fresh();
+
+    expect($fresh->status)->toBe(MatchStatus::Settled)
+        ->and($fresh->winner_user_id)->toBe($taker->id)
+        ->and($fresh->api_response['driver'])->toBe('lichess')
+        ->and($fresh->api_response['mode'])->toBe('auto_fetched_card');
+
+    // Pot $200 - $20 fee = $180 to the taker. Creator's stake stays held.
+    expect((string) $taker->fresh()->usdt_balance)->toBe('580.000000');
+    expect((string) $creator->fresh()->usdt_balance)->toBe('400.000000');
+});
+
+test('auto-dispute posts a "conflict — resolving via game record" system message before settlement', function () {
+    // Closes the UX gap where chat jumped silently from
+    // "Bob confirmed: Won" to "Match settled. {name} wins" with no
+    // explanation of how arbitration was triggered. The dispute-narration
+    // message must land BEFORE the settlement message so the chat reads in
+    // causal order.
+    [$creator, $taker, , $match] = pendingMatch();
+    mockGameApi()->forceWinner($creator->id);
+
+    $this->actingAs($creator)->postJson(route('matches.confirm', $match), ['outcome' => 'won']);
+    $this->actingAs($taker)->postJson(route('matches.confirm', $match), ['outcome' => 'won']);
+
+    $systemMessages = Message::query()
+        ->where('match_id', $match->id)
+        ->where('type', MessageType::System)
+        ->orderBy('id')
+        ->get();
+
+    $conflictIdx = $systemMessages->search(
+        fn ($m) => str_contains($m->content, 'confirmations conflict'),
+    );
+    $settledIdx = $systemMessages->search(
+        fn ($m) => str_contains($m->content, 'Match settled.'),
+    );
+
+    expect($conflictIdx)->not->toBeFalse('conflict-narration system message missing')
+        ->and($settledIdx)->not->toBeFalse('settlement system message missing')
+        ->and($conflictIdx)->toBeLessThan($settledIdx,
+            'conflict message must precede settlement message');
 });
 
 test('both confirm Lost → auto-dispute → API resolves to taker', function () {

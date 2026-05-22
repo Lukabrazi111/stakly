@@ -1,5 +1,5 @@
-import { Head, Link, useForm } from '@inertiajs/react';
-import { AlertCircle, Crown } from 'lucide-react';
+import { Head, Link, useForm, usePage } from '@inertiajs/react';
+import { AlertCircle, Crown, Link2 } from 'lucide-react';
 import type { ReactNode } from 'react';
 import InputError from '@/components/input-error';
 import { Button } from '@/components/ui/button';
@@ -14,6 +14,7 @@ import {
 } from '@/components/ui/select';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import SiteLayout from '@/layouts/site-layout';
+import { edit as linkedAccountsEdit } from '@/routes/linked-accounts';
 import {
     index as listingsIndex,
     mine as listingsMine,
@@ -35,6 +36,8 @@ export default function ListingsCreate({
     activeListingsCount,
     maxActiveListings,
 }: ListingCreateProps) {
+    const { auth } = usePage().props;
+    const hasChessLink = Boolean(auth.user?.has_chess_link);
     const atCap = activeListingsCount >= maxActiveListings;
     const { data, setData, post, processing, errors } = useForm<{
         game: string;
@@ -67,6 +70,50 @@ export default function ListingsCreate({
         && data.stake_amount !== ''
         && stakeNumber > 0
         && hasTimeControl;
+
+    // Linked-account gate (M8 Phase 5). The viewer hit this page without a
+    // verified chess provider → swap the form for a notice card. Server
+    // re-checks in `CreateListingAction` so a hand-crafted POST also fails.
+    if (! hasChessLink) {
+        return (
+            <SiteLayout>
+                <Head title="Create a listing" />
+
+                <div className="mx-auto max-w-2xl px-4 py-10 md:py-14">
+                    <header className="mb-8">
+                        <h1 className="font-display text-3xl font-bold tracking-tight md:text-4xl">
+                            Create a listing
+                        </h1>
+                        <p className="text-muted-foreground mt-2 text-sm">
+                            One more step before you can post on the marketplace.
+                        </p>
+                    </header>
+
+                    <div className="border-border/60 bg-card flex flex-col items-start gap-4 rounded-2xl border p-6">
+                        <div className="bg-primary/10 text-primary inline-flex size-10 items-center justify-center rounded-lg">
+                            <Link2 className="size-5" aria-hidden="true" />
+                        </div>
+                        <div className="flex flex-col gap-1">
+                            <h2 className="font-display text-xl font-bold tracking-tight">
+                                Link a chess account first
+                            </h2>
+                            <p className="text-muted-foreground text-sm leading-relaxed">
+                                Stakly verifies match outcomes against your
+                                chess.com or Lichess account. Link one to post
+                                listings and take matches — it takes about a
+                                minute.
+                            </p>
+                        </div>
+                        <Button variant="gradient" size="pill" asChild>
+                            <Link href={linkedAccountsEdit().url}>
+                                Link chess.com or Lichess
+                            </Link>
+                        </Button>
+                    </div>
+                </div>
+            </SiteLayout>
+        );
+    }
 
     return (
         <SiteLayout>

@@ -33,7 +33,7 @@ test('unverified users are blocked from the create form by the verified middlewa
 });
 
 test('verified users see the create form with balance + option lists', function () {
-    $user = User::factory()->create();
+    $user = User::factory()->withLichess()->create();
     Wallet::deposit($user, '500', reference: "test:deposit:{$user->id}");
 
     $response = $this->actingAs($user)->get('/listings/create');
@@ -51,7 +51,7 @@ test('verified users see the create form with balance + option lists', function 
 // ─── Store happy path (8.4) ───────────────────────────────────────────────
 
 test('store creates the listing AND writes the escrow hold ledger row', function () {
-    $user = User::factory()->create();
+    $user = User::factory()->withLichess()->create();
     Wallet::deposit($user, '500', reference: "test:deposit:{$user->id}");
 
     $response = $this->actingAs($user)->postJson('/listings', validPayload([
@@ -83,7 +83,7 @@ test('store creates the listing AND writes the escrow hold ledger row', function
 // ─── Validation failures (8.5, 8.6) ───────────────────────────────────────
 
 test('stake exceeding the user balance returns 422 keyed on stake_amount with no listing written', function () {
-    $user = User::factory()->create();
+    $user = User::factory()->withLichess()->create();
     Wallet::deposit($user, '50', reference: "test:deposit:{$user->id}");
 
     $response = $this->actingAs($user)->postJson('/listings', validPayload([
@@ -99,7 +99,7 @@ test('stake exceeding the user balance returns 422 keyed on stake_amount with no
 });
 
 test('missing required fields produce field-level 422 errors', function () {
-    $user = User::factory()->create();
+    $user = User::factory()->withLichess()->create();
     Wallet::deposit($user, '500', reference: "test:deposit:{$user->id}");
 
     $this->actingAs($user)
@@ -109,7 +109,7 @@ test('missing required fields produce field-level 422 errors', function () {
 });
 
 test('time_control must be a non-empty array of valid enum values', function () {
-    $user = User::factory()->create();
+    $user = User::factory()->withLichess()->create();
     Wallet::deposit($user, '500', reference: "test:deposit:{$user->id}");
 
     $this->actingAs($user)
@@ -130,7 +130,7 @@ test('stake_amount with more than 2 decimal places is rejected', function () {
     // let `Wallet::hold` debit at scale 6 while the listing stores a rounded
     // 2-decimal value, drifting on cancel/release. The `decimal:0,2` rule
     // pins precision at the request boundary.
-    $user = User::factory()->create();
+    $user = User::factory()->withLichess()->create();
     Wallet::deposit($user, '500', reference: "test:deposit:{$user->id}");
 
     $this->actingAs($user)
@@ -141,7 +141,7 @@ test('stake_amount with more than 2 decimal places is rejected', function () {
 // ─── Mass-assignment safety (8.7) ─────────────────────────────────────────
 
 test('attacker-supplied user_id, status, and expires_at in the request body have no effect', function () {
-    $user = User::factory()->create();
+    $user = User::factory()->withLichess()->create();
     $victim = User::factory()->create();
     Wallet::deposit($user, '500', reference: "test:deposit:{$user->id}");
 
@@ -172,7 +172,7 @@ test('a user at the active-listings cap cannot create another listing', function
     // tab could still submit. `StoreListingRequest::withValidator` counts the
     // user's Open listings and attaches an `active_listings_cap` error if at
     // or over the MAX_ACTIVE_LISTINGS constant.
-    $user = User::factory()->create();
+    $user = User::factory()->withLichess()->create();
     Wallet::deposit($user, '500', reference: "test:deposit:{$user->id}");
 
     Listing::factory()->open()->for($user)->count(2)->create();
@@ -190,7 +190,7 @@ test('only Open listings count toward the cap (Taken / Expired / Cancelled are f
     // If a user has settled / expired / cancelled listings in their history,
     // those should NOT block them from creating new ones. The cap is about
     // "listings currently holding capital + slot," not lifetime count.
-    $user = User::factory()->create();
+    $user = User::factory()->withLichess()->create();
     Wallet::deposit($user, '500', reference: "test:deposit:{$user->id}");
 
     Listing::factory()->open()->for($user)->create();
@@ -209,10 +209,60 @@ test('only Open listings count toward the cap (Taken / Expired / Cancelled are f
     )->toBe(2);
 });
 
+// ─── Linked-account gate (M8 Phase 5 create-gate) ──────────────────────────
+
+test('unlinked user hitting the create form sees the link-CTA notice instead of the form', function () {
+    // Server-side: the page still renders (route auth + verified middleware
+    // pass), but the frontend swaps the form for a notice card based on
+    // `auth.user.has_chess_link`. We assert the page renders + the user
+    // truly lacks a verified provider.
+    $user = User::factory()->create();
+    Wallet::deposit($user, '500', reference: "test:deposit:{$user->id}");
+
+    $response = $this->actingAs($user)->get('/listings/create');
+
+    $response->assertOk();
+    $response->assertInertia(fn ($page) => $page
+        ->component('listings/create')
+        ->where('balance', '500.000000')
+    );
+
+    expect($user->fresh()->hasVerifiedChessLink())->toBeFalse();
+});
+
+test('unlinked user POSTing /listings is redirected to linked-accounts settings with info toast', function () {
+    $user = User::factory()->create();
+    Wallet::deposit($user, '500', reference: "test:deposit:{$user->id}");
+
+    $response = $this->actingAs($user)->postJson('/listings', validPayload());
+
+    $response->assertRedirect(route('linked-accounts.edit'));
+    $response->assertInertiaFlash('toast', [
+        'type' => 'info',
+        'message' => 'Link a chess.com or Lichess account before creating a listing.',
+    ]);
+
+    expect(Listing::count())->toBe(0)
+        ->and(WalletTransaction::where('type', WalletTransactionType::EscrowHold)->count())->toBe(0);
+});
+
+test('chess.com-linked user CAN create a listing (single-provider link unlocks the gate)', function () {
+    // Symmetric to Lichess — confirms the gate is "at least one verified
+    // chess provider", not "Lichess only".
+    $user = User::factory()->withChessCom()->create();
+    Wallet::deposit($user, '500', reference: "test:deposit:{$user->id}");
+
+    $this->actingAs($user)
+        ->postJson('/listings', validPayload())
+        ->assertRedirect(route('listings.mine'));
+
+    expect(Listing::where('user_id', $user->id)->count())->toBe(1);
+});
+
 // ─── Toast flash (light sanity check) ─────────────────────────────────────
 
 test('successful store flashes a success toast', function () {
-    $user = User::factory()->create();
+    $user = User::factory()->withLichess()->create();
     Wallet::deposit($user, '500', reference: "test:deposit:{$user->id}");
 
     $this->actingAs($user)
