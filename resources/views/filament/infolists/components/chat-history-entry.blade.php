@@ -1,104 +1,188 @@
 @php
     $messages = $entry->getMessages();
+
+    // Group consecutive messages from the same role+author into bundles so
+    // we render one header per burst (Slack-style). The bundle key changes
+    // whenever role OR author changes — system messages always break the
+    // grouping since each one stands alone.
+    $bundles = [];
+    $current = null;
+    foreach ($messages as $message) {
+        $role = $entry->roleOf($message);
+        $key = $role === 'system'
+            ? 'system:'.$message->id
+            : $role.':'.($message->user_id ?? 'null');
+
+        if ($current === null || $current['key'] !== $key) {
+            if ($current !== null) {
+                $bundles[] = $current;
+            }
+            $current = [
+                'key' => $key,
+                'role' => $role,
+                'author_name' => $message->user?->name,
+                'author_username' => $message->user?->username,
+                'messages' => [],
+            ];
+        }
+        $current['messages'][] = $message;
+    }
+    if ($current !== null) {
+        $bundles[] = $current;
+    }
 @endphp
 
 <x-dynamic-component :component="$getEntryWrapperView()" :entry="$entry">
-    @if ($messages->isEmpty())
-        <p class="fi-color-gray-500 text-sm italic">No messages exchanged in this match.</p>
+    @if (empty($bundles))
+        <div class="fi-color-gray-500 rounded-lg border border-dashed border-gray-300 px-4 py-8 text-center text-sm dark:border-gray-700">
+            No messages exchanged in this match.
+        </div>
     @else
-        <div class="space-y-3">
-            @foreach ($messages as $message)
+        <div class="space-y-4">
+            @foreach ($bundles as $bundle)
                 @php
-                    $isSystem = $message->type === \App\Enums\MessageType::System;
-                    $author = $isSystem ? 'System' : ($message->user?->username ?? '—');
-                    $attachments = is_array($message->attachments_json) ? $message->attachments_json : [];
-                    $attachmentUrl = $isSystem ? null : $entry->attachmentUrl($message);
+                    $role = $bundle['role'];
+                    $isSystem = $role === 'system';
+
+                    // Role color is paired with a text label (rule:
+                    // "don't convey information by color alone"). Border
+                    // and label use the same color token.
+                    $accent = match ($role) {
+                        'creator' => 'border-l-cyan-500',
+                        'taker' => 'border-l-rose-500',
+                        'system' => 'border-l-gray-400 dark:border-l-gray-600',
+                        default => 'border-l-gray-400',
+                    };
+                    $roleLabel = match ($role) {
+                        'creator' => 'Creator',
+                        'taker' => 'Taker',
+                        'system' => 'System',
+                        default => 'Unknown',
+                    };
+                    $roleBadgeClass = match ($role) {
+                        'creator' => 'bg-cyan-100 text-cyan-900 dark:bg-cyan-900/50 dark:text-cyan-100',
+                        'taker' => 'bg-rose-100 text-rose-900 dark:bg-rose-900/50 dark:text-rose-100',
+                        'system' => 'bg-gray-200 text-gray-800 dark:bg-gray-700 dark:text-gray-100',
+                        default => 'bg-gray-200 text-gray-800',
+                    };
                 @endphp
 
                 <div @class([
-                    'rounded-lg border p-3',
-                    'border-blue-200 bg-blue-50 dark:border-blue-900 dark:bg-blue-950' => $isSystem,
-                    'border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-900' => ! $isSystem,
+                    'rounded-lg border border-l-4 bg-white p-4 dark:bg-gray-900/50',
+                    'border-gray-200 dark:border-gray-700/60',
+                    $accent,
                 ])>
-                    <div class="mb-1 flex items-center justify-between text-xs">
-                        <span class="font-semibold">
-                            {{ $author }}
-                            @if ($isSystem)
-                                <span class="ml-1 rounded bg-blue-200 px-1.5 py-0.5 text-blue-900 dark:bg-blue-800 dark:text-blue-100">system</span>
-                            @endif
+                    {{-- Bundle header: role badge + author + first/last timestamps --}}
+                    <div class="mb-3 flex flex-wrap items-center gap-2 text-xs">
+                        <span @class([
+                            'rounded-md px-1.5 py-0.5 font-semibold uppercase tracking-wide',
+                            $roleBadgeClass,
+                        ])>
+                            {{ $roleLabel }}
                         </span>
-                        <span class="opacity-60" title="{{ $message->created_at->toDateTimeString() }}">
-                            {{ $message->created_at->format('M j, H:i') }}
+
+                        @if (! $isSystem && $bundle['author_username'])
+                            <span class="font-semibold text-gray-900 dark:text-gray-100">
+                                {{ $bundle['author_name'] }}
+                            </span>
+                            <span class="text-gray-500 dark:text-gray-400">
+                                &commat;{{ $bundle['author_username'] }}
+                            </span>
+                        @endif
+
+                        <span class="ml-auto text-gray-500 dark:text-gray-400" title="{{ $bundle['messages'][0]->created_at->toDateTimeString() }}">
+                            {{ $bundle['messages'][0]->created_at->format('M j, H:i') }}
+                            @if (count($bundle['messages']) > 1)
+                                <span class="opacity-60">– {{ end($bundle['messages'])->created_at->format('H:i') }}</span>
+                            @endif
                         </span>
                     </div>
 
-                    @if ($message->content)
-                        <div class="whitespace-pre-wrap break-words text-sm">{{ $message->content }}</div>
-                    @endif
+                    {{-- Stacked messages within the bundle --}}
+                    <div class="space-y-2">
+                        @foreach ($bundle['messages'] as $message)
+                            @php
+                                $attachments = is_array($message->attachments_json) ? $message->attachments_json : [];
+                                $attachmentUrl = $isSystem ? null : $entry->attachmentUrl($message);
+                                $attachmentFullUrl = $isSystem ? null : $entry->attachmentUrl($message, thumb: false);
+                            @endphp
 
-                    @if ($attachmentUrl)
-                        <div class="mt-2">
-                            <a href="{{ $attachmentUrl }}" target="_blank" rel="noopener">
-                                <img
-                                    src="{{ $attachmentUrl }}"
-                                    alt="Chat attachment"
-                                    class="max-h-64 rounded border border-gray-300 dark:border-gray-700"
-                                    loading="lazy"
-                                />
-                            </a>
-                        </div>
-                    @endif
+                            @if ($message->content)
+                                <div class="whitespace-pre-wrap break-words text-sm leading-relaxed text-gray-800 dark:text-gray-100">{{ $message->content }}</div>
+                            @endif
 
-                    @if (count($attachments) > 0)
-                        <div class="mt-2 space-y-2">
-                            @foreach ($attachments as $att)
-                                @php
-                                    $type = $att['type'] ?? null;
-                                @endphp
+                            @if ($attachmentUrl)
+                                <a
+                                    href="{{ $attachmentFullUrl }}"
+                                    target="_blank"
+                                    rel="noopener"
+                                    class="block max-w-md overflow-hidden rounded-md border border-gray-300 transition hover:border-primary-500 dark:border-gray-700"
+                                >
+                                    <img
+                                        src="{{ $attachmentUrl }}"
+                                        alt="Chat attachment"
+                                        class="max-h-72 w-full object-contain"
+                                        loading="lazy"
+                                    />
+                                </a>
+                            @endif
 
-                                @if ($type === 'game_card')
-                                    <div class="rounded border border-amber-300 bg-amber-50 p-2 text-xs dark:border-amber-700 dark:bg-amber-950">
-                                        <div class="flex items-center justify-between">
-                                            <span class="font-semibold">
-                                                {{ strtoupper($att['provider'] ?? 'GAME') }} card
-                                                @if ($att['verified'] ?? false)
-                                                    <span class="ml-1 rounded bg-green-600 px-1.5 text-white">verified</span>
-                                                @else
-                                                    <span class="ml-1 rounded bg-gray-500 px-1.5 text-white">unverified</span>
+                            @if (count($attachments) > 0)
+                                <div class="space-y-2">
+                                    @foreach ($attachments as $att)
+                                        @php $type = $att['type'] ?? null; @endphp
+
+                                        @if ($type === 'game_card')
+                                            <div class="rounded-md border border-amber-300 bg-amber-50 p-3 text-xs dark:border-amber-800 dark:bg-amber-950/40">
+                                                <div class="mb-1 flex flex-wrap items-center gap-2">
+                                                    <span class="font-semibold uppercase tracking-wide text-amber-900 dark:text-amber-200">
+                                                        {{ strtoupper($att['provider'] ?? 'GAME') }} game
+                                                    </span>
+                                                    @if ($att['verified'] ?? false)
+                                                        <span class="rounded bg-emerald-600 px-1.5 py-0.5 text-white">verified</span>
+                                                    @else
+                                                        <span class="rounded bg-gray-500 px-1.5 py-0.5 text-white">unverified</span>
+                                                    @endif
+                                                    <span class="ml-auto text-amber-700 dark:text-amber-300">
+                                                        {{ $att['source'] ?? '—' }}
+                                                    </span>
+                                                </div>
+                                                <div class="text-amber-900 dark:text-amber-100">
+                                                    <strong>{{ $att['white_username'] ?? '?' }}</strong>
+                                                    vs
+                                                    <strong>{{ $att['black_username'] ?? '?' }}</strong>
+                                                    @if (! empty($att['winner_username']))
+                                                        → winner: <strong>{{ $att['winner_username'] }}</strong>
+                                                    @elseif (($att['winner_color'] ?? null) === null && ! empty($att['status']))
+                                                        → {{ $att['status'] }}
+                                                    @endif
+                                                </div>
+                                                @if (! empty($att['url']))
+                                                    <a href="{{ $att['url'] }}" target="_blank" rel="noopener" class="mt-1 inline-block text-blue-600 underline dark:text-blue-400">
+                                                        {{ $att['url'] }}
+                                                    </a>
                                                 @endif
-                                            </span>
-                                            <span class="opacity-60">{{ $att['source'] ?? '—' }}</span>
-                                        </div>
-                                        <div class="mt-1">
-                                            <strong>{{ $att['white_username'] ?? '?' }}</strong>
-                                            vs
-                                            <strong>{{ $att['black_username'] ?? '?' }}</strong>
-                                            @if (! empty($att['winner_username']))
-                                                → winner: <strong>{{ $att['winner_username'] }}</strong>
-                                            @elseif (($att['winner_color'] ?? null) === null && ! empty($att['status']))
-                                                → {{ $att['status'] }}
-                                            @endif
-                                        </div>
-                                        @if (! empty($att['url']))
-                                            <a href="{{ $att['url'] }}" target="_blank" rel="noopener" class="text-blue-600 underline dark:text-blue-400">{{ $att['url'] }}</a>
+                                            </div>
+                                        @elseif ($type === 'link')
+                                            <div class="rounded-md border border-gray-300 bg-gray-50 p-3 text-xs dark:border-gray-700 dark:bg-gray-800/60">
+                                                @if (! empty($att['title']))
+                                                    <div class="font-semibold text-gray-900 dark:text-gray-100">{{ $att['title'] }}</div>
+                                                @endif
+                                                @if (! empty($att['description']))
+                                                    <div class="text-gray-700 dark:text-gray-300">{{ \Illuminate\Support\Str::limit($att['description'], 140) }}</div>
+                                                @endif
+                                                @if (! empty($att['url']))
+                                                    <a href="{{ $att['url'] }}" target="_blank" rel="noopener" class="mt-1 inline-block text-blue-600 underline dark:text-blue-400">
+                                                        {{ $att['url'] }}
+                                                    </a>
+                                                @endif
+                                            </div>
                                         @endif
-                                    </div>
-                                @elseif ($type === 'link')
-                                    <div class="rounded border border-gray-300 bg-gray-50 p-2 text-xs dark:border-gray-700 dark:bg-gray-800">
-                                        @if (! empty($att['title']))
-                                            <div class="font-semibold">{{ $att['title'] }}</div>
-                                        @endif
-                                        @if (! empty($att['description']))
-                                            <div class="opacity-75">{{ \Illuminate\Support\Str::limit($att['description'], 120) }}</div>
-                                        @endif
-                                        @if (! empty($att['url']))
-                                            <a href="{{ $att['url'] }}" target="_blank" rel="noopener" class="text-blue-600 underline dark:text-blue-400">{{ $att['url'] }}</a>
-                                        @endif
-                                    </div>
-                                @endif
-                            @endforeach
-                        </div>
-                    @endif
+                                    @endforeach
+                                </div>
+                            @endif
+                        @endforeach
+                    </div>
                 </div>
             @endforeach
         </div>
