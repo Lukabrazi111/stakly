@@ -78,6 +78,10 @@ class UserController extends Controller
                 'listing.user:id,name,username',
                 'taker:id,name,username',
                 'winner:id,name,username',
+                // GameMatchResource exposes snapshotted usernames per
+                // listing.platform — eager-load to avoid N+1 on the
+                // history list.
+                'providerSnapshots',
             ])
             ->orderByDesc('settled_at')
             ->orderByDesc('id')

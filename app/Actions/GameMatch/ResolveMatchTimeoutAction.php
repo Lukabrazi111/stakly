@@ -3,79 +3,54 @@
 namespace App\Actions\GameMatch;
 
 use App\Actions\Message\PostSystemMessageAction;
-use App\Enums\MatchOutcome;
 use App\Enums\MatchStatus;
 use App\Models\GameMatch;
-use App\Models\User;
 use DateTimeInterface;
 use Illuminate\Support\Facades\DB;
-use RuntimeException;
 
 /**
- * Resolves a single timed-out `Pending` match per the Phase 7 rules.
- * Designed to be called from the iteration loop in
+ * Resolves a single timed-out `Pending` match by flipping it to
+ * `ManualReview`. Designed to be called from the iteration loop in
  * `App\Console\Commands\MatchesResolveTimeouts`.
  *
- * Resolution rules (locked in milestones.md Phase 7):
- *   - One `Won` + silent opponent → confirmer wins (honor claim).
- *   - One `Lost` + silent opponent → opponent wins (claim still honored:
- *     confirmer told us the opponent won, so they did).
- *   - One `Drawn` + silent opponent → game-API arbitrates (single Drawn
- *     can't unilaterally declare a draw).
- *   - Neither confirmed → game-API arbitrates.
- *   - Both confirmed but still `Pending` → defensive log + skip. The
- *     synchronous resolver in `ConfirmOutcomeAction` should have caught
- *     this; if it didn't we want the anomaly logged, not auto-resolved.
+ * M16 simplification — there's no "honor claim" path anymore (player
+ * Won/Lost/Drawn confirms were removed). The Phase 2 auto-fetch triggers
+ * (page-visit, chat-send, every-5-min cron) have been hammering the
+ * provider API for the full 4h window. If no game has been auto-fetched
+ * + settled by the time the timeout fires, no game is going to be found
+ * — money sits frozen until admin (M12) or M16-cooling-off resolves.
  *
  * Returns one of:
- *   - `'settled'`  → directly settled via `SettleMatchAction`.
- *   - `'disputed'` → flipped to Disputed + `ResolveDisputeAction` ran.
- *   - `'skipped'`  → no longer eligible (race, anomaly, etc.).
- *
- * `ResolveDisputeAction` runs OUTSIDE the row-locked transaction
- * (mirrors `ConfirmOutcomeAction`) — keeps the row lock free of API
- * latency once real adapters land in M8.
+ *   - `'manual-review'` → flipped to ManualReview, system messages posted.
+ *   - `'skipped'`       → no longer eligible (race: match settled / cancelled
+ *                          between the SELECT and the row lock).
  */
 class ResolveMatchTimeoutAction
 {
     public function __construct(
-        private readonly SettleMatchAction $settle,
-        private readonly ResolveDisputeAction $resolveDispute,
         private readonly PostSystemMessageAction $postSystem,
     ) {}
 
     public function handle(int $matchId, DateTimeInterface $deadline): string
     {
-        $action = DB::transaction(function () use ($matchId, $deadline) {
+        return DB::transaction(function () use ($matchId, $deadline) {
             $match = GameMatch::query()->lockForUpdate()->find($matchId);
 
             if (! $this->isStillEligible($match, $deadline)) {
-                return 'skip';
+                return 'skipped';
             }
 
             $match->load(['listing.user', 'taker']);
 
-            if ($this->isBothConfirmedAnomaly($match)) {
-                $this->reportAnomaly($match);
+            $this->flipToManualReview($match);
 
-                return 'skip';
-            }
-
-            return $this->resolveByConfirmations($match);
+            return 'manual-review';
         });
-
-        if ($action === 'dispute') {
-            $this->resolveDispute->handle(GameMatch::query()->findOrFail($matchId));
-
-            return 'disputed';
-        }
-
-        return $action === 'settle' ? 'settled' : 'skipped';
     }
 
     /**
-     * Re-check inside the lock: a synchronous confirm may have just
-     * resolved this match between our SELECT and the lock.
+     * Re-check inside the lock: auto-fetch (or any other resolver) may
+     * have settled / cancelled this match between our SELECT and the lock.
      */
     private function isStillEligible(?GameMatch $match, DateTimeInterface $deadline): bool
     {
@@ -84,62 +59,28 @@ class ResolveMatchTimeoutAction
             && $match->created_at->lte($deadline);
     }
 
-    private function isBothConfirmedAnomaly(GameMatch $match): bool
-    {
-        return $match->creator_confirmed_outcome !== null
-            && $match->taker_confirmed_outcome !== null;
-    }
-
-    private function reportAnomaly(GameMatch $match): void
-    {
-        report(new RuntimeException(
-            "ResolveMatchTimeoutAction: match #{$match->id} has both confirmations set but status is Pending. Synchronous resolver should have handled this."
-        ));
-    }
-
     /**
-     * Branches per the locked Phase 7 rules. Returns:
-     *   - 'settle'  — single Won/Lost confirmer; we'll call SettleMatchAction.
-     *   - 'dispute' — single Drawn or neither confirmed; status flipped to
-     *                 Disputed, caller dispatches `ResolveDisputeAction`
-     *                 outside the transaction.
+     * Two system messages bracket the status flip:
+     *
+     *   1. Narration — why the match was flagged (timeout, no API game found).
+     *   2. `dispute_prompt`-marked evidence call-to-action — same shape as
+     *      `ResolveDisputeAction::flipToManualReview` so the React
+     *      `SystemBubble` renders the warning-toned variant uniformly
+     *      across both manual-dispute and timeout entry points.
      */
-    private function resolveByConfirmations(GameMatch $match): string
+    private function flipToManualReview(GameMatch $match): void
     {
         $this->postSystem->handle(
             $match,
-            __('4-hour confirmation window expired. Resolving the match now.'),
+            __('4-hour confirmation window expired without an API-verified game record. Match flagged for admin review — your stakes stay in escrow until resolved.'),
         );
 
-        $singleConfirmedOutcome = $match->creator_confirmed_outcome ?? $match->taker_confirmed_outcome;
+        $match->update(['status' => MatchStatus::ManualReview]);
 
-        if ($singleConfirmedOutcome === null || $singleConfirmedOutcome === MatchOutcome::Drawn) {
-            $match->update([
-                'status' => MatchStatus::Disputed,
-                'dispute_opened_at' => now(),
-            ]);
-
-            return 'dispute';
-        }
-
-        $winner = $this->winnerByHonoredClaim($match, $singleConfirmedOutcome);
-
-        $this->settle->handle($match, $winner);
-
-        return 'settle';
-    }
-
-    /**
-     * Honor the confirmer's claim:
-     *   - `Won`  + silent → confirmer wins.
-     *   - `Lost` + silent → opponent wins (confirmer told us the opponent won).
-     */
-    private function winnerByHonoredClaim(GameMatch $match, MatchOutcome $confirmedOutcome): User
-    {
-        $confirmerIsCreator = $match->creator_confirmed_outcome !== null;
-        $confirmer = $confirmerIsCreator ? $match->listing->user : $match->taker;
-        $opponent = $confirmerIsCreator ? $match->taker : $match->listing->user;
-
-        return $confirmedOutcome === MatchOutcome::Won ? $confirmer : $opponent;
+        $this->postSystem->handle(
+            $match,
+            __('Submit evidence in chat — screenshot, game URL, or PGN. An admin will review.'),
+            [['type' => 'dispute_prompt']],
+        );
     }
 }

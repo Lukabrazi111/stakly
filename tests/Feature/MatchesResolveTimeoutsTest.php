@@ -1,13 +1,23 @@
 <?php
 
-use App\Enums\MatchOutcome;
 use App\Enums\MatchStatus;
+use App\Enums\MessageType;
 use App\Models\GameMatch;
 use App\Models\Listing;
+use App\Models\Message;
 use App\Models\User;
 use App\Models\WalletTransaction;
 use App\Services\Wallet;
 use Illuminate\Support\Facades\DB;
+
+/**
+ * M16 — `matches:resolve-timeouts` now does one thing: Pending matches
+ * past the 4h deadline flip to ManualReview. No honor-claim path (player
+ * confirms were removed). No API arbitration (the Phase 2 auto-fetch cron
+ * + page-visit + chat-send triggers have been retrying every 5 min for
+ * the full window; if no game has been auto-fetched + settled by now,
+ * none is going to be — admin / cooling-off owns the resolution).
+ */
 
 /**
  * Build a Pending match whose `created_at` has been backdated by `$hoursOld`
@@ -59,138 +69,10 @@ function timedOutMatch(string $stake = '100', int $hoursOld = 5): array
     return [$creator, $taker, $listing, $match];
 }
 
-// ─── Single Won confirmer (honor claim) ─────────────────────────────────────
+// ─── Happy path: Pending past deadline → ManualReview ──────────────────────
 
-test('single Won confirmer (creator) past deadline → creator wins, fee posted', function () {
+test('Pending match past deadline flips to ManualReview with narration + dispute_prompt', function () {
     [$creator, $taker, , $match] = timedOutMatch(stake: '100');
-
-    $match->update(['creator_confirmed_outcome' => MatchOutcome::Won]);
-
-    $this->artisan('matches:resolve-timeouts')->assertSuccessful();
-
-    $fresh = $match->fresh();
-
-    expect($fresh->status)->toBe(MatchStatus::Settled)
-        ->and($fresh->winner_user_id)->toBe($creator->id)
-        ->and($fresh->settled_at)->not->toBeNull();
-
-    // Pot=$200, fee=$20, payout=$180. Creator: 500 - 100 + 180 = 580.
-    expect((string) $creator->fresh()->usdt_balance)->toBe('580.000000');
-    expect((string) $taker->fresh()->usdt_balance)->toBe('400.000000');
-
-    expect(WalletTransaction::query()->where('reference_id', "match-payout:{$match->id}")->exists())->toBeTrue()
-        ->and(WalletTransaction::query()->where('reference_id', "match-fee:{$match->id}")->exists())->toBeTrue();
-});
-
-test('single Won confirmer (taker) past deadline → taker wins', function () {
-    [$creator, $taker, , $match] = timedOutMatch(stake: '100');
-
-    $match->update(['taker_confirmed_outcome' => MatchOutcome::Won]);
-
-    $this->artisan('matches:resolve-timeouts')->assertSuccessful();
-
-    $fresh = $match->fresh();
-
-    expect($fresh->status)->toBe(MatchStatus::Settled)
-        ->and($fresh->winner_user_id)->toBe($taker->id);
-
-    expect((string) $creator->fresh()->usdt_balance)->toBe('400.000000');
-    expect((string) $taker->fresh()->usdt_balance)->toBe('580.000000');
-});
-
-// ─── Single Lost confirmer (honor claim → OPPONENT wins) ────────────────────
-
-test('single Lost confirmer (creator) past deadline → taker wins (claim honored)', function () {
-    [$creator, $taker, , $match] = timedOutMatch(stake: '100');
-
-    $match->update(['creator_confirmed_outcome' => MatchOutcome::Lost]);
-
-    $this->artisan('matches:resolve-timeouts')->assertSuccessful();
-
-    $fresh = $match->fresh();
-
-    // Creator said "I lost" — we honor it. Taker wins.
-    expect($fresh->status)->toBe(MatchStatus::Settled)
-        ->and($fresh->winner_user_id)->toBe($taker->id);
-
-    expect((string) $creator->fresh()->usdt_balance)->toBe('400.000000');
-    expect((string) $taker->fresh()->usdt_balance)->toBe('580.000000');
-});
-
-test('single Lost confirmer (taker) past deadline → creator wins (claim honored)', function () {
-    [$creator, $taker, , $match] = timedOutMatch(stake: '100');
-
-    $match->update(['taker_confirmed_outcome' => MatchOutcome::Lost]);
-
-    $this->artisan('matches:resolve-timeouts')->assertSuccessful();
-
-    $fresh = $match->fresh();
-
-    expect($fresh->status)->toBe(MatchStatus::Settled)
-        ->and($fresh->winner_user_id)->toBe($creator->id);
-
-    expect((string) $creator->fresh()->usdt_balance)->toBe('580.000000');
-    expect((string) $taker->fresh()->usdt_balance)->toBe('400.000000');
-});
-
-// ─── Single Drawn confirmer → game-API arbitrates ───────────────────────────
-
-test('single Drawn confirmer past deadline → API arbitrates (mock returns winner)', function () {
-    [$creator, $taker, , $match] = timedOutMatch();
-    $match->update(['creator_confirmed_outcome' => MatchOutcome::Drawn]);
-    mockGameApi()->forceWinner($creator->id);
-
-    $this->artisan('matches:resolve-timeouts')->assertSuccessful();
-
-    $fresh = $match->fresh();
-
-    // Routed to dispute, then API resolved to creator.
-    expect($fresh->status)->toBe(MatchStatus::Settled)
-        ->and($fresh->winner_user_id)->toBe($creator->id)
-        ->and($fresh->dispute_opened_at)->not->toBeNull()
-        ->and($fresh->api_resolved_at)->not->toBeNull()
-        ->and($fresh->api_response)->toBeArray();
-});
-
-test('single Drawn confirmer past deadline + API returns Drawn → both refunded', function () {
-    [$creator, $taker, , $match] = timedOutMatch(stake: '100');
-    $match->update(['taker_confirmed_outcome' => MatchOutcome::Drawn]);
-    mockGameApi()->forceDraw();
-
-    $this->artisan('matches:resolve-timeouts')->assertSuccessful();
-
-    $fresh = $match->fresh();
-
-    expect($fresh->status)->toBe(MatchStatus::Settled)
-        ->and($fresh->winner_user_id)->toBeNull()
-        ->and($fresh->dispute_opened_at)->not->toBeNull();
-
-    // Both refunded.
-    expect((string) $creator->fresh()->usdt_balance)->toBe('500.000000');
-    expect((string) $taker->fresh()->usdt_balance)->toBe('500.000000');
-
-    expect(WalletTransaction::query()->where('reference_id', "match-fee:{$match->id}")->exists())->toBeFalse();
-});
-
-// ─── Neither confirmed → game-API arbitrates ────────────────────────────────
-
-test('neither confirmed past deadline → API arbitrates', function () {
-    [$creator, , , $match] = timedOutMatch();
-    mockGameApi()->forceWinner($creator->id);
-
-    $this->artisan('matches:resolve-timeouts')->assertSuccessful();
-
-    $fresh = $match->fresh();
-
-    expect($fresh->status)->toBe(MatchStatus::Settled)
-        ->and($fresh->winner_user_id)->toBe($creator->id)
-        ->and($fresh->dispute_opened_at)->not->toBeNull()
-        ->and($fresh->api_resolved_at)->not->toBeNull();
-});
-
-test('neither confirmed past deadline + API returns Unknown → ManualReview, money stays locked', function () {
-    [$creator, $taker, , $match] = timedOutMatch();
-    mockGameApi()->forceUnknown();
 
     $this->artisan('matches:resolve-timeouts')->assertSuccessful();
 
@@ -200,16 +82,32 @@ test('neither confirmed past deadline + API returns Unknown → ManualReview, mo
         ->and($fresh->winner_user_id)->toBeNull()
         ->and($fresh->settled_at)->toBeNull();
 
-    // Stakes still escrowed.
+    // Stakes still escrowed — admin owns the resolution.
     expect((string) $creator->fresh()->usdt_balance)->toBe('400.000000');
     expect((string) $taker->fresh()->usdt_balance)->toBe('400.000000');
+
+    // No payout / fee posted.
+    expect(WalletTransaction::query()->where('reference_id', "match-payout:{$match->id}")->exists())->toBeFalse()
+        ->and(WalletTransaction::query()->where('reference_id', "match-fee:{$match->id}")->exists())->toBeFalse();
+
+    // Two system messages: "expired" narration + dispute_prompt evidence call-to-action.
+    $messages = Message::query()
+        ->where('match_id', $match->id)
+        ->where('type', MessageType::System)
+        ->orderBy('id')
+        ->get();
+
+    expect($messages)->toHaveCount(2);
+    expect($messages[0]->content)->toContain('expired')
+        ->and($messages[0]->content)->toContain('admin review');
+    expect($messages[1]->content)->toContain('Submit evidence')
+        ->and($messages[1]->attachments_json)->toBe([['type' => 'dispute_prompt']]);
 });
 
 // ─── Eligibility filtering ──────────────────────────────────────────────────
 
 test('Pending match younger than the deadline is left alone', function () {
     [$creator, $taker, , $match] = timedOutMatch(stake: '100', hoursOld: 1);
-    $match->update(['creator_confirmed_outcome' => MatchOutcome::Won]);
 
     $this->artisan('matches:resolve-timeouts')->assertSuccessful();
 
@@ -222,7 +120,7 @@ test('Pending match younger than the deadline is left alone', function () {
 });
 
 test('already-Settled match past deadline is not re-touched', function () {
-    [$creator, $taker, , $match] = timedOutMatch();
+    [$creator, , , $match] = timedOutMatch();
     $match->update([
         'status' => MatchStatus::Settled,
         'winner_user_id' => $creator->id,
@@ -233,90 +131,95 @@ test('already-Settled match past deadline is not re-touched', function () {
 
     $this->artisan('matches:resolve-timeouts')->assertSuccessful();
 
-    // No second payout posted; balance unchanged.
     expect((string) $creator->fresh()->usdt_balance)->toBe((string) $balanceBefore);
-    expect(WalletTransaction::query()->where('reference_id', "match-payout:{$match->id}")->count())->toBe(0);
+    expect($match->fresh()->status)->toBe(MatchStatus::Settled);
 });
 
 test('already-ManualReview match past deadline is not re-touched', function () {
-    [$creator, , , $match] = timedOutMatch();
+    [, , , $match] = timedOutMatch();
     $match->update(['status' => MatchStatus::ManualReview]);
+
+    $messagesBefore = Message::query()->where('match_id', $match->id)->count();
 
     $this->artisan('matches:resolve-timeouts')->assertSuccessful();
 
     expect($match->fresh()->status)->toBe(MatchStatus::ManualReview);
+    // No duplicate narration / dispute_prompt messages posted.
+    expect(Message::query()->where('match_id', $match->id)->count())->toBe($messagesBefore);
 });
 
-// ─── Idempotency ────────────────────────────────────────────────────────────
-
-test('running the command twice on the same timed-out match does not double-pay', function () {
-    [$creator, $taker, , $match] = timedOutMatch(stake: '100');
-    $match->update(['creator_confirmed_outcome' => MatchOutcome::Won]);
-
-    $this->artisan('matches:resolve-timeouts')->assertSuccessful();
-    $balanceAfterFirst = $creator->fresh()->usdt_balance;
-
-    $this->artisan('matches:resolve-timeouts')->assertSuccessful();
-
-    // Status guard short-circuits the second run; balance unchanged.
-    expect((string) $creator->fresh()->usdt_balance)->toBe((string) $balanceAfterFirst);
-    expect(WalletTransaction::query()->where('reference_id', "match-payout:{$match->id}")->count())->toBe(1);
-});
-
-// ─── Defensive: both confirmed but still Pending ────────────────────────────
-
-test('match with both confirmations set but status Pending is logged + skipped', function () {
+test('already-Cancelled match past deadline is not re-touched', function () {
     [, , , $match] = timedOutMatch();
-
-    // Anomaly state: both confirmed but somehow still Pending. The
-    // synchronous resolver in GameMatchController::confirm should never leave
-    // this state, but defense in depth.
     $match->update([
-        'creator_confirmed_outcome' => MatchOutcome::Won,
-        'taker_confirmed_outcome' => MatchOutcome::Lost,
+        'status' => MatchStatus::Cancelled,
+        'cancelled_at' => now(),
     ]);
 
     $this->artisan('matches:resolve-timeouts')->assertSuccessful();
 
-    // Untouched — no auto-settlement.
-    $fresh = $match->fresh();
-    expect($fresh->status)->toBe(MatchStatus::Pending)
-        ->and($fresh->winner_user_id)->toBeNull();
-    expect(WalletTransaction::query()->where('reference_id', "match-payout:{$match->id}")->exists())->toBeFalse();
+    expect($match->fresh()->status)->toBe(MatchStatus::Cancelled);
 });
 
-// ─── Conservation across timeout path ───────────────────────────────────────
-
-test('full create → take → timeout flow conserves money across all participants', function () {
-    [, , $listing, $match] = timedOutMatch(stake: '100');
-    $match->update(['creator_confirmed_outcome' => MatchOutcome::Won]);
+test('already-Disputed match past deadline is not re-touched by the timeout resolver', function () {
+    [, , , $match] = timedOutMatch();
+    $match->update([
+        'status' => MatchStatus::Disputed,
+        'dispute_opened_at' => now(),
+    ]);
 
     $this->artisan('matches:resolve-timeouts')->assertSuccessful();
 
-    // Sum of all ledger entries tied to this listing = 0.
-    $sum = WalletTransaction::query()
-        ->where('related_listing_id', $listing->id)
-        ->sum('amount');
+    // Disputed has its own resolution path (ResolveDisputeAction via the
+    // OpenDispute trigger); the timeout cron leaves it alone.
+    expect($match->fresh()->status)->toBe(MatchStatus::Disputed);
+});
 
-    expect(bccomp((string) $sum, '0', 6))->toBe(0);
+// ─── Idempotency ────────────────────────────────────────────────────────────
+
+test('running the command twice on the same timed-out match is idempotent', function () {
+    [, , , $match] = timedOutMatch(stake: '100');
+
+    $this->artisan('matches:resolve-timeouts')->assertSuccessful();
+    $messagesAfterFirst = Message::query()->where('match_id', $match->id)->count();
+
+    $this->artisan('matches:resolve-timeouts')->assertSuccessful();
+
+    // Status guard short-circuits the second run; no new messages, status unchanged.
+    expect($match->fresh()->status)->toBe(MatchStatus::ManualReview);
+    expect(Message::query()->where('match_id', $match->id)->count())->toBe($messagesAfterFirst);
+});
+
+// ─── Money does NOT move on timeout (stakes stay escrowed for admin) ───────
+
+test('timeout → ManualReview does not post any payout / fee / refund ledger entries', function () {
+    [, , $listing, $match] = timedOutMatch(stake: '100');
+
+    $this->artisan('matches:resolve-timeouts')->assertSuccessful();
+
+    // Only the two pre-existing holds should remain — no settlement-side
+    // entries posted (admin / cooling-off owns the resolution).
+    $relatedRefs = WalletTransaction::query()
+        ->where('related_listing_id', $listing->id)
+        ->pluck('reference_id')
+        ->all();
+
+    expect($relatedRefs)
+        ->toContain("listing-create:{$listing->id}")
+        ->toContain("match-take:{$listing->id}")
+        ->not->toContain("match-payout:{$match->id}")
+        ->not->toContain("match-fee:{$match->id}")
+        ->not->toContain("match-draw-creator:{$match->id}")
+        ->not->toContain("match-draw-taker:{$match->id}");
 });
 
 // ─── Batch processing across multiple matches ───────────────────────────────
 
 test('processes multiple timed-out matches in one run', function () {
-    [$creatorA, $takerA, , $matchA] = timedOutMatch(stake: '100');
-    $matchA->update(['creator_confirmed_outcome' => MatchOutcome::Won]);
-
-    [$creatorB, $takerB, , $matchB] = timedOutMatch(stake: '200');
-    $matchB->update(['taker_confirmed_outcome' => MatchOutcome::Lost]);
+    [, , , $matchA] = timedOutMatch(stake: '100');
+    [, , , $matchB] = timedOutMatch(stake: '200');
 
     $this->artisan('matches:resolve-timeouts')->assertSuccessful();
 
-    // A: creator says Won → creator wins.
-    expect($matchA->fresh()->winner_user_id)->toBe($creatorA->id);
-    // B: taker says Lost → creator wins (claim honored).
-    expect($matchB->fresh()->winner_user_id)->toBe($creatorB->id);
-
-    expect($matchA->fresh()->status)->toBe(MatchStatus::Settled);
-    expect($matchB->fresh()->status)->toBe(MatchStatus::Settled);
+    expect($matchA->fresh()->status)->toBe(MatchStatus::ManualReview);
+    expect($matchB->fresh()->status)->toBe(MatchStatus::ManualReview);
 });

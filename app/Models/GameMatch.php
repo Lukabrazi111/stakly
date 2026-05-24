@@ -36,6 +36,13 @@ class GameMatch extends Model
 
     public const SIDE_TAKER = 'taker';
 
+    /**
+     * `creator_confirmed_outcome` + `taker_confirmed_outcome` are deprecated
+     * as of M16 — the player Won/Lost/Drawn confirm flow was removed, the
+     * game API is now the only outcome source. Columns kept nullable for
+     * historical audit of pre-M16 matches; no new writes happen. A future
+     * cleanup migration drops them once the suite is fully migrated.
+     */
     protected $fillable = [
         'listing_id',
         'taker_user_id',
@@ -104,8 +111,8 @@ class GameMatch extends Model
     /**
      * Snapshot of each player's verified external accounts at match
      * creation time (M8 Phase 4). Populated by `TakeListingAction`. Read by
-     * the smart-link enrichment jobs + `ConfirmOutcomeAction` auto-fetch
-     * gate. See `App\Models\MatchProviderSnapshot`.
+     * the smart-link enrichment jobs + auto-fetch jobs + `SettleFromCardAction`
+     * (M16) for winner-to-user mapping. See `App\Models\MatchProviderSnapshot`.
      */
     public function providerSnapshots(): HasMany
     {

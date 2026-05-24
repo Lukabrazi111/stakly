@@ -40,23 +40,21 @@ Public read-only profiles at `/users/{username}`. `username` + `bio` columns, `U
 
 The missing core loop: take listing → match created → both players play off-platform → return to confirm outcome → money settles.
 
-**State machine**:
+**State machine** (post-M16 — the player-confirm paths in the original M6 design were removed when M16 landed):
 
 ```
 Listing.Open --[take]--> Match.Pending, Listing.Taken (taker's Wallet::hold)
-Match.Pending --[both confirm same winner]--> Match.Settled
-Match.Pending --[both confirm Drawn]--> Match.Settled (refund both, no fee)
-Match.Pending --[both confirm different]--> Match.Disputed
-Match.Pending --[one confirms, 4h passes]--> Match.Settled (claim honored)
-Match.Pending --[neither confirms, 4h passes]--> Match.Disputed
+Match.Pending --[auto-fetched card has winner]--> Match.Settled (via SettleFromCardAction — M16)
+Match.Pending --[auto-fetched card is a draw]--> Match.Settled (refund both, no fee — M16)
 Match.Pending --[either opens dispute]--> Match.Disputed
+Match.Pending --[4h passes with no card]--> Match.ManualReview (M16 — terminal, admin resolves)
 Match.Pending --[one requests cancel, opponent accepts]--> Match.Cancelled (refund both, no fee — M10)
 Match.Pending --[one requests cancel, opponent rejects]--> Match.Pending (30min cooldown on requester — M10)
 Match.Disputed --[game-API returns winner]--> Match.Settled
 Match.Disputed --[game-API can't determine]--> Match.ManualReview (terminal — admin resolves out-of-band)
 ```
 
-> The player-confirm paths in this diagram are superseded by M16 (API-only outcome resolution). When M16 ships, the "both confirm" / "one confirms, 4h passes" / "both confirm different" branches disappear and the API becomes the only settlement signal during Pending.
+> The original M6 design had player Won/Lost/Drawn confirm buttons as the primary settlement signal, with the game API as the tiebreaker on disagreement. M16 inverted that: the API is the *only* settlement signal during Pending; the player buttons were removed entirely. "Report a problem" survives as the manual dispute escalation, and "Request cancellation" remains as the cooperative early exit.
 
 Phases 1–7 shipped: schema + policies, take + match creation, confirm UI + settlement + Inertia polling, mock game-API dispute path, listings/profile/wallet integration, listings management + Active Mode + scoped Player Hub sidebar, `Drawn` outcome, timeout resolver.
 

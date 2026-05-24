@@ -2,6 +2,7 @@
 
 namespace App\Jobs;
 
+use App\Actions\GameMatch\SettleFromCardAction;
 use App\Actions\Message\PostSystemMessageAction;
 use App\Enums\LinkedAccountProvider;
 use App\Enums\MessageType;
@@ -11,6 +12,7 @@ use App\Services\Provider\Exceptions\ProviderUnavailableException;
 use App\Services\Provider\LichessGameClient;
 use App\Services\Provider\LichessGameResult;
 use Illuminate\Bus\Queueable;
+use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueueAfterCommit;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
@@ -19,34 +21,34 @@ use Illuminate\Support\Facades\Log;
 use Throwable;
 
 /**
- * Posts an auto-fetched Lichess game card on the first player confirm
- * (M8 Phase 4 auto-fetch path). Dispatched by `ConfirmOutcomeAction` on
- * the zero→one confirm transition when both snapshotted Lichess usernames
- * are present on the match row.
+ * Posts an auto-fetched Lichess game card for a Pending match, then
+ * immediately settles via `SettleFromCardAction` (M16 — API is the only
+ * outcome source, no player Won/Lost/Drawn confirms).
  *
  * Pipeline:
  *   1. Search Lichess for games between the two snapshotted usernames
  *      since `match.created_at` via `LichessGameClient::searchGamesBetween()`.
- *   2. Filter to decisive games only (mate / resign / outoftime / etc.).
- *      Drawn / aborted games are excluded — they shouldn't auto-narrate
- *      "X won" in chat.
+ *   2. Filter to completed games — decisive (mate/resign/outoftime) OR draw
+ *      (draw/stalemate). Aborted / half-played games are excluded.
  *   3. If exactly ONE candidate exists, post a system message with the
- *      verified card attached. Zero or multiple candidates → silent skip.
- *      Wrong-game evidence is worse than no evidence; the paste path is
- *      the player's escape hatch for ambiguous cases.
+ *      verified card, then dispatch `SettleFromCardAction` to settle the
+ *      match. Zero or multiple candidates → silent skip; wrong-game
+ *      evidence is worse than no evidence.
+ *
+ * Triggered by M16 Phase 2 surfaces (page-visit on /matches/{id},
+ * chat-send during Pending, cron at 5-min cadence) and M16 Phase 4
+ * (Lichess admin OAuth stream consumer). All of those layer for redundancy
+ * — the job is idempotent (`alreadyPosted()` short-circuits re-runs).
  *
  * Decisions encoded:
- *   - Evidence, not a vote. No yes/no buttons on the card — Confirm
- *     Won/Lost/Drawn remains the only binding signal.
- *   - Never auto-settles. Even if the API winner disagrees with player
- *     confirms, settlement logic still uses the consensus path (M14 will
- *     gate auto-settlement on adapter maturity + dispute volume).
  *   - Snapshot-cross-checked, not live-looked-up. A mid-match unlink can't
  *     strip the anchor.
  *   - One post per match. Idempotency via an attachments_json scan keeps
- *     re-dispatch / queue-retry from double-posting.
+ *     re-dispatch / queue-retry from double-posting + double-settling.
+ *   - Card-then-settle order: the card lands in chat first so players
+ *     read the game record above the settlement narration.
  */
-class AutoFetchLichessGameJob implements ShouldQueueAfterCommit
+class AutoFetchLichessGameJob implements ShouldBeUnique, ShouldQueueAfterCommit
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
@@ -58,8 +60,23 @@ class AutoFetchLichessGameJob implements ShouldQueueAfterCommit
         public GameMatch $match,
     ) {}
 
-    public function handle(LichessGameClient $client, PostSystemMessageAction $postSystem): void
+    /**
+     * One in-flight job per match — M16 Phase 2 trigger sites (page-visit,
+     * chat-send, cron, stream) all funnel through `DispatchAutoFetchAction`
+     * and any of them might fire while a previous job is still running.
+     * The unique lock dedupes those races so we don't spam the provider API.
+     * Lock releases on job success / failure / final-retry-exhausted.
+     */
+    public function uniqueId(): string
     {
+        return (string) $this->match->id;
+    }
+
+    public function handle(
+        LichessGameClient $client,
+        PostSystemMessageAction $postSystem,
+        SettleFromCardAction $settleFromCard,
+    ): void {
         if ($this->alreadyPosted()) {
             return;
         }
@@ -88,15 +105,21 @@ class AutoFetchLichessGameJob implements ShouldQueueAfterCommit
             return;
         }
 
-        $decisive = $this->filterDecisive($games);
+        $completed = $this->filterCompleted($games);
 
-        if (count($decisive) !== 1) {
+        if (count($completed) !== 1) {
             // Zero or multiple — silent skip. Wrong-game evidence is worse
             // than no evidence; manual paste covers the ambiguous case.
             return;
         }
 
-        $this->postCard($postSystem, $decisive[0]);
+        $card = $this->postCard($postSystem, $completed[0]);
+
+        // M16 — card IS the settlement trigger. SettleFromCardAction
+        // row-locks the match, no-ops if not Pending (idempotent re-runs),
+        // branches on winner_color to SettleMatchAction (winner) or
+        // SettleDrawMatchAction (draw).
+        $settleFromCard->handle($this->match, $card);
     }
 
     /**
@@ -133,19 +156,30 @@ class AutoFetchLichessGameJob implements ShouldQueueAfterCommit
     }
 
     /**
+     * Games we'll auto-settle from: decisive (clear winner) OR draw
+     * (agreed/stalemate/etc.). Aborted / half-played games skipped —
+     * not a real result to settle against.
+     *
      * @param  list<LichessGameResult>  $games
      * @return list<LichessGameResult>
      */
-    private function filterDecisive(array $games): array
+    private function filterCompleted(array $games): array
     {
         return array_values(array_filter(
             $games,
-            fn (LichessGameResult $g) => $g->isDecisive(),
+            fn (LichessGameResult $g) => $g->isDecisive() || $g->isDraw(),
         ));
     }
 
-    private function postCard(PostSystemMessageAction $postSystem, LichessGameResult $game): void
+    /**
+     * @return array<string, mixed> the card payload posted to chat — passed
+     *                              to SettleFromCardAction so the settle
+     *                              decision uses the same data the players see.
+     */
+    private function postCard(PostSystemMessageAction $postSystem, LichessGameResult $game): array
     {
+        $card = $this->buildEntry($game);
+
         // Text is intentionally terse — the attached card carries the
         // detail (players, winner, time control, status). Plain-text
         // contexts (screen readers, future dispute log exports) still get
@@ -153,8 +187,10 @@ class AutoFetchLichessGameJob implements ShouldQueueAfterCommit
         $postSystem->handle(
             $this->match,
             __('Verified Lichess game record.'),
-            [$this->buildEntry($game)],
+            [$card],
         );
+
+        return $card;
     }
 
     /**

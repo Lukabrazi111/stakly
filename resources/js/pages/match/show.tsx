@@ -1,9 +1,8 @@
 import { Head, router, usePage } from '@inertiajs/react';
-import { useEffect } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { CancellationRequestBanner } from '@/components/match/cancellation-request-banner';
 import { CancellationSummary } from '@/components/match/cancellation-summary';
 import { ChatPanel } from '@/components/match/chat-panel';
-import { ConfirmButtons } from '@/components/match/confirm-buttons';
 import { MatchFaq } from '@/components/match/match-faq';
 import { MatchInfoCard } from '@/components/match/match-info-card';
 import { MatchTimer } from '@/components/match/match-timer';
@@ -12,6 +11,7 @@ import { MobileChatTrigger } from '@/components/match/mobile-chat-trigger';
 import { OpenDisputeButton } from '@/components/match/open-dispute-button';
 import { RequestCancellationButton } from '@/components/match/request-cancellation-button';
 import { SettlementSummary } from '@/components/match/settlement-summary';
+import { WaitingForGameCard } from '@/components/match/waiting-for-game-card';
 import { BackLink } from '@/components/site/back-link';
 import { useMatchChat } from '@/hooks/use-match-chat';
 import SiteLayout from '@/layouts/site-layout';
@@ -49,7 +49,7 @@ function cooldownRemainingFor(
 }
 
 const STATUS_LABEL: Record<MatchStatus, string> = {
-    pending: 'Pending — confirm outcome',
+    pending: 'Pending — waiting for game',
     disputed: 'Disputed — under review',
     settled: 'Settled',
     manual_review: 'Manual review',
@@ -83,15 +83,33 @@ export default function MatchShow({ match, messages }: MatchShowProps) {
     const opponent = isCreator ? match.taker : match.creator;
     const youAre = isCreator ? 'Listing creator' : 'Taker';
 
-    const myConfirmedOutcome = isCreator
-        ? match.creator_confirmed_outcome
-        : match.taker_confirmed_outcome;
-    const opponentConfirmedOutcome = isCreator
-        ? match.taker_confirmed_outcome
-        : match.creator_confirmed_outcome;
+    // M16 — has an auto-fetched card landed in chat yet? Drives the
+    // Pending action card's "found, settling…" hand-off state. The next
+    // poll tick catches `status === 'settled'` and unmounts the whole
+    // card in favor of `SettlementSummary`.
+    const hasAutoFetchedCard = useMemo(
+        () =>
+            chat.messages.some((message) =>
+                message.attachments.some(
+                    (attachment) =>
+                        attachment.type === 'game_card'
+                        && attachment.source === 'auto_fetch',
+                ),
+            ),
+        [chat.messages],
+    );
+
+    // Inertia partial reload returns a fresh `match` object reference on
+    // every poll tick. The WaitingForGameCard's "Last checked Ns ago"
+    // counter resets each time this bumps. Bumping is the signal that
+    // the backend's page-visit auto-fetch trigger just fired.
+    const [pollTick, setPollTick] = useState(0);
+    useEffect(() => {
+        setPollTick((n) => n + 1);
+    }, [match]);
 
     // A Settled match with no winner is a draw — both stakes were refunded
-    // via `MatchSettlement::settleDraw`, no platform fee charged. Backend
+    // via `SettleDrawMatchAction`, no platform fee charged. Backend
     // contract: `winner === null && status === 'settled'` ⇒ draw.
     const isDraw = match.status === 'settled' && match.winner === null;
     const pot = match.listing.stake_amount * 2;
@@ -202,22 +220,23 @@ export default function MatchShow({ match, messages }: MatchShowProps) {
                 </div>
 
                 {/* Action area — varies by status. For Pending we render
-                    the Confirm card + escape hatches. For Settled the
+                    the WaitingForGameCard (M16 — no buttons; the auto-
+                    fetch / SettleFromCard pipeline does the work) +
+                    escape-hatch links (cancel, dispute). For Settled the
                     SettlementSummary (pot / fee / payout breakdown). The
                     Cancelled / Disputed / ManualReview states render
                     nothing here — their status notification is the full-
                     width banner at the top of the page, and the Match
                     info card below covers the historical details. */}
                 {match.status === 'pending' && auth.user && (
-                    <section className="mb-6 rounded-2xl border border-border/60 bg-card/60 p-6">
-                        <h2 className="mb-4 text-lg font-semibold text-foreground">
-                            Confirm outcome
-                        </h2>
-                        <ConfirmButtons
-                            matchId={match.id}
-                            myConfirmedOutcome={myConfirmedOutcome}
-                            opponentConfirmedOutcome={opponentConfirmedOutcome}
+                    <div className="mb-6">
+                        <WaitingForGameCard
+                            platform={match.listing.platform}
+                            snapshots={match.snapshots}
+                            hasAutoFetchedCard={hasAutoFetchedCard}
+                            pollTick={pollTick}
                         />
+
                         {/* Escape hatches — Request cancellation
                             (mutual no-fault) + Report a problem
                             (one-sided escalation). Hidden when a
@@ -226,7 +245,7 @@ export default function MatchShow({ match, messages }: MatchShowProps) {
                             request is in flight; the top banner carries
                             the relevant actions. */}
                         {match.cancellation.requested_at === null && (
-                            <div className="mt-5 flex flex-col items-center justify-center gap-3 border-t border-border/60 pt-5 sm:flex-row sm:gap-6">
+                            <div className="mt-4 flex flex-col items-center justify-center gap-3 sm:flex-row sm:gap-6">
                                 <RequestCancellationButton
                                     matchId={match.id}
                                     cooldownMinutesRemaining={cooldownRemainingFor(
@@ -237,7 +256,7 @@ export default function MatchShow({ match, messages }: MatchShowProps) {
                                 <OpenDisputeButton matchId={match.id} />
                             </div>
                         )}
-                    </section>
+                    </div>
                 )}
 
                 {match.status === 'settled' && (
@@ -275,13 +294,6 @@ export default function MatchShow({ match, messages }: MatchShowProps) {
                 <div className="mt-6">
                     <MatchFaq />
                 </div>
-
-                {match.status === 'pending' && (
-                    <p className="mt-8 text-center text-xs text-muted-foreground">
-                        Play your game on chess.com or Lichess, then return here
-                        and confirm the outcome.
-                    </p>
-                )}
                     </div>
 
                     {/* Desktop right-rail chat. Sticky at top-28 (112px) so

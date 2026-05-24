@@ -54,8 +54,22 @@ class GameMatchResource extends JsonResource
                 'name' => $this->taker->name,
                 'username' => $this->taker->username,
             ],
-            'creator_confirmed_outcome' => $this->creator_confirmed_outcome?->value,
-            'taker_confirmed_outcome' => $this->taker_confirmed_outcome?->value,
+            // Snapshotted external-account handles scoped to the listing's
+            // platform (M16 Phase 3 — Pending action card displays the
+            // username pair so players know which game we're polling for).
+            // Either side may be null if the player never linked that
+            // provider; in practice the take + create gates prevent
+            // unlinked matches but the FE handles null defensively.
+            'snapshots' => [
+                'creator_username' => $this->snapshotUsername(
+                    GameMatch::SIDE_CREATOR,
+                    $this->listing->platform,
+                ),
+                'taker_username' => $this->snapshotUsername(
+                    GameMatch::SIDE_TAKER,
+                    $this->listing->platform,
+                ),
+            ],
             'winner' => $this->winner ? [
                 'id' => $this->winner->id,
                 'name' => $this->winner->name,

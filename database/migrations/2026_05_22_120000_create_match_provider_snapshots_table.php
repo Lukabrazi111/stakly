@@ -23,9 +23,9 @@ return new class extends Migration
      *
      * Populated by `App\Actions\GameMatch\TakeListingAction`. Read by
      * `App\Jobs\FetchLichessGameMetadataJob` (paste-path verification),
-     * `App\Jobs\AutoFetchLichessGameJob` (auto-fetch usernames),
-     * `App\Actions\GameMatch\ConfirmOutcomeAction` (gate on snapshot
-     * presence before dispatching auto-fetch).
+     * the auto-fetch jobs (`AutoFetchLichessGameJob` / `AutoFetchChessComGameJob`)
+     * for username pairs, and `App\Actions\GameMatch\SettleFromCardAction`
+     * (M16) for mapping the card's winner_username back to a participant.
      *
      * Cross-platform abuse defense: snapshot survives a mid-match unlink.
      * A player can't `DELETE /settings/linked-accounts/lichess` to escape

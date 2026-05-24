@@ -11,10 +11,10 @@ use InvalidArgumentException;
 
 /**
  * Settles a match as a draw — refunds both players' stakes via
- * `Wallet::release`, no platform fee, no winner. Used when both players
- * agree it was a draw (`ConfirmOutcomeAction::resolveBothConfirmed`) or
- * when the game-API returns `GameApiConfidence::Drawn`
- * (`ResolveDisputeAction`).
+ * `Wallet::release`, no platform fee, no winner. Called from:
+ *   - `SettleFromCardAction` (M16) when an auto-fetched game card has
+ *     `winner_color = null`.
+ *   - `ResolveDisputeAction` when the game-API returns `GameApiConfidence::Drawn`.
  *
  * Conservation per match: `-A_stake + -B_stake + +A_release + +B_release = 0`.
  *

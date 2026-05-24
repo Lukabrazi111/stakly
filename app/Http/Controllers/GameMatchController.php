@@ -3,14 +3,12 @@
 namespace App\Http\Controllers;
 
 use App\Actions\GameMatch\AcceptCancellationAction;
-use App\Actions\GameMatch\ConfirmOutcomeAction;
+use App\Actions\GameMatch\DispatchAutoFetchAction;
 use App\Actions\GameMatch\OpenDisputeAction;
 use App\Actions\GameMatch\RejectCancellationAction;
 use App\Actions\GameMatch\RequestCancellationAction;
 use App\Actions\GameMatch\TakeListingAction;
-use App\Enums\MatchOutcome;
 use App\Exceptions\InsufficientBalanceException;
-use App\Http\Requests\GameMatch\ConfirmRequest;
 use App\Http\Requests\GameMatch\IndexMatchesRequest;
 use App\Http\Requests\GameMatch\RequestCancellationRequest;
 use App\Http\Requests\GameMatch\TakeRequest;
@@ -55,6 +53,10 @@ class GameMatchController extends Controller
                     'listing.user:id,name,username',
                     'taker:id,name,username',
                     'winner:id,name,username',
+                    // GameMatchResource exposes snapshotted usernames per
+                    // listing.platform — without this eager-load the
+                    // resource transformer N+1s on the snapshot table.
+                    'providerSnapshots',
                 ]),
         )
             ->allowedFilters(
@@ -134,21 +136,30 @@ class GameMatchController extends Controller
     }
 
     /**
-     * Match detail page. Renders confirm UI (Pending), settlement summary
-     * (Settled), or dispute banner (Disputed / ManualReview) based on status.
+     * Match detail page. Renders the "waiting for game" state (Pending —
+     * card auto-fetch is the settlement trigger), settlement summary
+     * (Settled), cancellation banner (Cancelled), or dispute banner
+     * (Disputed / ManualReview) based on status.
      *
      * Non-participants get 404 (not 403) to avoid leaking match existence.
+     *
+     * M16 Phase 2 — every Pending page-visit dispatches the auto-fetch
+     * job. Idempotency lives at the job layer (`ShouldBeUnique` plus
+     * `alreadyPosted()`); F5-spam is harmless.
      */
-    public function show(GameMatch $match): Response
+    public function show(GameMatch $match, DispatchAutoFetchAction $dispatchAutoFetch): Response
     {
         $match->load([
             'listing:id,user_id,game,stake_amount,platform,time_control,status',
             'listing.user:id,name,username',
             'taker:id,name,username',
             'winner:id,name,username',
+            'providerSnapshots',
         ]);
 
         abort_if(request()->user()->cannot('view', $match), 404);
+
+        $dispatchAutoFetch->handle($match);
 
         // M8 Phase 2 — last 200 messages, chrono order. The composite
         // (match_id, id) index makes this cheap; a busy match should not
@@ -175,33 +186,12 @@ class GameMatchController extends Controller
     }
 
     /**
-     * Record a player's outcome confirmation. Business logic + resolution
-     * branching live in `ConfirmOutcomeAction`. This method authorizes,
-     * delegates, and maps the returned sentinel to a flash toast.
-     */
-    public function confirm(ConfirmRequest $request, GameMatch $match, ConfirmOutcomeAction $action): RedirectResponse
-    {
-        $user = $request->user();
-        $newOutcome = MatchOutcome::from($request->validated('outcome'));
-
-        abort_if($user->cannot('confirm', $match), 403);
-
-        $resolution = $action->handle($user, $match, $newOutcome);
-
-        return $this->confirmRedirect($resolution);
-    }
-
-    /**
-     * Manual escalation to game-API resolution during the player-confirm
-     * window. Either participant can open a dispute — the API winner is
-     * authoritative and overrides player self-reports. Business logic lives
-     * in `OpenDisputeAction`.
-     *
-     * Note on the abuse vector: opening a dispute before the opponent has
-     * had a chance to confirm IS allowed (the 4h timeout would otherwise
-     * be the only path forward). The API is the source of truth, so
-     * escalating early doesn't bias the outcome. Spammy / malicious
-     * dispute behaviour falls under future anti-abuse tooling.
+     * Manual escalation to game-API resolution during the Pending window.
+     * Either participant can open a dispute — the API winner is
+     * authoritative. M16 removed player self-reports, so this button is
+     * now the ONLY player-driven escalation path during Pending (alongside
+     * `RequestCancellationAction` for the cooperative early exit).
+     * Business logic lives in `OpenDisputeAction`.
      */
     public function openDispute(Request $request, GameMatch $match, OpenDisputeAction $action): RedirectResponse
     {
@@ -344,37 +334,6 @@ class GameMatchController extends Controller
                 'type' => 'warning',
                 'message' => __('Could not decline cancellation.'),
             ],
-        });
-
-        return back();
-    }
-
-    /**
-     * Map a `ConfirmOutcomeAction` resolution sentinel to its flash toast.
-     * `too-late` gets its own pre-branch since it's the only resolution
-     * that explicitly cancels the user's action (everything else either
-     * recorded their claim or progressed the match).
-     */
-    private function confirmRedirect(string $resolution): RedirectResponse
-    {
-        if ($resolution === 'too-late') {
-            Inertia::flash('toast', [
-                'type' => 'info',
-                'message' => __('This match has already been resolved.'),
-            ]);
-
-            return back();
-        }
-
-        Inertia::flash('toast', match ($resolution) {
-            'settled' => ['type' => 'success', 'message' => __('Both players agreed — match settled.')],
-            'settled-as-draw' => ['type' => 'success', 'message' => __('Both players agreed it was a draw. Stakes refunded.')],
-            'settled-by-api' => ['type' => 'success', 'message' => __('Players disagreed — game API resolved the match.')],
-            'settled-by-api-draw' => ['type' => 'success', 'message' => __('Players disagreed — game API ruled it a draw. Stakes refunded.')],
-            'manual-review' => ['type' => 'warning', 'message' => __('Game API could not determine a winner — match flagged for admin review.')],
-            'disputed' => ['type' => 'warning', 'message' => __('Both players disagree — match flagged for review.')],
-            'no-change' => ['type' => 'info', 'message' => __("You've already chosen that outcome.")],
-            default => ['type' => 'success', 'message' => __('Confirmation recorded.')],
         });
 
         return back();

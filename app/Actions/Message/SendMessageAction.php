@@ -2,6 +2,7 @@
 
 namespace App\Actions\Message;
 
+use App\Actions\GameMatch\DispatchAutoFetchAction;
 use App\Enums\MatchStatus;
 use App\Enums\MessageType;
 use App\Events\MessageSent;
@@ -69,6 +70,10 @@ class SendMessageAction
      */
     private const MAX_URLS_PER_MESSAGE = 5;
 
+    public function __construct(
+        private readonly DispatchAutoFetchAction $dispatchAutoFetch,
+    ) {}
+
     public function handle(
         User $user,
         GameMatch $match,
@@ -84,7 +89,7 @@ class SendMessageAction
 
         $this->assertChatIsOpen($match->fresh());
 
-        return DB::transaction(function () use ($user, $match, $content, $file, $correlationId) {
+        $message = DB::transaction(function () use ($user, $match, $content, $file, $correlationId) {
             $message = Message::create([
                 'match_id' => $match->id,
                 'user_id' => $user->id,
@@ -122,6 +127,15 @@ class SendMessageAction
 
             return $message;
         });
+
+        // M16 Phase 2 — chat-send trigger for the API-only outcome flow.
+        // Any user message during Pending kicks an auto-fetch attempt; the
+        // ShouldBeUnique lock on the job dedupes back-to-back sends, and
+        // the action gates on `status === Pending` so messages on Disputed
+        // / ManualReview matches don't re-trigger the API.
+        $this->dispatchAutoFetch->handle($match);
+
+        return $message;
     }
 
     /**

@@ -45,13 +45,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
     // (404 for non-participants, not 403, to avoid leaking match existence).
     Route::get('/matches/{match}', [GameMatchController::class, 'show'])->name('matches.show');
 
-    // M6 Phase 3 — record a player's outcome confirmation. Players can change
-    // their claim freely while match is Pending; once both confirm, the match
-    // resolves (Settled or Disputed) and further confirms are blocked.
-    Route::post('/matches/{match}/confirm', [GameMatchController::class, 'confirm'])->name('matches.confirm');
-
     // M6 Phase 4 — escalate to game-API resolution. Either participant can
-    // open a dispute during Pending; the API winner is authoritative.
+    // open a dispute during Pending; the API winner is authoritative. After
+    // M16 this is the only Pending-state escalation (player confirms removed).
     Route::post('/matches/{match}/dispute', [GameMatchController::class, 'openDispute'])->name('matches.openDispute');
 
     // M10 — mutual match cancellation. Either participant proposes; the

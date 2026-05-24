@@ -1,10 +1,10 @@
 <?php
 
-use App\Actions\GameMatch\ConfirmOutcomeAction;
 use App\Actions\GameMatch\OpenDisputeAction;
 use App\Actions\GameMatch\ResolveMatchTimeoutAction;
+use App\Actions\GameMatch\SettleDrawMatchAction;
+use App\Actions\GameMatch\SettleMatchAction;
 use App\Actions\GameMatch\TakeListingAction;
-use App\Enums\MatchOutcome;
 use App\Enums\MessageType;
 use App\Events\MessageSent;
 use App\Models\GameMatch;
@@ -16,17 +16,22 @@ use Illuminate\Support\Facades\Event;
 
 /**
  * Asserts the system messages posted by lifecycle Actions during a match's
- * journey: started, outcome confirmed, settled, draw, dispute opened, API
- * resolved (3 branches), timeout. Each message is created with `user_id =
- * null` + `type = system` and broadcasts via the same `MessageSent` event
- * as user messages, so subscribed Echo clients render them inline.
+ * journey: started, settled (winner / draw), dispute opened, API resolved
+ * (3 branches), timeout → ManualReview. Each message is created with
+ * `user_id = null` + `type = system` and broadcasts via the same
+ * `MessageSent` event as user messages, so subscribed Echo clients render
+ * them inline.
+ *
+ * M16 removed the player Won/Lost/Drawn confirm flow — `ConfirmOutcomeAction`
+ * and its system messages ("X confirmed: Won.", auto-dispute narration,
+ * etc.) are gone. Settlement system messages now fire from the same
+ * `SettleMatchAction` / `SettleDrawMatchAction` whether triggered by the
+ * auto-fetch card path (`SettleFromCardAction`) or the dispute path
+ * (`ResolveDisputeAction`).
  */
 
 /**
- * Helper: latest system message content for a match. Lifecycle Actions
- * post multiple system messages over the course of a resolution; this
- * helper returns the most recent so we can assert on the chronologically
- * last announcement.
+ * Helper: latest system message content for a match.
  */
 function latestSystemMessage(GameMatch $match): ?string
 {
@@ -70,58 +75,12 @@ test('taking a listing posts a "Match started" system message', function () {
         ->and($message->user_id)->toBeNull();
 });
 
-// ─── ConfirmOutcomeAction → "X confirmed: Y." ───────────────────────────────
+// ─── SettleMatchAction → "Match settled. {winner} wins $X USDT." ────────────
 
-test('confirming an outcome posts a "{name} confirmed: {outcome}" system message', function () {
-    [$creator, $taker, , $match] = pendingMatch();
-
-    app(ConfirmOutcomeAction::class)->handle($creator, $match, MatchOutcome::Won);
-
-    expect(latestSystemMessage($match))->toContain($creator->name)
-        ->and(latestSystemMessage($match))->toContain('Won');
-});
-
-test('Lost confirmation posts "Lost" in the system message', function () {
+test('settling a match posts a "Match settled" system message naming the winner', function () {
     [$creator, , , $match] = pendingMatch();
 
-    app(ConfirmOutcomeAction::class)->handle($creator, $match, MatchOutcome::Lost);
-
-    expect(latestSystemMessage($match))->toContain('Lost');
-});
-
-test('Drawn confirmation posts "Drawn" in the system message', function () {
-    [$creator, , , $match] = pendingMatch();
-
-    app(ConfirmOutcomeAction::class)->handle($creator, $match, MatchOutcome::Drawn);
-
-    expect(latestSystemMessage($match))->toContain('Drawn');
-});
-
-test('changing a confirmation posts a second system message (not just an overwrite)', function () {
-    [$creator, , , $match] = pendingMatch();
-
-    app(ConfirmOutcomeAction::class)->handle($creator, $match, MatchOutcome::Won);
-    app(ConfirmOutcomeAction::class)->handle($creator, $match, MatchOutcome::Lost);
-
-    expect(systemMessageCount($match))->toBe(2);
-});
-
-test('re-confirming the same outcome does not post a duplicate system message', function () {
-    [$creator, , , $match] = pendingMatch();
-
-    app(ConfirmOutcomeAction::class)->handle($creator, $match, MatchOutcome::Won);
-    app(ConfirmOutcomeAction::class)->handle($creator, $match, MatchOutcome::Won);
-
-    expect(systemMessageCount($match))->toBe(1);
-});
-
-// ─── SettleMatchAction → "Match settled. {winner} wins $X." ─────────────────
-
-test('both players confirming mirror outcomes posts a "Match settled" system message', function () {
-    [$creator, $taker, , $match] = pendingMatch();
-
-    app(ConfirmOutcomeAction::class)->handle($creator, $match, MatchOutcome::Won);
-    app(ConfirmOutcomeAction::class)->handle($taker, $match, MatchOutcome::Lost);
+    app(SettleMatchAction::class)->handle($match, $creator);
 
     $latest = latestSystemMessage($match);
     expect($latest)->toContain('Match settled')
@@ -129,10 +88,9 @@ test('both players confirming mirror outcomes posts a "Match settled" system mes
 });
 
 test('settlement message includes the payout amount', function () {
-    [$creator, $taker, , $match] = pendingMatch(stake: '100');
+    [$creator, , , $match] = pendingMatch(stake: '100');
 
-    app(ConfirmOutcomeAction::class)->handle($creator, $match, MatchOutcome::Won);
-    app(ConfirmOutcomeAction::class)->handle($taker, $match, MatchOutcome::Lost);
+    app(SettleMatchAction::class)->handle($match, $creator);
 
     // Pot = 200, fee = 10% = 20, payout = 180.
     expect(latestSystemMessage($match))->toContain('180.00');
@@ -140,11 +98,10 @@ test('settlement message includes the payout amount', function () {
 
 // ─── SettleDrawMatchAction → "Match ended as a draw. Stakes refunded." ──────
 
-test('both players confirming Drawn posts a "Match ended as a draw" system message', function () {
-    [$creator, $taker, , $match] = pendingMatch();
+test('settling as draw posts a "Match ended as a draw" system message', function () {
+    [, , , $match] = pendingMatch();
 
-    app(ConfirmOutcomeAction::class)->handle($creator, $match, MatchOutcome::Drawn);
-    app(ConfirmOutcomeAction::class)->handle($taker, $match, MatchOutcome::Drawn);
+    app(SettleDrawMatchAction::class)->handle($match);
 
     expect(latestSystemMessage($match))->toContain('draw')
         ->and(latestSystemMessage($match))->toContain('refunded');
@@ -228,18 +185,13 @@ test('API "Unknown" confidence also posts a dispute_prompt evidence call-to-acti
         ->and($promptMessage->attachments_json)->toBe([['type' => 'dispute_prompt']]);
 });
 
-// ─── ResolveMatchTimeoutAction → "Confirmation window expired." ─────────────
+// ─── ResolveMatchTimeoutAction → "expired without API-verified game record" ─
 
-test('timeout resolution posts a "window expired" system message', function () {
-    [$creator, , , $match] = pendingMatch();
-
-    // Force a Won confirmation so the timeout path takes the honored-claim
-    // branch rather than dispute. We only care about the timeout system
-    // message here; the subsequent settle message is tested above.
-    app(ConfirmOutcomeAction::class)->handle($creator, $match, MatchOutcome::Won);
+test('timeout resolution posts an "expired" narration + a dispute_prompt evidence message', function () {
+    [, , , $match] = pendingMatch();
 
     $deadline = now()->subHours(5);
-    // `created_at` isn't in $fillable — forceFill it.
+    // `created_at` isn't in $fillable — forceFill it past the deadline.
     $match->forceFill(['created_at' => now()->subHours(6)])->save();
 
     app(ResolveMatchTimeoutAction::class)->handle($match->id, $deadline);
@@ -251,7 +203,20 @@ test('timeout resolution posts a "window expired" system message', function () {
         ->all();
 
     $expiredMessage = collect($allContents)->first(fn ($c) => str_contains($c, 'expired'));
-    expect($expiredMessage)->not->toBeNull();
+    expect($expiredMessage)->not->toBeNull()
+        ->and($expiredMessage)->toContain('admin review');
+
+    // The second message carries the dispute_prompt attachment marker so
+    // the React `SystemBubble` renders the warning-toned evidence variant
+    // — same shape as `ResolveDisputeAction::flipToManualReview`.
+    $promptMessage = Message::query()
+        ->where('match_id', $match->id)
+        ->where('type', MessageType::System)
+        ->whereJsonContains('attachments_json', [['type' => 'dispute_prompt']])
+        ->first();
+
+    expect($promptMessage)->not->toBeNull()
+        ->and($promptMessage->content)->toContain('Submit evidence');
 });
 
 // ─── Broadcast: system messages broadcast via the same MessageSent event ────
@@ -261,7 +226,7 @@ test('system messages broadcast on the private match channel', function () {
 
     Event::fake([MessageSent::class]);
 
-    app(ConfirmOutcomeAction::class)->handle($creator, $match, MatchOutcome::Won);
+    app(SettleMatchAction::class)->handle($match, $creator);
 
     Event::assertDispatched(
         MessageSent::class,

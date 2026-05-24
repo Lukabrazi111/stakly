@@ -21,3 +21,12 @@ Schedule::command('listings:expire')
 Schedule::command('matches:resolve-timeouts')
     ->everyTenMinutes()
     ->withoutOverlapping();
+
+// M16 Phase 2 — periodic auto-fetch backstop. Catches matches where the
+// page-visit / chat-send triggers haven't fired (player walked away after
+// the game). 5-min cadence is the floor — finer would burn provider
+// quota; coarser would let absent-player matches sit longer than needed.
+// `withoutOverlapping` prevents stacked runs if a backlog ever forms.
+Schedule::command('stakly:auto-fetch-pending')
+    ->everyFiveMinutes()
+    ->withoutOverlapping();

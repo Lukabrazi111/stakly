@@ -120,29 +120,6 @@ test('non-participant cannot view the match', function () {
     expect($stranger->can('view', $match))->toBeFalse();
 });
 
-// ─── Policy: confirm (Pending only) ─────────────────────────────────────────
-
-test('participant can confirm a Pending match', function () {
-    $match = GameMatch::factory()->create();
-
-    expect($match->taker->can('confirm', $match))->toBeTrue()
-        ->and($match->listing->user->can('confirm', $match))->toBeTrue();
-});
-
-test('participant cannot confirm a non-Pending match', function (string $factoryState) {
-    $match = GameMatch::factory()->{$factoryState}()->create();
-
-    expect($match->taker->can('confirm', $match))->toBeFalse()
-        ->and($match->listing->user->can('confirm', $match))->toBeFalse();
-})->with(['disputed', 'settled', 'manualReview']);
-
-test('non-participant cannot confirm even on Pending', function () {
-    $match = GameMatch::factory()->create();
-    $stranger = User::factory()->create();
-
-    expect($stranger->can('confirm', $match))->toBeFalse();
-});
-
 // ─── Policy: openDispute (Pending only) ─────────────────────────────────────
 
 test('participant can open dispute on Pending', function () {

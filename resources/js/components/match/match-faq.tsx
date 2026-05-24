@@ -20,29 +20,29 @@ interface FaqItem {
  */
 const FAQ_ITEMS: FaqItem[] = [
     {
-        question: 'What if my opponent doesn’t confirm the outcome?',
-        answer:
-            'Every match has a 4-hour confirmation window. If only one of you has confirmed when the timer runs out, that claim is honoured — Won settles in your favour, Lost settles in your opponent’s. If neither of you confirmed, the game API arbitrates by reading the result directly off chess.com or Lichess.',
-    },
-    {
-        question: 'What happens if we disagree on the outcome?',
-        answer:
-            'Either player can open a dispute from this page. Stakly then checks the official chess.com or Lichess API for the game result — the API is authoritative and overrides both self-reports. If the API can’t determine a winner, the match is flagged for admin review and your stakes stay in escrow until it’s resolved.',
-    },
-    {
         question: 'Where do I actually play the game?',
         answer:
-            'On chess.com or Lichess. Stakly doesn’t host the chessboard — we handle the escrow and outcome verification. Open whichever platform you’ve linked, play your opponent, then come back here to confirm who won.',
+            'On chess.com or Lichess — whichever platform the listing was created for. Stakly doesn’t host the chessboard; we handle the escrow and the result verification. Open the platform you’ve linked, play your opponent, then come back here. We do the rest automatically.',
+    },
+    {
+        question: 'How does Stakly know who won?',
+        answer:
+            'We read the result directly from the chess.com or Lichess API as soon as your game finishes. The match settles automatically — no “I won / I lost” buttons. The API is the source of truth, so neither player can claim a result the game didn’t produce.',
+    },
+    {
+        question: 'How long does it take to settle after the game ends?',
+        answer:
+            'Usually within a few seconds. We poll continuously while you’re on this page and every five minutes in the background as a safety net, so even if you close the tab the match will settle on its own. chess.com archives can lag 5–15 seconds; Lichess is real-time.',
+    },
+    {
+        question: 'What if something goes wrong during the match?',
+        answer:
+            'Two escape hatches: Request cancellation (your opponent has to agree — both stakes refunded, no fee, doesn’t count toward your record) or Report a problem (sends the match to admin review). Use cancellation for cooperative exits, Report a problem for cheating, ghosting, or anything else where you need a human to look.',
     },
     {
         question: 'How is the platform fee calculated?',
         answer:
             'A flat 10% of the pot, taken from the winner’s payout. For example, on a $100 stake (pot = $200), the winner takes $180 and Stakly takes $20. Draws have no fee — both players get their original stake back in full.',
-    },
-    {
-        question: 'Can I cancel the match after it’s started?',
-        answer:
-            'No. Once you’ve taken a listing, the only ways out are: both players confirming the outcome, either of you opening a dispute, or the 4-hour confirmation window expiring. This protects both stakes from being clawed back mid-game.',
     },
     {
         question: 'When do I receive my payout?',

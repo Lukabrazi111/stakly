@@ -2,6 +2,7 @@
 
 namespace App\Jobs;
 
+use App\Actions\GameMatch\SettleFromCardAction;
 use App\Actions\Message\PostSystemMessageAction;
 use App\Enums\LinkedAccountProvider;
 use App\Enums\MessageType;
@@ -11,6 +12,7 @@ use App\Services\Provider\ChessComGameClient;
 use App\Services\Provider\ChessComGameResult;
 use App\Services\Provider\Exceptions\ProviderUnavailableException;
 use Illuminate\Bus\Queueable;
+use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueueAfterCommit;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
@@ -19,9 +21,12 @@ use Illuminate\Support\Facades\Log;
 use Throwable;
 
 /**
- * Posts an auto-fetched chess.com game card on the first player confirm
- * (M8 Phase 4b auto-fetch path). Mirror of `AutoFetchLichessGameJob`
- * adapted to chess.com's archive-based API + eventual-consistency lag.
+ * Posts an auto-fetched chess.com game card for a Pending match, then
+ * immediately settles via `SettleFromCardAction` (M16 — API is the only
+ * outcome source, no player Won/Lost/Drawn confirms).
+ *
+ * Mirror of `AutoFetchLichessGameJob` adapted to chess.com's
+ * archive-based API + eventual-consistency lag.
  *
  * Key delta from the Lichess version:
  *
@@ -35,9 +40,9 @@ use Throwable;
  *     of the Lichess columns.
  *
  *   - Posted card uses `provider: 'chess_com'` so the frontend renderer
- *     + arbitration driver pick the right code path.
+ *     + `SettleFromCardAction` resolve the matching snapshot side.
  */
-class AutoFetchChessComGameJob implements ShouldQueueAfterCommit
+class AutoFetchChessComGameJob implements ShouldBeUnique, ShouldQueueAfterCommit
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
@@ -49,6 +54,14 @@ class AutoFetchChessComGameJob implements ShouldQueueAfterCommit
     public int $tries = 4;
 
     public int $timeout = 30;
+
+    /**
+     * Cap how long the unique lock can persist regardless of job state.
+     * The release-on-empty retry chain can keep the job "in flight" for
+     * up to 65s; this gives a comfortable buffer past that without
+     * stranding the lock if the queue worker dies mid-retry.
+     */
+    public int $uniqueFor = 120;
 
     /**
      * Delay (seconds) before the next attempt when the search returns no
@@ -63,8 +76,23 @@ class AutoFetchChessComGameJob implements ShouldQueueAfterCommit
         public GameMatch $match,
     ) {}
 
-    public function handle(ChessComGameClient $client, PostSystemMessageAction $postSystem): void
+    /**
+     * One in-flight job per match — M16 Phase 2 trigger sites (page-visit,
+     * chat-send, cron, stream) all funnel through `DispatchAutoFetchAction`
+     * and any of them might fire while a previous job is still running.
+     * The unique lock dedupes those races so we don't spam the provider API.
+     * Lock releases on job success / failure / final-retry-exhausted.
+     */
+    public function uniqueId(): string
     {
+        return (string) $this->match->id;
+    }
+
+    public function handle(
+        ChessComGameClient $client,
+        PostSystemMessageAction $postSystem,
+        SettleFromCardAction $settleFromCard,
+    ): void {
         if ($this->alreadyPosted()) {
             return;
         }
@@ -90,22 +118,30 @@ class AutoFetchChessComGameJob implements ShouldQueueAfterCommit
             return;
         }
 
-        $decisive = array_values(array_filter(
+        $completed = array_values(array_filter(
             $games,
-            fn (ChessComGameResult $g) => $g->isDecisive(),
+            // Decisive winner OR a draw (agreed / repetition / 50move / etc.).
+            // Aborted / half-played excluded — not a real result to settle.
+            fn (ChessComGameResult $g) => $g->isDecisive() || $g->isDraw(),
         ));
 
-        if (count($decisive) === 0) {
+        if (count($completed) === 0) {
             $this->retryIfBudgetRemains();
 
             return;
         }
 
-        if (count($decisive) !== 1) {
+        if (count($completed) !== 1) {
             return;
         }
 
-        $this->postCard($postSystem, $decisive[0]);
+        $card = $this->postCard($postSystem, $completed[0]);
+
+        // M16 — card IS the settlement trigger. SettleFromCardAction
+        // row-locks the match, no-ops if not Pending (idempotent re-runs),
+        // branches on winner_color to SettleMatchAction (winner) or
+        // SettleDrawMatchAction (draw).
+        $settleFromCard->handle($this->match, $card);
     }
 
     /**
@@ -158,13 +194,22 @@ class AutoFetchChessComGameJob implements ShouldQueueAfterCommit
         $this->release(self::RETRY_DELAYS[$attempt - 1]);
     }
 
-    private function postCard(PostSystemMessageAction $postSystem, ChessComGameResult $game): void
+    /**
+     * @return array<string, mixed> the card payload posted to chat — passed
+     *                              to SettleFromCardAction so the settle
+     *                              decision uses the same data the players see.
+     */
+    private function postCard(PostSystemMessageAction $postSystem, ChessComGameResult $game): array
     {
+        $card = $this->buildEntry($game);
+
         $postSystem->handle(
             $this->match,
             __('Verified chess.com game record.'),
-            [$this->buildEntry($game)],
+            [$card],
         );
+
+        return $card;
     }
 
     private function alreadyPosted(): bool

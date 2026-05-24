@@ -35,16 +35,6 @@ class GameMatchPolicy
     }
 
     /**
-     * Only participants can confirm an outcome, and only while the match is
-     * still Pending. Disputed / Settled / ManualReview matches reject confirms.
-     */
-    public function confirm(User $user, GameMatch $match): bool
-    {
-        return $this->isParticipant($user, $match)
-            && $match->status === MatchStatus::Pending;
-    }
-
-    /**
      * Only participants can open a dispute, and only while Pending. Once a
      * match is in Disputed / Settled / ManualReview, dispute is rejected.
      */

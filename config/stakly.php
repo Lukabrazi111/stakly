@@ -24,17 +24,18 @@ return [
     |--------------------------------------------------------------------------
     |
     | Which `App\Services\GameApi\GameApi` implementation to bind. Used by
-    | `ResolveDisputeAction` to verify outcomes when players disagree (or
-    | when the 4h timeout fires with no agreement).
+    | `ResolveDisputeAction` when a player hits "Report a problem" (M16
+    | removed the player-confirm flow — the auto-fetch / SettleFromCard
+    | pipeline is the primary settlement path; this driver only handles
+    | the dispute / manual-escalation path).
     |
     | Supported:
     |   - 'chess' (default) — `ChessGameApi`. Reads the auto-fetched
     |     chess card from chat (posted by `AutoFetchLichessGameJob` or
-    |     `AutoFetchChessComGameJob` on the first confirm) and returns the
-    |     winner that card names. Provider-agnostic — handles BOTH Lichess
-    |     and chess.com cards via the card's `provider` discriminator.
-    |     Falls through to `MockGameApi` when no card exists (unlinked
-    |     players, race window between confirm and auto-fetch).
+    |     `AutoFetchChessComGameJob`) and returns the winner that card
+    |     names. Provider-agnostic — handles BOTH Lichess and chess.com
+    |     cards via the card's `provider` discriminator. Falls through to
+    |     `MockGameApi` when no card exists.
     |   - 'mock' — `MockGameApi` directly. Deterministic by `match.id`
     |     parity, no card reading. Useful for environments where real
     |     chess APIs shouldn't influence settlement.
@@ -48,15 +49,12 @@ return [
     | Match confirmation timeout (hours)
     |--------------------------------------------------------------------------
     |
-    | How long both players have to confirm a match outcome after the match
-    | is created (= the taker hit Take). After this window, the
-    | `matches:resolve-timeouts` scheduled command resolves the match per the
-    | rules in milestones.md Phase 7:
-    |
-    |   - One Won  + silent opponent → confirmer wins.
-    |   - One Lost + silent opponent → opponent wins (claim is honored).
-    |   - One Drawn + silent opponent → game-API arbitrates.
-    |   - Neither confirmed → game-API arbitrates.
+    | How long a Pending match waits for an API-verified game record before
+    | the `matches:resolve-timeouts` scheduled command flips it to
+    | ManualReview (M16). The auto-fetch triggers (page-visit, chat-send,
+    | `stakly:auto-fetch-pending` cron at 5-min cadence) get the full
+    | window to find a matching game; if none lands by the deadline, an
+    | admin (M12) takes over.
     |
     | Default: 4 hours. Frontend `MatchTimer` (resources/js/components/match/
     | match-timer.tsx) currently hardcodes the same value; if you change one,

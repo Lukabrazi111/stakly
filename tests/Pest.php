@@ -1,7 +1,10 @@
 <?php
 
+use App\Models\GameMatch;
+use App\Models\Listing;
 use App\Models\User;
 use App\Services\GameApi\MockGameApi;
+use App\Services\Wallet;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -62,6 +65,57 @@ function platformUser(): User
         ->where('is_platform', true)
         ->first()
         ?? User::factory()->create(['is_platform' => true]);
+}
+
+/**
+ * A `Pending` match with both stakes already escrowed — the canonical
+ * starting state for any test that exercises a downstream lifecycle
+ * Action (settle, dispute, cancel, auto-fetch, timeout, etc.). Returns
+ * `[$creator, $taker, $listing, $match]` so individual tests destructure
+ * what they need.
+ *
+ * Stake is configurable; default `$100` matches the conventional fixture
+ * used elsewhere (pot = 200, fee 10% = 20, winner payout = 180).
+ *
+ * Does NOT set up linked accounts — most action-level tests don't care,
+ * and the few that do can `withLichess()` / `withChessCom()` directly on
+ * the returned users + create a corresponding `MatchProviderSnapshot`.
+ *
+ * @return array{0: User, 1: User, 2: Listing, 3: GameMatch}
+ */
+function pendingMatch(string $stake = '100'): array
+{
+    platformUser();
+
+    $creator = User::factory()->create();
+    Wallet::deposit($creator, '500', reference: "test:deposit:creator:{$creator->id}");
+
+    $taker = User::factory()->create();
+    Wallet::deposit($taker, '500', reference: "test:deposit:taker:{$taker->id}");
+
+    $listing = Listing::factory()->taken()->for($creator)->state([
+        'stake_amount' => $stake,
+    ])->create();
+
+    Wallet::hold(
+        user: $creator,
+        amount: $stake,
+        listing: $listing,
+        reference: "listing-create:{$listing->id}",
+    );
+    Wallet::hold(
+        user: $taker,
+        amount: $stake,
+        listing: $listing,
+        reference: "match-take:{$listing->id}",
+    );
+
+    $match = GameMatch::factory()->create([
+        'listing_id' => $listing->id,
+        'taker_user_id' => $taker->id,
+    ]);
+
+    return [$creator, $taker, $listing, $match];
 }
 
 /**

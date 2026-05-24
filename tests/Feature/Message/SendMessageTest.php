@@ -2,14 +2,18 @@
 
 use App\Actions\Message\SendMessageAction;
 use App\Broadcasting\MatchChannel;
+use App\Enums\LinkedAccountProvider;
 use App\Enums\MatchStatus;
 use App\Enums\MessageType;
 use App\Events\MessageSent;
+use App\Jobs\AutoFetchLichessGameJob;
 use App\Models\GameMatch;
 use App\Models\Listing;
+use App\Models\MatchProviderSnapshot;
 use App\Models\Message;
 use App\Models\User;
 use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\RateLimiter;
 
 /**
@@ -315,4 +319,68 @@ test('nonexistent match id is rejected', function () {
     $user = User::factory()->create();
 
     expect((new MatchChannel)->join($user, 999999))->toBeFalse();
+});
+
+// ─── M16 Phase 2 — chat-send auto-fetch trigger ────────────────────────────
+
+/**
+ * Match with both-sides Lichess snapshots for the auto-fetch dispatch.
+ * `chatMatch()` above doesn't link accounts; for the trigger tests we need
+ * snapshots so `DispatchAutoFetchAction` doesn't silently skip.
+ */
+function chatMatchWithSnapshots(MatchStatus $status = MatchStatus::Pending): array
+{
+    $creator = User::factory()->active()->withLichess('alice-lichess')->create();
+    $taker = User::factory()->withLichess('bob-lichess')->create();
+    $listing = Listing::factory()->forLichess()->taken()->for($creator)->create();
+    $match = GameMatch::factory()->create([
+        'listing_id' => $listing->id,
+        'taker_user_id' => $taker->id,
+        'status' => $status,
+    ]);
+
+    foreach ([GameMatch::SIDE_CREATOR => 'alice-lichess', GameMatch::SIDE_TAKER => 'bob-lichess'] as $side => $u) {
+        MatchProviderSnapshot::create([
+            'match_id' => $match->id,
+            'side' => $side,
+            'provider' => LinkedAccountProvider::Lichess,
+            'username' => $u,
+        ]);
+    }
+
+    return [$creator, $taker, $match->fresh(['listing.user', 'taker', 'providerSnapshots'])];
+}
+
+test('sending a message on a Pending match dispatches the auto-fetch job', function () {
+    Queue::fake();
+
+    [, $taker, $match] = chatMatchWithSnapshots();
+
+    app(SendMessageAction::class)->handle($taker, $match, 'gg');
+
+    Queue::assertPushed(
+        AutoFetchLichessGameJob::class,
+        fn (AutoFetchLichessGameJob $job) => $job->match->id === $match->id,
+    );
+});
+
+test('sending a message on a Disputed match does NOT dispatch (Pending-only)', function () {
+    Queue::fake();
+
+    [, $taker, $match] = chatMatchWithSnapshots(status: MatchStatus::Disputed);
+
+    app(SendMessageAction::class)->handle($taker, $match, 'evidence below');
+
+    Queue::assertNotPushed(AutoFetchLichessGameJob::class);
+});
+
+test('sending a message without snapshots does NOT dispatch', function () {
+    Queue::fake();
+
+    [, , $match] = chatMatch();
+    $taker = $match->taker;
+
+    app(SendMessageAction::class)->handle($taker, $match, 'hi');
+
+    Queue::assertNotPushed(AutoFetchLichessGameJob::class);
 });

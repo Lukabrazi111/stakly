@@ -14,15 +14,16 @@ use Throwable;
  * `stakly.match_confirmation_timeout_hours`). Scheduled task in
  * `routes/console.php`.
  *
- * The per-match resolution logic lives in `ResolveMatchTimeoutAction`.
- * This command owns the iteration loop, summary statistics, and
- * per-match failure isolation — one bad match must not stop the run.
+ * Per-match logic lives in `ResolveMatchTimeoutAction`. M16 simplified the
+ * action: every timed-out match flips to `ManualReview` (the auto-fetch
+ * triggers in M16 Phase 2 have been retrying every 5 min for 4h — no game
+ * is going to materialize at the timeout boundary). This command owns
+ * the iteration loop, summary, and per-match failure isolation.
  *
  * Iteration uses `chunkById(100)` so a backlog stays bounded in memory.
  *
- * Idempotency: handled at the match-status level (Pending guard) + at the
- * wallet-reference level via the underlying settle / settleDraw /
- * resolveDispute Actions. No additional `match-timeout:{id}` reference.
+ * Idempotency: handled at the match-status level (Pending guard inside
+ * the action's row lock).
  *
  * **Dev caveat:** Laravel's scheduler does not auto-run in dev. Fire
  * manually via `sail artisan matches:resolve-timeouts`, or run
@@ -40,8 +41,7 @@ class MatchesResolveTimeouts extends Command
     {
         $deadline = now()->subHours((int) config('stakly.match_confirmation_timeout_hours'));
 
-        $settled = 0;
-        $disputed = 0;
+        $manualReview = 0;
         $skipped = 0;
         $failed = 0;
 
@@ -49,14 +49,13 @@ class MatchesResolveTimeouts extends Command
             ->where('status', MatchStatus::Pending)
             ->where('created_at', '<=', $deadline)
             ->orderBy('id')
-            ->chunkById(self::CHUNK_SIZE, function ($matches) use ($action, &$settled, &$disputed, &$skipped, &$failed, $deadline) {
+            ->chunkById(self::CHUNK_SIZE, function ($matches) use ($action, &$manualReview, &$skipped, &$failed, $deadline) {
                 foreach ($matches as $match) {
                     try {
                         $result = $action->handle($match->id, $deadline);
 
                         match ($result) {
-                            'settled' => $settled++,
-                            'disputed' => $disputed++,
+                            'manual-review' => $manualReview++,
                             default => $skipped++,
                         };
                     } catch (Throwable $e) {
@@ -66,7 +65,7 @@ class MatchesResolveTimeouts extends Command
                 }
             });
 
-        $this->info("Settled {$settled}. Sent to API {$disputed}. Skipped {$skipped}. Failed {$failed}.");
+        $this->info("Flagged for review {$manualReview}. Skipped {$skipped}. Failed {$failed}.");
 
         return self::SUCCESS;
     }

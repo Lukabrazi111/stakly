@@ -1,7 +1,7 @@
 // Frontend contract for the match domain. Backend source of truth:
 // - App\Http\Resources\GameMatchResource (data shape)
 // - App\Models\GameMatch (database)
-// - App\Enums\MatchStatus / MatchOutcome
+// - App\Enums\MatchStatus
 
 import type { GameId } from '@/config/games';
 import type { ListingPlatform, Paginator, TimeControl } from '@/types/listings';
@@ -12,11 +12,6 @@ export type MatchStatus =
     | 'settled'
     | 'manual_review'
     | 'cancelled';
-
-// `drawn` is a self-reported outcome submitted via the third button in
-// `ConfirmButtons`. Both players claiming `drawn` settles as a draw —
-// stakes refunded, no platform fee, `Match.winner` stays null.
-export type MatchOutcome = 'won' | 'lost' | 'drawn';
 
 export interface MatchPlayer {
     id: number;
@@ -29,10 +24,20 @@ export interface MatchListing {
     game: GameId;
     stake_amount: number;
     // Platform binds outcome verification — the match auto-verifies via
-    // this provider's API when the dispute path runs. Surfaced in
-    // `MatchInfoCard` as a capability indicator.
+    // this provider's API. Surfaced in `MatchInfoCard` as a capability
+    // indicator + drives the M16 Pending action card copy.
     platform: ListingPlatform;
     time_control: TimeControl[];
+}
+
+// M16 — snapshotted external-account handles scoped to the listing's
+// platform. Either side may be null if the snapshot row is missing
+// (defensive — take + create gates require linked accounts upstream).
+// The Pending action card uses these to tell the player which game we're
+// polling for ("Looking for a game between MagnusCarlsen and hikaru").
+export interface MatchSnapshots {
+    creator_username: string | null;
+    taker_username: string | null;
 }
 
 // M10 — mutual cancellation state. All fields nullable; the frontend
@@ -61,8 +66,7 @@ export interface Match {
     listing: MatchListing;
     creator: MatchPlayer;
     taker: MatchPlayer;
-    creator_confirmed_outcome: MatchOutcome | null;
-    taker_confirmed_outcome: MatchOutcome | null;
+    snapshots: MatchSnapshots;
     winner: MatchPlayer | null;
     settled_at: string | null;
     created_at: string | null;
@@ -113,27 +117,28 @@ export interface ChatLinkAttachment {
     image_url: string | null;
 }
 
-// Phase 4 verified-game evidence card. Two source paths produce identical
-// shape:
-//   - `source: 'paste'`      — user pasted a Lichess game URL into chat;
-//                              `FetchLichessGameMetadataJob` resolved it.
-//   - `source: 'auto_fetch'` — `ConfirmOutcomeAction` triggered
-//                              `AutoFetchLichessGameJob` on the first
-//                              confirm; posted as a system message.
+// M8 Phase 4 / 4b verified-game evidence card. Both Lichess and chess.com
+// jobs emit the same shape, discriminated by `provider`. Two source paths
+// produce identical structure:
+//   - `source: 'paste'`      — user pasted a game URL into chat; the
+//                              relevant `Fetch{Provider}GameMetadataJob`
+//                              resolved it.
+//   - `source: 'auto_fetch'` — `AutoFetch{Provider}GameJob` posted the
+//                              card as a system message. M16 also triggers
+//                              `SettleFromCardAction` immediately after
+//                              this card lands.
 //
-// `verified: true` iff both game players' Lichess usernames matched the
-// match's snapshotted handles. Auto-fetch is always verified by
-// construction (search is username-anchored); paste can be either,
-// depending on whether the URL belongs to a game between this match's
-// players.
+// `verified: true` iff both game players' usernames matched the match's
+// snapshotted handles. Auto-fetch is always verified by construction
+// (search is username-anchored); paste can be either, depending on whether
+// the URL belongs to a game between this match's players.
 //
 // `winner_color` is `null` on draw/aborted; `winner_username` mirrors that
-// (null when no winner). `status` is the raw Lichess status — frontend
-// maps it to human copy (`mate` → "by checkmate", `resign` → "by
-// resignation", etc.).
+// (null when no winner). `status` is the raw provider status — frontend
+// maps it to human copy via `describeWinner` (provider-specific vocab).
 export interface ChatGameCardAttachment {
     type: 'game_card';
-    provider: 'lichess';
+    provider: 'lichess' | 'chess_com';
     source: 'paste' | 'auto_fetch';
     game_id: string;
     url: string;
