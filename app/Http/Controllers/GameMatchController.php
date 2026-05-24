@@ -2,13 +2,17 @@
 
 namespace App\Http\Controllers;
 
+use App\Actions\GameMatch\AcceptCancellationAction;
 use App\Actions\GameMatch\ConfirmOutcomeAction;
 use App\Actions\GameMatch\OpenDisputeAction;
+use App\Actions\GameMatch\RejectCancellationAction;
+use App\Actions\GameMatch\RequestCancellationAction;
 use App\Actions\GameMatch\TakeListingAction;
 use App\Enums\MatchOutcome;
 use App\Exceptions\InsufficientBalanceException;
 use App\Http\Requests\GameMatch\ConfirmRequest;
 use App\Http\Requests\GameMatch\IndexMatchesRequest;
+use App\Http\Requests\GameMatch\RequestCancellationRequest;
 use App\Http\Requests\GameMatch\TakeRequest;
 use App\Http\Resources\GameMatchResource;
 use App\Http\Resources\MessageResource;
@@ -221,6 +225,125 @@ class GameMatchController extends Controller
             'settled-by-api-draw' => ['type' => 'success', 'message' => __('Dispute resolved — game API ruled it a draw. Stakes refunded.')],
             'manual-review' => ['type' => 'warning', 'message' => __('Dispute opened — game API could not determine a winner. Match flagged for admin review.')],
             default => ['type' => 'warning', 'message' => __('Dispute opened — awaiting resolution.')],
+        });
+
+        return back();
+    }
+
+    /**
+     * M10 — propose mutual cancellation. Either participant can request;
+     * the other accepts (refund both stakes) or rejects (request closed,
+     * 30-min cooldown for the requester). Authorization gates participant,
+     * Pending status, no-open-request, and past-cooldown — see
+     * `GameMatchPolicy::requestCancellation`. Request body carries an
+     * optional reason capped at 200 chars.
+     */
+    public function requestCancellation(
+        RequestCancellationRequest $request,
+        GameMatch $match,
+        RequestCancellationAction $action,
+    ): RedirectResponse {
+        $user = $request->user();
+
+        abort_if($user->cannot('requestCancellation', $match), 403);
+
+        $resolution = $action->handle(
+            $user,
+            $match,
+            $request->validated('reason'),
+        );
+
+        Inertia::flash('toast', match ($resolution) {
+            'requested' => [
+                'type' => 'success',
+                'message' => __('Cancellation request sent — waiting for your opponent.'),
+            ],
+            'race_lost' => [
+                'type' => 'info',
+                'message' => __('This match has already been resolved.'),
+            ],
+            default => [
+                'type' => 'info',
+                'message' => __('Cancellation request not recorded.'),
+            ],
+        });
+
+        return back();
+    }
+
+    /**
+     * M10 — accept the opponent's pending cancellation request. Refunds
+     * both stakes, flips match + listing to Cancelled.
+     * Policy: participant who is NOT the requester, Pending status, open
+     * request must exist.
+     */
+    public function acceptCancellation(
+        Request $request,
+        GameMatch $match,
+        AcceptCancellationAction $action,
+    ): RedirectResponse {
+        $user = $request->user();
+
+        abort_if($user->cannot('acceptCancellation', $match), 403);
+
+        $resolution = $action->handle($user, $match);
+
+        Inertia::flash('toast', match ($resolution) {
+            'cancelled', 'already_cancelled' => [
+                'type' => 'success',
+                'message' => __('Match cancelled. Both stakes refunded.'),
+            ],
+            'race_lost' => [
+                'type' => 'info',
+                'message' => __('This match has already been resolved.'),
+            ],
+            'request_missing' => [
+                'type' => 'info',
+                'message' => __('There is no open cancellation request.'),
+            ],
+            default => [
+                'type' => 'warning',
+                'message' => __('Could not accept cancellation.'),
+            ],
+        });
+
+        return back();
+    }
+
+    /**
+     * M10 — decline the opponent's pending cancellation request. Match
+     * stays Pending; the requester enters the 30-min per-user cooldown
+     * before they can request again. Policy: participant who is NOT the
+     * requester, Pending status, open request must exist.
+     */
+    public function rejectCancellation(
+        Request $request,
+        GameMatch $match,
+        RejectCancellationAction $action,
+    ): RedirectResponse {
+        $user = $request->user();
+
+        abort_if($user->cannot('rejectCancellation', $match), 403);
+
+        $resolution = $action->handle($user, $match);
+
+        Inertia::flash('toast', match ($resolution) {
+            'rejected' => [
+                'type' => 'info',
+                'message' => __('Cancellation request declined. Match continues.'),
+            ],
+            'race_lost' => [
+                'type' => 'info',
+                'message' => __('This match has already been resolved.'),
+            ],
+            'request_missing' => [
+                'type' => 'info',
+                'message' => __('There is no open cancellation request.'),
+            ],
+            default => [
+                'type' => 'warning',
+                'message' => __('Could not decline cancellation.'),
+            ],
         });
 
         return back();

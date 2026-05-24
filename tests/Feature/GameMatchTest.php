@@ -236,3 +236,63 @@ test('cooldown is per-user — the OTHER participant can request immediately aft
     $creator = $match->fresh()->listing->user;
     expect($creator->can('requestCancellation', $match->fresh()))->toBeTrue();
 });
+
+// ─── Policy: acceptCancellation / rejectCancellation (non-requester only) ───
+
+test('the OTHER participant can accept or reject an open cancellation request', function () {
+    $match = GameMatch::factory()->create();
+    $taker = $match->taker;
+    $creator = $match->listing->user;
+    // Creator requested; taker should be able to accept OR reject.
+    $match->update([
+        'cancellation_requested_by' => $creator->id,
+        'cancellation_requested_at' => now(),
+    ]);
+
+    expect($taker->can('acceptCancellation', $match->fresh()))->toBeTrue()
+        ->and($taker->can('rejectCancellation', $match->fresh()))->toBeTrue();
+});
+
+test('the REQUESTER cannot accept or reject their own request', function () {
+    $match = GameMatch::factory()->create();
+    $creator = $match->listing->user;
+    $match->update([
+        'cancellation_requested_by' => $creator->id,
+        'cancellation_requested_at' => now(),
+    ]);
+
+    expect($creator->can('acceptCancellation', $match->fresh()))->toBeFalse()
+        ->and($creator->can('rejectCancellation', $match->fresh()))->toBeFalse();
+});
+
+test('non-participant cannot accept or reject', function () {
+    $match = GameMatch::factory()->create();
+    $stranger = User::factory()->create();
+    $match->update([
+        'cancellation_requested_by' => $match->taker_user_id,
+        'cancellation_requested_at' => now(),
+    ]);
+
+    expect($stranger->can('acceptCancellation', $match->fresh()))->toBeFalse()
+        ->and($stranger->can('rejectCancellation', $match->fresh()))->toBeFalse();
+});
+
+test('cannot accept or reject when there is no open request', function () {
+    $match = GameMatch::factory()->create();
+    // Default — no cancellation cols set.
+
+    expect($match->taker->can('acceptCancellation', $match))->toBeFalse()
+        ->and($match->listing->user->can('rejectCancellation', $match))->toBeFalse();
+});
+
+test('cannot accept or reject on non-Pending match', function (string $factoryState) {
+    $match = GameMatch::factory()->{$factoryState}()->create();
+    // Even if a request was somehow set, non-Pending blocks both actions.
+    $match->update([
+        'cancellation_requested_by' => $match->taker_user_id,
+        'cancellation_requested_at' => now(),
+    ]);
+
+    expect($match->fresh()->listing->user->can('acceptCancellation', $match->fresh()))->toBeFalse()
+        ->and($match->fresh()->listing->user->can('rejectCancellation', $match->fresh()))->toBeFalse();
+})->with(['disputed', 'settled', 'manualReview', 'cancelled']);

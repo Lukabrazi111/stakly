@@ -83,6 +83,49 @@ class GameMatchPolicy
     }
 
     /**
+     * Only participants who are NOT the requester can accept the pending
+     * cancellation. Match must be Pending and an open request must exist.
+     * Blocks the requester from accepting their own request (UI doesn't
+     * show them the accept button, but a direct POST bypassing the UI
+     * would otherwise let them self-cancel).
+     */
+    public function acceptCancellation(User $user, GameMatch $match): bool
+    {
+        return $this->canRespondToCancellation($user, $match);
+    }
+
+    /**
+     * Symmetric with `acceptCancellation` — only the non-requester can
+     * reject. Same Pending + open-request preconditions.
+     */
+    public function rejectCancellation(User $user, GameMatch $match): bool
+    {
+        return $this->canRespondToCancellation($user, $match);
+    }
+
+    /**
+     * Shared predicate for accept / reject: participant, Pending status,
+     * open request exists, and the user is the OTHER participant (not the
+     * one who requested).
+     */
+    private function canRespondToCancellation(User $user, GameMatch $match): bool
+    {
+        if (! $this->isParticipant($user, $match)) {
+            return false;
+        }
+
+        if ($match->status !== MatchStatus::Pending) {
+            return false;
+        }
+
+        if ($match->cancellation_requested_at === null) {
+            return false;
+        }
+
+        return $match->cancellation_requested_by !== $user->id;
+    }
+
+    /**
      * Per-user cooldown check. Returns true iff this user previously
      * requested cancellation and the rejection timestamp is still inside
      * the cooldown window. A different user being mid-cooldown does not

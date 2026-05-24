@@ -54,6 +54,14 @@ Route::middleware(['auth', 'verified'])->group(function () {
     // open a dispute during Pending; the API winner is authoritative.
     Route::post('/matches/{match}/dispute', [GameMatchController::class, 'openDispute'])->name('matches.openDispute');
 
+    // M10 — mutual match cancellation. Either participant proposes; the
+    // other accepts (refund both) or rejects (request closed, requester
+    // enters 30-min per-user cooldown). The /accept and /reject paths
+    // sit under /cancellation as POST sub-actions on the same resource.
+    Route::post('/matches/{match}/cancellation', [GameMatchController::class, 'requestCancellation'])->name('matches.cancellation.request');
+    Route::post('/matches/{match}/cancellation/accept', [GameMatchController::class, 'acceptCancellation'])->name('matches.cancellation.accept');
+    Route::post('/matches/{match}/cancellation/reject', [GameMatchController::class, 'rejectCancellation'])->name('matches.cancellation.reject');
+
     // M8 Phase 2 — chat messages on a match. Participant-only (404 for
     // non-participants, matching the show convention). Rate limit + status
     // gate live inside `SendMessageAction`.
