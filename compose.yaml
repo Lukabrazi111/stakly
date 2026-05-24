@@ -106,6 +106,31 @@ services:
             - laravel.test
             - pgsql
             - redis
+    lichess-stream:
+        # M16 Phase 4 — long-lived consumer of Lichess's
+        # `/api/stream/games-by-users` NDJSON stream. Dispatches
+        # `AutoFetchLichessGameJob` the instant a game between two
+        # subscribed Pending-match players ends. Optimization on top of
+        # the Phase 2 cron — if this container is stopped, settlement
+        # still happens within ~5min via the cron backstop.
+        #
+        # `restart: unless-stopped` so a crash auto-restarts. The
+        # daemon's own reconnect loop handles transient Lichess
+        # connection drops; restart kicks in only on PHP-level fatal
+        # exits.
+        image: 'sail-8.5/app'
+        command: 'php artisan stakly:lichess-stream'
+        restart: unless-stopped
+        environment:
+            WWWUSER: '${WWWUSER}'
+            LARAVEL_SAIL: 1
+        volumes:
+            - '.:/var/www/html'
+        networks:
+            - sail
+        depends_on:
+            - laravel.test
+            - pgsql
 networks:
     sail:
         driver: bridge

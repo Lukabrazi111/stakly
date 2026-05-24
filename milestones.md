@@ -2,14 +2,13 @@
 
 Frontend-first build. UI against real DB infrastructure + seeded fake data; backend logic (escrow, payouts, on-chain integration) lands per page once the UI is validated. Milestones are work-chunk labels, not version commitments — decisions inside any of them are revisitable.
 
-> **Shipped milestones live in `milestones_archived.md`** (M1, M2, M2.5, M3, M3.5, M4, M5, M6, M7, M11, M8 all phases, M10, M14 Slice A). This file is for active + upcoming work + the cross-cutting architectural decisions that earlier milestones established.
+> **Shipped milestones live in `milestones_archived.md`** (M1, M2, M2.5, M3, M3.5, M4, M5, M6, M7, M11, M8 all phases, M10, M16 all phases, M14 Slice A). This file is for active + upcoming work + the cross-cutting architectural decisions that earlier milestones established.
 
 ## Phases (map)
 
 **Active / upcoming:**
 
-- **M16** — API-only outcome resolution (replaces M6 confirm flow) **← next**
-- **M12** — Filament admin panel + chat-driven dispute resolution
+- **M12** — Filament admin panel + chat-driven dispute resolution **← next**
 - **M13** — Chat anti-abuse + moderation
 - **M14** — Automated outcome adapters (volume-triggered optimization; Slice A shipped)
 - **M15** — Multi-game expansion (FACEIT, OpenDota, Riot adapters)
@@ -36,122 +35,6 @@ Decisions made earlier that have shaped a lot of code downstream. Not locked —
 - **Strongest anti-cheat per game** (M8 + M15). Stakly only takes stakes on matches played on the strongest available anti-cheat platform for the relevant game. The verification provider (who tells us the result) and the anti-cheat platform (where the match must be played) are conceptually separate — sometimes the same vendor (FACEIT for CS2, Riot for Valorant), sometimes different (Steam-ranked Dota 2 verified via OpenDota). Per-game adapter pattern via `LinkedAccountProvider` enum + `ProfileClient` interface + `listings.platform` column.
 - **User-supplied free-text never lands in system messages** (M10 Phase 3). System messages bypass the M13 chat anti-abuse layer by construction. Any user-supplied text (cancellation reasons, future dispute notes, etc.) surfaces in structured banner UI we control — never spliced into chat lifecycle narration. The banner is the sanitization surface; chat stays for player-to-player communication that DOES go through M13 filters.
 - **Outcome is API-truth, not player self-report** (M16). Match results come from the game API (Lichess stream, chess.com archive polling) — not from "I won / lost / drawn" player buttons. Player self-reports were always non-binding (the API was the tiebreaker on disagreement); M16 removes the redundant confirm layer entirely. The dispute surface (`Report a problem`) survives as the manual escalation path for unresolvable cases. "Mutual cancellation" (M10) remains the cooperative early-exit when no game gets played.
-
----
-
-## M16 — API-only outcome resolution **← next**
-
-Replaces M6's player-self-report confirm flow entirely. Match outcomes come from the game API — not from "I won / I lost / Drawn" button clicks. Sequenced ahead of M12 because the dispute surface M12 will administer changes shape here (no more conflicting-confirms auto-dispute; ManualReview becomes the primary admin-touched state, fed only by API failures + explicit "Report a problem" escalations).
-
-### Why now
-
-The current confirm flow has two layered intent signals: player self-report (subjective, gameable, racy) and game API (objective, authoritative). When they agree, the player confirm is redundant. When they disagree, the API wins anyway via `ResolveDisputeAction`. The player confirm only meaningfully matters when the API is silent — and even there it just defers the API check to "dispute" rather than replacing it. Removing it eliminates the entire two-player coordination dance, the "lying about winning" attack vector, the 4h-timeout-on-honest-player penalty, and ~20 conditional branches across `ConfirmOutcomeAction` / `ResolveMatchTimeoutAction` / chat conflict narration / single-confirmer claim honoring.
-
-### Architecture
-
-```
-Match.Pending
-  ↓ (triggers, layered for redundancy)
-  ├─ page-visit on /matches/{id}   → dispatch AutoFetch{Lichess,ChessCom}Job
-  ├─ chat-send during Pending      → dispatch AutoFetch
-  ├─ Lichess stream consumer       → on game-end event, dispatch SettleFromCardAction
-  └─ stakly:auto-fetch-pending cron (every 5 min) → scan Pending > 10 min, dispatch
-  ↓
-AutoFetch job finds decisive game between snapshot usernames since match.created_at
-  ↓
-PostSystemMessageAction posts game_card to chat
-  ↓
-SettleFromCardAction: extract winner, map via snapshot, call SettleMatchAction
-  ↓
-Match.Settled (or SettleDrawMatchAction for draws)
-
-If no game found within 4h:
-  ResolveMatchTimeoutAction → ManualReview (admin or M12-cooling-off resolves)
-```
-
-### Trigger details
-
-- **chess.com**: polling-only. `/pub/player/{u}/games/{Y}/{M}` archive endpoint has 5-15s lag after game-end — already handled by `AutoFetchChessComGameJob`'s `$tries = 4` + `release([5,15,45])` backoff. No webhook exists.
-- **Lichess (Phase 1-3)**: same polling pattern as chess.com via existing `AutoFetchLichessGameJob`. Real-time API so no lag; one-shot per dispatch.
-- **Lichess (Phase 4)**: OAuth-authed `/api/stream/games-by-users` (POST, NDJSON) for true real-time push. ONE admin OAuth token (Stakly's own Lichess account, not per-user) — streams up to 100 concurrent Pending matches' Lichess usernames. On game-end event in the stream, dispatch settle immediately. Polling remains as the fallback for chess.com + as backup if the stream daemon dies.
-
-### Phases
-
-> Estimates are focused solo dev time. Phase 1 alone breaks the app (no confirm buttons, no replacement UX yet) so Phase 1+2+3 ship together as one usable cut. Phase 4 (Lichess stream) and Phase 5 (cleanup) ship incrementally after.
-
-**Phase 1 — Backend foundation: remove confirm flow, add new trigger plumbing (~2 days)**
-
-- [ ] Delete `app/Actions/GameMatch/ConfirmOutcomeAction.php`.
-- [ ] Delete `app/Http/Requests/GameMatch/ConfirmRequest.php`.
-- [ ] Delete `GameMatchController::confirm` method + `POST /matches/{match}/confirm` route.
-- [ ] Delete `GameMatchPolicy::confirm` method.
-- [ ] Update `ResolveMatchTimeoutAction`: remove the "single confirmer → honor claim" path. Behavior becomes: dispatch AutoFetch one final time, if no card lands shortly → flip to `ManualReview`.
-- [ ] New `App\Actions\GameMatch\SettleFromCardAction` — takes (`GameMatch`, latest `game_card` attachment), row-locks the match, maps `winner_username` to a participant via snapshot, calls `SettleMatchAction` or `SettleDrawMatchAction` depending on card outcome. Idempotent on `match.status === Settled`.
-- [ ] `AutoFetchLichessGameJob` + `AutoFetchChessComGameJob`: after posting card, immediately invoke `SettleFromCardAction` (don't wait for any user action).
-- [ ] **Keep** `creator_confirmed_outcome` + `taker_confirmed_outcome` columns nullable on `game_matches` for historical audit. Mark deprecated in model docblock. A future cleanup migration drops them once the suite is fully migrated.
-- [ ] Update M6 state-machine diagram in `milestones_archived.md` to reflect the API-only paths.
-
-**Phase 2 — Polling triggers (~1 day)**
-
-- [ ] Page-visit trigger: `GameMatchController::show` dispatches `AutoFetch{provider}Job` (per `listing.platform`) on every Pending-state view. Job is idempotent by `attachments_json` membership — duplicates are cheap no-ops.
-- [ ] Chat-send trigger: `SendMessageAction` (or a `MessageSent` event listener) dispatches the same job on every Pending-match message. Same idempotency.
-- [ ] New `app/Console/Commands/AutoFetchPendingMatches.php` artisan command — scans `game_matches` where `status = pending` AND `created_at < now() - 10 min`, dispatches AutoFetch per match. Scheduled `everyFiveMinutes()->withoutOverlapping()` in `routes/console.php`. Bounded cost: only matches in the 10min-to-4h window get scanned.
-
-**Phase 3 — Frontend: redesign Pending action area (~2 days)**
-
-- [ ] Delete `resources/js/components/match/confirm-buttons.tsx`.
-- [ ] Delete `MatchOutcome` TS type usage from `match/show.tsx` (or keep the type, just stop importing in show).
-- [ ] New Pending action card: prominent "Play your match on {Platform}" headline + snapshotted usernames displayed (so player knows what game we're looking for) + "Looking for your game..." progress state + "Last checked: 12s ago" timestamp. No buttons. F5 = re-trigger page-visit fetch.
-- [ ] Once `game_card` attachment arrives in chat (via `useMatchChat` hook subscription), the card renders inline on the action card too as a "found, settling now..." state, then the page polls/refreshes to Settled status.
-- [ ] Remove `creator_confirmed_outcome` / `taker_confirmed_outcome` from `GameMatchResource` (or keep as deprecated for transition).
-- [ ] Keep `RequestCancellationButton` + `OpenDisputeButton` (M10 + M8 Slice C) as the only Pending-state action buttons. Both remain valid.
-- [ ] `MatchInfoCard` "Verification" row copy stays accurate ("Auto via Lichess / chess.com" — now even more literally true).
-
-**Phase 4 — Lichess OAuth + stream consumer (~3 days)**
-
-- [ ] **Investigation slice**: confirm the OAuth scope required by `/api/stream/games-by-users` (likely just basic / public scope, not bot:play). Spike with a manual curl + admin token before building.
-- [ ] Provision an admin Lichess account for Stakly + obtain an OAuth token. Store in `.env` as `LICHESS_ADMIN_OAUTH_TOKEN`.
-- [ ] New `app/Console/Commands/LichessStream.php` artisan daemon. Long-lived HTTP connection to `https://lichess.org/api/stream/games-by-users` (POST). Body: list of Lichess usernames from currently-Pending matches' creator+taker snapshots. NDJSON line-by-line parse.
-- [ ] On `game-end` event in stream (game finished with winner / draw / abort), look up the corresponding `GameMatch` by the username pair, dispatch `AutoFetchLichessGameJob` to do the canonical fetch + card-post + settle (don't trust the stream payload alone — re-fetch for canonical data).
-- [ ] User-list refresh: every 30s the daemon polls the local DB for the current Pending-Lichess usernames, compares to its subscribed set, reconnects if changed. (Lichess subscription is per-connection, not mutable.)
-- [ ] Reconnection: on connection drop, exponential backoff with jitter; reconnect with current user list.
-- [ ] `compose.yaml`: add a `lichess-stream` service (mirroring the existing `queue` + `reverb` sidecar pattern). Supervisord-style auto-restart.
-- [ ] **Defensive**: if the daemon is dead, polling still catches the match within 5 min via cron. Stream is an optimization, not a hard dependency.
-
-**Phase 5 — Tests + cleanup (~2 days)**
-
-- [ ] Delete tests that exercise the confirm flow specifically: `GameMatchConfirmTest`, the confirm sections of `MatchSettlementTest` + `SystemMessageTest`, the auto-dispute conflict-narration test. Suite shrinks by ~50-80 tests.
-- [ ] Add tests for new paths: `SettleFromCardAction` (happy + idempotent + race), `AutoFetchPendingMatchesCommand`, page-visit trigger dispatches job, chat-send trigger dispatches job, stream-event-end triggers re-fetch (mock the stream).
-- [ ] Update existing tests that set up matches via `ConfirmOutcomeAction` — replace with direct status manipulation OR with `SettleFromCardAction` invocation.
-- [ ] M8 Phase 4 tests for `AutoFetchLichessGameJob` / `AutoFetchChessComGameJob` need updating since these jobs now also settle (not just post card).
-- [ ] Full pint + npm build + suite green.
-
-### Decisions
-
-- **API is the only outcome source.** Player self-report removed entirely. Disputes still go through API (`ResolveDisputeAction` → `ChessGameApi`) when the explicit `Report a problem` button fires.
-- **Polling for chess.com is permanent** — no webhook exists in the Published Data API. The 5-15s archive lag is handled by existing `AutoFetchChessComGameJob` retry-on-empty.
-- **Lichess uses admin-level OAuth, not per-user** (M16 Phase 4). One Stakly-owned Lichess account, one OAuth token, streams up to 100 concurrent Pending matches' usernames. Preserves the bio-code linked-account UX (no auth flow per user) at the cost of a hardcoded 100-user ceiling — acceptable for early-launch volume; revisit if we sustain >100 concurrent Lichess matches.
-- **Stream is an optimization, not a dependency.** Cron-polling backstops every 5 min; if `lichess-stream` daemon dies the worst case is a 5-min delay on settlement, not a frozen match.
-- **No "I'm done" button.** Page-visit + chat-send are implicit player-engagement triggers; cron catches absent players. F5 re-triggers page-visit fetch as the manual override.
-- **4h timeout → ManualReview** (not "honor claim" path anymore). Without confirms there's no claim to honor; if no game found in 4h, money sits frozen until M12 admin (or cooling-off after admin lands).
-- **Auto-dispute path (both-confirm-Won) deleted.** That conflict literally can't happen without confirms. `ResolveDisputeAction` is now only called by `OpenDisputeAction` (Report a problem button) and future M12 admin actions.
-- **`confirmed_outcome` columns kept nullable** during M16 for historical audit + safer rollback. Future cleanup migration drops them.
-- **`MatchOutcome` enum stays** — still used internally by `ChessGameApi` to map card winner colors / draw status to settlement params. Just no longer surfaced through a player-facing confirm endpoint.
-- **OAuth scope check is a Phase 4 spike.** If the Lichess scope requires too much (e.g. `bot:play`, which would conflict with the admin account's normal usage), fall back to polling-only and revisit per-user OAuth later.
-
-### Not in M16
-
-- **Per-user Lichess OAuth.** Admin-level token only. Per-user OAuth (each player authorizes Stakly) would replace the bio-code flow — major UX downgrade for early users. Tabled until there's a real reason (>100 concurrent matches, or webhook scopes that require per-user tokens).
-- **Chess.com webhooks.** None exist. Polling is the only option for that platform.
-- **Re-introducing player confirm as an opt-in path.** No "I want to override the API" surface. If the API is wrong (cheating, account swap), the path is `Report a problem` → ManualReview → admin (M12).
-- **Push notifications to players** ("your match is settling…"). The page-visit pattern is pull-based; players see results when they return. Push is a separate UX project.
-- **Dropping `confirmed_outcome` columns immediately.** Kept for the M16 transition; future migration handles the drop.
-
-### Migration & rollback notes
-
-- M16 is destructive of M6 code but additive on the schema (no columns dropped in M16 itself). If we need to roll back, restore the deleted Actions + routes + UI components from git history; the DB schema isn't a blocker.
-- Tests deleted in Phase 5 are NOT replaced 1:1 — the confirm-flow tests are obsolete by design. The new tests cover the API-only paths.
-- Before merging Phase 1, the test suite WILL fail until Phase 3 lands. Phases 1+2+3 must ship as one commit (or rebased into one) to keep the suite green at every commit boundary.
 
 ---
 
