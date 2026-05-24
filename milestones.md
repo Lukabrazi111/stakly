@@ -16,8 +16,8 @@ Frontend-first build. UI against real DB infrastructure + seeded fake data; back
 - **M11** — Controller Refactor to Actions Pattern ✅
 - **M8** — Match Chat + Linked Accounts ✅ (all phases shipped — Phase 5 Slice C closed it out 2026-05-22)
 - **M14 Slice A** — `ChessGameApi` card arbitration ✅ (pulled forward from full M14)
-- **M10** — Mutual Match Cancellation **← next**
-- **M12** — Filament admin panel + chat-driven dispute resolution
+- **M10** — Mutual Match Cancellation ✅ (all 4 phases shipped 2026-05-24)
+- **M12** — Filament admin panel + chat-driven dispute resolution **← next**
 - **M13** — Chat anti-abuse + moderation
 - **M14** — Automated outcome adapters (volume-triggered optimization; Slice A shipped)
 - **M15** — Multi-game expansion (FACEIT, OpenDota, Riot adapters)
@@ -236,50 +236,40 @@ The existing `OpenDisputeButton` + `OpenDisputeAction` (already wired in M11) re
 
 ---
 
-## M10 — Mutual Match Cancellation
+## M10 — Mutual Match Cancellation ✅ shipped 2026-05-24
 
-The fourth resolution path for a Pending match. Today a match has three exits: both players confirm an outcome → `Settled`; either opens a dispute → `Disputed`; the 4-hour timer expires → resolution per Phase 7 rules. Real players will occasionally want a fourth — cancel by mutual agreement. Common scenarios: opponent goes AFK before play, both realise the match was a misclick or miscommunication, one player has an emergency and the other is willing to bail.
+The fourth resolution path for a Pending match — sibling to "both confirm," "open dispute," and "4h timeout." Either player proposes via the **Request cancellation** button on the Pending action card; the opponent sees an inline warning-toned banner at the top of the match page with the requester's reason in a quoted block + **Decline / Accept and refund** buttons. On accept, the match flips to `Cancelled`, the listing flips to `Cancelled`, both stakes are refunded via `Wallet::release` (idempotent on `cancel-refund-{creator,taker}:{match_id}`), and a system message narrates the close-out. On reject, the request closes, the requester enters a 30-min per-user cooldown, and the match stays Pending.
 
-The UX models Bybit's order-cancellation pattern: when one player requests cancellation, the other sees an inline accept/reject banner at the top of the match page. On accept the match transitions to `Cancelled`, both stakes are refunded via `Wallet::release`, and a system message in chat narrates the resolution.
+**Schema** (`game_matches`): 5 new nullable columns — `cancelled_at`, `cancellation_requested_by` (FK users, nullOnDelete), `cancellation_requested_at`, `cancellation_rejected_at`, `cancellation_reason` (varchar 200). `MatchStatus::Cancelled` enum case added; M6 state-machine doc updated to include both cancel-accept and cancel-reject arrows.
 
-### Decisions (pre-design)
+**Actions** in `app/Actions/GameMatch/`: `RequestCancellationAction`, `AcceptCancellationAction`, `RejectCancellationAction`. Each is row-locked, idempotent where appropriate (accept short-circuits with `'already_cancelled'` on a re-call), and posts a system message via `PostSystemMessageAction`. Sentinel-string returns map to flash toasts in the controller adapters (`'requested'` / `'cancelled'` / `'rejected'` / `'race_lost'` / `'request_missing'` / `'self_{accept,reject}_forbidden'` / `'already_cancelled'`). Same refund-both conservation pattern as `SettleDrawMatchAction`: `-A_stake + -B_stake + +A_release + +B_release = 0`.
 
-- **Pending only.** Once a match flips to `Disputed` (game-API has been invoked) or `Settled` (money's moved), cancellation is off the table. From those states the dispute / settlement path is the only exit.
-- **One open request at a time per match.** A second request before the first resolves is rejected at the controller with a toast: "There's already an open cancellation request."
-- **30-minute cooldown after rejection.** If Bob rejects Alice's request, Alice can't re-request for 30 min. Prevents spam-cancel as a coercion tactic ("cancel or I'll keep asking until you give in").
-- **Request expires with the match timeout.** If neither player responds within the existing 4h confirmation window, the regular timeout resolver runs (honored claim or game-API arbitration). The cancel request is a polite offer — it doesn't extend or interrupt the match's primary lifecycle.
-- **Reason is optional, capped at 200 chars.** Short free-text so the other player understands the why.
-- **System messages narrate the flow.** "Alice requested to cancel the match. [reason]" → "Bob accepted. Match cancelled, stakes refunded." or "Bob declined. Match continues."
-- **No fee on cancellation.** Mirrors the draw outcome — both stakes released, no platform rake. Cancellation is a no-result, not a no-winner game.
-- **Cancellation doesn't count toward player record.** Like a draw with no fee, but explicitly logged as "Cancelled" not "Drawn" — preserves the distinction for future statistics / reputation surfaces.
+**Policy**: `GameMatchPolicy::requestCancellation` (participant + Pending + no-open-request + per-user 30-min cooldown), `acceptCancellation` / `rejectCancellation` (participant + Pending + open-request-exists + NOT the requester — defense in depth against bypass-policy callers).
 
-### Phases
+**Routes**: `POST /matches/{match}/cancellation` (`matches.cancellation.request`), `/accept` (`.accept`), `/reject` (`.reject`). `RequestCancellationRequest` FormRequest validates `reason: nullable|string|max:200` and normalizes whitespace-only input to `null` in `prepareForValidation`.
 
-**Phase 1 — Schema + state machine (~1-2 days)**
+**Frontend** (`components/match/`):
+- `RequestCancellationButton` — subordinate inline button (sibling to `OpenDisputeButton`) with Handshake icon. Modal opens a **hybrid radio list of 5 preset reasons + "Other"** with conditional free-text textarea (200-char limit + live counter). Selection required to submit. Disabled state with tooltip shows remaining cooldown minutes.
+- `CancellationRequestBanner` — inline warning-toned banner above the Confirm card while a request is open. Two variants from one component: viewer-is-requester (waiting state, reason echoed back, no actions) vs viewer-is-responder (requester's reason quoted + Decline / Accept-and-refund buttons).
+- `CancellationSummary` — terminal banner in the action slot for `status === 'cancelled'`. Muted tone (no winner gradient), Handshake icon, "Both stakes refunded — $X returned to each player" + "Cancellations don't count toward your match record" + optional reason quote.
+- `match/show.tsx` wires all three, hides the Request + Report-a-problem button pair while a request is open (banner takes over the action surface). `cooldownRemainingFor(match, viewerId)` helper computes the requester's cooldown locally — no clock subscription needed since the page polls every 8s during Pending.
+- `MatchesFilterChips` gains a `Cancelled` chip on `/matches` (separate mental category from `Settled`, expected to be reasonably common in early-days play).
 
-- [ ] Migration: add `cancelled_at`, `cancellation_requested_by` (FK to users), `cancellation_requested_at`, `cancellation_rejected_at`, `cancellation_reason` columns to `game_matches`. `cancellation_rejected_at` tracks the cooldown window for the requester.
-- [ ] Enum: extend `MatchStatus` with `Cancelled`. Update the state-machine doc in M6 to reflect the new path.
-- [ ] `GameMatchPolicy::requestCancellation` — participant-only, Pending only, no open request from same user, past cooldown if previously rejected.
+**Resource shape**: `GameMatchResource.cancellation` ships `{ requested_by_id, requested_at, reason, rejected_at, cancelled_at }` — all nullable. Frontend infers UI state from combinations. `requested_by_id` (not a nested player object) is intentional — saves an eager-load since the FE can look up name client-side from the already-loaded creator/taker.
 
-**Phase 2 — Backend Actions (~1-2 days)**
+**Decisions**:
 
-- [ ] `RequestCancellationAction`: row-locked transaction, validates state + cooldown, writes pending columns, posts system message via `PostSystemMessageAction`. Returns a sentinel for the controller.
-- [ ] `AcceptCancellationAction`: row-locked transaction, transitions status to `Cancelled`, calls `Wallet::release` for both players (idempotent via `cancel-refund-creator:{match_id}` / `cancel-refund-taker:{match_id}` references), posts system message. Same conservation invariant as `SettleDrawMatchAction`.
-- [ ] `RejectCancellationAction`: clears pending columns, records `cancellation_rejected_at` for cooldown tracking, posts system message.
-- [ ] Route: `POST /matches/{match}/cancellation` (request), `POST /matches/{match}/cancellation/accept`, `POST /matches/{match}/cancellation/reject`.
-
-**Phase 3 — Frontend (~1-2 days)**
-
-- [ ] "Request cancellation" button on the Pending action card (alongside Confirm and Open dispute).
-- [ ] Modal asking for optional reason (textarea, 200-char cap mirroring backend).
-- [ ] Inline banner at the top of `match/show.tsx` when there's an open request — shown to the OTHER player with Accept / Reject buttons. Requester sees a "Cancellation pending — waiting for {opponent}" version with no actions.
-- [ ] Cancelled-status banner replaces the active-pending banner once the match transitions: "Match cancelled by mutual agreement. Both stakes refunded."
-- [ ] Disable the "Request cancellation" button when in cooldown; show a tooltip with the cooldown expiry.
-
-**Phase 4 — Tests + polish (~1 day)**
-
-- [ ] Pest coverage: happy path (request → accept), reject path, cooldown enforcement, double-request rejection, status guards (no-cancel from Settled / Disputed / ManualReview), wallet refunds + ledger conservation, broadcast events fired.
-- [ ] Wallet ledger conservation per cancelled match: `-A_stake + -B_stake + +A_release + +B_release = 0` (same as draw settlement).
+- **Pending-only.** Once a match flips to `Disputed` (API has been invoked) or `Settled` (money's moved), cancellation is off the table. From those states the dispute / settlement path is the only exit.
+- **One open request at a time per match.** Policy + Action both gate on `cancellation_requested_at !== null`.
+- **30-minute per-user cooldown after rejection** keyed on `cancellation_requested_by`. Bob being mid-cooldown does not gate Alice (different requesters; cooldown is personal).
+- **Request expires with the match timeout** (no separate expiry job). The 4h confirmation timer is the master clock — neither side responds, the regular timeout resolver runs.
+- **Reason field stays out of the chat system message** (M10 Phase 3 — security tweak). The Action posts a neutral "X requested to cancel the match.". The reason surfaces only inside the structured banner UI on the opponent's screen, which sidesteps the M13 chat-anti-abuse bypass vector (system messages aren't filtered like user messages).
+- **Hybrid reason input (radio list + Other)** beats free-text-only for discoverability and beats radio-only for flexibility. Preset paths carry safe canned strings; the "Other" textarea covers the long tail. Selection is required — picking a reason is low cost and helps the opponent understand. Empty "Other" persists as the literal `"Other"` so the opponent reads it as "didn't want to specify" rather than a blank field.
+- **No fee on cancellation.** Mirrors the draw outcome — both stakes released, no platform rake.
+- **Cancellation doesn't count toward player record.** Distinct from a played draw — explicitly logged as `Cancelled` (not `Settled` with null winner) so future stats / reputation surfaces can treat them differently.
+- **Listing flips to `Cancelled` on accept** (not back to `Open`). UNIQUE constraint on `game_matches.listing_id` means one listing → at most one match ever; reopening would let a second match land on the historical record. Creator can create a new listing if they want to keep playing.
+- **`confirmed_outcome` columns NOT cleared on cancel.** If Alice had clicked Won before the cancel, the historical record of her claim survives — useful for forensics if a dispute about the cancellation itself arises later. The terminal `Cancelled` status prevents these columns from being acted on (status guard in `confirm` policy).
+- **"Take back my cancellation request"** not built. Bybit doesn't support it either; KISS until someone asks.
 
 ### Not in M10
 

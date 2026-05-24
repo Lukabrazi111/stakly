@@ -12,11 +12,16 @@ interface Chip {
 // returns Unknown in production; only forced in tests) and folds visually
 // under "All" until it has enough surface to deserve its own chip. Users can
 // still target it explicitly via ?filter[status]=manual_review if needed.
+//
+// `cancelled` (M10) gets its own chip because the mental category is
+// genuinely distinct from `settled` (no winner, no record impact) and
+// expected to be reasonably common in early-days play.
 const CHIPS: Chip[] = [
     { label: 'All', value: null },
     { label: 'Pending', value: 'pending' },
     { label: 'Disputed', value: 'disputed' },
     { label: 'Settled', value: 'settled' },
+    { label: 'Cancelled', value: 'cancelled' },
 ];
 
 interface Props {
