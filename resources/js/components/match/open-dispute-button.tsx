@@ -17,19 +17,14 @@ interface OpenDisputeButtonProps {
 }
 
 /**
- * Report-a-problem escape hatch — escalates the match to game-API
- * resolution. Rendered subordinate to the I-won / I-lost / Draw buttons
- * (small inline link, not a primary action) since the cooperative
- * confirm path is the intended default.
+ * Report-a-problem escape hatch — flags the match for admin review.
+ * Rendered subordinate (small inline link, not a primary action) since
+ * the cooperative path is the intended default.
  *
- * Visible throughout `Pending` — covers symmetric scenarios: "we disagree
- * on the outcome," "my opponent ghosted before play," "I think they
- * cheated." Spurious reports are bounded by `ResolveDisputeAction` → API
- * search → `Unknown` confidence → `ManualReview` (admin reviews, no money
- * moves until they decide).
- *
- * Confirmation Dialog uses sharpened language ("An admin will review and
- * decide who gets the pot") since the user is past the soft-prompt point.
+ * Visible throughout `Pending`. M12 Phase 3 — the button used to escalate
+ * to game-API auto-resolution; it now flips the match to `Disputed` and
+ * surfaces it in the M12 admin queue. Money stays escrowed until admin
+ * decides, so spurious reports cost only review time, not funds.
  */
 export function OpenDisputeButton({ matchId }: OpenDisputeButtonProps) {
     const [open, setOpen] = useState(false);
@@ -66,11 +61,11 @@ export function OpenDisputeButton({ matchId }: OpenDisputeButtonProps) {
                     <DialogHeader>
                         <DialogTitle>Report a problem?</DialogTitle>
                         <DialogDescription>
-                            This escalates the match to the game API for
-                            resolution. The API result is final — the pot
-                            will be paid to the winner immediately. If the
-                            API can't determine a winner, an admin will
-                            review and decide who gets the pot.
+                            This flags the match for admin review. A Stakly
+                            admin will read the chat and any evidence you
+                            post, then decide who wins the pot (or refund
+                            both stakes as a draw). Your stake stays in
+                            escrow until they resolve.
                         </DialogDescription>
                     </DialogHeader>
                     <DialogFooter>

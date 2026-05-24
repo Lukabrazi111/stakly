@@ -2,14 +2,13 @@
 
 Frontend-first build. UI against real DB infrastructure + seeded fake data; backend logic (escrow, payouts, on-chain integration) lands per page once the UI is validated. Milestones are work-chunk labels, not version commitments — decisions inside any of them are revisitable.
 
-> **Shipped milestones live in `milestones_archived.md`** (M1, M2, M2.5, M3, M3.5, M4, M5, M6, M7, M11, M8 all phases, M10, M16 all phases, M14 Slice A). This file is for active + upcoming work + the cross-cutting architectural decisions that earlier milestones established.
+> **Shipped milestones live in `milestones_archived.md`** (M1, M2, M2.5, M3, M3.5, M4, M5, M6, M7, M11, M8 all phases, M10, M12 all phases, M16 all phases, M14 Slice A). This file is for active + upcoming work + the cross-cutting architectural decisions that earlier milestones established.
 
 ## Phases (map)
 
 **Active / upcoming:**
 
-- **M12** — Filament admin panel + chat-driven dispute resolution **← next**
-- **M13** — Chat anti-abuse + moderation
+- **M13** — Chat anti-abuse + moderation **← next**
 - **M14** — Automated outcome adapters (volume-triggered optimization; Slice A shipped)
 - **M15** — Multi-game expansion (FACEIT, OpenDota, Riot adapters)
 - **M9** — Chain Integration [paused — pending crypto-payment-gateway specialist]
@@ -38,48 +37,9 @@ Decisions made earlier that have shaped a lot of code downstream. Not locked —
 
 ---
 
-## M12 — Filament admin panel + chat-driven dispute resolution
-
-Pulled forward from "pre-launch gate" because chat-first dispute resolution requires admin tooling. Without M12, M8's chat sits alongside the existing `MockGameApi` dispute path — useful but not the primary mechanism. M12 makes chat the source of truth for disputes.
-
-### Phases
-
-**Phase 1 — Install Filament + admin auth** ✅ shipped 2026-05-24
-
-- [x] Filament 5 installed (`composer require filament/filament:"^5.0"` + `php artisan filament:install --panels`). Admin lives at `/admin/*` (Livewire + Alpine + Filament's Tailwind config, separate from the Inertia + React user app — doesn't share Stakly's pink/purple design, per user direction).
-- [x] Admin role via Spatie permissions. `User` implements `FilamentUser` with `canAccessPanel()` enforcing two gates in order: `is_platform` users are blocked unconditionally (defense in depth — the platform user holds the rake balance and must never log in even with an accidental role grant), then the `admin` role check. Guests redirect to `/admin/login`; authed non-admins get 403.
-- [x] `AdminUserSeeder` (wired in `DatabaseSeeder` before `ListingSeeder`) creates the `admin` Spatie role + first admin user from `ADMIN_EMAIL` / `ADMIN_PASSWORD` / `ADMIN_NAME` env vars with dev fallbacks (`admin@stakly.test` / `password` / `Stakly Admin`). Idempotent on re-runs via `firstOrCreate` on both role + user. The admin user is NOT `is_platform = true` — it's a distinct human-operated account.
-- [x] `UserFactory::admin()` state for tests (afterCreating hook assigns the role, creates it if missing — matters for RefreshDatabase suites).
-- [x] 8 feature tests in `tests/Feature/Admin/AdminPanelAccessTest.php` cover the gate (allow / deny / platform-block, route gating at `/admin`, seeder correctness + idempotency).
-
-**Phase 2 — Match resolution panel** ✅ shipped 2026-05-24
-
-- [x] `GameMatchResource` at `/admin/disputes`. Default `SelectFilter` pre-selects Disputed + ManualReview (the queue); admin can lift the filter to all statuses for context lookups. Sorted desc by `created_at`. Eager-loads `listing.user`, `taker`, `winner` to avoid N+1. Resource is view-only — `canCreate()` returns false; no Edit page.
-- [x] View page renders five sections (Section components in `GameMatchInfolist`): Match metadata · Creator profile · Taker profile · Chat history (custom `ChatHistoryEntry` Blade renderer with text bubbles, system messages, image thumbnails via the existing `matches.messages.attachment` route, game-card + link-card payloads from `attachments_json`) · Admin resolution history (only renders if rows exist).
-- [x] Three header actions (`Filament\Actions\Action`): Settle to creator (success/green) · Settle to taker (success/green) · Draw — refund both (warning/amber). Each requires a `Textarea::make('reason')->required()->maxLength(1000)`, requires confirmation, and is hidden via `visible()` on terminal statuses (Settled / Cancelled). Errors from race-loss surface as Filament danger notifications instead of crashing.
-- [x] `match_admin_resolutions` audit table (immutable, `created_at` only, no `updated_at`) with `match_id` cascade · `admin_user_id` restrict · `action` string (`settle_to_creator` / `settle_to_taker` / `settle_draw` via `MatchAdminResolutionAction` enum) · nullable `winner_user_id` restrict · `reason` text. Wrapped by `App\Actions\GameMatch\Admin\AdminSettleToWinnerAction` and `AdminSettleDrawAction` which write the audit row in the same DB transaction as the underlying `SettleMatchAction` / `SettleDrawMatchAction` call (atomicity: row not written on failure).
-- [x] Underlying Settle actions relaxed to also accept `ManualReview` as a valid starting state (was Pending + Disputed only). Comment in `assertSettleableStatus` clarifies admin is the legitimate `ManualReview` resolver.
-- [x] `GameMatchPolicy::view` scoped admin bypass — admins pass `view` so they can stream chat attachments via the existing player route. Bypass is `view`-only; admins don't get cancellation/dispute capabilities from the player UI.
-- [x] 19 new tests: `AdminSettleActionsTest` (7) covers happy paths per status + atomicity. `GameMatchResourceTest` (12) covers list filtering, view rendering, button visibility per status, all three resolve flows end-to-end, required-reason validation. Suite 699 → 718, all green.
-
-**Phase 3 — Switch dispute resolver** (~1-2 days)
-
-- [ ] `OpenDisputeAction` no longer dispatches `MockGameApi` resolution. Sets match to `Disputed` and waits for admin.
-- [ ] `ResolveMatchTimeoutAction`: cases that would have gone to `MockGameApi` now go to `Disputed` and surface in admin queue.
-- [ ] `MockGameApi` retained for the existing test suite (tests still call it via service binding); production binding switches to a null-driver that no-ops or to the real Lichess adapter once M14 lands.
-- [ ] Migration of the conceptual model: `Disputed` becomes "waiting for admin or API," `ManualReview` becomes the truly-irrecoverable terminal state (locked, money frozen pending refund-or-payout decision).
-
-### Not in M12
-
-- Real-time admin notifications (email / push when new dispute opens) — Filament's default polling is fine to start.
-- Bulk resolution actions — one match at a time.
-- Auto-resolution from M8 Phase 4 verified cards (admin still clicks to confirm). M14 adds the auto-path.
-
----
-
 ## M13 — Chat anti-abuse + moderation
 
-Chat is the highest-abuse-surface feature on the platform. M13 builds the policing layer. Lands after M12 so admin tools exist to review flags + bans.
+Chat is the highest-abuse-surface feature on the platform. M13 builds the policing layer. M12 shipped so admin tools now exist for reviewing flags + banning abusers.
 
 ### Phases
 
@@ -157,7 +117,7 @@ Decide per-adapter when the first non-chess one ships. The current `username` co
 ### Not in M15
 
 - Auto-resolution from those adapters — that's M14, gated on volume.
-- Filament admin moderation surfaces for the new game types — covered by M12 once it lands.
+- Filament admin moderation surfaces for the new game types — covered by M12 (shipped). New game types automatically appear in the existing `GameMatchResource` queue.
 - Marketing / homepage copy for the anti-cheat trust pitch — separate from engineering scope; revisit alongside the existing marquee-copy cleanup.
 - Aggregator-as-a-service (PandaScore / Bayes / Abios) — considered and parked. Reconsider only if the per-game maintenance burden gets painful and revenue can absorb the monthly cost.
 

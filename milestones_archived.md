@@ -287,3 +287,41 @@ Pulled forward from the broader M14 milestone (still active in `milestones.md`) 
 `AppServiceProvider::bindGameApi` registers `MockGameApi` as its own concrete + binds `GameApi::class` to `ChessGameApi` (wrapping `MockGameApi` as fallback). `config/stakly.php` default driver: `'chess'`. `tests/Pest.php` `mockGameApi()` helper resolves `MockGameApi::class` directly so existing tests using `forceWinner()` keep working through the wrapper's fallback path.
 
 Originally landed Lichess-only as `LichessGameApi`; Phase 4b extended to chess.com cards and renamed to `ChessGameApi`. Full M14 (FACEIT, OpenDota, Riot, plus no-admin-fallback policy) still lives behind the original trigger: M12 admin path in use + dispute volume signal.
+
+---
+
+## M12 — Filament admin panel + chat-driven dispute resolution ✅ shipped 2026-05-24
+
+Pulled forward from "pre-launch gate" because chat-first dispute resolution needs admin tooling. Without M12, M8's chat sat alongside the existing `MockGameApi` dispute path — useful but not the primary mechanism. M12 makes chat the source of truth for disputes; the game API becomes one input among many that an admin weighs.
+
+**Phase 1 — Install Filament + admin auth** ✅ shipped 2026-05-24
+
+Filament 5 installed via `composer require filament/filament:"^5.0"` + `php artisan filament:install --panels`. Admin lives at `/admin/*` (Livewire + Alpine + Filament's Tailwind config, separate from the Inertia + React user app — doesn't share Stakly's pink/purple design, per user direction). Admin role gate via Spatie permissions: `User implements FilamentUser` with `canAccessPanel()` enforcing two gates in order — `is_platform` blocked unconditionally (defense in depth — the platform user holds the rake and must never log in even with an accidental role grant), then `admin` role check. `AdminUserSeeder` reads `ADMIN_EMAIL` / `ADMIN_PASSWORD` / `ADMIN_NAME` env with dev fallbacks; idempotent via `firstOrCreate` on role + user. `UserFactory::admin()` state for tests. 8 feature tests in `AdminPanelAccessTest.php`.
+
+**Phase 2 — Match resolution panel** ✅ shipped 2026-05-24
+
+`App\Filament\Resources\GameMatches\GameMatchResource` at `/admin/disputes`. Default `SelectFilter` pre-selects Disputed + ManualReview (the queue); admin can lift the filter to all statuses for context lookups. Sorted desc by `created_at`. Eager-loads `listing.user`, `taker`, `winner` to avoid N+1. Read-only — `canCreate()` returns false; no Edit page. View page renders five sections: Match metadata · Creator profile · Taker profile · Chat history (custom `ChatHistoryEntry` infolist component + Blade view rendering text bubbles, system messages, image thumbnails via the existing `matches.messages.attachment` route, game-card + link-card payloads from `attachments_json`) · Admin resolution history (only renders if rows exist).
+
+Three header actions on the View page: Settle to creator (success/green) · Settle to taker (success/green) · Draw — refund both (warning/amber). Each requires a `Textarea::make('reason')->required()->maxLength(1000)`, requires confirmation, hidden via `visible()` on terminal statuses (Settled / Cancelled). Race-loss errors surface as Filament danger notifications.
+
+`match_admin_resolutions` audit table — immutable (`created_at` only, no `updated_at`) — with `match_id` cascade · `admin_user_id` restrict · `action` string (`settle_to_creator` / `settle_to_taker` / `settle_draw` via `MatchAdminResolutionAction` enum) · nullable `winner_user_id` restrict · `reason` text. Wrapped by `App\Actions\GameMatch\Admin\AdminSettleToWinnerAction` and `AdminSettleDrawAction` which write the audit row in the same DB transaction as the underlying `SettleMatchAction` / `SettleDrawMatchAction` call (atomicity: row not written on failure).
+
+`SettleMatchAction` + `SettleDrawMatchAction` guards relaxed to also accept `ManualReview` (was Pending + Disputed only — admin is the legitimate `ManualReview` resolver). `GameMatchPolicy::view` scoped admin bypass — admins pass `view` so they can stream chat attachments via the existing player route; bypass is `view`-only (admins don't get cancellation/dispute capabilities from the player UI). 19 new tests (`AdminSettleActionsTest` + `GameMatchResourceTest`).
+
+**Phase 3 — Switch dispute resolver** ✅ shipped 2026-05-24
+
+`OpenDisputeAction` no longer dispatches `ResolveDisputeAction` / `MockGameApi`. It just flips the match to `Disputed`, posts a system message (`'Dispute opened by {name}. Please post any evidence (screenshots, game URLs, PGN) in this chat — an admin will review.'`) with the `dispute_prompt` attachment marker, and returns. Money stays escrowed until an admin clicks Settle/Draw in the Phase 2 Filament panel.
+
+`ResolveMatchTimeoutAction` was already feeding `ManualReview` (not the API) post-M16 — no change needed in Phase 3. `ResolveDisputeAction` + `MockGameApi` retained as-is in the codebase for the existing test suite and future M14 automated arbitration. Conceptual model post-Phase-3: **`Disputed`** = player-triggered admin review (via "Report a problem" button), **`ManualReview`** = timeout-triggered admin review (4h window expired without API-verified game record). Both surface in the same admin queue; the status distinction encodes context only.
+
+Controller toast simplified: single warning toast `'Dispute opened — an admin will review and resolve this match.'`. Frontend `match/show.tsx` banner copy rewritten — header is now `'Admin review pending'` for both statuses with status-specific body text. `OpenDisputeButton` confirmation copy updated to reflect admin-resolution flow.
+
+### Decisions
+
+- **Filament's design ≠ Stakly's design — by choice.** Admin panel uses Filament defaults (Livewire + Alpine + Filament Tailwind config) rather than the Stakly pink/purple system. Saves visual styling time on a tool only the operator sees; preserves Filament's component ergonomics; doesn't compete with the player app for design attention. Documented as the intended trade-off.
+- **`is_platform` users blocked from admin panel even with the role.** Defense in depth: a misconfigured seeder or accidental role grant on the rake-holder must NOT let it log in. `canAccessPanel()` checks `is_platform` BEFORE the role check.
+- **Audit row + Settle in the same DB transaction.** `match_admin_resolutions` rows are written from inside the same `DB::transaction` as the wallet movement. If the Settle throws (terminal status race, conservation invariant violation), the audit row rolls back. The trail is exactly the money movements that succeeded — no orphan rows.
+- **`ManualReview` is admin-settleable, not terminal.** Pre-M12 the Settle actions rejected `ManualReview` outright with "admin tools must take a different path." Phase 2 made the Filament panel that path, so the guard accepts `ManualReview` as well as Pending + Disputed.
+- **Admin doesn't write in chat (yet).** Phase 2 ships read-only chat. Admin's resolve flow includes a required-reason textarea that lands in the audit table, plus the auto-posted system message after settlement narrates the outcome to players. If real disputes show admin needs to ask for more evidence, a Phase 4 ("request evidence" system message button) or full admin-in-chat lands later. Validating need before building.
+- **No real-time admin notifications in M12.** Filament's default polling is fine for current dispute volume. Email/push when a new dispute opens lands as a separate ask if volume justifies.
+- **Bulk resolution actions deliberately out.** One match at a time — admin reviews evidence before paying. Bulk actions are a footgun on money-moving flows.

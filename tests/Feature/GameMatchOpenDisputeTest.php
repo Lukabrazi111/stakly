@@ -90,11 +90,13 @@ test('cannot open dispute on a ManualReview match (403 via policy)', function ()
         ->assertForbidden();
 });
 
-// ─── Happy path: API confirmed → Settled ─────────────────────────────────────
+// ─── Happy path: dispute opens → Disputed status, money stays escrowed ─────
+// M12 Phase 3 — OpenDisputeAction no longer auto-resolves via the game API.
+// It flips the match to Disputed and surfaces it in the admin queue
+// (Filament panel). Money stays escrowed until admin clicks Settle/Draw.
 
-test('creator opens dispute → API confirmed → Settled with API winner', function () {
+test('creator opens dispute → status flips to Disputed, money stays escrowed', function () {
     [$creator, $taker, , $match] = disputableMatch();
-    mockGameApi()->forceWinner($taker->id);
 
     $this->actingAs($creator)
         ->postJson(route('matches.openDispute', $match))
@@ -102,55 +104,14 @@ test('creator opens dispute → API confirmed → Settled with API winner', func
 
     $fresh = $match->fresh();
 
-    expect($fresh->status)->toBe(MatchStatus::Settled)
-        ->and($fresh->winner_user_id)->toBe($taker->id)
+    expect($fresh->status)->toBe(MatchStatus::Disputed)
         ->and($fresh->dispute_opened_by)->toBe($creator->id)
         ->and($fresh->dispute_opened_at)->not->toBeNull()
-        ->and($fresh->settled_at)->not->toBeNull()
-        ->and($fresh->api_resolved_at)->not->toBeNull()
-        ->and($fresh->api_response)->toBeArray();
-
-    // Pot = $200, fee = $20, payout = $180 to taker.
-    expect((string) $taker->fresh()->usdt_balance)->toBe('580.000000');
-    expect((string) $creator->fresh()->usdt_balance)->toBe('400.000000');
-});
-
-test('taker opens dispute → API confirmed → Settled with API winner', function () {
-    [$creator, $taker, , $match] = disputableMatch();
-    mockGameApi()->forceWinner($creator->id);
-
-    $this->actingAs($taker)
-        ->postJson(route('matches.openDispute', $match))
-        ->assertRedirect();
-
-    $fresh = $match->fresh();
-
-    expect($fresh->status)->toBe(MatchStatus::Settled)
-        ->and($fresh->winner_user_id)->toBe($creator->id)
-        ->and($fresh->dispute_opened_by)->toBe($taker->id);
-
-    expect((string) $creator->fresh()->usdt_balance)->toBe('580.000000');
-});
-
-// ─── ManualReview branch ────────────────────────────────────────────────────
-
-test('opens dispute → API unknown → ManualReview, money locked', function () {
-    [$creator, $taker, , $match] = disputableMatch();
-    mockGameApi()->forceUnknown();
-
-    $this->actingAs($creator)
-        ->postJson(route('matches.openDispute', $match));
-
-    $fresh = $match->fresh();
-
-    expect($fresh->status)->toBe(MatchStatus::ManualReview)
         ->and($fresh->winner_user_id)->toBeNull()
         ->and($fresh->settled_at)->toBeNull()
-        ->and($fresh->dispute_opened_at)->not->toBeNull()
-        ->and($fresh->dispute_opened_by)->toBe($creator->id)
-        ->and($fresh->api_resolved_at)->not->toBeNull();
+        ->and($fresh->api_resolved_at)->toBeNull();
 
-    // Both stakes still escrowed.
+    // Both stakes still escrowed — nothing moves until admin resolves.
     expect((string) $creator->fresh()->usdt_balance)->toBe('400.000000');
     expect((string) $taker->fresh()->usdt_balance)->toBe('400.000000');
 
@@ -158,48 +119,45 @@ test('opens dispute → API unknown → ManualReview, money locked', function ()
         ->and(WalletTransaction::query()->where('reference_id', "match-fee:{$match->id}")->exists())->toBeFalse();
 });
 
+test('taker opens dispute → status flips to Disputed, dispute_opened_by is taker', function () {
+    [, $taker, , $match] = disputableMatch();
+
+    $this->actingAs($taker)
+        ->postJson(route('matches.openDispute', $match))
+        ->assertRedirect();
+
+    $fresh = $match->fresh();
+
+    expect($fresh->status)->toBe(MatchStatus::Disputed)
+        ->and($fresh->dispute_opened_by)->toBe($taker->id);
+});
+
 // ─── Race / idempotency ─────────────────────────────────────────────────────
 
-test('repeat openDispute after settlement is blocked by policy', function () {
+test('second openDispute on the same match is blocked by policy (already Disputed)', function () {
     [$creator, , , $match] = disputableMatch();
-    mockGameApi()->forceWinner($creator->id);
 
-    // First call settles via API.
+    // First call flips to Disputed.
     $this->actingAs($creator)
         ->postJson(route('matches.openDispute', $match));
 
-    expect($match->fresh()->status)->toBe(MatchStatus::Settled);
+    expect($match->fresh()->status)->toBe(MatchStatus::Disputed);
 
-    // Second call: policy blocks (status != Pending). The "too-late" toast
-    // path is for the rarer in-flight race of opponent confirming during
-    // our request lifetime, not user double-clicks.
+    // Second call: policy blocks (openDispute policy requires Pending).
     $this->actingAs($creator)
         ->postJson(route('matches.openDispute', $match))
         ->assertForbidden();
 });
 
-// ─── Toast assertions ───────────────────────────────────────────────────────
+// ─── Toast assertion ────────────────────────────────────────────────────────
 
-test('successful dispute resolution flashes settled-by-api toast', function () {
+test('opening a dispute flashes the admin-review toast', function () {
     [$creator, , , $match] = disputableMatch();
-    mockGameApi()->forceWinner($creator->id);
-
-    $this->actingAs($creator)
-        ->postJson(route('matches.openDispute', $match))
-        ->assertInertiaFlash('toast', [
-            'type' => 'success',
-            'message' => 'Dispute resolved — game API determined the winner.',
-        ]);
-});
-
-test('unknown API resolution flashes manual-review toast', function () {
-    [$creator, , , $match] = disputableMatch();
-    mockGameApi()->forceUnknown();
 
     $this->actingAs($creator)
         ->postJson(route('matches.openDispute', $match))
         ->assertInertiaFlash('toast', [
             'type' => 'warning',
-            'message' => 'Dispute opened — game API could not determine a winner. Match flagged for admin review.',
+            'message' => 'Dispute opened — an admin will review and resolve this match.',
         ]);
 });

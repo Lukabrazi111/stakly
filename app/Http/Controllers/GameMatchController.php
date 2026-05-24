@@ -186,11 +186,11 @@ class GameMatchController extends Controller
     }
 
     /**
-     * Manual escalation to game-API resolution during the Pending window.
-     * Either participant can open a dispute — the API winner is
-     * authoritative. M16 removed player self-reports, so this button is
-     * now the ONLY player-driven escalation path during Pending (alongside
-     * `RequestCancellationAction` for the cooperative early exit).
+     * Player-triggered escalation during the Pending window. Either
+     * participant can open a dispute — the match flips to `Disputed` and
+     * lands in the M12 admin review queue. M16 removed player self-reports,
+     * so this button is the ONLY player-driven escalation path during
+     * Pending (alongside `RequestCancellationAction` for cooperative exit).
      * Business logic lives in `OpenDisputeAction`.
      */
     public function openDispute(Request $request, GameMatch $match, OpenDisputeAction $action): RedirectResponse
@@ -199,23 +199,12 @@ class GameMatchController extends Controller
 
         abort_if($user->cannot('openDispute', $match), 403);
 
-        $resolution = $action->handle($user, $match);
+        $opened = $action->handle($user, $match);
 
-        if ($resolution === null) {
-            Inertia::flash('toast', [
-                'type' => 'info',
-                'message' => __('This match has already been resolved.'),
-            ]);
-
-            return back();
-        }
-
-        Inertia::flash('toast', match ($resolution) {
-            'settled-by-api' => ['type' => 'success', 'message' => __('Dispute resolved — game API determined the winner.')],
-            'settled-by-api-draw' => ['type' => 'success', 'message' => __('Dispute resolved — game API ruled it a draw. Stakes refunded.')],
-            'manual-review' => ['type' => 'warning', 'message' => __('Dispute opened — game API could not determine a winner. Match flagged for admin review.')],
-            default => ['type' => 'warning', 'message' => __('Dispute opened — awaiting resolution.')],
-        });
+        Inertia::flash('toast', $opened
+            ? ['type' => 'warning', 'message' => __('Dispute opened — an admin will review and resolve this match.')]
+            : ['type' => 'info', 'message' => __('This match has already been resolved.')],
+        );
 
         return back();
     }

@@ -9,32 +9,38 @@ use App\Models\User;
 use Illuminate\Support\Facades\DB;
 
 /**
- * Manual escalation to game-API resolution during the player-confirm
- * window. Either participant can open a dispute — the API winner is
- * authoritative and overrides player self-reports.
+ * Player-triggered escalation during the Pending window. Either participant
+ * can open a dispute; the match flips to `Disputed` and lands in the
+ * admin review queue (M12 Phase 2).
  *
- * Returns `null` if the match was already resolved (status non-Pending by
- * the time our row lock acquired), otherwise returns the post-resolution
- * sentinel string the controller maps to a flash toast.
+ * M12 Phase 3 — dispute resolution is now admin-driven by default. The
+ * pre-Phase-3 behavior auto-resolved via `ResolveDisputeAction` (which
+ * called the configured `GameApi` driver — `MockGameApi` in tests, no
+ * production driver yet); after Phase 3, OpenDisputeAction stops invoking
+ * that path. `ResolveDisputeAction` + `MockGameApi` remain in the codebase
+ * for the test suite and for any future automated arbitration (M14).
+ *
+ * Returns `true` if the dispute was opened, `false` if the match was
+ * already past Pending by the time our row lock acquired (race with
+ * cancellation, settlement, or another dispute).
  *
  * Race-safety:
- *   - Opponent's confirm landing first → match flips to Settled or
- *     Disputed before our row lock; we return null ("already resolved").
  *   - Two players opening dispute simultaneously → second caller's row
- *     lock waits, sees status=Disputed, returns null.
+ *     lock waits, sees status=Disputed, returns false.
  *   - Race with the timeout job → same `lockForUpdate` + status guard;
  *     whichever runs second is a no-op.
+ *   - Race with mutual cancellation acceptance → status becomes Cancelled
+ *     before our lock; we return false.
  */
 class OpenDisputeAction
 {
     public function __construct(
-        private readonly ResolveDisputeAction $resolveDispute,
         private readonly PostSystemMessageAction $postSystem,
     ) {}
 
-    public function handle(User $user, GameMatch $match): ?string
+    public function handle(User $user, GameMatch $match): bool
     {
-        $opened = DB::transaction(function () use ($match, $user) {
+        return DB::transaction(function () use ($match, $user) {
             $locked = GameMatch::query()->lockForUpdate()->findOrFail($match->id);
 
             if ($locked->status !== MatchStatus::Pending) {
@@ -45,23 +51,14 @@ class OpenDisputeAction
 
             $this->postSystem->handle(
                 $locked,
-                __('Dispute opened by :name. Resolving via game API…', [
+                __('Dispute opened by :name. Please post any evidence (screenshots, game URLs, PGN) in this chat — an admin will review.', [
                     'name' => $user->name,
                 ]),
+                [['type' => 'dispute_prompt']],
             );
 
             return true;
         });
-
-        if (! $opened) {
-            return null;
-        }
-
-        // Resolve via API outside the dispute-flip transaction. Mock is sync;
-        // M8 swaps in queued jobs for real chess.com / Lichess calls.
-        $this->resolveDispute->handle($match->fresh());
-
-        return $this->postDisputeResolutionSentinel($match->fresh());
     }
 
     private function flipToDisputed(GameMatch $match, User $opener): void
@@ -71,16 +68,5 @@ class OpenDisputeAction
             'dispute_opened_at' => now(),
             'dispute_opened_by' => $opener->id,
         ]);
-    }
-
-    private function postDisputeResolutionSentinel(GameMatch $match): string
-    {
-        return match ($match->status) {
-            MatchStatus::Settled => $match->winner_user_id === null
-                ? 'settled-by-api-draw'
-                : 'settled-by-api',
-            MatchStatus::ManualReview => 'manual-review',
-            default => 'disputed',
-        };
     }
 }

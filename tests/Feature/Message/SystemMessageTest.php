@@ -109,80 +109,26 @@ test('settling as draw posts a "Match ended as a draw" system message', function
 
 // ─── OpenDisputeAction → "Dispute opened by {name}." ────────────────────────
 
-test('opening a dispute posts a "Dispute opened by {name}" system message', function () {
+test('opening a dispute posts a "Dispute opened by {name}" system message with dispute_prompt marker', function () {
+    // M12 Phase 3 — OpenDisputeAction no longer dispatches game-API
+    // resolution. It posts ONE system message: the dispute narration +
+    // evidence call-to-action, carrying the `dispute_prompt` attachment
+    // marker so the React `SystemBubble` renders the warning variant.
     [$creator, , , $match] = pendingMatch();
-
-    // Mock API winner so post-dispute settle works deterministically.
-    mockGameApi()->forceWinner($creator->id);
 
     app(OpenDisputeAction::class)->handle($creator, $match);
 
-    // The dispute path posts at least the dispute message, plus the
-    // settlement-after-resolution messages. Verify dispute appears in the
-    // chain by checking ALL system messages.
-    $allContents = Message::query()
-        ->where('match_id', $match->id)
-        ->where('type', MessageType::System)
-        ->pluck('content')
-        ->all();
-
-    $disputeMessage = collect($allContents)->first(fn ($c) => str_contains($c, 'Dispute opened'));
-    expect($disputeMessage)->not->toBeNull()
-        ->and($disputeMessage)->toContain($creator->name);
-});
-
-// ─── ResolveDisputeAction branches ──────────────────────────────────────────
-
-test('API "Drawn" confidence posts the draw-settlement system message', function () {
-    [$creator, , , $match] = pendingMatch();
-    mockGameApi()->forceDraw();
-
-    app(OpenDisputeAction::class)->handle($creator, $match);
-
-    $allContents = Message::query()
-        ->where('match_id', $match->id)
-        ->where('type', MessageType::System)
-        ->pluck('content')
-        ->all();
-
-    $drawMessage = collect($allContents)->first(fn ($c) => str_contains($c, 'draw'));
-    expect($drawMessage)->not->toBeNull();
-});
-
-test('API "Unknown" confidence posts the "admin review" system message', function () {
-    [$creator, , , $match] = pendingMatch();
-    mockGameApi()->forceUnknown();
-
-    app(OpenDisputeAction::class)->handle($creator, $match);
-
-    $allContents = Message::query()
-        ->where('match_id', $match->id)
-        ->where('type', MessageType::System)
-        ->pluck('content')
-        ->all();
-
-    $manualReviewMessage = collect($allContents)->first(fn ($c) => str_contains($c, 'admin review'));
-    expect($manualReviewMessage)->not->toBeNull();
-});
-
-test('API "Unknown" confidence also posts a dispute_prompt evidence call-to-action', function () {
-    [$creator, , , $match] = pendingMatch();
-    mockGameApi()->forceUnknown();
-
-    app(OpenDisputeAction::class)->handle($creator, $match);
-
-    // The Unknown branch fires two system messages: narration first, then
-    // the dispute prompt carrying a `dispute_prompt` attachment marker so
-    // the React `SystemBubble` renders a visually distinct warning variant.
-    $promptMessage = Message::query()
+    $message = Message::query()
         ->where('match_id', $match->id)
         ->where('type', MessageType::System)
         ->whereJsonContains('attachments_json', [['type' => 'dispute_prompt']])
         ->first();
 
-    expect($promptMessage)->not->toBeNull()
-        ->and($promptMessage->content)->toContain('Submit evidence')
-        ->and($promptMessage->attachments_json)->toBe([['type' => 'dispute_prompt']]);
+    expect($message)->not->toBeNull()
+        ->and($message->content)->toContain('Dispute opened')
+        ->and($message->content)->toContain($creator->name)
+        ->and($message->content)->toContain('admin will review')
+        ->and($message->attachments_json)->toBe([['type' => 'dispute_prompt']]);
 });
 
 // ─── ResolveMatchTimeoutAction → "expired without API-verified game record" ─
