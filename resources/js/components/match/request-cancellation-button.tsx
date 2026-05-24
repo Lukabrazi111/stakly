@@ -187,6 +187,15 @@ export function RequestCancellationButton({
                                     placeholder="Optional — add a short note for your opponent."
                                     maxLength={REASON_MAX}
                                     rows={3}
+                                    // Borderless override — the radio rows
+                                    // above carry the visual hierarchy;
+                                    // textarea sits as a soft inset under
+                                    // the "Other" row without competing
+                                    // for attention with its own chrome.
+                                    // Cursor is the focus indicator
+                                    // (browsers render it regardless of
+                                    // styling).
+                                    className="border-0"
                                 />
                                 <p className="text-muted-foreground text-right text-xs tabular-nums">
                                     {otherText.length}/{REASON_MAX}
@@ -229,19 +238,28 @@ interface ReasonOptionProps {
  * shadcn primitive for a single feature; we can swap to a shared
  * `RadioGroup` later if more places need radios.
  *
- * Selected state: primary tint + ring (mirrors the toggle / select
- * patterns elsewhere). Hover: soft primary wash. Focus-within: visible
- * ring on the surrounding label so keyboard nav reads cleanly.
+ * Selected state: **border color only** — no glow, no inner tint
+ * beyond the shared `bg-card/40` surface. The inner radio dot fills
+ * in to provide a second non-color affordance.
+ *
+ * Focus ring uses `has-[:focus-visible]:ring-*` (Tailwind v4 `:has()`
+ * variant + `:focus-visible`) so the keyboard-focus ring **only**
+ * appears when the user arrived via Tab — mouse clicks don't trigger
+ * the glow. Drops the previous `focus-within:ring` which fired
+ * unconditionally on click. Per the UI/UX skill's accessibility rule
+ * we can't remove focus indication entirely; scoping to
+ * focus-visible keeps a11y intact without showing the glow to mouse
+ * users.
  */
 function ReasonOption({ label, checked, onSelect }: ReasonOptionProps) {
     return (
         <label
             className={cn(
-                'flex cursor-pointer items-center gap-3 rounded-lg border px-3 py-2.5 transition-colors',
-                'focus-within:ring-2 focus-within:ring-primary/25',
+                'flex cursor-pointer items-center gap-3 rounded-lg border bg-card/40 px-3 py-2.5 transition-colors',
+                'has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-primary/25',
                 checked
-                    ? 'border-primary/40 bg-primary/10'
-                    : 'border-border/60 bg-card/40 hover:border-primary/30 hover:bg-primary/5',
+                    ? 'border-primary'
+                    : 'border-border/60 hover:border-primary/30 hover:bg-primary/5',
             )}
         >
             <input

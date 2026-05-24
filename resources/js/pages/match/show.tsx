@@ -130,6 +130,41 @@ export default function MatchShow({ match, messages }: MatchShowProps) {
             <Head title={`Match #${match.id}`} />
 
             <div className="mx-auto max-w-7xl px-4 py-10 md:px-6 md:py-14">
+                {/* ─── Status notifications — full-width, above
+                    Back + Match header. At any given time at most ONE
+                    of these renders; mutually exclusive by status.
+                    Promoted to the top so a player landing on the page
+                    sees the most critical state-change first without
+                    scrolling past header / chips / action card. ─── */}
+                {match.status === 'pending' && auth.user && (
+                    <CancellationRequestBanner
+                        match={match}
+                        viewerId={auth.user.id}
+                    />
+                )}
+
+                {match.status === 'cancelled' && (
+                    <div className="mb-6">
+                        <CancellationSummary match={match} />
+                    </div>
+                )}
+
+                {(match.status === 'disputed' ||
+                    match.status === 'manual_review') && (
+                    <section className="mb-6 rounded-2xl border border-destructive/40 bg-destructive/5 p-6">
+                        <h2 className="mb-2 font-display text-lg font-semibold text-foreground">
+                            {match.status === 'disputed'
+                                ? 'Resolving via game API'
+                                : 'Manual review pending'}
+                        </h2>
+                        <p className="text-sm text-muted-foreground">
+                            {match.status === 'disputed'
+                                ? 'This match is being resolved via the official game API. It usually completes in seconds — refresh the page if it doesn’t update shortly.'
+                                : 'The game API could not determine a winner. An admin will review this match manually. Your stake stays in escrow until then.'}
+                        </p>
+                    </section>
+                )}
+
                 <div className="mb-6">
                     <BackLink fallback={listingShow(match.listing.id).url} />
                 </div>
@@ -166,54 +201,43 @@ export default function MatchShow({ match, messages }: MatchShowProps) {
                     </div>
                 </div>
 
-                {/* Action area — varies by status. Confirm UI / settlement
-                    summary / dispute banner / cancellation surfaces take
-                    the prominent slot. */}
+                {/* Action area — varies by status. For Pending we render
+                    the Confirm card + escape hatches. For Settled the
+                    SettlementSummary (pot / fee / payout breakdown). The
+                    Cancelled / Disputed / ManualReview states render
+                    nothing here — their status notification is the full-
+                    width banner at the top of the page, and the Match
+                    info card below covers the historical details. */}
                 {match.status === 'pending' && auth.user && (
-                    <>
-                        {/* M10 — inline cancellation request banner sits
-                            ABOVE the confirm card when a request is open
-                            so the responder (or waiting requester) sees
-                            it first. Confirm buttons remain active —
-                            players can supersede a pending cancellation
-                            by just confirming an outcome. */}
-                        <CancellationRequestBanner
-                            match={match}
-                            viewerId={auth.user.id}
+                    <section className="mb-6 rounded-2xl border border-border/60 bg-card/60 p-6">
+                        <h2 className="mb-4 text-lg font-semibold text-foreground">
+                            Confirm outcome
+                        </h2>
+                        <ConfirmButtons
+                            matchId={match.id}
+                            myConfirmedOutcome={myConfirmedOutcome}
+                            opponentConfirmedOutcome={opponentConfirmedOutcome}
                         />
-
-                        <section className="mb-6 rounded-2xl border border-border/60 bg-card/60 p-6">
-                            <h2 className="mb-4 text-lg font-semibold text-foreground">
-                                Confirm outcome
-                            </h2>
-                            <ConfirmButtons
-                                matchId={match.id}
-                                myConfirmedOutcome={myConfirmedOutcome}
-                                opponentConfirmedOutcome={
-                                    opponentConfirmedOutcome
-                                }
-                            />
-                            {/* Escape hatches — Request cancellation
-                                (mutual no-fault) + Report a problem
-                                (one-sided escalation). Hidden when a
-                                cancellation request is already open so we
-                                don't show "Request cancellation" while a
-                                request is in flight; the request banner
-                                above carries the relevant actions. */}
-                            {match.cancellation.requested_at === null && (
-                                <div className="mt-5 flex flex-col items-center justify-center gap-3 border-t border-border/60 pt-5 sm:flex-row sm:gap-6">
-                                    <RequestCancellationButton
-                                        matchId={match.id}
-                                        cooldownMinutesRemaining={cooldownRemainingFor(
-                                            match,
-                                            auth.user.id,
-                                        )}
-                                    />
-                                    <OpenDisputeButton matchId={match.id} />
-                                </div>
-                            )}
-                        </section>
-                    </>
+                        {/* Escape hatches — Request cancellation
+                            (mutual no-fault) + Report a problem
+                            (one-sided escalation). Hidden when a
+                            cancellation request is already open so we
+                            don't show "Request cancellation" while a
+                            request is in flight; the top banner carries
+                            the relevant actions. */}
+                        {match.cancellation.requested_at === null && (
+                            <div className="mt-5 flex flex-col items-center justify-center gap-3 border-t border-border/60 pt-5 sm:flex-row sm:gap-6">
+                                <RequestCancellationButton
+                                    matchId={match.id}
+                                    cooldownMinutesRemaining={cooldownRemainingFor(
+                                        match,
+                                        auth.user.id,
+                                    )}
+                                />
+                                <OpenDisputeButton matchId={match.id} />
+                            </div>
+                        )}
+                    </section>
                 )}
 
                 {match.status === 'settled' && (
@@ -228,28 +252,6 @@ export default function MatchShow({ match, messages }: MatchShowProps) {
                             }
                         />
                     </div>
-                )}
-
-                {match.status === 'cancelled' && (
-                    <div className="mb-6">
-                        <CancellationSummary match={match} />
-                    </div>
-                )}
-
-                {(match.status === 'disputed' ||
-                    match.status === 'manual_review') && (
-                    <section className="mb-6 rounded-2xl border border-destructive/40 bg-destructive/5 p-6">
-                        <h2 className="mb-2 font-display text-lg font-semibold text-foreground">
-                            {match.status === 'disputed'
-                                ? 'Resolving via game API'
-                                : 'Manual review pending'}
-                        </h2>
-                        <p className="text-sm text-muted-foreground">
-                            {match.status === 'disputed'
-                                ? 'This match is being resolved via the official game API. It usually completes in seconds — refresh the page if it doesn’t update shortly.'
-                                : 'The game API could not determine a winner. An admin will review this match manually. Your stake stays in escrow until then.'}
-                        </p>
-                    </section>
                 )}
 
                 {/* Compact match-info card: opponent + parameters in one
