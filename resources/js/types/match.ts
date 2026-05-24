@@ -35,6 +35,22 @@ export interface MatchListing {
     time_control: TimeControl[];
 }
 
+// M10 — mutual cancellation state. All fields nullable; the frontend
+// infers the UI state from combinations:
+//   - `requested_at !== null`  → open request, render the inline banner
+//   - `requested_by_id === viewer.id && rejected_at` + 30 min > now
+//                              → requester is in cooldown
+//   - `match.status === 'cancelled'` → terminal banner
+// `requested_by_id` lets the FE look up the name client-side from the
+// already-loaded creator/taker — saves a backend eager-load.
+export interface MatchCancellation {
+    requested_by_id: number | null;
+    requested_at: string | null;
+    reason: string | null;
+    rejected_at: string | null;
+    cancelled_at: string | null;
+}
+
 export interface Match {
     id: number;
     status: MatchStatus;
@@ -50,6 +66,7 @@ export interface Match {
     winner: MatchPlayer | null;
     settled_at: string | null;
     created_at: string | null;
+    cancellation: MatchCancellation;
 }
 
 // Chat messages on a match. Mirrors `App\Http\Resources\MessageResource` AND

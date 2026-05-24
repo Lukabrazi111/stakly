@@ -78,10 +78,16 @@ test('request happy path: records cols + posts message + returns "requested"', f
         ->and($fresh->status)->toBe(MatchStatus::Pending);  // status doesn't flip on request
 });
 
-test('request system message includes the reason when supplied', function () {
+test('request system message is always neutral — reason is never leaked into chat', function () {
     [$creator, , , $match] = cancellableMatch();
 
-    app(RequestCancellationAction::class)->handle($creator, $match, 'Opponent went AFK');
+    // Even when the reason looks like an off-platform deal solicitation,
+    // it stays on the match column and never lands inside the chat body.
+    // This sidesteps the abuse vector where system messages bypass the
+    // M13 chat anti-abuse layer.
+    $maliciousReason = 'contact me on telegram @scamX for off-platform deal';
+
+    app(RequestCancellationAction::class)->handle($creator, $match, $maliciousReason);
 
     $message = Message::query()
         ->where('match_id', $match->id)
@@ -90,37 +96,13 @@ test('request system message includes the reason when supplied', function () {
         ->first();
 
     expect($message->content)->toContain($creator->name)
-        ->and($message->content)->toContain('Opponent went AFK')
-        ->and($message->content)->toContain('Reason:');
-});
-
-test('request system message omits the reason clause when null', function () {
-    [$creator, , , $match] = cancellableMatch();
-
-    app(RequestCancellationAction::class)->handle($creator, $match, null);
-
-    $message = Message::query()
-        ->where('match_id', $match->id)
-        ->where('type', MessageType::System)
-        ->latest('id')
-        ->first();
-
-    expect($message->content)->toContain($creator->name)
+        ->and($message->content)->not->toContain('telegram')
+        ->and($message->content)->not->toContain('scamX')
         ->and($message->content)->not->toContain('Reason:');
-});
 
-test('request system message treats whitespace-only reason as no-reason', function () {
-    [$creator, , , $match] = cancellableMatch();
-
-    app(RequestCancellationAction::class)->handle($creator, $match, '   ');
-
-    $message = Message::query()
-        ->where('match_id', $match->id)
-        ->where('type', MessageType::System)
-        ->latest('id')
-        ->first();
-
-    expect($message->content)->not->toContain('Reason:');
+    // The reason still persists on the match for the structured banner UI
+    // to render on the opponent's screen.
+    expect($match->fresh()->cancellation_reason)->toBe($maliciousReason);
 });
 
 test('request clears a stale cancellation_rejected_at marker', function () {

@@ -63,6 +63,21 @@ class GameMatchResource extends JsonResource
             ] : null,
             'settled_at' => $this->settled_at?->toIso8601String(),
             'created_at' => $this->created_at?->toIso8601String(),
+            // M10 — mutual cancellation state. All fields nullable; the
+            // frontend infers open-request / cooldown / terminal banner
+            // from the combination. `requested_by_id` is enough for the
+            // FE to look up the name client-side from creator / taker
+            // (already loaded) — saves an eager-load for the requester
+            // relation. `cancellation_rejected_at` is what the requester
+            // reads to compute their cooldown countdown for the disabled
+            // "Request cancellation" button tooltip.
+            'cancellation' => [
+                'requested_by_id' => $this->cancellation_requested_by,
+                'requested_at' => $this->cancellation_requested_at?->toIso8601String(),
+                'reason' => $this->cancellation_reason,
+                'rejected_at' => $this->cancellation_rejected_at?->toIso8601String(),
+                'cancelled_at' => $this->cancelled_at?->toIso8601String(),
+            ],
         ];
     }
 }

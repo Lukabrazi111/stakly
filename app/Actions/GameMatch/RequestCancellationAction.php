@@ -56,13 +56,25 @@ class RequestCancellationAction
 
             $this->postSystem->handle(
                 $locked,
-                $this->buildRequestMessage($requester, $reason),
+                __(':name requested to cancel the match.', ['name' => $requester->name]),
             );
 
             return 'requested';
         });
     }
 
+    /**
+     * Note on the reason field: it's persisted on the match but
+     * deliberately NOT included in the system message body. The reason
+     * surfaces in the structured inline banner on the match page where
+     * the opponent reads it — never as free text inside chat. This
+     * sidesteps the abuse vector where a malicious user could sneak
+     * URLs / payment handles / harassment through cancellation reasons
+     * (system messages bypass the M13 chat anti-abuse layer). The banner
+     * renders the reason inside a controlled UI block and we keep the
+     * sanitization options open (truncate, escape, regex-flag) without
+     * having to retroactively scrub chat history.
+     */
     private function recordRequest(GameMatch $match, User $requester, ?string $reason): void
     {
         $match->update([
@@ -73,18 +85,6 @@ class RequestCancellationAction
             // supersedes any prior cooldown record (policy already verified
             // the requester is past their per-user cooldown window).
             'cancellation_rejected_at' => null,
-        ]);
-    }
-
-    private function buildRequestMessage(User $requester, ?string $reason): string
-    {
-        if ($reason === null || trim($reason) === '') {
-            return __(':name requested to cancel the match.', ['name' => $requester->name]);
-        }
-
-        return __(':name requested to cancel the match. Reason: :reason', [
-            'name' => $requester->name,
-            'reason' => trim($reason),
         ]);
     }
 }

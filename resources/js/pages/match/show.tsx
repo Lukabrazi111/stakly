@@ -1,5 +1,7 @@
 import { Head, router, usePage } from '@inertiajs/react';
 import { useEffect } from 'react';
+import { CancellationRequestBanner } from '@/components/match/cancellation-request-banner';
+import { CancellationSummary } from '@/components/match/cancellation-summary';
 import { ChatPanel } from '@/components/match/chat-panel';
 import { ConfirmButtons } from '@/components/match/confirm-buttons';
 import { MatchFaq } from '@/components/match/match-faq';
@@ -8,12 +10,43 @@ import { MatchTimer } from '@/components/match/match-timer';
 import { MatchTimestamps } from '@/components/match/match-timestamps';
 import { MobileChatTrigger } from '@/components/match/mobile-chat-trigger';
 import { OpenDisputeButton } from '@/components/match/open-dispute-button';
+import { RequestCancellationButton } from '@/components/match/request-cancellation-button';
 import { SettlementSummary } from '@/components/match/settlement-summary';
 import { BackLink } from '@/components/site/back-link';
 import { useMatchChat } from '@/hooks/use-match-chat';
 import SiteLayout from '@/layouts/site-layout';
 import { show as listingShow } from '@/routes/listings';
 import type { MatchShowProps, MatchStatus } from '@/types';
+
+const CANCEL_COOLDOWN_MINUTES = 30;
+
+/**
+ * Returns the minutes remaining on the viewer's per-user cancellation
+ * cooldown (0 if not in cooldown). Cooldown engages when the viewer was
+ * the requester on a previously rejected request AND the 30-min window
+ * since `rejected_at` hasn't elapsed. Mirrors `GameMatchPolicy::
+ * requestCancellation`'s cooldown gate so the disabled button matches
+ * the server's decision.
+ */
+function cooldownRemainingFor(
+    match: import('@/types').Match,
+    viewerId: number,
+): number {
+    const { cancellation } = match;
+    if (cancellation.requested_by_id !== viewerId) {
+        return 0;
+    }
+    if (cancellation.rejected_at === null) {
+        return 0;
+    }
+    const rejectedAtMs = new Date(cancellation.rejected_at).getTime();
+    const cooldownEndMs = rejectedAtMs + CANCEL_COOLDOWN_MINUTES * 60 * 1000;
+    const remainingMs = cooldownEndMs - Date.now();
+    if (remainingMs <= 0) {
+        return 0;
+    }
+    return Math.ceil(remainingMs / 60_000);
+}
 
 const STATUS_LABEL: Record<MatchStatus, string> = {
     pending: 'Pending — confirm outcome',
@@ -134,30 +167,53 @@ export default function MatchShow({ match, messages }: MatchShowProps) {
                 </div>
 
                 {/* Action area — varies by status. Confirm UI / settlement
-                    summary / dispute banner take the prominent slot. */}
-                {match.status === 'pending' && (
-                    <section className="mb-6 rounded-2xl border border-border/60 bg-card/60 p-6">
-                        <h2 className="mb-4 text-lg font-semibold text-foreground">
-                            Confirm outcome
-                        </h2>
-                        <ConfirmButtons
-                            matchId={match.id}
-                            myConfirmedOutcome={myConfirmedOutcome}
-                            opponentConfirmedOutcome={opponentConfirmedOutcome}
+                    summary / dispute banner / cancellation surfaces take
+                    the prominent slot. */}
+                {match.status === 'pending' && auth.user && (
+                    <>
+                        {/* M10 — inline cancellation request banner sits
+                            ABOVE the confirm card when a request is open
+                            so the responder (or waiting requester) sees
+                            it first. Confirm buttons remain active —
+                            players can supersede a pending cancellation
+                            by just confirming an outcome. */}
+                        <CancellationRequestBanner
+                            match={match}
+                            viewerId={auth.user.id}
                         />
-                        {/* Report-a-problem — always visible during
-                            Pending. Covers "we disagree on outcome,"
-                            "opponent ghosted before play," and "I think
-                            they cheated" symmetrically. Previously gated
-                            on at least one player having confirmed, but
-                            that left ghosting victims stuck waiting for
-                            the 4h timeout. Spurious reports cost nothing
-                            (API search returns Unknown → ManualReview,
-                            admin reviews; no money moves prematurely). */}
-                        <div className="mt-5 flex justify-center border-t border-border/60 pt-5">
-                            <OpenDisputeButton matchId={match.id} />
-                        </div>
-                    </section>
+
+                        <section className="mb-6 rounded-2xl border border-border/60 bg-card/60 p-6">
+                            <h2 className="mb-4 text-lg font-semibold text-foreground">
+                                Confirm outcome
+                            </h2>
+                            <ConfirmButtons
+                                matchId={match.id}
+                                myConfirmedOutcome={myConfirmedOutcome}
+                                opponentConfirmedOutcome={
+                                    opponentConfirmedOutcome
+                                }
+                            />
+                            {/* Escape hatches — Request cancellation
+                                (mutual no-fault) + Report a problem
+                                (one-sided escalation). Hidden when a
+                                cancellation request is already open so we
+                                don't show "Request cancellation" while a
+                                request is in flight; the request banner
+                                above carries the relevant actions. */}
+                            {match.cancellation.requested_at === null && (
+                                <div className="mt-5 flex flex-col items-center justify-center gap-3 border-t border-border/60 pt-5 sm:flex-row sm:gap-6">
+                                    <RequestCancellationButton
+                                        matchId={match.id}
+                                        cooldownMinutesRemaining={cooldownRemainingFor(
+                                            match,
+                                            auth.user.id,
+                                        )}
+                                    />
+                                    <OpenDisputeButton matchId={match.id} />
+                                </div>
+                            )}
+                        </section>
+                    </>
                 )}
 
                 {match.status === 'settled' && (
@@ -171,6 +227,12 @@ export default function MatchShow({ match, messages }: MatchShowProps) {
                                 !isDraw && auth.user?.id === match.winner?.id
                             }
                         />
+                    </div>
+                )}
+
+                {match.status === 'cancelled' && (
+                    <div className="mb-6">
+                        <CancellationSummary match={match} />
                     </div>
                 )}
 

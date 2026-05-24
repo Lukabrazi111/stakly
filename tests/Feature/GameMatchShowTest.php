@@ -100,3 +100,49 @@ test('a freshly-created match has null winner and null settled_at', function () 
             ->where('match.taker_confirmed_outcome', null)
         );
 });
+
+// ─── Cancellation shape on GameMatchResource ────────────────────────────────
+
+test('fresh match emits a cancellation block with all-null fields', function () {
+    $match = GameMatch::factory()->create();
+
+    $this->actingAs($match->taker)
+        ->get(route('matches.show', $match))
+        ->assertInertia(fn ($page) => $page
+            ->has('match.cancellation')
+            ->where('match.cancellation.requested_by_id', null)
+            ->where('match.cancellation.requested_at', null)
+            ->where('match.cancellation.reason', null)
+            ->where('match.cancellation.rejected_at', null)
+            ->where('match.cancellation.cancelled_at', null)
+        );
+});
+
+test('open cancellation request surfaces requester id + reason on the resource', function () {
+    $match = GameMatch::factory()->create();
+    $creator = $match->listing->user;
+    $match->update([
+        'cancellation_requested_by' => $creator->id,
+        'cancellation_requested_at' => now(),
+        'cancellation_reason' => 'Opponent went AFK',
+    ]);
+
+    $this->actingAs($match->taker)
+        ->get(route('matches.show', $match))
+        ->assertInertia(fn ($page) => $page
+            ->where('match.cancellation.requested_by_id', $creator->id)
+            ->where('match.cancellation.reason', 'Opponent went AFK')
+            ->whereNot('match.cancellation.requested_at', null)
+        );
+});
+
+test('Cancelled match emits cancelled_at on the resource', function () {
+    $match = GameMatch::factory()->cancelled()->create();
+
+    $this->actingAs($match->taker)
+        ->get(route('matches.show', $match))
+        ->assertInertia(fn ($page) => $page
+            ->where('match.status', 'cancelled')
+            ->whereNot('match.cancellation.cancelled_at', null)
+        );
+});

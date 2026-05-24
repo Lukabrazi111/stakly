@@ -28,6 +28,27 @@ class RequestCancellationRequest extends FormRequest
     }
 
     /**
+     * Normalize whitespace-only input to null so the model stores either
+     * a meaningful reason or `null` — never `"   "`. Saves the frontend
+     * from having to render empty-string reasons as "no reason" with a
+     * defensive trim.
+     */
+    protected function prepareForValidation(): void
+    {
+        $raw = $this->input('reason');
+
+        if (! is_string($raw)) {
+            return;
+        }
+
+        $trimmed = trim($raw);
+
+        $this->merge([
+            'reason' => $trimmed === '' ? null : $trimmed,
+        ]);
+    }
+
+    /**
      * @return array<string, ValidationRule|array<mixed>|string>
      */
     public function rules(): array
