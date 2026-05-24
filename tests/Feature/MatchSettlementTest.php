@@ -318,31 +318,32 @@ test('settleDraw preserves exact BCMath precision on awkward stake values', func
     expect(bccomp((string) $taker->fresh()->usdt_balance, '500.000000', 6))->toBe(0);
 });
 
-// ─── settle / settleDraw: ManualReview guard (Phase 7.3) ────────────────────
+// ─── settle / settleDraw: ManualReview is admin-settleable (M12 Phase 2) ────
 
-test('settle throws when called on a ManualReview match', function () {
-    [$creator, , , $match] = pendingMatchForSettlement();
+test('settle succeeds when called on a ManualReview match (admin path)', function () {
+    // M12 Phase 2 — ManualReview matches are resolved by admin clicking
+    // Settle to Creator/Taker in the Filament panel, which routes through
+    // SettleMatchAction. The guard accepts Pending / Disputed / ManualReview;
+    // only Cancelled / Settled / Open are rejected.
+    [$creator, , , $match] = pendingMatchForSettlement(stake: '100');
     $match->update(['status' => MatchStatus::ManualReview]);
 
-    expect(fn () => app(SettleMatchAction::class)->handle($match, $creator))
-        ->toThrow(InvalidArgumentException::class);
+    app(SettleMatchAction::class)->handle($match, $creator);
 
-    // Status unchanged; no settlement ledger rows written.
-    expect($match->fresh()->status)->toBe(MatchStatus::ManualReview);
-    expect(WalletTransaction::query()->where('reference_id', "match-payout:{$match->id}")->exists())->toBeFalse()
-        ->and(WalletTransaction::query()->where('reference_id', "match-fee:{$match->id}")->exists())->toBeFalse();
+    expect($match->fresh()->status)->toBe(MatchStatus::Settled);
+    expect(WalletTransaction::query()->where('reference_id', "match-payout:{$match->id}")->exists())->toBeTrue()
+        ->and(WalletTransaction::query()->where('reference_id', "match-fee:{$match->id}")->exists())->toBeTrue();
 });
 
-test('settleDraw throws when called on a ManualReview match', function () {
-    [, , , $match] = pendingMatchForSettlement();
+test('settleDraw succeeds when called on a ManualReview match (admin path)', function () {
+    [, , , $match] = pendingMatchForSettlement(stake: '100');
     $match->update(['status' => MatchStatus::ManualReview]);
 
-    expect(fn () => app(SettleDrawMatchAction::class)->handle($match))
-        ->toThrow(InvalidArgumentException::class);
+    app(SettleDrawMatchAction::class)->handle($match);
 
-    expect($match->fresh()->status)->toBe(MatchStatus::ManualReview);
-    expect(WalletTransaction::query()->where('reference_id', "match-draw-creator:{$match->id}")->exists())->toBeFalse()
-        ->and(WalletTransaction::query()->where('reference_id', "match-draw-taker:{$match->id}")->exists())->toBeFalse();
+    expect($match->fresh()->status)->toBe(MatchStatus::Settled);
+    expect(WalletTransaction::query()->where('reference_id', "match-draw-creator:{$match->id}")->exists())->toBeTrue()
+        ->and(WalletTransaction::query()->where('reference_id', "match-draw-taker:{$match->id}")->exists())->toBeTrue();
 });
 
 // ─── resolveDispute: drawn branch ───────────────────────────────────────────

@@ -26,11 +26,20 @@ class GameMatchPolicy
     private const CANCEL_REQUEST_COOLDOWN_MINUTES = 30;
 
     /**
-     * Only the two participants can view a match. Non-participants get a 404
+     * Participants can view a match. Admins also pass — they need to read
+     * the chat (and stream attachments via `MessageController::attachment`)
+     * from the M12 dispute panel without being participants. Admin bypass
+     * is intentionally scoped to `view` only — admins do NOT participate
+     * in cancellation / dispute flows from the player UI; their path is
+     * the Filament resolve actions. Non-admin non-participants get a 404
      * at the controller layer (not 403) to avoid leaking match existence.
      */
     public function view(User $user, GameMatch $match): bool
     {
+        if ($user->hasRole('admin')) {
+            return true;
+        }
+
         return $this->isParticipant($user, $match);
     }
 

@@ -7,6 +7,7 @@ use App\Support\MockTronAddress;
 use Illuminate\Database\Eloquent\Factories\Factory;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
+use Spatie\Permission\Models\Role;
 
 /**
  * @extends Factory<User>
@@ -117,5 +118,23 @@ class UserFactory extends Factory
             'chess_com_username' => $username ?? Str::slug(fake()->unique()->userName()),
             'chess_com_verified_at' => now(),
         ]);
+    }
+
+    /**
+     * Assign the Spatie `admin` role after creation. Creates the role if
+     * it doesn't exist yet (RefreshDatabase tests drop the roles table
+     * between cases). Used by Filament panel tests + any other admin-only
+     * surface.
+     */
+    public function admin(): static
+    {
+        return $this->afterCreating(function (User $user) {
+            $role = Role::firstOrCreate([
+                'name' => 'admin',
+                'guard_name' => 'web',
+            ]);
+
+            $user->assignRole($role);
+        });
     }
 }

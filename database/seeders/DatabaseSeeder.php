@@ -36,6 +36,7 @@ class DatabaseSeeder extends Seeder
         // testing has comfortable room to create multiple listings.
         Wallet::deposit($test, '10000', reference: "seed:dev-deposit:{$test->id}");
 
+        $this->call(AdminUserSeeder::class);
         $this->call(ListingSeeder::class);
     }
 }

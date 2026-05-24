@@ -120,6 +120,16 @@ class GameMatch extends Model
     }
 
     /**
+     * Admin resolution audit rows (M12 Phase 2). Append-only; one row per
+     * admin click on Settle to Creator / Settle to Taker / Settle as Draw.
+     * Ordered oldest → newest so the chronology renders top-down.
+     */
+    public function adminResolutions(): HasMany
+    {
+        return $this->hasMany(MatchAdminResolution::class, 'match_id')->oldest();
+    }
+
+    /**
      * Lookup helper for the smart-link jobs: "what username did the
      * {side} player verify for {provider} at match creation?" Returns
      * null when no snapshot exists for that slot — caller treats that as

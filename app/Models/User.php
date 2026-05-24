@@ -3,6 +3,8 @@
 namespace App\Models;
 
 use Database\Factories\UserFactory;
+use Filament\Models\Contracts\FilamentUser;
+use Filament\Panel;
 use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
@@ -37,10 +39,27 @@ use Spatie\Permission\Traits\HasRoles;
     'remember_token',
     'pending_verification_code',
 ])]
-class User extends Authenticatable implements MustVerifyEmail
+class User extends Authenticatable implements FilamentUser, MustVerifyEmail
 {
     /** @use HasFactory<UserFactory> */
     use HasFactory, HasRoles, Notifiable, TwoFactorAuthenticatable;
+
+    /**
+     * M12 — Filament panel access gate. Required by the `FilamentUser`
+     * interface. Only users with the Spatie `admin` role can reach
+     * `/admin/*` URLs; anyone else is redirected to the login page (or
+     * 403 if already authenticated as a non-admin). The platform user
+     * (`is_platform = true`) is also blocked — same posture as the
+     * `is_platform → 403` gate on the wallet routes, defense in depth.
+     */
+    public function canAccessPanel(Panel $panel): bool
+    {
+        if ($this->is_platform) {
+            return false;
+        }
+
+        return $this->hasRole('admin');
+    }
 
     /**
      * Route model binding uses `username` instead of `id`, so `/users/{user}`

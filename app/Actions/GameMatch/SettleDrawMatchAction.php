@@ -52,9 +52,11 @@ class SettleDrawMatchAction
 
     private function assertSettleableStatus(GameMatch $match): void
     {
-        if ($match->status !== MatchStatus::Pending && $match->status !== MatchStatus::Disputed) {
+        $allowed = [MatchStatus::Pending, MatchStatus::Disputed, MatchStatus::ManualReview];
+
+        if (! in_array($match->status, $allowed, true)) {
             throw new InvalidArgumentException(
-                "Cannot settle match {$match->id} as draw: status is {$match->status->value}, expected Pending or Disputed (ManualReview matches must be resolved via admin tools)."
+                "Cannot settle match {$match->id} as draw: status is {$match->status->value}, expected Pending, Disputed, or ManualReview."
             );
         }
     }

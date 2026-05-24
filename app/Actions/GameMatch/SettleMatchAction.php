@@ -67,15 +67,18 @@ class SettleMatchAction
     }
 
     /**
-     * Phase 7.3 guard: settle only runs mid-resolution (Pending after both
-     * confirm; Disputed after `resolveDispute` flips status). `ManualReview`
-     * is terminal — admin tools must resolve it through their own path.
+     * Settle runs mid-resolution: Pending (both confirm), Disputed (game-API
+     * arbitration), or ManualReview (admin clicked Settle to Creator/Taker
+     * in the Filament panel — M12 Phase 2). Cancelled / Settled / Open are
+     * rejected — those are terminal or pre-match states.
      */
     private function assertSettleableStatus(GameMatch $match): void
     {
-        if ($match->status !== MatchStatus::Pending && $match->status !== MatchStatus::Disputed) {
+        $allowed = [MatchStatus::Pending, MatchStatus::Disputed, MatchStatus::ManualReview];
+
+        if (! in_array($match->status, $allowed, true)) {
             throw new InvalidArgumentException(
-                "Cannot settle match {$match->id}: status is {$match->status->value}, expected Pending or Disputed (ManualReview matches must be resolved via admin tools)."
+                "Cannot settle match {$match->id}: status is {$match->status->value}, expected Pending, Disputed, or ManualReview."
             );
         }
     }
