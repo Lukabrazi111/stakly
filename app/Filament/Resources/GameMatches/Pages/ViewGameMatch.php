@@ -35,10 +35,29 @@ class ViewGameMatch extends ViewRecord
     protected function getHeaderActions(): array
     {
         return [
+            $this->openAsParticipantAction(),
             $this->settleToCreatorAction(),
             $this->settleToTakerAction(),
             $this->settleDrawAction(),
         ];
+    }
+
+    /**
+     * Opens the player-side match page in a new tab. Useful for verifying
+     * what the players actually see (status banner copy, evidence prompts,
+     * etc.) without losing your place in the admin review.
+     *
+     * Works on all statuses (including Settled / Cancelled) — admins can
+     * audit a resolved match's final visible state.
+     */
+    private function openAsParticipantAction(): Action
+    {
+        return Action::make('open_as_participant')
+            ->label('Open as participant')
+            ->icon('heroicon-o-arrow-top-right-on-square')
+            ->color('gray')
+            ->url(fn (GameMatch $record) => route('matches.show', $record))
+            ->openUrlInNewTab();
     }
 
     private function settleToCreatorAction(): Action

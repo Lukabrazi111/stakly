@@ -2,8 +2,10 @@
 
 namespace App\Actions\GameMatch;
 
+use App\Actions\Admin\NotifyAdminsAction;
 use App\Actions\Message\PostSystemMessageAction;
 use App\Enums\MatchStatus;
+use App\Filament\Resources\GameMatches\GameMatchResource;
 use App\Models\GameMatch;
 use DateTimeInterface;
 use Illuminate\Support\Facades\DB;
@@ -29,11 +31,12 @@ class ResolveMatchTimeoutAction
 {
     public function __construct(
         private readonly PostSystemMessageAction $postSystem,
+        private readonly NotifyAdminsAction $notifyAdmins,
     ) {}
 
     public function handle(int $matchId, DateTimeInterface $deadline): string
     {
-        return DB::transaction(function () use ($matchId, $deadline) {
+        $outcome = DB::transaction(function () use ($matchId, $deadline) {
             $match = GameMatch::query()->lockForUpdate()->find($matchId);
 
             if (! $this->isStillEligible($match, $deadline)) {
@@ -46,6 +49,15 @@ class ResolveMatchTimeoutAction
 
             return 'manual-review';
         });
+
+        // After-commit notification — admin queue gets a bell ping for the
+        // newly-flagged match. Skipped path doesn't fire (race-loss to
+        // another resolver — there's nothing for admin to act on).
+        if ($outcome === 'manual-review') {
+            $this->notifyAdminsOfTimeout(GameMatch::query()->find($matchId));
+        }
+
+        return $outcome;
     }
 
     /**
@@ -81,6 +93,26 @@ class ResolveMatchTimeoutAction
             $match,
             __('Submit evidence in chat — screenshot, game URL, or PGN. An admin will review.'),
             [['type' => 'dispute_prompt']],
+        );
+    }
+
+    private function notifyAdminsOfTimeout(?GameMatch $match): void
+    {
+        if ($match === null) {
+            return;
+        }
+
+        $match->loadMissing(['listing.user', 'taker']);
+
+        $creator = $match->listing?->user?->username ?? 'unknown';
+        $taker = $match->taker?->username ?? 'unknown';
+        $stake = number_format((float) ($match->listing?->stake_amount ?? 0), 2);
+
+        $this->notifyAdmins->handle(
+            title: "Match auto-flagged — #{$match->id}",
+            body: "Match #{$match->id} timed out without an API-verified result. {$creator} vs {$taker}, \${$stake} stake each. Please review.",
+            url: GameMatchResource::getUrl('view', ['record' => $match]),
+            color: 'danger',
         );
     }
 }

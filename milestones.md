@@ -8,7 +8,8 @@ Frontend-first build. UI against real DB infrastructure + seeded fake data; back
 
 **Active / upcoming:**
 
-- **M13** — Chat anti-abuse + moderation **← next**
+- **M17** — Admin operational tooling (Phase 1 widgets + Phase 2 in-panel notifications shipped; Phase 3 email deferred until needed)
+- **M13** — Chat anti-abuse + moderation [parked — design needs review]
 - **M14** — Automated outcome adapters (volume-triggered optimization; Slice A shipped)
 - **M15** — Multi-game expansion (FACEIT, OpenDota, Riot adapters)
 - **M9** — Chain Integration [paused — pending crypto-payment-gateway specialist]
@@ -34,6 +35,64 @@ Decisions made earlier that have shaped a lot of code downstream. Not locked —
 - **Strongest anti-cheat per game** (M8 + M15). Stakly only takes stakes on matches played on the strongest available anti-cheat platform for the relevant game. The verification provider (who tells us the result) and the anti-cheat platform (where the match must be played) are conceptually separate — sometimes the same vendor (FACEIT for CS2, Riot for Valorant), sometimes different (Steam-ranked Dota 2 verified via OpenDota). Per-game adapter pattern via `LinkedAccountProvider` enum + `ProfileClient` interface + `listings.platform` column.
 - **User-supplied free-text never lands in system messages** (M10 Phase 3). System messages bypass the M13 chat anti-abuse layer by construction. Any user-supplied text (cancellation reasons, future dispute notes, etc.) surfaces in structured banner UI we control — never spliced into chat lifecycle narration. The banner is the sanitization surface; chat stays for player-to-player communication that DOES go through M13 filters.
 - **Outcome is API-truth, not player self-report** (M16). Match results come from the game API (Lichess stream, chess.com archive polling) — not from "I won / lost / drawn" player buttons. Player self-reports were always non-binding (the API was the tiebreaker on disagreement); M16 removes the redundant confirm layer entirely. The dispute surface (`Report a problem`) survives as the manual escalation path for unresolvable cases. "Mutual cancellation" (M10) remains the cooperative early-exit when no game gets played.
+
+---
+
+## M17 — Admin operational tooling
+
+Stakly's admin panel (M12) ships with a default Filament Dashboard showing a placeholder `AccountWidget` + `FilamentInfoWidget` marketing card — useful for the panel install demo, useless for actually running ops. M17 replaces that with a real ops surface: at-a-glance health stats on the dashboard, and real-time bell-icon notifications when something needs admin attention.
+
+Pulled forward ahead of M13 (chat anti-abuse) because M12 just shipped — admin currently has no signal that a dispute opened until they manually refresh `/admin/disputes`. Every minute a dispute sits unnoticed is a minute of player money locked in escrow with no progress.
+
+### Phases
+
+**Phase 1 — Dashboard widgets** ✅ shipped 2026-05-24
+
+- [x] Replaced `AccountWidget` + `FilamentInfoWidget` placeholders with four ops widgets registered in `AdminPanelProvider::panel()`.
+- [x] **Open disputes** (`App\Filament\Widgets\OpenDisputes`): counts matches with Disputed + ManualReview. Description shows oldest dispute age via `Carbon::diffForHumans`. Color tier: gray (queue clear), success (<1h), warning (1-6h), danger (6h+). Click-through to `/admin/disputes`.
+- [x] **Matches today** (`MatchesToday`): 24h count + 7-day sparkline via `Stat::chart()`. Description compares today vs yesterday with up/down trend icon.
+- [x] **Platform earnings (this month)** (`PlatformEarnings`): sums `WalletTransactionType::Fee` rows since `startOfMonth()`. Month-over-month delta in description. BCMath arithmetic (scale 2) for fee math.
+- [x] **Active users (7d)** (`ActiveUsers`): distinct count via SQL `UNION` across listings/matches/messages from the last 7 days. Joins `users` and filters `is_platform = false`. Compares vs prior 7-day window.
+- [x] Polling: `protected ?string $pollingInterval = '30s'` on all four widgets.
+- [x] 10 feature tests in `tests/Feature/Admin/DashboardWidgetsTest.php` (Livewire-driven). Includes `staleListingAndMatch()` helper for ActiveUsers scenarios that need controlled-date fixtures (since factory chains auto-create users that would pollute the active count).
+
+**Phase 2 — In-panel real-time notifications** ✅ shipped 2026-05-24
+
+- [x] `notifications:table` migration patched to `jsonb` for the `data` column (Postgres requires JSONB for Filament's `data->>'format'` bell-icon query).
+- [x] `->databaseNotifications()` + `->databaseNotificationsPolling('30s')` enabled in `AdminPanelProvider`. Bell icon + dropdown render in panel header.
+- [x] `App\Actions\Admin\NotifyAdminsAction` — broadcasts a Filament `Notification` via `sendToDatabase($admins, isEventDispatched: true)` to every user with the `admin` Spatie role (excluding `is_platform = true`). Uses `whereHas('roles', ...)` instead of Spatie's `role()` scope so it no-ops gracefully when the admin role hasn't been seeded yet (vs throwing `RoleDoesNotExist`).
+- [x] Notification carries title + body + color + `heroicon-o-exclamation-triangle` icon + an "Open match" action button linking to the dispute view.
+- [x] Triggers wired:
+    - [x] `OpenDisputeAction` → "Dispute opened — match #N" with creator vs taker + stake. Color `warning`. Fires AFTER the DB transaction commits (so notification doesn't fire on rolled-back disputes; broadcast events are also more reliable after-commit).
+    - [x] `ResolveMatchTimeoutAction` → "Match auto-flagged — #N" with timeout context. Color `danger`. Same after-commit pattern.
+- [x] Race-loss paths covered: repeat `openDispute` on already-Disputed match doesn't fire a duplicate (action returns false); `ResolveMatchTimeoutAction` returning `skipped` doesn't fire.
+- [x] 7 feature tests in `tests/Feature/Admin/AdminNotificationsTest.php` covering role scoping, graceful no-op on missing role, notification persistence shape, lifecycle hook triggers (both success + race-loss paths).
+
+**Polish iteration** ✅ shipped 2026-05-24
+
+After live-testing Phase 1: the 4 per-stat widgets each rendered as their own full-width row (Filament's `StatsOverviewWidget` defaults `columnSpan = 'full'`), producing a tall vertical stack instead of a scorecard. Two follow-ups landed:
+
+- [x] **Consolidated four widgets into one `OpsOverview`.** Filament's native StatsOverviewWidget renders multiple stats as a responsive grid; splitting them across separate widgets forced the vertical layout. Deleted `OpenDisputes`, `MatchesToday`, `PlatformEarnings`, `ActiveUsers` widget files. Per-stat queries moved to private methods on `OpsOverview` (one method per stat — `getStats()` reads as a recipe).
+- [x] **2x2 grid via `getColumns() => 2` override.** For 4 stats, 2x2 reads cleaner than 4-in-a-row (same pattern as Stripe / Linear / Vercel scorecards). Collapses to single column on mobile via Filament's responsive default.
+- [x] **Urgency-first stat ordering.** Top-left → top-right → bottom-left → bottom-right: Open disputes (action item) · Matches today (volume) · Earnings this month (revenue trend) · Active users (engagement trend). Top row = "right now" snapshot, bottom row = "trends".
+- [x] **Pretty URL via `$slug = 'disputes'` on `GameMatchResource`.** Filament defaults the URL to `/admin/game-matches` from the model name; the slug override produces `/admin/disputes` to match the sidebar label.
+- [x] **Switched URL builders from hardcoded paths to `GameMatchResource::getUrl()`.** `OpsOverview` widget + `NotifyAdminsAction` callers (via `OpenDisputeAction` + `ResolveMatchTimeoutAction`) now resolve dispute URLs through Filament's resource URL helper. Survives any future slug rename.
+
+**Phase 3 (deferred) — Email backup**
+
+In-panel notifications only reach admin when they have the panel open. Email is the natural complement for "I'm not in the panel right now" coverage, but it adds SMTP / deliverability / spam-filter complexity. Build it as a separate slice once real ops shows in-panel alone is insufficient.
+
+- [ ] When triggered, mail dispatcher sends to every admin's email (alongside the in-panel notification, not instead of it).
+- [ ] Configurable per-admin opt-out (some admins might want in-panel only, some want both).
+- [ ] Trigger: dispute-opened initially. Timeout-triggered separately if needed.
+- [ ] Optional: Slack webhook variant for teams that prefer Slack over email.
+
+### Not in M17
+
+- Slack/Discord webhooks (could be added with Phase 3 email if a team adopts Stakly).
+- Custom per-admin notification preferences (more than one admin → revisit then).
+- Aging-dispute reminders (cron-driven "this dispute is still open after 4h" pings) — adds a scheduled task surface; defer until proven needed.
+- Notifications for other events (large stake match, user signup spike, etc.) — start with the two highest-value triggers, add others if ops asks for them.
 
 ---
 
@@ -160,6 +219,38 @@ Note: TronGrid, Moralis, and CryptoCloud are not the same kind of thing despite 
 ### Live questions for the specialist
 
 **Provider tier** (DIY / managed primitives / payment gateway) → **custody model** (BYO-key vs vendor-MPC vs full vendor custody) → **key storage** (KMS / HSM / vault / vendor-held) → **TRC20 gas strategy** (pre-funded TRX per address vs delegated Energy via TRX-staked master vs vendor-handled) → **testnet shakedown plan** → **mainnet flip checklist**.
+
+---
+
+## Admin panel enhancements (backlog)
+
+Ideas captured during M12 build + polish that aren't worth doing now but should land later as Stakly's ops surface grows. Not a milestone — pull individual items into a slice whenever they become valuable. Listed in roughly "most likely to need first" order.
+
+**Dispute review workflow**
+
+- **Request-evidence action.** A 4th resolve button that doesn't settle — posts a system message in chat ("Stakly support needs the chess.com game URL — please post within 48h or this will be settled as draw") with a configurable deadline. Lets admin gather more info without choosing a side. Useful when chat evidence is thin but the dispute isn't yet "irrecoverable." Phase 4 of M12 in spirit.
+- **Inline admin notes** on a match. Private notes admins write to each other ("waiting on legal", "this user has 3 prior reports") — not visible to players, separate from the resolution audit log. Just a `match_admin_notes` table + a notes panel in the View page.
+- **Admin-writes-in-chat** (full support panel). Admin posts as "Stakly Support" with a verified badge; players reply in normal chat. Decided in M12 Phase 2 design discussion to defer until real disputes show we need it — most disputes resolve fine on chat evidence already posted. Revisit if "I'd settle this but I need one more piece" becomes a recurring admin frustration.
+- **Partial refund tool.** Currently the "draw" action refunds both stakes fully. Nuanced cases (one player clearly forfeited but other played in bad faith) might warrant 70/30 splits. Wallet primitives already support arbitrary amounts; just needs an action UI + audit shape.
+
+**Admin productivity**
+
+- **Audit log as its own Filament resource.** Move `match_admin_resolutions` from the inline HTML render on the View page to a proper `MatchAdminResolutionResource` at `/admin/resolutions`. Filterable by admin, action, date range. Useful for self-audit ("what did I resolve this week?") and team-audit ("who's settling to creator most often?").
+- **Aging-dispute reminders** (cron-driven). Every N hours, fire a notification for any dispute still open beyond a threshold (e.g. 4h). Separate from the open-event notification — catches the "I missed it the first time" case. Needs a scheduled task + dedup to avoid spamming the same dispute every cron tick.
+
+> Dashboard widgets + real-time admin notifications promoted to **M17** (above).
+
+**Player context in dispute review**
+
+- **User history sidebar** in Creator / Taker cards: "X disputes opened, Y won, Z lost", "wallet balance", "matches played in last 30d", "open reports against this user" (depends on M13). Gives admin "is this a habitual disputer?" context without leaving the page.
+- **Quick links to game APIs.** Buttons in the chat history that take admin straight to chess.com / Lichess game search for the snapshotted usernames. Saves the copy-paste step when admin wants to manually verify a claim.
+- **Provider snapshot view.** Show the snapshotted username from `match_provider_snapshots` (what they were linked as at match creation), not just current linked accounts. Matters when a player unlinked and relinked a different account post-match.
+- **Listing context popover.** Quick view of the original listing (description, time control, language, region) for context — currently the admin has to leave the page to see the listing.
+
+**Filtering + search**
+
+- **Better search.** Currently the matches list is sortable but not searchable. Add search by player username, player email, or stake range. Existing filter only covers status.
+- **Audit log CSV export.** Download `match_admin_resolutions` filtered by date range — useful for any future accounting or operational review.
 
 ---
 

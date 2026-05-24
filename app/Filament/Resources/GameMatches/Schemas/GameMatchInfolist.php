@@ -14,17 +14,20 @@ use Filament\Support\Icons\Heroicon;
 /**
  * M12 Phase 2 — admin match detail view used on `ViewGameMatch`.
  *
- * Layout (top → bottom):
- *   1. Match — full-width banner; 6-col compact grid of key facts. The one
- *      thing admin scans first to size up the dispute.
- *   2. Creator + Taker — 2-column Grid side-by-side. When settled, the
- *      winner's section gets a gold trophy icon in its header.
- *   3. Chat history — full-width, primary content (where the admin makes
- *      the decision). Not collapsible — primary content shouldn't hide.
- *   4. Admin resolution history — full-width, only renders if rows exist.
+ * Layout (top → bottom). Every top-level Section calls `columnSpanFull()`
+ * — Filament's default panel schema runs a 3-column grid, and without the
+ * full-span override, sections collide on the same row and inner fields
+ * wrap awkwardly. Match metadata is split across three smaller sections
+ * (Status / Money / Timeline) instead of one wide card so each section
+ * fits its fields in 4 columns without label-wrap.
  *
- * Linked-account rows hide themselves when empty (no "— not linked —"
- * noise filling the cards for unlinked players).
+ *   1. Status & game — Match #, status badge, game, platform, winner
+ *   2. Money breakdown — stake, pot, fee, winner payout
+ *   3. Timeline — created/disputed/opened-by/settled timestamps
+ *   4. Creator + Taker — side-by-side Grid(2). Winner gets a gold trophy
+ *      on their section header when Settled.
+ *   5. Chat history — full-width, primary content
+ *   6. Admin resolution history — full-width, only when rows exist
  */
 class GameMatchInfolist
 {
@@ -32,20 +35,24 @@ class GameMatchInfolist
     {
         return $schema
             ->components([
-                self::matchSection(),
+                self::statusSection()->columnSpanFull(),
+                self::moneySection()->columnSpanFull(),
+                self::timelineSection()->columnSpanFull(),
                 Grid::make(2)
+                    ->columnSpanFull()
                     ->schema([
                         self::creatorSection(),
                         self::takerSection(),
                     ]),
-                self::chatSection(),
-                self::resolutionHistorySection(),
+                self::chatSection()->columnSpanFull(),
+                self::resolutionHistorySection()->columnSpanFull(),
             ]);
     }
 
-    private static function matchSection(): Section
+    private static function statusSection(): Section
     {
-        return Section::make('Match')
+        return Section::make('Status & game')
+            ->icon(Heroicon::InformationCircle)
             ->schema([
                 TextEntry::make('id')
                     ->label('Match #'),
@@ -75,6 +82,22 @@ class GameMatchInfolist
                     ->label('Platform')
                     ->formatStateUsing(fn ($state) => $state?->value ?? '—'),
 
+                TextEntry::make('winner.username')
+                    ->label('Winner')
+                    ->placeholder('—')
+                    ->icon(fn (GameMatch $record) => $record->winner_user_id ? Heroicon::Trophy : null)
+                    ->iconColor('warning'),
+            ])
+            ->columns(5);
+    }
+
+    private static function moneySection(): Section
+    {
+        $feeRate = (float) config('stakly.platform_fee_rate');
+
+        return Section::make('Money breakdown')
+            ->icon(Heroicon::Banknotes)
+            ->schema([
                 TextEntry::make('listing.stake_amount')
                     ->label('Stake (each)')
                     ->formatStateUsing(fn ($state) => '$'.number_format((float) $state, 2)),
@@ -83,6 +106,22 @@ class GameMatchInfolist
                     ->label('Pot total')
                     ->formatStateUsing(fn ($state) => '$'.number_format((float) $state * 2, 2)),
 
+                TextEntry::make('listing.stake_amount')
+                    ->label('Fee ('.($feeRate * 100).'%)')
+                    ->formatStateUsing(fn ($state) => '$'.number_format((float) $state * 2 * $feeRate, 2)),
+
+                TextEntry::make('listing.stake_amount')
+                    ->label('Winner payout')
+                    ->formatStateUsing(fn ($state) => '$'.number_format((float) $state * 2 * (1 - $feeRate), 2)),
+            ])
+            ->columns(4);
+    }
+
+    private static function timelineSection(): Section
+    {
+        return Section::make('Timeline')
+            ->icon(Heroicon::Clock)
+            ->schema([
                 TextEntry::make('created_at')
                     ->label('Match created')
                     ->dateTime('M j, Y H:i')
@@ -92,6 +131,25 @@ class GameMatchInfolist
                     ->label('Dispute opened')
                     ->dateTime('M j, Y H:i')
                     ->since()
+                    ->badge()
+                    ->color(function ($state, GameMatch $record): string {
+                        // Don't urgency-color terminal matches — already resolved.
+                        if (in_array($record->status, [MatchStatus::Settled, MatchStatus::Cancelled], true)) {
+                            return 'gray';
+                        }
+
+                        if ($state === null) {
+                            return 'gray';
+                        }
+
+                        $hours = abs(now()->diffInHours($state));
+
+                        return match (true) {
+                            $hours >= 6 => 'danger',
+                            $hours >= 1 => 'warning',
+                            default => 'success',
+                        };
+                    })
                     ->placeholder('—'),
 
                 TextEntry::make('disputeOpener.name')
@@ -103,14 +161,8 @@ class GameMatchInfolist
                     ->dateTime('M j, Y H:i')
                     ->since()
                     ->placeholder('—'),
-
-                TextEntry::make('winner.username')
-                    ->label('Winner')
-                    ->placeholder('—')
-                    ->icon(fn (GameMatch $record) => $record->winner_user_id ? Heroicon::Trophy : null)
-                    ->iconColor('warning'),
             ])
-            ->columns(6);
+            ->columns(4);
     }
 
     private static function creatorSection(): Section

@@ -2,8 +2,10 @@
 
 namespace App\Actions\GameMatch;
 
+use App\Actions\Admin\NotifyAdminsAction;
 use App\Actions\Message\PostSystemMessageAction;
 use App\Enums\MatchStatus;
+use App\Filament\Resources\GameMatches\GameMatchResource;
 use App\Models\GameMatch;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
@@ -36,11 +38,12 @@ class OpenDisputeAction
 {
     public function __construct(
         private readonly PostSystemMessageAction $postSystem,
+        private readonly NotifyAdminsAction $notifyAdmins,
     ) {}
 
     public function handle(User $user, GameMatch $match): bool
     {
-        return DB::transaction(function () use ($match, $user) {
+        $opened = DB::transaction(function () use ($match, $user) {
             $locked = GameMatch::query()->lockForUpdate()->findOrFail($match->id);
 
             if ($locked->status !== MatchStatus::Pending) {
@@ -59,6 +62,16 @@ class OpenDisputeAction
 
             return true;
         });
+
+        // Notification dispatched AFTER commit. Inside the transaction it
+        // would fire even if a downstream caller rolls back, and the bell
+        // would point to a match that "didn't happen." After-commit is
+        // also where broadcast events should fire for cache/timing reasons.
+        if ($opened) {
+            $this->notifyAdminsOfDispute($match->fresh());
+        }
+
+        return $opened;
     }
 
     private function flipToDisputed(GameMatch $match, User $opener): void
@@ -68,5 +81,22 @@ class OpenDisputeAction
             'dispute_opened_at' => now(),
             'dispute_opened_by' => $opener->id,
         ]);
+    }
+
+    private function notifyAdminsOfDispute(GameMatch $match): void
+    {
+        $match->loadMissing(['listing.user', 'taker', 'disputeOpener']);
+
+        $creator = $match->listing?->user?->username ?? 'unknown';
+        $taker = $match->taker?->username ?? 'unknown';
+        $stake = number_format((float) ($match->listing?->stake_amount ?? 0), 2);
+        $openedBy = $match->disputeOpener?->name ?? 'a player';
+
+        $this->notifyAdmins->handle(
+            title: "Dispute opened — match #{$match->id}",
+            body: "{$openedBy} reported a problem. {$creator} vs {$taker}, \${$stake} stake each. Please review.",
+            url: GameMatchResource::getUrl('view', ['record' => $match]),
+            color: 'warning',
+        );
     }
 }

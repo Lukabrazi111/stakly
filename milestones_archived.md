@@ -316,6 +316,14 @@ Three header actions on the View page: Settle to creator (success/green) · Sett
 
 Controller toast simplified: single warning toast `'Dispute opened — an admin will review and resolve this match.'`. Frontend `match/show.tsx` banner copy rewritten — header is now `'Admin review pending'` for both statuses with status-specific body text. `OpenDisputeButton` confirmation copy updated to reflect admin-resolution flow.
 
+**Polish iteration** ✅ shipped 2026-05-24
+
+After live-testing the Phase 2 panel, two polish slices landed on top:
+
+**Layout + chat rebuild (high-impact)** — `GameMatchInfolist` restructured: top-banner Match section (6-column compact grid: Match # · Status · Game · Platform · Stake (each) · Pot total · timestamps · Winner with trophy icon), two-column Grid for Creator + Taker side-by-side, full-width Chat history, full-width audit log. Winner gets a gold `Heroicon::Trophy` on their card's section header when Settled. Empty linked-account rows hide via `->hidden(fn ($state) => blank($state))`. `ChatHistoryEntry` Blade view rebuilt: consecutive messages from the same author collapse into one bundle (Slack-style, one header per burst), role color-coded left border (creator cyan, taker rose, system gray) PAIRED with a text role badge (UX rule: don't convey info by color alone), timestamps right-aligned + muted with bundle range when spans multiple minutes, attachment images in bordered hover containers linking to full-size in a new tab, dashed-border empty state.
+
+**Pot math + urgency + cross-link (medium-impact)** — Added Platform fee + Winner payout entries beside Pot total (reads `config('stakly.platform_fee_rate')` for the rate; full breakdown so admin doesn't mental-math who's owed what). `Dispute opened` field promoted to a colored badge with urgency tiers: green <1h (fresh), amber 1–6h (aging), red 6h+ (stale), gray on terminal matches. `Open as participant` header action — gray icon button (`heroicon-o-arrow-top-right-on-square`) that links to the player-side `/matches/{id}` page in a new tab for verifying what players actually see.
+
 ### Decisions
 
 - **Filament's design ≠ Stakly's design — by choice.** Admin panel uses Filament defaults (Livewire + Alpine + Filament Tailwind config) rather than the Stakly pink/purple system. Saves visual styling time on a tool only the operator sees; preserves Filament's component ergonomics; doesn't compete with the player app for design attention. Documented as the intended trade-off.

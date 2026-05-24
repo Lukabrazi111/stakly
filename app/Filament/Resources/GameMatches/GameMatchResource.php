@@ -35,6 +35,12 @@ class GameMatchResource extends Resource
 
     protected static string|\UnitEnum|null $navigationGroup = 'Operations';
 
+    // Pretty URL — `/admin/disputes` instead of Filament's auto-generated
+    // `/admin/game-matches`. Sidebar nav already labels this "Disputes"
+    // (see `$navigationLabel`); keeping the URL slug consistent makes
+    // links + bookmarks read naturally.
+    protected static ?string $slug = 'disputes';
+
     public static function infolist(Schema $schema): Schema
     {
         return GameMatchInfolist::configure($schema);
