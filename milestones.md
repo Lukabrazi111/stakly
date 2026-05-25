@@ -10,7 +10,8 @@ Frontend-first build. UI against real DB infrastructure + seeded fake data; back
 
 - **M17** — Admin operational tooling (Phase 1 widgets + Phase 2 in-panel notifications shipped; Phase 3 email deferred until needed)
 - **M13** — Chat anti-abuse + moderation [parked — design needs review]
-- **M14** — Automated outcome adapters (volume-triggered optimization; Slice A shipped)
+- **M14** — Outcome pipeline hardening (reframed from "automated outcome adapters" — observability + reliability + coverage of the auto-fetch pipeline; Slice A shipped, Phase 1 next)
+- **M18** — Profile expansion + redesign (trust surface, Stakly-fit visuals, editable identity)
 - **M15** — Multi-game expansion (FACEIT, OpenDota, Riot adapters)
 - **M9** — Chain Integration [paused — pending crypto-payment-gateway specialist]
 
@@ -122,15 +123,114 @@ Chat is the highest-abuse-surface feature on the platform. M13 builds the polici
 
 ---
 
-## M14 — Automated outcome adapters
+## M14 — Outcome pipeline hardening
 
-When dispute volume justifies automation, swap from "every dispute → admin reviews" to "supported-game disputes → API auto-resolves, falls through to admin only on Unknown."
+Reframed from the original "automated outcome adapters" framing. That milestone made sense in a world where every match needed manual confirmation and the work was "build dispute auto-resolution." M16 changed the world — the auto-fetch pipeline now settles the bulk of matches without anyone touching them. The leverage isn't expanding dispute resolution; it's making the pipeline itself observable and resilient before launch. Stakly is custodial money code with an automated settlement engine — flying blind on its health is the biggest pre-launch risk.
 
-Builds on the per-game verification clients from M8 (chess.com / Lichess) and M15 (FACEIT / OpenDota / Riot): each adapter is the same HTTP client the chat link-card enrichment uses, just invoked from `ResolveDisputeAction` instead of only from `SendMessageAction` link-paste detection. Result confidence maps to `MatchOutcome` (Won/Lost/Drawn) and `GameApiConfidence` (Confirmed → auto-settle, Drawn → auto-refund, Unknown → fall to admin).
+The FACEIT / OpenDota / Riot adapter work and the "no-admin-fallback policy" piece move to M15, where the per-game adapter shape already lives.
 
-Trigger for full M14: M12 admin path is in use and dispute volume justifies the engineering. Pull forward sooner if a class of disputes shows it'd be obviously easier to auto-resolve.
+**Slice A — Chess card arbitration** ✅ shipped 2026-05-22 (see `milestones_archived.md` for the implementation detail). `ChessGameApi` reads the most-recent auto-fetched card off chat — provider-agnostic, handles both Lichess and chess.com via the card's `provider` field — and returns the named winner with `Confirmed` confidence. Falls through to `MockGameApi` for race / no-card / unmappable. Originally pulled forward because the mock was paying the wrong player whenever a Lichess card disagreed; under the reframe, this is the foundation the rest of M14 builds on (the adapter has to be correct before the pipeline around it can be hardened).
 
-**Slice A — Chess card arbitration** ✅ shipped 2026-05-22 (see `milestones_archived.md` for the implementation detail). `ChessGameApi` reads the most-recent auto-fetched card off chat — provider-agnostic, handles both Lichess and chess.com via the card's `provider` field — and returns the named winner with `Confirmed` confidence. Falls through to `MockGameApi` for race / no-card / unmappable. Pulled forward because the mock was paying the wrong player whenever a Lichess card disagreed. Full M14 (FACEIT, OpenDota, Riot, plus the no-admin-fallback policy) still lives behind the original trigger.
+### Phases
+
+**Phase 1 — Per-match audit trail + admin visibility**
+
+Today nobody can answer "why is this match in ManualReview?" without grepping logs. Every dispute investigation starts blind. Phase 1 captures the auto-fetch pipeline's reasoning as queryable data inside the app.
+
+- New `match_auto_fetch_attempts` table (append-only, indexed on `match_id`). Columns: `match_id`, `provider` (lichess / chess_com), `outcome` (matched / no_match / ambiguous / error / skipped), `winner_username` nullable, `candidates_count`, `error_message` nullable, `latency_ms`, `created_at`.
+- `DispatchAutoFetchAction` + both `AutoFetch*GameJob`s write one row per attempt — including the "we didn't even try" skips (snapshot missing, status not Pending, etc.) since those are equally important signals.
+- `Log::info` / `Log::warning` mirrors of the same data so any future production log forwarding sees the same events.
+- New Filament Infolist section on `GameMatchResource` View page: per-match audit timeline. Admin opens a disputed match → sees the full history of what the system tried, when, and what it found.
+- New `PipelineHealth` Filament dashboard widget alongside `OpsOverview`: auto-fetch success rate (7d / 30d), avg time-to-settle, top "no_match" reasons.
+
+**Phase 2 — Reliability**
+
+The jobs currently catch provider errors and log a warning. Fine at one-match scale, dangerous at volume.
+
+- Real retry policy on `AutoFetch*GameJob`s: exponential backoff for transient errors (5xx, timeouts, network), no retry for permanent errors (4xx other than rate-limit).
+- Rate-limit awareness: read `Retry-After` / `X-RateLimit-Reset` headers from both Lichess and chess.com, back off accordingly.
+- Circuit breaker per provider — if Lichess errors > N% for the last M minutes, pause auto-fetch for Lichess matches and surface in the admin widget. Resumes automatically when the error rate drops below threshold.
+- Structured `ProviderError` exception hierarchy distinguishing transient vs permanent vs ambiguous.
+
+**Phase 3 — Coverage**
+
+The edge cases the pipeline currently silently skips. Each is a class of "match got stuck in Pending" that needs an explicit policy.
+
+- Aborted games (currently filtered out by `AutoFetchLichessGameJob::filterCompleted`): decide policy — auto-refund both as a draw-like outcome, or stay in Pending until a real game lands? Probably depends on how often players abort intentionally vs accidentally.
+- Multiple candidate games between the same pair (currently silently skipped — "wrong game is worse than no game"): smarter disambiguation. Closest to match creation time? Matches the listing's `time_control`? Lowest-rated game (typical "first game" heuristic)?
+- Time-control mismatch: listing says blitz, players played bullet. Should the API result count? Today it does. Probably shouldn't.
+
+**Phase 4 — Dispute fast-path**
+
+The original M14 intent, slimmed down to chess only.
+
+- When `OpenDisputeAction` fires on a Pending chess match, query the API immediately via `ResolveDisputeAction` instead of waiting for the next 5-min auto-fetch cron tick.
+- `ChessGameApi` already supports this; wiring is `OpenDisputeAction` → `ResolveDisputeAction` (gated by a config flag, default off until Phase 1 metrics show it'd be safe).
+- FACEIT / OpenDota / Riot piece stays in M15.
+
+### Not in M14
+
+- New game adapters (FACEIT, OpenDota, Riot, etc.) — those live in M15.
+- Cross-provider Lichess↔chess.com disambiguation — a player would have to be linked on both AND play the same opponent on both within the same match window, which is implausible.
+- Streaming WebSocket consumer redesign — Phase 4 of M16 shipped the Lichess admin OAuth stream; if it proves insufficient at volume, revisit then.
+
+---
+
+## M18 — Profile expansion + redesign
+
+Today's `/users/{username}` page is functional but minimal — name, username, open listings, settled match history. Stakly is P2P with real money on the line, and a sparse profile doesn't help Alice decide whether Bob is safe to stake against. M18 turns the profile from a directory entry into a trust surface, restyles it to fit the Stakly visual system, and fills out the editing gaps so users have something worth showing.
+
+The three threads — trust signals, visual redesign, editing surface — are interleaved, not sequential: every phase touches the layer that makes sense for it.
+
+### Phases
+
+**Phase 1 — Editable identity + avatar**
+
+The smallest unit of "I'm a real person, not a bot." Today users have a name and a username derived at registration; nothing else surfaces.
+
+- Avatar upload via Spatie Media Library (`profile-avatar` collection on `User`, web-safe MIME types, ~2 MB cap, automatic thumbnail conversion mirroring the chat attachment setup).
+- `/settings/profile` extended to manage avatar + bio + display name (the `bio` column exists in `User::$fillable` but has no UI today).
+- Default avatar stays the existing initials-on-gradient — keeps the look consistent for users who don't upload.
+- `UserProfileResource` exposes `avatar_url` and `avatar_thumb_url`. Avatars are public-by-nature so they live on the public disk (separate from chat attachments which need authenticated streaming).
+- Public profile renders the avatar in a circular frame with a magenta glow on hover.
+
+**Phase 2 — Profile redesign + stats hero**
+
+The visual restyle. Mirror the design tokens already in use on the match page and home hero.
+
+- Hero section: large circular avatar, display name in `font-display`, `@username` underneath, verification badges (Lichess / chess.com) next to the name with platform-tinted borders, `member since` pill, Active / Inactive mode pill.
+- Stats row directly below the hero: `Total matches`, `Win rate`, `Total volume staked`, `Disputes opened`. Pill-style cards with `bg-card/60 rounded-2xl border-border/60`, mirroring the `SettlementSummary` stat row.
+- Bio block below the stats — soft `bg-muted/40` card with the user's free-text bio if set, omitted if not.
+- Active listings and recent settled matches keep their existing data but get re-styled to match the new card shape.
+- Stakly-skin every new shadcn primitive at `components/ui/*` per the project rule.
+
+**Phase 3 — Trust signals**
+
+The "should I stake against this user?" surface.
+
+- Verified chess platform handle(s) shown with the platform's logo + link out (so Alice can click through to verify Bob's chess.com / Lichess profile and check his actual rating / activity).
+- Live rating from chess.com / Lichess displayed next to the linked handle (cached via the existing `ChessComProfileClient` / `LichessProfileClient` — short TTL ~1h, queued refresh).
+- Win rate visualisation as a thin gradient bar (`bg-gradient-primary` width-proportional) so Alice can read "Bob wins 60% of matches" without doing the math.
+- Dispute rate badge — color-coded: green ≤2%, amber 2–10%, red >10%. Computed from `game_matches` where this user is a participant and status was Disputed / ManualReview.
+- Cancellation rate badge — same shape.
+- "You've played N matches against this user" widget shown only when an authenticated viewer is looking at someone else's profile and the pair has shared match history. Repeat-interaction trust signal.
+
+**Phase 4 — Privacy + sharing**
+
+Letting users opt out of trust transparency carries its own tradeoff: Stakly's marketplace works *because* match history is public. So privacy toggles are narrow.
+
+- User can hide stake amounts on their public match history (match outcome stays visible, just the dollar figure is redacted). Default: visible.
+- User can hide their dispute / cancellation rates entirely (with a "this user has chosen not to display their reputation stats" notice — privacy is itself a signal).
+- Profile share button: copy URL, QR code via existing `qrcode.react`.
+- Open Graph meta tags on `/users/{username}` so links shared into Discord / Telegram / Twitter render a card with the avatar, name, and "Stakly P2P chess staking" tagline.
+
+### Not in M18
+
+- **Player-to-player reviews / ratings after matches.** Inviting users to rate each other on a P2P money platform invites coercion ("give me 5 stars or I'll dispute"). If a reputation layer becomes needed later, base it on objective data (dispute rate, payout reliability) rather than subjective reviews.
+- **Achievement badges / gamification.** Tempting but feels off-brand for a money platform. Revisit if usage data shows users want it.
+- **Activity feed / follow graph.** Stakly isn't a social network; defer indefinitely.
+- **Account deletion / data export.** Real concern but belongs in a separate compliance-focused milestone — user-owned area per the no-legal-concerns rule, so wait for direction.
+- **Skill progression chart (rating over time).** Cool but expensive — would need to snapshot ratings into Stakly DB rather than fetch live. Defer to a future "stats deepening" slice.
 
 ---
 
