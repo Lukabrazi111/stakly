@@ -12,6 +12,15 @@ interface SettlementSummaryProps {
     /** Winner payout when there's a winner; per-player refund when drawn. */
     payout: number;
     iAmWinner: boolean;
+    /**
+     * Play the fade-up entrance animation. True when the card mounts
+     * during a live Pending → Settled transition (fresh reveal); false
+     * when the user landed on an already-settled match via refresh /
+     * direct link / back nav, where animating historical info would
+     * just slow down reading it. Defaults to true so callers that
+     * don't care opt into the animation.
+     */
+    animateEntrance?: boolean;
 }
 
 /**
@@ -26,6 +35,7 @@ export function SettlementSummary({
     fee,
     payout,
     iAmWinner,
+    animateEntrance = true,
 }: SettlementSummaryProps) {
     const reduceMotion = useReducedMotion();
 
@@ -33,15 +43,17 @@ export function SettlementSummary({
     // hand-off so the settled card lands with the same fade-and-rise feel
     // as the "found" state right before it. Slightly longer + larger lift
     // than the found card (0.3s / y=12 vs 0.2s / y=8) because this is the
-    // bigger reveal moment of the flow. Reduced-motion users get a static
-    // mount.
-    const entrance = reduceMotion
-        ? {}
-        : {
-              initial: { opacity: 0, y: 12 },
-              animate: { opacity: 1, y: 0 },
-              transition: { duration: 0.3, ease: 'easeOut' as const },
-          };
+    // bigger reveal moment of the flow. Suppressed when the parent
+    // signals this is an already-settled match (refresh / direct link),
+    // and respects reduced-motion in either case.
+    const entrance =
+        animateEntrance && !reduceMotion
+            ? {
+                  initial: { opacity: 0, y: 12 },
+                  animate: { opacity: 1, y: 0 },
+                  transition: { duration: 0.3, ease: 'easeOut' as const },
+              }
+            : {};
 
     if (winner === null) {
         return (

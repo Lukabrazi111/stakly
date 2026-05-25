@@ -1,5 +1,5 @@
 import { Head, router, usePage } from '@inertiajs/react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { CancellationRequestBanner } from '@/components/match/cancellation-request-banner';
 import { CancellationSummary } from '@/components/match/cancellation-summary';
 import { ChatPanel } from '@/components/match/chat-panel';
@@ -107,6 +107,19 @@ export default function MatchShow({ match, messages }: MatchShowProps) {
     useEffect(() => {
         setPollTick((n) => n + 1);
     }, [match]);
+
+    // Snapshot the match status on first render so we can tell apart:
+    //   - "user watched this match settle" — initial=pending, current=settled
+    //     → animate the SettlementSummary on its fresh mount.
+    //   - "user landed on an already-settled match" — initial=settled
+    //     → no entrance animation. The result is historical info, not a
+    //     new reveal; animating it on every refresh / back-nav / direct
+    //     link would slow down reading content the user already knows.
+    // useRef's initializer runs once; the value survives every prop
+    // update including Inertia partial reloads from the 8s polling loop.
+    const initialStatusRef = useRef(match.status);
+    const settledCardShouldAnimate =
+        initialStatusRef.current !== 'settled';
 
     // A Settled match with no winner is a draw — both stakes were refunded
     // via `SettleDrawMatchAction`, no platform fee charged. Backend
@@ -267,6 +280,7 @@ export default function MatchShow({ match, messages }: MatchShowProps) {
                             iAmWinner={
                                 !isDraw && auth.user?.id === match.winner?.id
                             }
+                            animateEntrance={settledCardShouldAnimate}
                         />
                     </div>
                 )}
