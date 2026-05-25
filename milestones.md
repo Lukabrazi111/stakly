@@ -188,41 +188,52 @@ The three threads — trust signals, visual redesign, editing surface — are in
 
 The smallest unit of "I'm a real person, not a bot." Today users have a name and a username derived at registration; nothing else surfaces.
 
-- Avatar upload via Spatie Media Library (`profile-avatar` collection on `User`, web-safe MIME types, ~2 MB cap, automatic thumbnail conversion mirroring the chat attachment setup).
-- `/settings/profile` extended to manage avatar + bio + display name (the `bio` column exists in `User::$fillable` but has no UI today).
-- Default avatar stays the existing initials-on-gradient — keeps the look consistent for users who don't upload.
-- `UserProfileResource` exposes `avatar_url` and `avatar_thumb_url`. Avatars are public-by-nature so they live on the public disk (separate from chat attachments which need authenticated streaming).
-- Public profile renders the avatar in a circular frame with a magenta glow on hover.
+- **Avatar upload** via Spatie Media Library (`profile-avatar` collection on `User`, web-safe MIME types, ~2 MB cap, automatic 512×512 + 128×128 thumbnail conversion mirroring the chat attachment setup).
+- **Client-side crop modal** via `react-image-crop` (new npm dep, ~10 KB MIT-licensed, actively maintained — the standard React choice for circular avatar cropping). User picks a file → positions inside a circular preview → posts the cropped result. Confirmed at the moment of `npm install` per the project's library-discussion rule.
+- **`/settings/profile`** extended to manage avatar + bio. Display name reuses the existing `users.name` column (already editable via the Fortify-backed profile update flow); the form surfaces it cleanly alongside the new fields. No separate `display_name` column.
+- **Bio** is plain text with line breaks, escaped on render. Character cap ~500. Heavier anti-abuse (URL stripping, link sanitization) lives with M13 — Phase 1 just escapes and length-limits at the server boundary.
+- **Default avatar** stays the existing initials-on-gradient — keeps the look consistent for users who don't upload.
+- **`UserProfileResource`** exposes `avatar_url` and `avatar_thumb_url`. Avatars are public-by-nature so they live on the public disk (`storage/app/public/`) — separate from chat attachments which need authenticated streaming.
+- **Public profile** renders the avatar in a circular frame with a magenta glow on hover. Sibling surfaces that currently show user initials (chat bubbles, `profile-listing-row`, `profile-match-row`, etc.) start using the real avatar when one is set, falling back to the initials component when not.
 
 **Phase 2 — Profile redesign + stats hero**
 
 The visual restyle. Mirror the design tokens already in use on the match page and home hero.
 
-- Hero section: large circular avatar, display name in `font-display`, `@username` underneath, verification badges (Lichess / chess.com) next to the name with platform-tinted borders, `member since` pill, Active / Inactive mode pill.
-- Stats row directly below the hero: `Total matches`, `Win rate`, `Total volume staked`, `Disputes opened`. Pill-style cards with `bg-card/60 rounded-2xl border-border/60`, mirroring the `SettlementSummary` stat row.
-- Bio block below the stats — soft `bg-muted/40` card with the user's free-text bio if set, omitted if not.
+- **Hero section**: large circular avatar, display name in `font-display`, `@username` underneath, verification badges (Lichess / chess.com) next to the name with platform-tinted borders, `member since` pill, Active / Inactive mode pill.
+- **Stats row (public view — what other users see)** directly below the hero — two pill-style cards (`bg-card/60 rounded-2xl border-border/60`), mirroring the `SettlementSummary` stat row layout:
+  - **Total matches** (count of all settled matches). Activity signal — hard to exploit because it doesn't reveal skill.
+  - **Total volume staked** — sum of this user's own stake across all their matches (not pot total). Reads as "Bob has committed $X to matches."
+- **Stats row (own-profile view — additional cards visible only to the profile owner)**:
+  - **Win rate** computed as `wins / (wins + losses)` — draws excluded from the denominator. W–D–L breakdown shown inline beneath the percentage (e.g. "65% · 12W–3L–2D").
+- **Why win rate is owner-only**: showing it publicly creates a farming vector — strong players hunt low-win-rate opponents, concentrating losses on the weakest players (who already aren't winning). Skill matching is already handled at the listing layer (`skill_min` / `skill_max`), and Phase 3 surfaces the chess.com / Lichess rating from the linked account as the *public* skill signal. Stakly's own win rate adds zero trust value publicly and creates net-negative marketplace dynamics, so it stays private. Future Phase 4 opt-in can let users who explicitly want to brag flip their win rate visible.
+- All stats are **all-time** by default. A "last 90 days" toggle can be added later if usage data suggests recent activity reads more meaningfully than full history.
+- Dispute / cancellation stats live in Phase 3's trust signals row, NOT in this hero — those carry threshold logic and a different visual treatment.
+- **Bio block** below the stats — soft `bg-muted/40` card with the user's free-text bio if set, omitted if not.
 - Active listings and recent settled matches keep their existing data but get re-styled to match the new card shape.
 - Stakly-skin every new shadcn primitive at `components/ui/*` per the project rule.
 
 **Phase 3 — Trust signals**
 
-The "should I stake against this user?" surface.
+The "should I stake against this user?" surface. Layered ON the Phase 2 hero — Phase 2 shows the neutral activity counts, Phase 3 adds the threshold-coloured behavior signals and the public skill signal.
 
-- Verified chess platform handle(s) shown with the platform's logo + link out (so Alice can click through to verify Bob's chess.com / Lichess profile and check his actual rating / activity).
-- Live rating from chess.com / Lichess displayed next to the linked handle (cached via the existing `ChessComProfileClient` / `LichessProfileClient` — short TTL ~1h, queued refresh).
-- Win rate visualisation as a thin gradient bar (`bg-gradient-primary` width-proportional) so Alice can read "Bob wins 60% of matches" without doing the math.
-- Dispute rate badge — color-coded: green ≤2%, amber 2–10%, red >10%. Computed from `game_matches` where this user is a participant and status was Disputed / ManualReview.
-- Cancellation rate badge — same shape.
-- "You've played N matches against this user" widget shown only when an authenticated viewer is looking at someone else's profile and the pair has shared match history. Repeat-interaction trust signal.
+- **Verified chess platform handle(s)** shown with the platform's logo + link out (so Alice can click through to verify Bob's chess.com / Lichess profile and check his actual rating / activity).
+- **Live rating** from chess.com / Lichess displayed next to the linked handle (cached via the existing `ChessComProfileClient` / `LichessProfileClient` — short TTL ~1h, queued refresh). **This is the public skill signal** — Stakly's own win rate stays private per Phase 2.
+- **Dispute rate badge** — color-coded: green ≤ 2%, amber 2–10%, red > 10%. Computed from `game_matches` where this user is a participant and status was Disputed or ManualReview at any point. Thresholds are calibrated to "no real data yet"; revisit once Stakly has post-launch volume to compare against.
+- **Cancellation rate badge** — same shape, same threshold logic. Counts user-initiated cancellations (accepted by opponent), not auto-expiries.
+- **"You've played N matches against this user" widget** — shown only when an authenticated viewer is looking at someone else's profile AND the pair has played 2 or more shared matches. Match 1 isn't a notable signal (every match is a first match for someone); 2+ marks a repeat interaction worth surfacing. Hidden entirely when the viewer is on their own profile or has no shared history with the target.
+- **Win rate gradient bar (own-profile only)** — thin `bg-gradient-primary` width-proportional bar visualising the user's own win rate, rendered ONLY when the viewer IS the profile owner. Personal performance tracking without leaking the stat publicly.
+- All Phase 3 stats are **all-time** by default — matches Phase 2's window.
 
 **Phase 4 — Privacy + sharing**
 
-Letting users opt out of trust transparency carries its own tradeoff: Stakly's marketplace works *because* match history is public. So privacy toggles are narrow.
+Letting users opt out of trust transparency carries its own tradeoff: Stakly's marketplace works *because* dispute / cancellation behavior is public. So privacy toggles are narrow and biased toward keeping behavior signals visible.
 
-- User can hide stake amounts on their public match history (match outcome stays visible, just the dollar figure is redacted). Default: visible.
-- User can hide their dispute / cancellation rates entirely (with a "this user has chosen not to display their reputation stats" notice — privacy is itself a signal).
-- Profile share button: copy URL, QR code via existing `qrcode.react`.
-- Open Graph meta tags on `/users/{username}` so links shared into Discord / Telegram / Twitter render a card with the avatar, name, and "Stakly P2P chess staking" tagline.
+- **Hide stake amounts on public match history**: per-user toggle. Match outcome (settled / cancelled / disputed) stays visible, just the dollar figure is redacted. Default: visible.
+- **Hide dispute + cancellation rates**: per-user toggle, narrowly scoped to *only* the threshold-coloured trust badges from Phase 3. Total matches, total volume staked, member-since, and verified-account ratings stay visible regardless. Renders as "this user has chosen not to display their reputation rates" in place of the two badges — privacy is itself a (weaker) signal Alice can factor in. Default: visible.
+- **No public-win-rate toggle is needed in v1** — win rate is private by default per Phase 2 (farming-risk mitigation). If post-launch users push for the ability to brag publicly, an opt-in "Show my Stakly performance publicly" toggle becomes the natural extension, default off.
+- **Profile share button**: copy URL, QR code via existing `qrcode.react`.
+- **Open Graph meta tags** on `/users/{username}` so links shared into Discord / Telegram / Twitter render a card with the avatar, name, and "Stakly P2P chess staking" tagline. Static branded template first; dynamic per-user OG image (rendered server-side from the profile data) is a future polish.
 
 ### Not in M18
 
