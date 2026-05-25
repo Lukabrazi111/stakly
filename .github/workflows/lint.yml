@@ -33,13 +33,30 @@ jobs:
           composer install -q --no-ansi --no-interaction --no-scripts --no-progress --prefer-dist
           npm install
 
-      # All three quality gates run in `*:check` (non-autofix) mode. The
-      # previous setup ran `pint`, `prettier --write`, and `eslint --fix`
-      # — which silently rewrite files on CI then throw the changes away
-      # (auto-commit step was never enabled). `eslint --fix` was also the
-      # only one that could fail CI, masking style drift in PHP + frontend
+      # Wayfinder generates `@/routes/*` and `@/actions/*` TypeScript files
+      # at build/dev time (Vite plugin) — those paths are gitignored, so a
+      # fresh CI checkout doesn't have them. ESLint's typescript resolver
+      # needs them to resolve imports for the `import/order` rule; without
+      # them, ~35 imports get mis-grouped and the rule fails. Generate
+      # explicitly here. `--with-form` includes the `.form()` accessors
+      # that `<Form>` components rely on (vite plugin generates these by
+      # default, the artisan command does not).
+      - name: Copy Environment File
+        run: cp .env.example .env
+
+      - name: Generate Application Key
+        run: php artisan key:generate
+
+      - name: Generate Wayfinder routes
+        run: php artisan wayfinder:generate --with-form --no-interaction
+
+      # All quality gates run in `*:check` (non-autofix) mode. The previous
+      # setup ran `pint`, `prettier --write`, and `eslint --fix` — which
+      # silently rewrite files on CI then throw the changes away (auto-
+      # commit step was never enabled). `eslint --fix` was also the only
+      # one that could fail CI, masking style drift in PHP + frontend
       # behind a one-sided JS-only signal. Check variants exit non-zero on
-      # any drift so the failure mode is uniform across all three.
+      # any drift so the failure mode is uniform across all four.
 
       - name: Pint (check only)
         run: composer lint:check

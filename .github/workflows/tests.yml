@@ -19,7 +19,10 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        php-version: ['8.3', '8.4', '8.5']
+        # 8.3 dropped — composer.lock pins Symfony 8.x which requires
+        # `php >=8.4`. The `composer.json` `^8.3` constraint is stale and
+        # not satisfiable; testing on 8.3 fails at `composer install`.
+        php-version: ['8.4', '8.5']
 
     # Matches the local Sail Postgres 18 service. Tests rely on Postgres-
     # specific features (jsonb, AsEnumCollection casts, whereJsonContains
