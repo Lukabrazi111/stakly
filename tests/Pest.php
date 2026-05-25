@@ -21,6 +21,13 @@ use Tests\TestCase;
 
 pest()->extend(TestCase::class)
     ->use(RefreshDatabase::class)
+    ->beforeEach(function () {
+        // No-op `@vite(...)` directives during tests so a missing
+        // `public/build/manifest.json` (e.g. on CI where we skip the
+        // frontend build to keep the pipeline fast) doesn't 500 every
+        // Feature test that renders an Inertia/Blade response.
+        $this->withoutVite();
+    })
     ->in('Feature');
 
 /*
