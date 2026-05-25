@@ -28,3 +28,14 @@ yarn-error.log
 /.nova
 /.vscode
 /.zed
+
+# Claude Code — per-user local settings (commit `.claude/settings.json` and
+# `.claude/skills/`, ignore the `.local` overrides which are personal).
+.claude/settings.local.json
+
+# Per-environment Vite/Laravel overrides — `.env.local`, `.env.testing.local`, etc.
+.env.*.local
+
+# Vim swap files
+*.swp
+*.swo
