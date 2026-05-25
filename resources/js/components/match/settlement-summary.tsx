@@ -1,4 +1,5 @@
 import { Handshake, Trophy } from 'lucide-react';
+import { motion, useReducedMotion } from 'motion/react';
 import type { ReactNode } from 'react';
 import type { MatchPlayer } from '@/types';
 
@@ -26,9 +27,28 @@ export function SettlementSummary({
     payout,
     iAmWinner,
 }: SettlementSummaryProps) {
+    const reduceMotion = useReducedMotion();
+
+    // Entrance animation — mirrors the WaitingForGameCard "Game found"
+    // hand-off so the settled card lands with the same fade-and-rise feel
+    // as the "found" state right before it. Slightly longer + larger lift
+    // than the found card (0.3s / y=12 vs 0.2s / y=8) because this is the
+    // bigger reveal moment of the flow. Reduced-motion users get a static
+    // mount.
+    const entrance = reduceMotion
+        ? {}
+        : {
+              initial: { opacity: 0, y: 12 },
+              animate: { opacity: 1, y: 0 },
+              transition: { duration: 0.3, ease: 'easeOut' as const },
+          };
+
     if (winner === null) {
         return (
-            <section className="rounded-2xl border border-border/60 bg-card/60 p-6">
+            <motion.section
+                {...entrance}
+                className="rounded-2xl border border-border/60 bg-card/60 p-6"
+            >
                 <div className="mb-5 flex items-center gap-3">
                     <div className="rounded-full bg-muted p-2">
                         <Handshake className="size-5 text-muted-foreground" />
@@ -51,12 +71,13 @@ export function SettlementSummary({
                         accent
                     />
                 </dl>
-            </section>
+            </motion.section>
         );
     }
 
     return (
-        <section
+        <motion.section
+            {...entrance}
             className={`rounded-2xl border p-6 ${
                 iAmWinner
                     ? 'border-success/40 bg-success/5'
@@ -107,7 +128,7 @@ export function SettlementSummary({
                     accent={iAmWinner}
                 />
             </dl>
-        </section>
+        </motion.section>
     );
 }
 
