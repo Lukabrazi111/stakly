@@ -11,7 +11,7 @@ Frontend-first build. UI against real DB infrastructure + seeded fake data; back
 - **M17** — Admin operational tooling (Phase 1 widgets + Phase 2 in-panel notifications shipped; Phase 3 email deferred until needed)
 - **M13** — Chat anti-abuse + moderation [parked — design needs review]
 - **M14** — Outcome pipeline hardening (reframed from "automated outcome adapters" — observability + reliability + coverage of the auto-fetch pipeline; Slice A shipped, Phase 1 next)
-- **M18** — Profile expansion + redesign (trust surface, Stakly-fit visuals, editable identity)
+- **M18** — Profile expansion + redesign (Phases 1 + 2 shipped, Phase 3 Slice A shipped — link-out + schema normalisation; **next: Phase 3 Slice B — dispute + cancellation trust badges**, then Slice C, then Phase 4)
 - **M15** — Multi-game expansion (FACEIT, OpenDota, Riot adapters)
 - **M9** — Chain Integration [paused — pending crypto-payment-gateway specialist]
 
@@ -182,9 +182,32 @@ Today's `/users/{username}` page is functional but minimal — name, username, o
 
 The three threads — trust signals, visual redesign, editing surface — are interleaved, not sequential: every phase touches the layer that makes sense for it.
 
+### Resume here
+
+**Next session: M18 Phase 3 Slice B — dispute + cancellation trust badges.** Locked decisions (per the slice questions earlier):
+- Thresholds: green ≤ 2%, amber 2–10%, red > 10% — calibrated to "no real data yet" guess; revisit post-launch.
+- Min sample: hide both badges below **5 resolved matches** (show "Not enough matches yet" placeholder instead).
+- Dispute rate denominator = total resolved matches (Settled + Cancelled + Disputed + ManualReview); numerator = matches where this user is a participant AND status was Disputed OR ManualReview at any point.
+- Cancellation rate counts user-INITIATED accepted cancellations (`cancellation_requested_by` = user AND status = Cancelled). Auto-expiries don't count.
+
+Concrete starting tasks:
+1. Backend — extend the stats aggregation in `UserController::show` with two more CASE counters and the resolved-match total. Decide whether the percentages live alongside `total_matches` / `total_volume` on the `stats` payload or as a sibling `trust` key.
+2. `ProfileStats` type — add the `dispute_rate` / `cancellation_rate` shape (likely `{ percentage: number, total: number } | null` where null = below min sample).
+3. New `TrustBadgesSection` component below `StatsCard`. Color tokens already exist (`success`, `warning`, `destructive`).
+4. Feature tests for both rates: threshold colors, min-sample hiding, denominator correctness, cancellation initiator filter.
+
+### Demo seed data ready
+
+`vendor/bin/sail artisan migrate:fresh --seed` populates ready-to-view profiles:
+- `testuser` — 12 settled matches, 73% win rate (8W·1D·3L), $2,000 volume, both chess.com + Lichess linked.
+- 3 marketplace users with 5–8 matches each (~14% to ~75% win rates).
+- ~17 marketplace users stay match-empty so the empty-state UI is also testable.
+
+Wallet ledger invariant holds across seed data — every match settles via the real `SettleMatchAction` / `SettleDrawMatchAction`.
+
 ### Phases
 
-**Phase 1 — Editable identity + avatar**
+**Phase 1 — Editable identity + avatar** ✅ shipped 2026-05-25
 
 The smallest unit of "I'm a real person, not a bot." Today users have a name and a username derived at registration; nothing else surfaces.
 
@@ -196,31 +219,50 @@ The smallest unit of "I'm a real person, not a bot." Today users have a name and
 - **`UserProfileResource`** exposes `avatar_url` and `avatar_thumb_url`. Avatars are public-by-nature so they live on the public disk (`storage/app/public/`) — separate from chat attachments which need authenticated streaming.
 - **Public profile** renders the avatar in a circular frame with a magenta glow on hover. Sibling surfaces that currently show user initials (chat bubbles, `profile-listing-row`, `profile-match-row`, etc.) start using the real avatar when one is set, falling back to the initials component when not.
 
-**Phase 2 — Profile redesign + stats hero**
+**Phase 1 polish — propagation + remove avatar** ✅ shipped 2026-05-25
 
-The visual restyle. Mirror the design tokens already in use on the match page and home hero.
+Closed the gap between "uploaded" and "visible everywhere":
+- `ListingResource` + `GameMatchResource` (creator / taker / winner) expose `avatar_thumb_url`; the 6 list components (chat-message-bubble, match-info-card, match-list-row, listing-row, listing-card, profile-match-row) render `<AvatarImage>` when present, falling back to gradient initials when null.
+- `DELETE /settings/profile/avatar` route + ghost-variant "Remove" button on the settings page (visible only when an avatar exists and no crop preview is staged). Idempotent — clearing an empty collection is a no-op.
 
-- **Hero section**: large circular avatar, display name in `font-display`, `@username` underneath, verification badges (Lichess / chess.com) next to the name with platform-tinted borders, `member since` pill, Active / Inactive mode pill.
-- **Stats row (public view — what other users see)** directly below the hero — two pill-style cards (`bg-card/60 rounded-2xl border-border/60`), mirroring the `SettlementSummary` stat row layout:
-  - **Total matches** (count of all settled matches). Activity signal — hard to exploit because it doesn't reveal skill.
-  - **Total volume staked** — sum of this user's own stake across all their matches (not pot total). Reads as "Bob has committed $X to matches."
-- **Stats row (own-profile view — additional cards visible only to the profile owner)**:
-  - **Win rate** computed as `wins / (wins + losses)` — draws excluded from the denominator. W–D–L breakdown shown inline beneath the percentage (e.g. "65% · 12W–3L–2D").
+**Phase 2 — Stats hero** ✅ shipped 2026-05-25
+
+What landed: the stats row directly. Broader visual restyle (hero section, Active Mode pill, verification badges, re-styled listings/matches cards) deferred to a future polish slice — the stats row carries the highest information value and the existing `ProfileHeader` already looks consistent with the Stakly design system.
+
+Shipped:
+- **Stats row (public view)** — two tiles below the profile header:
+  - **Total matches** (settled-only count). Activity signal — hard to exploit because it doesn't reveal skill.
+  - **Total volume staked** — sum of this user's own stake across settled matches (not pot total). `Intl.NumberFormat` with USD + 0 fraction digits.
+- **Stats row (own-profile view — extra tile)**:
+  - **Win rate** computed as `wins / (wins + losses)` — draws excluded from denominator. Percentage rendered as `67%` (or `—` when no decided matches), with `12W · 1D · 5L` breakdown underneath in muted text.
+- **Empty state** — when `total_matches === 0`, each tile renders the existing dashed-border "No matches yet" variant.
 - **Why win rate is owner-only**: showing it publicly creates a farming vector — strong players hunt low-win-rate opponents, concentrating losses on the weakest players (who already aren't winning). Skill matching is already handled at the listing layer (`skill_min` / `skill_max`), and Phase 3 surfaces the chess.com / Lichess rating from the linked account as the *public* skill signal. Stakly's own win rate adds zero trust value publicly and creates net-negative marketplace dynamics, so it stays private. Future Phase 4 opt-in can let users who explicitly want to brag flip their win rate visible.
-- All stats are **all-time** by default. A "last 90 days" toggle can be added later if usage data suggests recent activity reads more meaningfully than full history.
-- Dispute / cancellation stats live in Phase 3's trust signals row, NOT in this hero — those carry threshold logic and a different visual treatment.
-- **Bio block** below the stats — soft `bg-muted/40` card with the user's free-text bio if set, omitted if not.
-- Active listings and recent settled matches keep their existing data but get re-styled to match the new card shape.
-- Stakly-skin every new shadcn primitive at `components/ui/*` per the project rule.
+- Backend aggregation is a single Eloquent query: `forParticipant + Settled` + listings join + CASE-based W/D/L counters; `win_rate` only included on the resource when `$isOwnProfile && total_matches > 0`.
+- All stats are **all-time**. A "last 90 days" toggle can be added later if usage data suggests recent activity reads more meaningfully.
+
+Deferred to a polish slice (not blocking Phase 3):
+- Hero section restyle (verification badges next to name with platform-tinted borders, `member since` pill, Active / Inactive mode pill).
+- Restyle existing Open listings + Match history cards to match the new pill-style language.
+- Stakly-skin sweep across any newly-touched shadcn primitives.
 
 **Phase 3 — Trust signals**
 
-The "should I stake against this user?" surface. Layered ON the Phase 2 hero — Phase 2 shows the neutral activity counts, Phase 3 adds the threshold-coloured behavior signals and the public skill signal.
+The "should I stake against this user?" surface. Layered ON the Phase 2 hero — Phase 2 shows the neutral activity counts, Phase 3 adds the threshold-coloured behavior signals and the public skill signal. Splitting into three slices to keep each reviewable.
 
-- **Verified chess platform handle(s)** shown with the platform's logo + link out (so Alice can click through to verify Bob's chess.com / Lichess profile and check his actual rating / activity).
-- **Live rating** from chess.com / Lichess displayed next to the linked handle (cached via the existing `ChessComProfileClient` / `LichessProfileClient` — short TTL ~1h, queued refresh). **This is the public skill signal** — Stakly's own win rate stays private per Phase 2.
+**Slice A — link-out + schema normalisation** ✅ shipped 2026-05-25
+
+- **Verified chess handles link out**: chess.com / Lichess usernames on the public profile are now anchors to the external profile (`https://www.chess.com/member/{user}` / `https://lichess.org/@/{user}`), opening in a new tab with a small `ExternalLink` icon. The click-through is the public skill signal — Alice sees the full external profile (rating + history + activity) instead of an inline rating number, which both delivers more info AND avoids the API-integration / cache / refresh-job complexity. If users push for an inline rating later it slots into the new schema cleanly.
+- **Linked-account schema normalised out of `users`**: `chess_com_username` / `chess_com_verified_at` / `lichess_username` / `lichess_verified_at` and the 4 `pending_verification_*` columns moved into two new tables — `linked_accounts` (UNIQUE(user_id, provider) + UNIQUE(provider, username)) and `pending_verifications` (UNIQUE(user_id), TTL-bound). New `LinkedAccount` + `PendingVerification` models; `User` keeps backwards-compat accessors that read off the eager-loaded `linkedAccounts` relation so external callers (resources, infolists, controllers) don't break. Done now while we're pre-real-users — M15 multi-game expansion adds provider rows now instead of widening the `users` table.
+- Live rating display considered + dropped: the link-out covers the trust need without an API integration. Can revisit if usage data calls for inline ratings.
+
+**Slice B — Trust badges (next)**
+
 - **Dispute rate badge** — color-coded: green ≤ 2%, amber 2–10%, red > 10%. Computed from `game_matches` where this user is a participant and status was Disputed or ManualReview at any point. Thresholds are calibrated to "no real data yet"; revisit once Stakly has post-launch volume to compare against.
 - **Cancellation rate badge** — same shape, same threshold logic. Counts user-initiated cancellations (accepted by opponent), not auto-expiries.
+- **Minimum sample**: hide both badges below 5 resolved matches (show "Not enough matches yet" placeholder). 5 is the cutoff for noise-out-the-extremes; 1-match users showing 100% dispute rate reads scarier than reality.
+
+**Slice C — Repeat-pair + win-rate bar**
+
 - **"You've played N matches against this user" widget** — shown only when an authenticated viewer is looking at someone else's profile AND the pair has played 2 or more shared matches. Match 1 isn't a notable signal (every match is a first match for someone); 2+ marks a repeat interaction worth surfacing. Hidden entirely when the viewer is on their own profile or has no shared history with the target.
 - **Win rate gradient bar (own-profile only)** — thin `bg-gradient-primary` width-proportional bar visualising the user's own win rate, rendered ONLY when the viewer IS the profile owner. Personal performance tracking without leaking the stat publicly.
 - All Phase 3 stats are **all-time** by default — matches Phase 2's window.

@@ -32,7 +32,8 @@ class LinkedAccountController extends Controller
 {
     public function edit(Request $request): Response
     {
-        $user = $request->user();
+        $user = $request->user()->load(['linkedAccounts', 'pendingVerification']);
+        $pending = $user->pendingVerification;
 
         return Inertia::render('settings/linked-accounts', [
             'providers' => [
@@ -53,11 +54,11 @@ class LinkedAccountController extends Controller
                     'targetFieldInstructions' => 'Settings → Edit Profile → Bio',
                 ],
             ],
-            'pending' => $user->pending_verification_provider ? [
-                'provider' => $user->pending_verification_provider,
-                'username' => $user->pending_verification_username,
-                'code' => $user->pending_verification_code,
-                'expiresAt' => $user->pending_verification_expires_at?->toIso8601String(),
+            'pending' => $pending ? [
+                'provider' => $pending->provider->value,
+                'username' => $pending->username,
+                'code' => $pending->code,
+                'expiresAt' => $pending->expires_at->toIso8601String(),
             ] : null,
         ]);
     }
@@ -102,12 +103,10 @@ class LinkedAccountController extends Controller
 
     public function destroy(Request $request, LinkedAccountProvider $provider): RedirectResponse
     {
-        $user = $request->user();
-
-        $user->forceFill([
-            "{$provider->value}_username" => null,
-            "{$provider->value}_verified_at" => null,
-        ])->save();
+        $request->user()
+            ->linkedAccounts()
+            ->where('provider', $provider->value)
+            ->delete();
 
         Inertia::flash('toast', [
             'type' => 'success',
@@ -118,19 +117,14 @@ class LinkedAccountController extends Controller
     }
 
     /**
-     * Cancel an in-flight verification — nulls the pending columns so the
+     * Cancel an in-flight verification — deletes the pending row so the
      * user can start again with a different username. Used when the user
      * mistyped their handle and wants to correct it without waiting for the
      * 15-minute TTL.
      */
     public function cancelPending(Request $request): RedirectResponse
     {
-        $request->user()->forceFill([
-            'pending_verification_provider' => null,
-            'pending_verification_username' => null,
-            'pending_verification_code' => null,
-            'pending_verification_expires_at' => null,
-        ])->save();
+        $request->user()->pendingVerification()->delete();
 
         return to_route('linked-accounts.edit');
     }

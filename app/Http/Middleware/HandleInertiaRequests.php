@@ -37,6 +37,13 @@ class HandleInertiaRequests extends Middleware
     {
         $user = $request->user();
 
+        // Eager-load `linkedAccounts` once so the backwards-compat
+        // accessors on User (`chess_com_username`, etc.) plus the
+        // `has_chess_link` / `linked_platforms` computed flags below all
+        // read from the same loaded collection — no N+1 across the hot
+        // Inertia shared-data path.
+        $user?->load('linkedAccounts');
+
         return [
             ...parent::share($request),
             'name' => config('app.name'),
@@ -58,15 +65,16 @@ class HandleInertiaRequests extends Middleware
                     // `linked_platforms` below for per-listing-platform UI.
                     'has_chess_link' => $user->hasVerifiedChessLink(),
                     // M8 Phase 5 Slice B — the verified chess providers the
-                    // user has linked. Frontend reads this to render
-                    // platform-specific Take button copy on the listing
-                    // detail page and to show/hide the create-form platform
-                    // picker. Listed in the order the LinkedAccountProvider
-                    // enum defines.
-                    'linked_platforms' => array_values(array_filter([
-                        $user->chess_com_verified_at !== null ? 'chess_com' : null,
-                        $user->lichess_verified_at !== null ? 'lichess' : null,
-                    ])),
+                    // user has linked, ordered to match
+                    // `App\Enums\LinkedAccountProvider`. Frontend reads this
+                    // to render platform-specific Take button copy + the
+                    // create-form platform picker.
+                    'linked_platforms' => $user->linkedAccounts
+                        ->sortBy(fn ($la) => $la->provider->value)
+                        ->pluck('provider')
+                        ->map(fn ($provider) => $provider->value)
+                        ->values()
+                        ->all(),
                 ] : null,
             ],
             'status' => fn () => $request->session()->get('status'),

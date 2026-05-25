@@ -461,49 +461,12 @@ test('match creation snapshots only the verified provider per side', function ()
         ->and($match->providerSnapshots()->count())->toBe(3);
 });
 
-test('match creation does NOT snapshot an unverified-but-set username on the OTHER provider', function () {
-    // Verification state matters: a `{provider}_username` value with a null
-    // `{provider}_verified_at` is treated as "not linked" — must NOT be
-    // snapshotted as an evidence anchor. Otherwise a user could set
-    // arbitrary handles via tinker / a buggy migration / a leaked admin
-    // path and have them appear on match rows as if verified.
-    //
-    // Test setup: creator is verified on Lichess (so the create-gate
-    // passes) but has an unverified-but-set chess.com username (the field
-    // we expect to be SKIPPED).
-    $creator = User::factory()
-        ->active()
-        ->withLichess('alice-lichess')
-        ->create();
-    // Direct attribute set bypassing the chess.com verification flow:
-    $creator->chess_com_username = 'unverified-handle';
-    $creator->save();
-    Wallet::deposit($creator, '500', reference: "test:deposit:creator:{$creator->id}");
-
-    // Lock the listing to Lichess — matches the default Lichess-linked
-    // takerWithBalance() so the take-gate passes and the snapshot logic
-    // we're testing actually runs.
-    $listing = Listing::factory()->open()->forLichess()->for($creator)->state([
-        'stake_amount' => '100',
-    ])->create();
-    Wallet::hold(
-        user: $creator,
-        amount: '100',
-        listing: $listing,
-        reference: "listing-create:{$listing->id}",
-    );
-
-    $taker = takerWithBalance();
-
-    $this->actingAs($taker)->postJson("/listings/{$listing->id}/take")->assertRedirect();
-
-    $match = GameMatch::query()->where('listing_id', $listing->id)->firstOrFail();
-
-    // Lichess snapshot present (verified); chess.com snapshot SKIPPED
-    // (unverified despite the column having a value).
-    expect($match->snapshotUsername(GameMatch::SIDE_CREATOR, LinkedAccountProvider::Lichess))->toBe('alice-lichess')
-        ->and($match->snapshotUsername(GameMatch::SIDE_CREATOR, LinkedAccountProvider::ChessCom))->toBeNull();
-});
+// NOTE: the M8 "unverified-but-set username on the OTHER provider" test
+// was deleted in the M18 Phase 3 normalisation refactor. With the new
+// `linked_accounts` table that scenario can't exist by construction — a
+// row in `linked_accounts` always implies verification (the column
+// `verified_at` is NOT NULL). The boundary is now structural, not
+// behavioural; no test needed.
 
 // ─── BCMath round-trip on the taker hold ────────────────────────────────────
 

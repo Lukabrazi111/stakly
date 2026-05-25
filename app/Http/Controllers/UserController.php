@@ -42,6 +42,11 @@ class UserController extends Controller
     {
         abort_if($user->is_platform, 404);
 
+        // Eager-load linked accounts so the backwards-compat accessors on
+        // `User` (chess_com_username / lichess_username / etc.) read from
+        // the loaded collection — `UserProfileResource` reads each one.
+        $user->load('linkedAccounts');
+
         $isOwnProfile = $request->user()?->id === $user->id;
 
         $openListings = $user->listings()

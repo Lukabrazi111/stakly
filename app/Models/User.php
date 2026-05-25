@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\LinkedAccountProvider;
 use Database\Factories\UserFactory;
 use Filament\Models\Contracts\FilamentUser;
 use Filament\Panel;
@@ -11,6 +12,7 @@ use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Laravel\Fortify\TwoFactorAuthenticatable;
@@ -28,21 +30,12 @@ use Spatie\Permission\Traits\HasRoles;
     'password',
     'tron_address',
     'is_active_mode',
-    'chess_com_username',
-    'chess_com_verified_at',
-    'lichess_username',
-    'lichess_verified_at',
-    'pending_verification_provider',
-    'pending_verification_username',
-    'pending_verification_code',
-    'pending_verification_expires_at',
 ])]
 #[Hidden([
     'password',
     'two_factor_secret',
     'two_factor_recovery_codes',
     'remember_token',
-    'pending_verification_code',
 ])]
 class User extends Authenticatable implements FilamentUser, HasMedia, MustVerifyEmail
 {
@@ -100,9 +93,6 @@ class User extends Authenticatable implements FilamentUser, HasMedia, MustVerify
             'usdt_balance' => 'decimal:6',
             'is_platform' => 'boolean',
             'is_active_mode' => 'boolean',
-            'chess_com_verified_at' => 'datetime',
-            'lichess_verified_at' => 'datetime',
-            'pending_verification_expires_at' => 'datetime',
         ];
     }
 
@@ -131,6 +121,29 @@ class User extends Authenticatable implements FilamentUser, HasMedia, MustVerify
     }
 
     /**
+     * Verified external game-account links (M18 Phase 3 prep — replaces the
+     * inline `chess_com_*` / `lichess_*` columns). One row per (user_id,
+     * provider) pair. Callers that read `chess_com_username` /
+     * `lichess_username` / `chess_com_verified_at` / `lichess_verified_at`
+     * via the legacy accessors below should eager-load this relation to
+     * avoid N+1 (e.g. `$user->load('linkedAccounts')`).
+     */
+    public function linkedAccounts(): HasMany
+    {
+        return $this->hasMany(LinkedAccount::class);
+    }
+
+    /**
+     * In-flight bio-code verification state (transient). At most one row
+     * per user — the verification flow upserts on (user_id). Replaces the
+     * inline `pending_verification_*` columns.
+     */
+    public function pendingVerification(): HasOne
+    {
+        return $this->hasOne(PendingVerification::class);
+    }
+
+    /**
      * Has the user verified at least one chess provider account? Gates both
      * sides of marketplace participation (M8 Phase 5 take-gate +
      * create-gate). Permissive — one link unlocks both create and take —
@@ -138,11 +151,68 @@ class User extends Authenticatable implements FilamentUser, HasMedia, MustVerify
      * sufficient to support evidence resolution. Phase 5's
      * `listings.platform` column tightens this to "verified on the
      * listing's specific platform."
+     *
+     * Reads from the loaded `linkedAccounts` collection when present
+     * (avoids an extra query on Inertia shared-data hot path); falls back
+     * to a relation query when not loaded. Callers that hit this in tight
+     * loops should `->load('linkedAccounts')` first.
      */
     public function hasVerifiedChessLink(): bool
     {
-        return $this->lichess_verified_at !== null
-            || $this->chess_com_verified_at !== null;
+        if ($this->relationLoaded('linkedAccounts')) {
+            return $this->linkedAccounts->isNotEmpty();
+        }
+
+        return $this->linkedAccounts()->exists();
+    }
+
+    /**
+     * Backwards-compat accessor — reads the chess.com username off the
+     * `linkedAccounts` relation. External callers still write
+     * `$user->chess_com_username` after the M18 normalisation refactor.
+     * Eager-load `linkedAccounts` first to keep this query-free.
+     */
+    protected function chessComUsername(): Attribute
+    {
+        return Attribute::get(
+            fn (): ?string => $this->linkedAccountFor(LinkedAccountProvider::ChessCom)?->username,
+        );
+    }
+
+    protected function chessComVerifiedAt(): Attribute
+    {
+        return Attribute::get(
+            fn () => $this->linkedAccountFor(LinkedAccountProvider::ChessCom)?->verified_at,
+        );
+    }
+
+    protected function lichessUsername(): Attribute
+    {
+        return Attribute::get(
+            fn (): ?string => $this->linkedAccountFor(LinkedAccountProvider::Lichess)?->username,
+        );
+    }
+
+    protected function lichessVerifiedAt(): Attribute
+    {
+        return Attribute::get(
+            fn () => $this->linkedAccountFor(LinkedAccountProvider::Lichess)?->verified_at,
+        );
+    }
+
+    /**
+     * Internal helper for the backwards-compat accessors. Reads from the
+     * loaded collection when available, falls back to a one-shot query.
+     */
+    private function linkedAccountFor(LinkedAccountProvider $provider): ?LinkedAccount
+    {
+        if ($this->relationLoaded('linkedAccounts')) {
+            return $this->linkedAccounts->firstWhere('provider', $provider);
+        }
+
+        return $this->linkedAccounts()
+            ->where('provider', $provider)
+            ->first();
     }
 
     /**

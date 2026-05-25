@@ -2,6 +2,8 @@
 
 namespace Database\Factories;
 
+use App\Enums\LinkedAccountProvider;
+use App\Models\LinkedAccount;
 use App\Models\User;
 use App\Support\MockTronAddress;
 use Illuminate\Database\Eloquent\Factories\Factory;
@@ -96,16 +98,21 @@ class UserFactory extends Factory
     }
 
     /**
-     * Mark the user as having a verified Lichess account. `lichess_username`
-     * is unique at the DB level, so callers needing multiple Lichess-verified
-     * users in one test should pass distinct usernames.
+     * Mark the user as having a verified Lichess account by inserting a
+     * `LinkedAccount` row after creation. `(provider, username)` is unique
+     * at the DB level, so callers needing multiple Lichess-verified users
+     * in one test should pass distinct usernames.
      */
     public function withLichess(?string $username = null): static
     {
-        return $this->state(fn (array $attributes) => [
-            'lichess_username' => $username ?? Str::slug(fake()->unique()->userName()),
-            'lichess_verified_at' => now(),
-        ]);
+        return $this->afterCreating(function (User $user) use ($username) {
+            LinkedAccount::create([
+                'user_id' => $user->id,
+                'provider' => LinkedAccountProvider::Lichess->value,
+                'username' => $username ?? Str::slug(fake()->unique()->userName()),
+                'verified_at' => now(),
+            ]);
+        });
     }
 
     /**
@@ -114,10 +121,14 @@ class UserFactory extends Factory
      */
     public function withChessCom(?string $username = null): static
     {
-        return $this->state(fn (array $attributes) => [
-            'chess_com_username' => $username ?? Str::slug(fake()->unique()->userName()),
-            'chess_com_verified_at' => now(),
-        ]);
+        return $this->afterCreating(function (User $user) use ($username) {
+            LinkedAccount::create([
+                'user_id' => $user->id,
+                'provider' => LinkedAccountProvider::ChessCom->value,
+                'username' => $username ?? Str::slug(fake()->unique()->userName()),
+                'verified_at' => now(),
+            ]);
+        });
     }
 
     /**

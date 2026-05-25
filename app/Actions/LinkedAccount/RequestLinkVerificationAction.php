@@ -3,21 +3,23 @@
 namespace App\Actions\LinkedAccount;
 
 use App\Enums\LinkedAccountProvider;
+use App\Models\LinkedAccount;
+use App\Models\PendingVerification;
 use App\Models\User;
 use Illuminate\Validation\ValidationException;
 
 /**
- * Step 1 of the bio-code linking flow: generate a code, store it as
- * pending verification state on the user, return it for display.
+ * Step 1 of the bio-code linking flow: generate a code, upsert a
+ * `PendingVerification` row for the user, return the code for display.
  *
  * Throws `ValidationException` on three rejectable conditions:
  *   - username doesn't match the provider's allowed format
  *   - another Stakly user already has this username verified
  *   - this user is already verified for this provider (must unlink first)
  *
- * Starting a verification overwrites any existing pending state — a user
- * who started a chess.com flow and then changes their mind to Lichess
- * doesn't get stuck. Code TTL is configurable via
+ * Starting a verification upserts on (user_id) — a user who started a
+ * chess.com flow and then changes their mind to Lichess overwrites the
+ * pending row cleanly, no stuck state. Code TTL is configurable via
  * `stakly.link_verification_ttl_minutes` (default 15).
  */
 class RequestLinkVerificationAction
@@ -33,12 +35,19 @@ class RequestLinkVerificationAction
         $code = $this->generateCode();
         $ttlMinutes = (int) config('stakly.link_verification_ttl_minutes', 15);
 
-        $user->forceFill([
-            'pending_verification_provider' => $provider->value,
-            'pending_verification_username' => $username,
-            'pending_verification_code' => $code,
-            'pending_verification_expires_at' => now()->addMinutes($ttlMinutes),
-        ])->save();
+        // Upsert on user_id — the UNIQUE constraint on
+        // `pending_verifications.user_id` ensures at most one in-flight
+        // verification per user. `updateOrCreate` translates cleanly to
+        // an INSERT … ON CONFLICT under the hood.
+        PendingVerification::updateOrCreate(
+            ['user_id' => $user->id],
+            [
+                'provider' => $provider->value,
+                'username' => $username,
+                'code' => $code,
+                'expires_at' => now()->addMinutes($ttlMinutes),
+            ],
+        );
 
         return $code;
     }
@@ -59,9 +68,11 @@ class RequestLinkVerificationAction
 
     private function assertUserNotAlreadyVerified(LinkedAccountProvider $provider, User $user): void
     {
-        $verifiedColumn = "{$provider->value}_verified_at";
+        $alreadyVerified = $user->linkedAccounts()
+            ->where('provider', $provider->value)
+            ->exists();
 
-        if ($user->{$verifiedColumn} !== null) {
+        if ($alreadyVerified) {
             throw ValidationException::withMessages([
                 'provider' => "You've already linked a {$provider->displayName()} account. Unlink it first to link a different one.",
             ]);
@@ -70,13 +81,10 @@ class RequestLinkVerificationAction
 
     private function assertUsernameNotClaimed(LinkedAccountProvider $provider, string $username, User $user): void
     {
-        $usernameColumn = "{$provider->value}_username";
-        $verifiedColumn = "{$provider->value}_verified_at";
-
-        $claimed = User::query()
-            ->where($usernameColumn, $username)
-            ->whereNotNull($verifiedColumn)
-            ->where('id', '!=', $user->id)
+        $claimed = LinkedAccount::query()
+            ->where('provider', $provider->value)
+            ->where('username', $username)
+            ->where('user_id', '!=', $user->id)
             ->exists();
 
         if ($claimed) {

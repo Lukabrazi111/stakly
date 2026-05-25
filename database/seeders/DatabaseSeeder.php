@@ -24,11 +24,20 @@ class DatabaseSeeder extends Seeder
         // `/users/testuser` without depending on faker's random output.
         // `->active()` so manual UI testing sees the user as discoverable
         // (column default is `false`; production new users opt in).
-        $test = User::factory()->active()->create([
-            'name' => 'Test User',
-            'username' => 'testuser',
-            'email' => 'test@example.com',
-        ]);
+        // `->withLichess/withChessCom` so the linked-accounts section on
+        // the public profile renders populated rows out-of-the-box; same
+        // reason `MatchHistorySeeder` can settle real matches involving
+        // testuser (matchmaking gates require a verified provider).
+        $test = User::factory()
+            ->active()
+            ->withLichess('testuser-lichess')
+            ->withChessCom('testuser-chesscom')
+            ->create([
+                'name' => 'Test User',
+                'username' => 'testuser',
+                'email' => 'test@example.com',
+                'bio' => "Hi! I'm the seeded test profile.\nNew here — let's play.",
+            ]);
 
         // Seed test user balance through the service (never set
         // `usdt_balance` directly — keeps ledger + balance in sync).
@@ -38,5 +47,6 @@ class DatabaseSeeder extends Seeder
 
         $this->call(AdminUserSeeder::class);
         $this->call(ListingSeeder::class);
+        $this->call(MatchHistorySeeder::class);
     }
 }

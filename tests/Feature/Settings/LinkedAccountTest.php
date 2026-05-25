@@ -1,12 +1,14 @@
 <?php
 
+use App\Enums\LinkedAccountProvider;
+use App\Models\PendingVerification;
 use App\Models\User;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\RateLimiter;
 
 /*
 |--------------------------------------------------------------------------
-| LinkedAccountController (M8 Phase 1)
+| LinkedAccountController (M8 Phase 1, refactored M18 Phase 3)
 |--------------------------------------------------------------------------
 |
 | HTTP-level tests for /settings/linked-accounts — covers route auth,
@@ -45,10 +47,7 @@ test('settings page renders for verified users', function () {
 });
 
 test('settings page surfaces existing linked usernames', function () {
-    $user = User::factory()->create([
-        'chess_com_username' => 'alice',
-        'chess_com_verified_at' => now(),
-    ]);
+    $user = User::factory()->withChessCom('alice')->create();
 
     $this->actingAs($user)
         ->get('/settings/linked-accounts')
@@ -59,11 +58,13 @@ test('settings page surfaces existing linked usernames', function () {
 });
 
 test('settings page surfaces pending verification state', function () {
-    $user = User::factory()->create([
-        'pending_verification_provider' => 'chess_com',
-        'pending_verification_username' => 'alice',
-        'pending_verification_code' => 'stakly-ABCDEFGHJK',
-        'pending_verification_expires_at' => now()->addMinutes(15),
+    $user = User::factory()->create();
+    PendingVerification::create([
+        'user_id' => $user->id,
+        'provider' => LinkedAccountProvider::ChessCom->value,
+        'username' => 'alice',
+        'code' => 'stakly-ABCDEFGHJK',
+        'expires_at' => now()->addMinutes(15),
     ]);
 
     $this->actingAs($user)
@@ -88,10 +89,11 @@ test('store generates a code and stores pending state', function () {
         ->assertSessionHasNoErrors()
         ->assertRedirect('/settings/linked-accounts');
 
-    $user->refresh();
-    expect($user->pending_verification_provider)->toBe('chess_com');
-    expect($user->pending_verification_username)->toBe('alice');
-    expect($user->pending_verification_code)->toStartWith('stakly-');
+    $pending = $user->fresh()->pendingVerification;
+    expect($pending)->not->toBeNull();
+    expect($pending->provider)->toBe(LinkedAccountProvider::ChessCom);
+    expect($pending->username)->toBe('alice');
+    expect($pending->code)->toStartWith('stakly-');
 });
 
 test('store rejects invalid provider', function () {
@@ -117,10 +119,7 @@ test('store rejects username with invalid format', function () {
 });
 
 test('store rejects when username is already linked by another user', function () {
-    User::factory()->create([
-        'chess_com_username' => 'taken',
-        'chess_com_verified_at' => now(),
-    ]);
+    User::factory()->withChessCom('taken')->create();
 
     $secondUser = User::factory()->create();
 
@@ -135,11 +134,13 @@ test('store rejects when username is already linked by another user', function (
 // ─── verify (POST) ──────────────────────────────────────────────────────
 
 test('verify happy path: marks user verified + clears pending', function () {
-    $user = User::factory()->create([
-        'pending_verification_provider' => 'chess_com',
-        'pending_verification_username' => 'alice',
-        'pending_verification_code' => 'stakly-ABCDEFGHJK',
-        'pending_verification_expires_at' => now()->addMinutes(15),
+    $user = User::factory()->create();
+    PendingVerification::create([
+        'user_id' => $user->id,
+        'provider' => LinkedAccountProvider::ChessCom->value,
+        'username' => 'alice',
+        'code' => 'stakly-ABCDEFGHJK',
+        'expires_at' => now()->addMinutes(15),
     ]);
 
     Http::fake([
@@ -157,7 +158,7 @@ test('verify happy path: marks user verified + clears pending', function () {
     $user->refresh();
     expect($user->chess_com_username)->toBe('alice');
     expect($user->chess_com_verified_at)->not->toBeNull();
-    expect($user->pending_verification_provider)->toBeNull();
+    expect($user->pendingVerification)->toBeNull();
 });
 
 test('verify with no pending state redirects without crashing', function () {
@@ -187,19 +188,17 @@ test('verify is throttled at 6 requests per minute', function () {
 
 // ─── unlink (DELETE) ────────────────────────────────────────────────────
 
-test('unlink clears verified columns for the named provider only', function () {
-    $user = User::factory()->create([
-        'chess_com_username' => 'alice',
-        'chess_com_verified_at' => now(),
-        'lichess_username' => 'alice_lichess',
-        'lichess_verified_at' => now(),
-    ]);
+test('unlink clears the verified link for the named provider only', function () {
+    $user = User::factory()
+        ->withChessCom('alice')
+        ->withLichess('alice_lichess')
+        ->create();
 
     $this->actingAs($user)
         ->delete('/settings/linked-accounts/chess_com')
         ->assertRedirect('/settings/linked-accounts');
 
-    $user->refresh();
+    $user->refresh()->load('linkedAccounts');
     expect($user->chess_com_username)->toBeNull();
     expect($user->chess_com_verified_at)->toBeNull();
     // Lichess survives.
@@ -217,45 +216,43 @@ test('unlink with unknown provider 404s via enum route binding', function () {
 
 // ─── cancelPending (DELETE /pending) ─────────────────────────────────────
 
-test('cancel pending nulls all pending columns', function () {
-    $user = User::factory()->create([
-        'pending_verification_provider' => 'chess_com',
-        'pending_verification_username' => 'mistyped',
-        'pending_verification_code' => 'stakly-ABCDEFGHJK',
-        'pending_verification_expires_at' => now()->addMinutes(15),
+test('cancel pending deletes the pending row', function () {
+    $user = User::factory()->create();
+    PendingVerification::create([
+        'user_id' => $user->id,
+        'provider' => LinkedAccountProvider::ChessCom->value,
+        'username' => 'mistyped',
+        'code' => 'stakly-ABCDEFGHJK',
+        'expires_at' => now()->addMinutes(15),
     ]);
 
     $this->actingAs($user)
         ->delete('/settings/linked-accounts/pending')
         ->assertRedirect('/settings/linked-accounts');
 
-    $user->refresh();
-    expect($user->pending_verification_provider)->toBeNull();
-    expect($user->pending_verification_username)->toBeNull();
-    expect($user->pending_verification_code)->toBeNull();
-    expect($user->pending_verification_expires_at)->toBeNull();
+    expect($user->fresh()->pendingVerification)->toBeNull();
 });
 
 test('cancel pending leaves verified linked accounts untouched', function () {
-    $user = User::factory()->create([
-        'chess_com_username' => 'alice',
-        'chess_com_verified_at' => now()->subDay(),
-        'pending_verification_provider' => 'lichess',
-        'pending_verification_username' => 'mistyped',
-        'pending_verification_code' => 'stakly-LMNOPQRSTUV',
-        'pending_verification_expires_at' => now()->addMinutes(15),
+    $user = User::factory()->withChessCom('alice')->create();
+    PendingVerification::create([
+        'user_id' => $user->id,
+        'provider' => LinkedAccountProvider::Lichess->value,
+        'username' => 'mistyped',
+        'code' => 'stakly-LMNOPQRSTUV',
+        'expires_at' => now()->addMinutes(15),
     ]);
 
     $this->actingAs($user)
         ->delete('/settings/linked-accounts/pending')
         ->assertRedirect('/settings/linked-accounts');
 
-    $user->refresh();
+    $user->refresh()->load('linkedAccounts');
     // Verified chess.com link survives.
     expect($user->chess_com_username)->toBe('alice');
     expect($user->chess_com_verified_at)->not->toBeNull();
     // Pending Lichess verification cleared.
-    expect($user->pending_verification_provider)->toBeNull();
+    expect($user->pendingVerification)->toBeNull();
 });
 
 test('cancel pending is a noop when no pending state exists', function () {
@@ -266,5 +263,5 @@ test('cancel pending is a noop when no pending state exists', function () {
         ->assertRedirect('/settings/linked-accounts');
 
     // Nothing to assert beyond "didn't crash and redirects cleanly."
-    expect($user->fresh()->pending_verification_provider)->toBeNull();
+    expect($user->fresh()->pendingVerification)->toBeNull();
 });

@@ -2,15 +2,17 @@
 
 use App\Actions\LinkedAccount\RequestLinkVerificationAction;
 use App\Enums\LinkedAccountProvider;
+use App\Models\LinkedAccount;
+use App\Models\PendingVerification;
 use App\Models\User;
 use Illuminate\Validation\ValidationException;
 
 /*
 |--------------------------------------------------------------------------
-| RequestLinkVerificationAction (M8 Phase 1)
+| RequestLinkVerificationAction (M8 Phase 1, refactored M18 Phase 3)
 |--------------------------------------------------------------------------
 |
-| Generates a bio-code and stores it as pending verification state on the
+| Generates a bio-code and upserts a `pending_verifications` row for the
 | user. Validates username format + cross-user uniqueness + already-linked.
 |
 */
@@ -27,12 +29,12 @@ test('generates a stakly-prefixed code and stores pending state', function () {
     expect($code)->toStartWith('stakly-');
     expect(strlen($code))->toBe(17); // 'stakly-' (7) + 10 alphanumeric
 
-    $user->refresh();
-    expect($user->pending_verification_provider)->toBe('chess_com');
-    expect($user->pending_verification_username)->toBe('alice');
-    expect($user->pending_verification_code)->toBe($code);
-    expect($user->pending_verification_expires_at)->not->toBeNull();
-    expect($user->pending_verification_expires_at->isFuture())->toBeTrue();
+    $pending = $user->refresh()->pendingVerification;
+    expect($pending)->not->toBeNull();
+    expect($pending->provider)->toBe(LinkedAccountProvider::ChessCom);
+    expect($pending->username)->toBe('alice');
+    expect($pending->code)->toBe($code);
+    expect($pending->expires_at->isFuture())->toBeTrue();
 });
 
 test('normalises username to lowercase + trimmed', function () {
@@ -44,7 +46,7 @@ test('normalises username to lowercase + trimmed', function () {
         '  AliceWonderland  ',
     );
 
-    expect($user->fresh()->pending_verification_username)->toBe('alicewonderland');
+    expect($user->fresh()->pendingVerification->username)->toBe('alicewonderland');
 });
 
 test('overwrites existing pending state on second request', function () {
@@ -56,10 +58,14 @@ test('overwrites existing pending state on second request', function () {
 
     expect($firstCode)->not->toBe($secondCode);
 
-    $user->refresh();
-    expect($user->pending_verification_provider)->toBe('lichess');
-    expect($user->pending_verification_username)->toBe('second');
-    expect($user->pending_verification_code)->toBe($secondCode);
+    // UNIQUE(user_id) on pending_verifications means the second request
+    // overwrites the first — never two rows in flight per user.
+    expect(PendingVerification::query()->where('user_id', $user->id)->count())->toBe(1);
+
+    $pending = $user->fresh()->pendingVerification;
+    expect($pending->provider)->toBe(LinkedAccountProvider::Lichess);
+    expect($pending->username)->toBe('second');
+    expect($pending->code)->toBe($secondCode);
 });
 
 test('rejects invalid chess.com username format', function () {
@@ -83,10 +89,7 @@ test('rejects username with spaces or special characters', function () {
 });
 
 test('rejects when this user is already verified for the provider', function () {
-    $user = User::factory()->create([
-        'chess_com_username' => 'alice',
-        'chess_com_verified_at' => now(),
-    ]);
+    $user = User::factory()->withChessCom('alice')->create();
 
     expect(fn () => app(RequestLinkVerificationAction::class)->handle(
         $user,
@@ -96,10 +99,7 @@ test('rejects when this user is already verified for the provider', function () 
 });
 
 test('lets user request different provider while one is already verified', function () {
-    $user = User::factory()->create([
-        'chess_com_username' => 'alice',
-        'chess_com_verified_at' => now(),
-    ]);
+    $user = User::factory()->withChessCom('alice')->create();
 
     $code = app(RequestLinkVerificationAction::class)->handle(
         $user,
@@ -108,14 +108,11 @@ test('lets user request different provider while one is already verified', funct
     );
 
     expect($code)->toStartWith('stakly-');
-    expect($user->fresh()->pending_verification_provider)->toBe('lichess');
+    expect($user->fresh()->pendingVerification->provider)->toBe(LinkedAccountProvider::Lichess);
 });
 
 test('rejects when another user has verified the same external username', function () {
-    User::factory()->create([
-        'chess_com_username' => 'taken',
-        'chess_com_verified_at' => now(),
-    ]);
+    User::factory()->withChessCom('taken')->create();
 
     $secondUser = User::factory()->create();
 
@@ -127,14 +124,15 @@ test('rejects when another user has verified the same external username', functi
 });
 
 test('allows username that another user only has pending (not yet verified)', function () {
-    // Another user has the username pending but never finished verification.
-    User::factory()->create([
-        'chess_com_username' => null,
-        'chess_com_verified_at' => null,
-        'pending_verification_provider' => 'chess_com',
-        'pending_verification_username' => 'contested',
-        'pending_verification_code' => 'stakly-XXXXXXXXXX',
-        'pending_verification_expires_at' => now()->addMinutes(15),
+    // Another user has the username pending but never finished verification —
+    // their `pending_verifications` row exists, but no `linked_accounts` row.
+    $contestor = User::factory()->create();
+    PendingVerification::create([
+        'user_id' => $contestor->id,
+        'provider' => LinkedAccountProvider::ChessCom->value,
+        'username' => 'contested',
+        'code' => 'stakly-XXXXXXXXXX',
+        'expires_at' => now()->addMinutes(15),
     ]);
 
     $newUser = User::factory()->create();
@@ -146,4 +144,9 @@ test('allows username that another user only has pending (not yet verified)', fu
     );
 
     expect($code)->toStartWith('stakly-');
+    // Pending row created for the new user — but the contestor's pending
+    // row also still exists. UNIQUE(user_id) means one row per user, but
+    // two users can both have pending rows for the same external username
+    // (only verification commits resolve the race).
+    expect(LinkedAccount::query()->where('username', 'contested')->count())->toBe(0);
 });

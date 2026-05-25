@@ -130,10 +130,12 @@ class ListingController extends Controller
         // have multiple, (c) swap the form for the link-CTA notice when
         // they have zero (handled by the existing `has_chess_link` flag in
         // shared auth.user props).
-        $linkedPlatforms = array_values(array_filter([
-            $user->lichess_verified_at !== null ? 'lichess' : null,
-            $user->chess_com_verified_at !== null ? 'chess_com' : null,
-        ]));
+        $linkedPlatforms = $user->linkedAccounts()
+            ->orderBy('provider')
+            ->pluck('provider')
+            ->map(fn ($provider) => $provider->value)
+            ->values()
+            ->all();
 
         return Inertia::render('listings/create', [
             'balance' => Wallet::balanceFor($user),

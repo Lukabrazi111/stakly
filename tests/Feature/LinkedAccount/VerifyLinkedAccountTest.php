@@ -1,6 +1,8 @@
 <?php
 
 use App\Actions\LinkedAccount\VerifyLinkedAccountAction;
+use App\Enums\LinkedAccountProvider;
+use App\Models\PendingVerification;
 use App\Models\User;
 use App\Services\Provider\Exceptions\ProviderUnavailableException;
 use Illuminate\Support\Facades\Http;
@@ -8,33 +10,41 @@ use Illuminate\Validation\ValidationException;
 
 /*
 |--------------------------------------------------------------------------
-| VerifyLinkedAccountAction (M8 Phase 1)
+| VerifyLinkedAccountAction (M8 Phase 1, refactored M18 Phase 3)
 |--------------------------------------------------------------------------
 |
 | Fetches the user's profile from the provider, matches the pending code
 | against the target field (chess.com `location`, Lichess `profile.bio`),
-| and marks the account verified. Sentinel returns drive controller toasts.
+| and inserts a `linked_accounts` row + deletes the pending row.
 |
 */
 
 function pendingUserForChessCom(string $code = 'stakly-ABCDEFGHJK', string $username = 'alice'): User
 {
-    return User::factory()->create([
-        'pending_verification_provider' => 'chess_com',
-        'pending_verification_username' => $username,
-        'pending_verification_code' => $code,
-        'pending_verification_expires_at' => now()->addMinutes(15),
+    $user = User::factory()->create();
+    PendingVerification::create([
+        'user_id' => $user->id,
+        'provider' => LinkedAccountProvider::ChessCom->value,
+        'username' => $username,
+        'code' => $code,
+        'expires_at' => now()->addMinutes(15),
     ]);
+
+    return $user;
 }
 
 function pendingUserForLichess(string $code = 'stakly-LMNOPQRSTUV', string $username = 'alice'): User
 {
-    return User::factory()->create([
-        'pending_verification_provider' => 'lichess',
-        'pending_verification_username' => $username,
-        'pending_verification_code' => $code,
-        'pending_verification_expires_at' => now()->addMinutes(15),
+    $user = User::factory()->create();
+    PendingVerification::create([
+        'user_id' => $user->id,
+        'provider' => LinkedAccountProvider::Lichess->value,
+        'username' => $username,
+        'code' => $code,
+        'expires_at' => now()->addMinutes(15),
     ]);
+
+    return $user;
 }
 
 // ─── chess.com happy path ────────────────────────────────────────────────
@@ -56,8 +66,7 @@ test('chess.com verified happy path: marks user, clears pending', function () {
     $user->refresh();
     expect($user->chess_com_username)->toBe('alice');
     expect($user->chess_com_verified_at)->not->toBeNull();
-    expect($user->pending_verification_provider)->toBeNull();
-    expect($user->pending_verification_code)->toBeNull();
+    expect($user->pendingVerification)->toBeNull();
 });
 
 test('chess.com canonical username from response is persisted (not the user-typed one)', function () {
@@ -73,7 +82,7 @@ test('chess.com canonical username from response is persisted (not the user-type
 
     app(VerifyLinkedAccountAction::class)->handle($user);
 
-    // We lowercase the canonical for our column.
+    // We lowercase the canonical for our row.
     expect($user->fresh()->chess_com_username)->toBe('alice');
 });
 
@@ -125,7 +134,7 @@ test('Lichess handles missing profile object gracefully', function () {
 
 test('returns expired when pending TTL is past', function () {
     $user = pendingUserForChessCom();
-    $user->update(['pending_verification_expires_at' => now()->subMinute()]);
+    $user->pendingVerification->update(['expires_at' => now()->subMinute()]);
 
     expect(app(VerifyLinkedAccountAction::class)->handle($user))->toBe('expired');
 });
@@ -167,10 +176,7 @@ test('returns code-not-found when bio field is empty / missing', function () {
 });
 
 test('returns username-claimed when another user wins the UNIQUE race', function () {
-    User::factory()->create([
-        'chess_com_username' => 'alice',
-        'chess_com_verified_at' => now(),
-    ]);
+    User::factory()->withChessCom('alice')->create();
 
     $user = pendingUserForChessCom();
 
@@ -196,7 +202,7 @@ test('bubbles ProviderUnavailableException when provider 500s', function () {
 });
 
 test('throws ValidationException when no pending verification exists', function () {
-    $user = User::factory()->create(); // No pending fields set.
+    $user = User::factory()->create(); // No pending row.
 
     expect(fn () => app(VerifyLinkedAccountAction::class)->handle($user))
         ->toThrow(ValidationException::class);
