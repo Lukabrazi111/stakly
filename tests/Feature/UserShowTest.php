@@ -21,6 +21,9 @@ test('public profile renders for a guest visitor', function () {
         ->has('user.member_since')
         ->where('user.avatar_url', null)
         ->where('user.avatar_thumb_url', null)
+        ->where('stats.total_matches', 0)
+        ->where('stats.total_volume', 0)
+        ->where('stats.win_rate', null)
     );
 });
 
@@ -124,31 +127,154 @@ test('openListings is capped at 5, newest first', function () {
     $response->assertInertia(fn ($page) => $page->has('openListings.data', 5));
 });
 
-// ─── Stats ────────────────────────────────────────────────────────────────
+// ─── Stats (M18 Phase 2 — profile stats hero) ────────────────────────────
 
-test('stats reflect the profile owner listing counts', function () {
+test('stats.total_matches counts only Settled matches, not Pending/Cancelled', function () {
     $owner = User::factory()->create(['username' => 'iris']);
-    Wallet::deposit($owner, '10000', reference: "test:deposit:{$owner->id}");
+    $opp = User::factory()->create();
 
-    // 3 open (counted in both open + total)
-    foreach (range(1, 3) as $i) {
-        $listing = Listing::factory()->open()->for($owner)->state(['stake_amount' => '50'])->create();
-        Wallet::hold(user: $owner, amount: '50', listing: $listing, reference: "listing-create:{$listing->id}");
+    $settledListing = Listing::factory()->taken()->for($owner)->state(['stake_amount' => '100'])->create();
+    GameMatch::factory()->for($settledListing)->for($opp, 'taker')->settled($owner)->create();
+
+    $pendingListing = Listing::factory()->taken()->for($owner)->state(['stake_amount' => '100'])->create();
+    GameMatch::factory()->for($pendingListing)->for($opp, 'taker')->create();
+
+    $cancelledListing = Listing::factory()->taken()->for($owner)->state(['stake_amount' => '100'])->create();
+    GameMatch::factory()->for($cancelledListing)->for($opp, 'taker')->cancelled($owner)->create();
+
+    $this->get('/users/iris')
+        ->assertInertia(fn ($page) => $page->where('stats.total_matches', 1));
+});
+
+test('stats.total_volume sums stake_amount across settled matches', function () {
+    $owner = User::factory()->create(['username' => 'jules']);
+    $opp = User::factory()->create();
+
+    $first = Listing::factory()->taken()->for($owner)->state(['stake_amount' => '100'])->create();
+    GameMatch::factory()->for($first)->for($opp, 'taker')->settled($owner)->create();
+
+    $second = Listing::factory()->taken()->for($owner)->state(['stake_amount' => '250'])->create();
+    GameMatch::factory()->for($second)->for($opp, 'taker')->settled($opp)->create();
+
+    // Pending match shouldn't contribute.
+    $pending = Listing::factory()->taken()->for($owner)->state(['stake_amount' => '999'])->create();
+    GameMatch::factory()->for($pending)->for($opp, 'taker')->create();
+
+    $this->get('/users/jules')
+        ->assertInertia(fn ($page) => $page->where('stats.total_volume', 350));
+});
+
+test('stats.win_rate is included only when viewing own profile', function () {
+    $owner = User::factory()->create(['username' => 'kara']);
+    $opp = User::factory()->create();
+
+    $listing = Listing::factory()->taken()->for($owner)->state(['stake_amount' => '100'])->create();
+    GameMatch::factory()->for($listing)->for($opp, 'taker')->settled($owner)->create();
+
+    // Visitor — no win_rate.
+    $this->get('/users/kara')
+        ->assertInertia(fn ($page) => $page->where('stats.win_rate', null));
+
+    // Owner — win_rate present.
+    $this->actingAs($owner)
+        ->get('/users/kara')
+        ->assertInertia(fn ($page) => $page
+            ->has('stats.win_rate', fn ($w) => $w
+                ->where('wins', 1)
+                ->where('draws', 0)
+                ->where('losses', 0)
+                ->where('percentage', 100)
+            )
+        );
+});
+
+test('stats.win_rate percentage excludes draws from denominator', function () {
+    $owner = User::factory()->create(['username' => 'liam']);
+    $opp = User::factory()->create();
+
+    // 2 wins
+    foreach (range(1, 2) as $i) {
+        $listing = Listing::factory()->taken()->for($owner)->state(['stake_amount' => '50'])->create();
+        GameMatch::factory()->for($listing)->for($opp, 'taker')->settled($owner)->create();
+    }
+    // 1 draw (Settled but winner_user_id is null)
+    $drawListing = Listing::factory()->taken()->for($owner)->state(['stake_amount' => '50'])->create();
+    GameMatch::factory()->for($drawListing)->for($opp, 'taker')->state([
+        'status' => MatchStatus::Settled,
+        'settled_at' => now(),
+        'winner_user_id' => null,
+    ])->create();
+    // 1 loss
+    $lossListing = Listing::factory()->taken()->for($owner)->state(['stake_amount' => '50'])->create();
+    GameMatch::factory()->for($lossListing)->for($opp, 'taker')->settled($opp)->create();
+
+    // 2W / 1D / 1L → decided = 3 → 2/3 = 67%
+    $this->actingAs($owner)
+        ->get('/users/liam')
+        ->assertInertia(fn ($page) => $page
+            ->has('stats.win_rate', fn ($w) => $w
+                ->where('wins', 2)
+                ->where('draws', 1)
+                ->where('losses', 1)
+                ->where('percentage', 67)
+            )
+        );
+});
+
+test('stats.win_rate.percentage is null when every settled match is a draw', function () {
+    $owner = User::factory()->create(['username' => 'mira']);
+    $opp = User::factory()->create();
+
+    foreach (range(1, 2) as $i) {
+        $listing = Listing::factory()->taken()->for($owner)->state(['stake_amount' => '50'])->create();
+        GameMatch::factory()->for($listing)->for($opp, 'taker')->state([
+            'status' => MatchStatus::Settled,
+            'settled_at' => now(),
+            'winner_user_id' => null,
+        ])->create();
     }
 
-    // 1 taken (counted in total only)
-    Listing::factory()->taken()->for($owner)->create();
+    $this->actingAs($owner)
+        ->get('/users/mira')
+        ->assertInertia(fn ($page) => $page
+            ->has('stats.win_rate', fn ($w) => $w
+                ->where('wins', 0)
+                ->where('draws', 2)
+                ->where('losses', 0)
+                ->where('percentage', null)
+            )
+        );
+});
 
-    // 2 cancelled (counted in total only)
-    Listing::factory()->cancelled()->count(2)->for($owner)->create();
+test('stats.win_rate is null on own profile when there are no settled matches', function () {
+    $owner = User::factory()->create(['username' => 'nico']);
 
-    $response = $this->get('/users/iris');
+    $this->actingAs($owner)
+        ->get('/users/nico')
+        ->assertInertia(fn ($page) => $page
+            ->where('stats.total_matches', 0)
+            ->where('stats.total_volume', 0)
+            ->where('stats.win_rate', null)
+        );
+});
 
-    $response->assertInertia(fn ($page) => $page
-        ->where('stats.open_listings', 3)
-        ->where('stats.total_listings', 6)
-        ->has('stats.member_since')
-    );
+test('stats count matches where the user is creator OR taker', function () {
+    $owner = User::factory()->create(['username' => 'omar']);
+    $opp = User::factory()->create();
+
+    // As creator
+    $creatorListing = Listing::factory()->taken()->for($owner)->state(['stake_amount' => '100'])->create();
+    GameMatch::factory()->for($creatorListing)->for($opp, 'taker')->settled($owner)->create();
+
+    // As taker
+    $takerListing = Listing::factory()->taken()->for($opp)->state(['stake_amount' => '200'])->create();
+    GameMatch::factory()->for($takerListing)->for($owner, 'taker')->settled($owner)->create();
+
+    $this->get('/users/omar')
+        ->assertInertia(fn ($page) => $page
+            ->where('stats.total_matches', 2)
+            ->where('stats.total_volume', 300)
+        );
 });
 
 // ─── Bio shape ────────────────────────────────────────────────────────────

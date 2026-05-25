@@ -88,11 +88,56 @@ class UserController extends Controller
             ->limit(self::MATCH_HISTORY_LIMIT)
             ->get();
 
+        // M18 Phase 2 — profile stats hero. One aggregation pass over the
+        // user's settled matches, joined to listings for the stake column.
+        // `forParticipant` handles "creator OR taker" via subquery; combined
+        // with the explicit join, PG resolves it cleanly. CASE counters
+        // produce wins / draws / losses without a second query.
+        //
+        // Public viewers get total_matches + total_volume only. Owner gets
+        // those + win_rate. The win-rate-is-owner-only gate is a design
+        // call (M18 milestone) — public win rate would invite strong
+        // players to hunt weak ones, undercutting the safe-marketplace
+        // identity. Chess.com / Lichess rating is the public skill signal.
+        $aggregate = GameMatch::query()
+            ->forParticipant($user->id)
+            ->where('game_matches.status', MatchStatus::Settled)
+            ->join('listings', 'listings.id', '=', 'game_matches.listing_id')
+            ->selectRaw(
+                'COUNT(*) AS total_matches,
+                 COALESCE(SUM(listings.stake_amount), 0) AS total_volume,
+                 COUNT(CASE WHEN game_matches.winner_user_id = ? THEN 1 END) AS wins,
+                 COUNT(CASE WHEN game_matches.winner_user_id IS NULL THEN 1 END) AS draws,
+                 COUNT(CASE WHEN game_matches.winner_user_id IS NOT NULL AND game_matches.winner_user_id <> ? THEN 1 END) AS losses',
+                [$user->id, $user->id],
+            )
+            ->first();
+
         $stats = [
-            'open_listings' => $user->listings()->open()->count(),
-            'total_listings' => $user->listings()->count(),
             'member_since' => $user->created_at->toIso8601String(),
+            'total_matches' => (int) $aggregate->total_matches,
+            // Float at the JSON boundary — same convention as
+            // `ListingResource::toArray` for `stake_amount`. Internal money
+            // math stays BCMath; this is a read-only display value.
+            'total_volume' => (float) $aggregate->total_volume,
+            'win_rate' => null,
         ];
+
+        if ($isOwnProfile && $aggregate->total_matches > 0) {
+            $decided = (int) $aggregate->wins + (int) $aggregate->losses;
+            $stats['win_rate'] = [
+                'wins' => (int) $aggregate->wins,
+                'draws' => (int) $aggregate->draws,
+                'losses' => (int) $aggregate->losses,
+                // Percentage from decided matches only — draws don't count
+                // toward win rate. Industry convention (chess.com,
+                // Lichess). Null when no decided matches so the FE can
+                // render '—' instead of a misleading 0%.
+                'percentage' => $decided > 0
+                    ? (int) round(((int) $aggregate->wins / $decided) * 100)
+                    : null,
+            ];
+        }
 
         return Inertia::render('users/show', [
             'user' => (new UserProfileResource($user))->resolve(),

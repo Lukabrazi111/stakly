@@ -32,11 +32,28 @@ export interface UserProfile {
 }
 
 export interface ProfileStats {
-    open_listings: number;
-    total_listings: number;
     // Same ISO 8601 as `UserProfile.member_since` — duplicated here so the
     // stats grid can render independently of the header card.
     member_since: string;
+    // M18 Phase 2 — settled-match count and total stake volume (the user's
+    // own stake summed across settled matches; not the pot). Public to
+    // everyone. Zero on a fresh profile; never null.
+    total_matches: number;
+    total_volume: number;
+    // Owner-only — null when the viewer is not the profile owner OR when
+    // the owner has no settled matches yet. Win rate is intentionally not
+    // public to avoid inviting strong players to hunt weak ones; the
+    // public skill signal is the chess.com / Lichess rating.
+    //
+    // `percentage` is rounded to integer (e.g. 67 not 66.67). Null when
+    // there are no decided matches (all draws), so the UI renders "—"
+    // instead of a misleading "0%".
+    win_rate: {
+        wins: number;
+        draws: number;
+        losses: number;
+        percentage: number | null;
+    } | null;
 }
 
 // Page-level props for `pages/users/show.tsx` (built in Phase 4).
