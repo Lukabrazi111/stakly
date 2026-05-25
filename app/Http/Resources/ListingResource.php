@@ -40,6 +40,10 @@ class ListingResource extends JsonResource
                 'id' => $this->user->id,
                 'name' => $this->user->name,
                 'username' => $this->user->username,
+                // M18 Phase 1 propagation — 128×128 thumb so listing cards /
+                // detail page can show the real avatar instead of initials.
+                // Null until the creator uploads an avatar.
+                'avatar_thumb_url' => $this->user->avatar_thumb_url,
                 // M6 Phase 6.5 — surface Active Mode to the frontend so the
                 // listing detail page can disable the Take button + show a
                 // banner when the owner is inactive. PII-wise this is already

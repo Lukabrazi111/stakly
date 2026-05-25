@@ -10,7 +10,7 @@ import {
     X,
 } from 'lucide-react';
 import { useState } from 'react';
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { useInitials } from '@/hooks/use-initials';
@@ -88,7 +88,12 @@ export function ChatMessageBubble({
                 isOwn ? 'justify-end' : 'justify-start',
             )}
         >
-            {!isOwn && <SenderAvatar name={sender.name} />}
+            {!isOwn && (
+                <SenderAvatar
+                    name={sender.name}
+                    avatarThumbUrl={sender.avatar_thumb_url}
+                />
+            )}
 
             <div
                 className={cn(
@@ -370,11 +375,18 @@ function FailedFooter({ onRetry, onDismiss }: FailedFooterProps) {
     );
 }
 
-function SenderAvatar({ name }: { name: string }) {
+function SenderAvatar({
+    name,
+    avatarThumbUrl,
+}: {
+    name: string;
+    avatarThumbUrl: string | null;
+}) {
     const getInitials = useInitials();
 
     return (
         <Avatar className="size-7 shrink-0">
+            <AvatarImage src={avatarThumbUrl ?? undefined} alt={name} />
             <AvatarFallback className="bg-gradient-primary text-[10px] font-semibold text-primary-foreground">
                 {getInitials(name)}
             </AvatarFallback>

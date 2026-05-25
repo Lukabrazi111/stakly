@@ -1,6 +1,6 @@
 import { Link } from '@inertiajs/react';
 import { Clock, Trophy } from 'lucide-react';
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { useInitials } from '@/hooks/use-initials';
 import {
@@ -49,6 +49,10 @@ export function ListingCard({ listing }: Props) {
                     className="flex min-w-0 items-center gap-2.5 rounded-lg focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none"
                 >
                     <Avatar className="size-9 shrink-0 overflow-hidden rounded-full">
+                        <AvatarImage
+                            src={listing.creator.avatar_thumb_url ?? undefined}
+                            alt={listing.creator.name}
+                        />
                         <AvatarFallback className="bg-gradient-primary text-xs font-semibold text-primary-foreground">
                             {getInitials(listing.creator.name)}
                         </AvatarFallback>

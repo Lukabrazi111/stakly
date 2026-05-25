@@ -55,4 +55,20 @@ class ProfileController extends Controller
 
         return to_route('profile.edit');
     }
+
+    /**
+     * Remove the user's avatar, reverting them to the gradient-initials
+     * fallback. Idempotent — clearing an empty collection is a no-op and
+     * still returns a clean toast so the UI feels consistent (the FE only
+     * surfaces the button when an avatar exists, but a duplicate click /
+     * stale view should never 500).
+     */
+    public function destroyAvatar(Request $request): RedirectResponse
+    {
+        $request->user()->clearMediaCollection('profile-avatar');
+
+        Inertia::flash('toast', ['type' => 'success', 'message' => __('Avatar removed.')]);
+
+        return to_route('profile.edit');
+    }
 }

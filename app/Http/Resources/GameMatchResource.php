@@ -48,11 +48,15 @@ class GameMatchResource extends JsonResource
                 'id' => $this->listing->user->id,
                 'name' => $this->listing->user->name,
                 'username' => $this->listing->user->username,
+                // M18 Phase 1 propagation — 128×128 thumb for chat bubbles +
+                // match info card. Null until upload.
+                'avatar_thumb_url' => $this->listing->user->avatar_thumb_url,
             ],
             'taker' => [
                 'id' => $this->taker->id,
                 'name' => $this->taker->name,
                 'username' => $this->taker->username,
+                'avatar_thumb_url' => $this->taker->avatar_thumb_url,
             ],
             // Snapshotted external-account handles scoped to the listing's
             // platform (M16 Phase 3 — Pending action card displays the
@@ -74,6 +78,7 @@ class GameMatchResource extends JsonResource
                 'id' => $this->winner->id,
                 'name' => $this->winner->name,
                 'username' => $this->winner->username,
+                'avatar_thumb_url' => $this->winner->avatar_thumb_url,
             ] : null,
             'settled_at' => $this->settled_at?->toIso8601String(),
             'created_at' => $this->created_at?->toIso8601String(),

@@ -19,6 +19,10 @@ export interface ListingCreator {
     id: number;
     name: string;
     username: string;
+    // M18 Phase 1 propagation — 128×128 avatar thumb for listing cards +
+    // detail page. Null when the creator hasn't uploaded one; FE falls
+    // back to gradient-initials via `useInitials()`.
+    avatar_thumb_url: string | null;
     // M6 Phase 6.5 — used by the listing detail page to disable the Take
     // button + show "currently inactive" banner when false. Server-side gate
     // in `GameMatchController::take` is the authoritative enforcement.

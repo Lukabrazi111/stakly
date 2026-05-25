@@ -1,4 +1,4 @@
-import { Head, Link, useForm, usePage } from '@inertiajs/react';
+import { Head, Link, router, useForm, usePage } from '@inertiajs/react';
 import { CameraIcon } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import type { ChangeEvent, FormEvent } from 'react';
@@ -53,6 +53,7 @@ export default function Profile({
     const [cropOpen, setCropOpen] = useState(false);
     const [previewUrl, setPreviewUrl] = useState<string | null>(null);
     const [rawFileError, setRawFileError] = useState<string | null>(null);
+    const [isRemovingAvatar, setIsRemovingAvatar] = useState(false);
     const fileInputRef = useRef<HTMLInputElement | null>(null);
 
     // Revoke the cropped-blob object URL on unmount or when it's replaced —
@@ -100,6 +101,14 @@ export default function Profile({
     const handleCropClose = () => {
         setCropOpen(false);
         setCropFile(null);
+    };
+
+    const handleRemoveAvatar = () => {
+        setIsRemovingAvatar(true);
+        router.delete(ProfileController.destroyAvatar.url(), {
+            preserveScroll: true,
+            onFinish: () => setIsRemovingAvatar(false),
+        });
     };
 
     const handleSubmit = (e: FormEvent) => {
@@ -164,16 +173,32 @@ export default function Profile({
                                 </span>
                             </button>
                             <div className="text-sm">
-                                <Button
-                                    type="button"
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={() =>
-                                        fileInputRef.current?.click()
-                                    }
-                                >
-                                    Change avatar
-                                </Button>
+                                <div className="flex items-center gap-1">
+                                    <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={() =>
+                                            fileInputRef.current?.click()
+                                        }
+                                    >
+                                        Change avatar
+                                    </Button>
+                                    {user.avatar_url && !previewUrl && (
+                                        <Button
+                                            type="button"
+                                            variant="ghost"
+                                            size="sm"
+                                            onClick={handleRemoveAvatar}
+                                            disabled={isRemovingAvatar}
+                                            className="text-destructive [text-shadow:none] hover:text-destructive hover:[text-shadow:none]"
+                                        >
+                                            {isRemovingAvatar
+                                                ? 'Removing…'
+                                                : 'Remove'}
+                                        </Button>
+                                    )}
+                                </div>
                                 <p className="mt-1 text-xs text-muted-foreground">
                                     JPG, PNG, or WebP. Max 2 MB after crop.
                                 </p>

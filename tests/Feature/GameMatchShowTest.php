@@ -34,6 +34,18 @@ test('match taker can view the match', function () {
         ->assertInertia(fn ($page) => $page->component('match/show'));
 });
 
+test('match creator + taker carry avatar_thumb_url for chat bubbles (M18)', function () {
+    $match = GameMatch::factory()->create();
+    $creator = $match->listing->user;
+
+    $this->actingAs($creator)
+        ->get(route('matches.show', $match))
+        ->assertInertia(fn ($page) => $page
+            ->has('match.creator', fn ($p) => $p->where('avatar_thumb_url', null)->etc())
+            ->has('match.taker', fn ($p) => $p->where('avatar_thumb_url', null)->etc())
+        );
+});
+
 test('non-participant gets 404 (not 403 — never leak match existence)', function () {
     $match = GameMatch::factory()->create();
     $stranger = User::factory()->create();

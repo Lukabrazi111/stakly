@@ -1,6 +1,6 @@
 import { Link } from '@inertiajs/react';
 import { Clock, Handshake, Trophy, X } from 'lucide-react';
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { useInitials } from '@/hooks/use-initials';
 import { timeControlLabels } from '@/lib/listings-format';
 import { formatMatchDate } from '@/lib/matches-format';
@@ -58,6 +58,10 @@ export function ProfileMatchRow({ match, profileUserId }: Props) {
                 className="flex min-w-0 flex-1 items-center gap-3 rounded-lg focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none"
             >
                 <Avatar className="size-9 shrink-0 overflow-hidden rounded-full">
+                    <AvatarImage
+                        src={opponent.avatar_thumb_url ?? undefined}
+                        alt={opponent.name}
+                    />
                     <AvatarFallback className="bg-gradient-primary text-xs font-semibold text-primary-foreground">
                         {getInitials(opponent.name)}
                     </AvatarFallback>

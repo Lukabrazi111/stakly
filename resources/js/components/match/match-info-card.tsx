@@ -1,6 +1,6 @@
 import { Link } from '@inertiajs/react';
 import { ChevronRight, ShieldCheck } from 'lucide-react';
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { useInitials } from '@/hooks/use-initials';
 import { show as userShow } from '@/routes/users';
 import type { ListingPlatform, MatchPlayer, TimeControl } from '@/types';
@@ -60,6 +60,10 @@ export function MatchInfoCard({
                     <dt className="text-sm text-muted-foreground">Opponent</dt>
                     <dd className="flex items-center gap-2.5">
                         <Avatar className="size-7">
+                            <AvatarImage
+                                src={opponent.avatar_thumb_url ?? undefined}
+                                alt={opponent.name}
+                            />
                             <AvatarFallback className="bg-gradient-primary text-[10px] font-semibold text-primary-foreground">
                                 {getInitials(opponent.name)}
                             </AvatarFallback>

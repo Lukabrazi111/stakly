@@ -17,6 +17,10 @@ export interface MatchPlayer {
     id: number;
     name: string;
     username: string;
+    // M18 Phase 1 propagation — 128×128 avatar thumb for chat bubbles,
+    // match info card, match list rows. Null when the player hasn't
+    // uploaded an avatar; FE falls back to gradient-initials.
+    avatar_thumb_url: string | null;
 }
 
 export interface MatchListing {

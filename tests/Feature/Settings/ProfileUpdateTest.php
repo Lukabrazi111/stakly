@@ -206,3 +206,43 @@ test('profile update without an avatar leaves the existing avatar untouched', fu
     expect($user->refresh()->getFirstMedia('profile-avatar')->id)->toBe($mediaId);
     expect($user->name)->toBe('Renamed');
 });
+
+// ─── Remove avatar (M18 Phase 1 polish) ────────────────────────────────────
+
+test('avatar can be removed', function () {
+    $user = User::factory()->create();
+
+    $this->actingAs($user)
+        ->patch(route('profile.update'), [
+            'name' => $user->name,
+            'email' => $user->email,
+            'avatar' => UploadedFile::fake()->image('avatar.jpg', 600, 600),
+        ])
+        ->assertSessionHasNoErrors();
+
+    expect($user->refresh()->getFirstMedia('profile-avatar'))->not->toBeNull();
+
+    $this->actingAs($user)
+        ->delete(route('profile.avatar.destroy'))
+        ->assertRedirect(route('profile.edit'));
+
+    expect($user->refresh()->getFirstMedia('profile-avatar'))->toBeNull();
+    expect($user->avatar_url)->toBeNull();
+    expect($user->avatar_thumb_url)->toBeNull();
+});
+
+test('removing an avatar that does not exist is a no-op', function () {
+    $user = User::factory()->create();
+
+    $this->actingAs($user)
+        ->delete(route('profile.avatar.destroy'))
+        ->assertRedirect(route('profile.edit'))
+        ->assertSessionHasNoErrors();
+
+    expect($user->refresh()->getFirstMedia('profile-avatar'))->toBeNull();
+});
+
+test('guest cannot remove an avatar', function () {
+    $this->delete(route('profile.avatar.destroy'))
+        ->assertRedirect(route('login'));
+});

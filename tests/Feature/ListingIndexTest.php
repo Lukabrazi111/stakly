@@ -201,6 +201,19 @@ test('creator data is whitelisted — no email or sensitive fields ship', functi
     $response->assertDontSee('private@example.com');
 });
 
+test('creator carries avatar_thumb_url for the marketplace cards (M18)', function () {
+    $user = User::factory()->active()->create();
+    Listing::factory()->open()->for($user)->create();
+
+    $this->get('/listings')
+        ->assertInertia(fn ($page) => $page
+            ->has('listings.data.0.creator', fn ($creator) => $creator
+                ->where('avatar_thumb_url', null)
+                ->etc()
+            )
+        );
+});
+
 test('filters are echoed back in props for URL → form hydration', function () {
     Listing::factory()->open()->count(2)->create();
 
