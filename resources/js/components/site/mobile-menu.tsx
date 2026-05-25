@@ -182,7 +182,7 @@ export function MobileMenu() {
                             <div className="flex items-center gap-3 p-4">
                                 <Avatar className="size-12 overflow-hidden rounded-full">
                                     <AvatarImage
-                                        src={user.avatar}
+                                        src={user.avatar_thumb_url ?? undefined}
                                         alt={user.name}
                                     />
                                     <AvatarFallback className="bg-gradient-primary text-base font-semibold text-primary-foreground">

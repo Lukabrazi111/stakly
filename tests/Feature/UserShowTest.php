@@ -19,7 +19,8 @@ test('public profile renders for a guest visitor', function () {
         ->where('user.username', 'alice')
         ->where('user.name', 'Alice')
         ->has('user.member_since')
-        ->where('user.avatar', null)
+        ->where('user.avatar_url', null)
+        ->where('user.avatar_thumb_url', null)
     );
 });
 

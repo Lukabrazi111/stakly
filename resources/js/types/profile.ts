@@ -17,9 +17,13 @@ export interface UserProfile {
     // ISO 8601 timestamp from `created_at`. Frontend formats it for display
     // (e.g. "Joined Mar 2026").
     member_since: string;
-    // Always `null` in v1 — frontend falls back to the gradient-initials
-    // avatar via `useInitials()`. Upload flow lands post-MVP.
-    avatar: string | null;
+    // M18 Phase 1 — uploaded avatar URLs from Spatie media library. Null
+    // when the user hasn't uploaded one yet; frontend falls back to a
+    // gradient-initials avatar via `useInitials()`.
+    //   - `avatar_url`       512×512 (profile header)
+    //   - `avatar_thumb_url` 128×128 (chat bubbles / listing rows)
+    avatar_url: string | null;
+    avatar_thumb_url: string | null;
     // Verified external game-account usernames (M8 Phase 1). `null` when not
     // linked. Pending verification state is NEVER exposed here — these fields
     // are only populated after the bio-code flow completes.

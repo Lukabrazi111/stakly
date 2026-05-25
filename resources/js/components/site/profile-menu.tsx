@@ -71,7 +71,10 @@ export function ProfileMenu({ user }: Props) {
                     aria-label="Open account menu"
                 >
                     <Avatar className="size-9 overflow-hidden rounded-full ring-0 transition-all duration-200 ease-out group-hover:ring-2 group-hover:ring-primary/50 group-data-[state=open]:ring-2 group-data-[state=open]:ring-primary/50">
-                        <AvatarImage src={user.avatar} alt={user.name} />
+                        <AvatarImage
+                            src={user.avatar_thumb_url ?? undefined}
+                            alt={user.name}
+                        />
                         <AvatarFallback className="bg-gradient-primary text-sm font-semibold text-primary-foreground">
                             {getInitials(user.name)}
                         </AvatarFallback>

@@ -3,7 +3,14 @@ export type User = {
     name: string;
     username: string;
     email: string;
-    avatar?: string;
+    bio: string | null;
+    // M18 Phase 1 — uploaded avatar URLs served from the `public` disk via
+    // Spatie media library. Null when the user hasn't uploaded an avatar.
+    // `avatar_url` is 512×512 (header / settings), `avatar_thumb_url` is
+    // 128×128 (chat bubbles / listing rows). Frontend falls back to a
+    // gradient-initials placeholder via `useInitials()` when null.
+    avatar_url: string | null;
+    avatar_thumb_url: string | null;
     email_verified_at: string | null;
     two_factor_enabled?: boolean;
     // Spendable USDT balance. Float, not string — converted at the Inertia

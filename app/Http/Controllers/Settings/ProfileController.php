@@ -25,16 +25,31 @@ class ProfileController extends Controller
 
     /**
      * Update the user's profile information.
+     *
+     * Avatar arrives as a multipart file and is extracted from the
+     * validated array before `fill()` so the file instance never reaches
+     * mass-assignment. After the scalar fields save, the Spatie
+     * `profile-avatar` single-file collection on `User` swaps in the new
+     * upload (the previous file is deleted automatically).
      */
     public function update(ProfileUpdateRequest $request): RedirectResponse
     {
-        $request->user()->fill($request->validated());
+        $validated = $request->validated();
+        $avatarFile = $request->file('avatar');
+        unset($validated['avatar']);
 
-        if ($request->user()->isDirty('email')) {
-            $request->user()->email_verified_at = null;
+        $user = $request->user();
+        $user->fill($validated);
+
+        if ($user->isDirty('email')) {
+            $user->email_verified_at = null;
         }
 
-        $request->user()->save();
+        $user->save();
+
+        if ($avatarFile !== null) {
+            $user->addMedia($avatarFile)->toMediaCollection('profile-avatar');
+        }
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Profile updated.')]);
 

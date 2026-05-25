@@ -8,11 +8,16 @@ use Filament\Panel;
 use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
+use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Laravel\Fortify\TwoFactorAuthenticatable;
+use Spatie\Image\Enums\Fit;
+use Spatie\MediaLibrary\HasMedia;
+use Spatie\MediaLibrary\InteractsWithMedia;
+use Spatie\MediaLibrary\MediaCollections\Models\Media;
 use Spatie\Permission\Traits\HasRoles;
 
 #[Fillable([
@@ -39,10 +44,20 @@ use Spatie\Permission\Traits\HasRoles;
     'remember_token',
     'pending_verification_code',
 ])]
-class User extends Authenticatable implements FilamentUser, MustVerifyEmail
+class User extends Authenticatable implements FilamentUser, HasMedia, MustVerifyEmail
 {
     /** @use HasFactory<UserFactory> */
-    use HasFactory, HasRoles, Notifiable, TwoFactorAuthenticatable;
+    use HasFactory, HasRoles, InteractsWithMedia, Notifiable, TwoFactorAuthenticatable;
+
+    /**
+     * Computed avatar URLs exposed via Eloquent's `toArray()` — flow into
+     * Inertia's shared `auth.user` and `UserProfileResource` without any
+     * controller plumbing. Null when the user hasn't uploaded an avatar yet;
+     * the frontend falls back to a gradient-initials placeholder.
+     *
+     * @var list<string>
+     */
+    protected $appends = ['avatar_url', 'avatar_thumb_url'];
 
     /**
      * M12 — Filament panel access gate. Required by the `FilamentUser`
@@ -128,5 +143,72 @@ class User extends Authenticatable implements FilamentUser, MustVerifyEmail
     {
         return $this->lichess_verified_at !== null
             || $this->chess_com_verified_at !== null;
+    }
+
+    /**
+     * Single-file avatar collection (M18 Phase 1). Uploading a new avatar
+     * replaces the previous file on disk — `singleFile()` handles the
+     * delete + insert atomically. Accepted MIME types match the validation
+     * rule on `ProfileUpdateRequest`; both layers enforce the same set so
+     * a request can't sneak past one and trip the other.
+     */
+    public function registerMediaCollections(): void
+    {
+        $this->addMediaCollection('profile-avatar')
+            ->singleFile()
+            ->acceptsMimeTypes(['image/jpeg', 'image/png', 'image/webp']);
+    }
+
+    /**
+     * Two derived sizes:
+     *   - `main` (512×512) — public profile + settings preview
+     *   - `thumb` (128×128) — chat bubbles, listing rows, comment avatars
+     *
+     * `nonQueued()` runs conversions inline because (a) the source is
+     * already cropped to a square ~512px by `react-image-crop` on the
+     * client, so the resize cost is trivial, and (b) returning a 200 with
+     * a still-pending conversion URL would 404 momentarily on the next
+     * page render. Once we need a CDN + larger originals, move to a
+     * queued worker.
+     */
+    public function registerMediaConversions(?Media $media = null): void
+    {
+        $this->addMediaConversion('main')
+            ->fit(Fit::Crop, 512, 512)
+            ->nonQueued()
+            ->performOnCollections('profile-avatar');
+
+        $this->addMediaConversion('thumb')
+            ->fit(Fit::Crop, 128, 128)
+            ->nonQueued()
+            ->performOnCollections('profile-avatar');
+    }
+
+    /**
+     * Public URL of the 512×512 avatar conversion. Null when the user has
+     * not uploaded an avatar. Exposed via `$appends` so Inertia's shared
+     * `auth.user` carries it without any controller plumbing.
+     */
+    protected function avatarUrl(): Attribute
+    {
+        return Attribute::get(function (): ?string {
+            $media = $this->getFirstMedia('profile-avatar');
+
+            return $media?->getUrl('main');
+        });
+    }
+
+    /**
+     * Public URL of the 128×128 avatar thumbnail. Used by dense lists
+     * (chat bubbles, listing rows) where the larger conversion is
+     * overkill. Null when no avatar uploaded.
+     */
+    protected function avatarThumbUrl(): Attribute
+    {
+        return Attribute::get(function (): ?string {
+            $media = $this->getFirstMedia('profile-avatar');
+
+            return $media?->getUrl('thumb');
+        });
     }
 }

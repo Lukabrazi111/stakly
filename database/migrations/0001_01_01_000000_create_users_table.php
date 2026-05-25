@@ -22,9 +22,11 @@ return new class extends Migration
             // collision handling — `CreateNewUser` retries on violation.
             $table->string('username', 30)->unique();
 
-            // Optional 280-char bio shown on the public profile (M5). Bounded
-            // length, not text — bio is never queried/filtered.
-            $table->string('bio', 280)->nullable();
+            // Optional 500-char bio shown on the public profile (M5 → M18).
+            // Bounded length, not text — bio is never queried/filtered. Plain
+            // text with line breaks; React's JSX interpolation escapes on
+            // render, and `whitespace-pre-line` preserves the newlines.
+            $table->string('bio', 500)->nullable();
 
             $table->string('email')->unique();
             $table->timestamp('email_verified_at')->nullable();

@@ -32,9 +32,14 @@ class UserProfileResource extends JsonResource
             'name' => $this->name,
             'bio' => $this->bio,
             'member_since' => $this->created_at->toIso8601String(),
-            // Always null in v1 — frontend falls back to a gradient-initials
-            // avatar via `useInitials()`. Upload flow lands post-MVP.
-            'avatar' => null,
+            // M18 Phase 1 — uploaded avatar served from the `public` disk
+            // via the `profile-avatar` Spatie collection on `User`. Both
+            // URLs are null until the user uploads; the frontend then
+            // falls back to a gradient-initials avatar via `useInitials()`.
+            //   - `avatar_url`       512×512 (profile header, settings)
+            //   - `avatar_thumb_url` 128×128 (chat bubbles, listing rows)
+            'avatar_url' => $this->avatar_url,
+            'avatar_thumb_url' => $this->avatar_thumb_url,
             // Verified linked external accounts (M8 Phase 1). Null when not
             // linked — the username column is only populated after successful
             // bio-code verification (pending state lives in
