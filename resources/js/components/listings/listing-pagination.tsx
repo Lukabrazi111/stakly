@@ -20,7 +20,10 @@ const ELLIPSIS = '…';
  *   current=5, last=20  →  [1, …, 4, 5, 6, …, 20]
  *   current=1, last=20  →  [1, 2, 3, …, 20]
  */
-function visiblePages(current: number, last: number): (number | typeof ELLIPSIS)[] {
+function visiblePages(
+    current: number,
+    last: number,
+): (number | typeof ELLIPSIS)[] {
     if (last <= 7) {
         return Array.from({ length: last }, (_, i) => i + 1);
     }
@@ -57,11 +60,10 @@ export function ListingPagination({ currentPage, lastPage, filters }: Props) {
             return;
         }
 
-        router.get(
-            listingsIndex().url,
-            buildListingsQuery(filters, { page }),
-            { preserveState: true, preserveScroll: false },
-        );
+        router.get(listingsIndex().url, buildListingsQuery(filters, { page }), {
+            preserveState: true,
+            preserveScroll: false,
+        });
     };
 
     const pages = visiblePages(currentPage, lastPage);
@@ -84,7 +86,7 @@ export function ListingPagination({ currentPage, lastPage, filters }: Props) {
                     <span
                         key={`ellipsis-${idx}`}
                         aria-hidden
-                        className="text-muted-foreground inline-flex h-9 w-9 items-center justify-center text-sm"
+                        className="inline-flex h-9 w-9 items-center justify-center text-sm text-muted-foreground"
                     >
                         {ELLIPSIS}
                     </span>

@@ -34,11 +34,10 @@ export function MatchesFilterChips({ filters }: Props) {
             return;
         }
 
-        router.get(
-            matchesIndex().url,
-            buildMatchesQuery({ status: value }),
-            { preserveState: true, preserveScroll: false },
-        );
+        router.get(matchesIndex().url, buildMatchesQuery({ status: value }), {
+            preserveState: true,
+            preserveScroll: false,
+        });
     };
 
     return (

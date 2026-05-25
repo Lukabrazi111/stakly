@@ -33,17 +33,22 @@ jobs:
           composer install -q --no-ansi --no-interaction --no-scripts --no-progress --prefer-dist
           npm install
 
-      - name: Run Pint
-        run: composer lint
+      # All three quality gates run in `*:check` (non-autofix) mode. The
+      # previous setup ran `pint`, `prettier --write`, and `eslint --fix`
+      # — which silently rewrite files on CI then throw the changes away
+      # (auto-commit step was never enabled). `eslint --fix` was also the
+      # only one that could fail CI, masking style drift in PHP + frontend
+      # behind a one-sided JS-only signal. Check variants exit non-zero on
+      # any drift so the failure mode is uniform across all three.
 
-      - name: Format Frontend
-        run: npm run format
+      - name: Pint (check only)
+        run: composer lint:check
 
-      - name: Lint Frontend
-        run: npm run lint
+      - name: Prettier (check only)
+        run: npm run format:check
 
-      # - name: Commit Changes
-      #   uses: stefanzweifel/git-auto-commit-action@v7
-      #   with:
-      #     commit_message: fix code style
-      #     commit_options: '--no-verify'
+      - name: ESLint (check only)
+        run: npm run lint:check
+
+      - name: TypeScript (no emit)
+        run: npm run types:check

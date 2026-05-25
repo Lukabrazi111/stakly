@@ -52,7 +52,7 @@ const mobileDisabledItemClass =
 
 function SoonBadge() {
     return (
-        <span className="bg-background/80 text-muted-foreground ml-auto rounded-full px-2 py-0.5 text-[10px] tracking-wide uppercase backdrop-blur">
+        <span className="ml-auto rounded-full bg-background/80 px-2 py-0.5 text-[10px] tracking-wide text-muted-foreground uppercase backdrop-blur">
             Soon
         </span>
     );
@@ -81,26 +81,26 @@ export function MobileMenu() {
                 <button
                     type="button"
                     aria-label="Open menu"
-                    className="group focus-visible:ring-primary focus-visible:ring-offset-background relative inline-flex size-10 cursor-pointer items-center justify-center rounded-full transition-shadow duration-200 ease-out hover:shadow-glow-sm focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none md:hidden"
+                    className="group relative inline-flex size-10 cursor-pointer items-center justify-center rounded-full transition-shadow duration-200 ease-out hover:shadow-glow-sm focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none md:hidden"
                 >
                     <span className="relative flex h-4 w-6 flex-col justify-between">
-                        <span className="bg-foreground h-0.5 w-full origin-center rounded-full transition-transform duration-300 ease-out group-data-[state=open]:translate-y-[7px] group-data-[state=open]:rotate-45" />
-                        <span className="bg-foreground h-0.5 w-full rounded-full transition-opacity duration-200 ease-out group-data-[state=open]:opacity-0" />
-                        <span className="bg-foreground h-0.5 w-full origin-center rounded-full transition-transform duration-300 ease-out group-data-[state=open]:-translate-y-[7px] group-data-[state=open]:-rotate-45" />
+                        <span className="h-0.5 w-full origin-center rounded-full bg-foreground transition-transform duration-300 ease-out group-data-[state=open]:translate-y-[7px] group-data-[state=open]:rotate-45" />
+                        <span className="h-0.5 w-full rounded-full bg-foreground transition-opacity duration-200 ease-out group-data-[state=open]:opacity-0" />
+                        <span className="h-0.5 w-full origin-center rounded-full bg-foreground transition-transform duration-300 ease-out group-data-[state=open]:-translate-y-[7px] group-data-[state=open]:-rotate-45" />
                     </span>
                 </button>
             </SheetTrigger>
 
             <SheetContent
                 side="right"
-                className="bg-background/95 border-border/50 flex w-full flex-col gap-0 border-l p-0 backdrop-blur-xl sm:max-w-none"
+                className="flex w-full flex-col gap-0 border-l border-border/50 bg-background/95 p-0 backdrop-blur-xl sm:max-w-none"
             >
                 <SheetTitle className="sr-only">Stakly menu</SheetTitle>
                 <SheetDescription className="sr-only">
                     Site navigation, search, and account actions.
                 </SheetDescription>
 
-                <div className="border-border/50 flex items-center border-b px-5 py-4">
+                <div className="flex items-center border-b border-border/50 px-5 py-4">
                     <SheetClose asChild>
                         <Link
                             href={home()}
@@ -114,12 +114,12 @@ export function MobileMenu() {
 
                 <div className="px-5 pt-5">
                     <div className="relative">
-                        <Search className="text-muted-foreground absolute top-1/2 left-4 size-4 -translate-y-1/2" />
+                        <Search className="absolute top-1/2 left-4 size-4 -translate-y-1/2 text-muted-foreground" />
                         <input
                             type="search"
                             placeholder="Search listings, players, games..."
                             aria-label="Search"
-                            className="border-border bg-card text-foreground placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-ring focus-visible:shadow-glow-sm h-11 w-full rounded-full border pr-4 pl-11 text-sm transition-shadow duration-200 ease-out focus-visible:ring-1 focus-visible:outline-none"
+                            className="h-11 w-full rounded-full border border-border bg-card pr-4 pl-11 text-sm text-foreground transition-shadow duration-200 ease-out placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-1 focus-visible:shadow-glow-sm focus-visible:ring-ring focus-visible:outline-none"
                         />
                     </div>
                 </div>
@@ -129,12 +129,12 @@ export function MobileMenu() {
                         <SheetClose key={link.label} asChild>
                             <Link
                                 href={link.href}
-                                className="font-display text-foreground hover:text-primary border-border/40 group flex items-center justify-between border-b py-4 text-2xl font-bold tracking-tight transition-colors"
+                                className="group flex items-center justify-between border-b border-border/40 py-4 font-display text-2xl font-bold tracking-tight text-foreground transition-colors hover:text-primary"
                             >
                                 <span>{link.label}</span>
                                 <span
                                     aria-hidden
-                                    className="text-muted-foreground/40 group-hover:text-primary translate-x-0 text-xl transition-all duration-200 ease-out group-hover:translate-x-1"
+                                    className="translate-x-0 text-xl text-muted-foreground/40 transition-all duration-200 ease-out group-hover:translate-x-1 group-hover:text-primary"
                                 >
                                     →
                                 </span>
@@ -155,7 +155,7 @@ export function MobileMenu() {
                                 >
                                     Create listing
                                 </Button>
-                                <p className="text-muted-foreground text-center text-xs">
+                                <p className="text-center text-xs text-muted-foreground">
                                     Verify your email to create listings.
                                 </p>
                             </div>
@@ -178,22 +178,22 @@ export function MobileMenu() {
 
                 <div className="mt-auto flex flex-col gap-3 p-5">
                     {user ? (
-                        <div className="border-border/60 bg-card/95 flex flex-col overflow-hidden rounded-2xl border backdrop-blur-md">
+                        <div className="flex flex-col overflow-hidden rounded-2xl border border-border/60 bg-card/95 backdrop-blur-md">
                             <div className="flex items-center gap-3 p-4">
                                 <Avatar className="size-12 overflow-hidden rounded-full">
                                     <AvatarImage
                                         src={user.avatar}
                                         alt={user.name}
                                     />
-                                    <AvatarFallback className="bg-gradient-primary text-primary-foreground text-base font-semibold">
+                                    <AvatarFallback className="bg-gradient-primary text-base font-semibold text-primary-foreground">
                                         {getInitials(user.name)}
                                     </AvatarFallback>
                                 </Avatar>
                                 <div className="flex min-w-0 flex-1 flex-col">
-                                    <span className="text-foreground truncate text-sm font-semibold">
+                                    <span className="truncate text-sm font-semibold text-foreground">
                                         {user.name}
                                     </span>
-                                    <span className="text-muted-foreground truncate text-xs">
+                                    <span className="truncate text-xs text-muted-foreground">
                                         {user.email}
                                     </span>
                                 </div>
@@ -212,21 +212,21 @@ export function MobileMenu() {
                                 <Link
                                     href={walletIndex().url}
                                     prefetch
-                                    className="border-border/60 hover:bg-primary/10 active:bg-primary/10 flex items-center justify-between gap-3 border-t px-4 py-3 transition-colors duration-150 ease-out"
+                                    className="flex items-center justify-between gap-3 border-t border-border/60 px-4 py-3 transition-colors duration-150 ease-out hover:bg-primary/10 active:bg-primary/10"
                                 >
-                                    <span className="text-muted-foreground text-xs font-medium tracking-wide uppercase">
+                                    <span className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
                                         Balance
                                     </span>
-                                    <span className="font-display text-foreground text-base font-semibold">
+                                    <span className="font-display text-base font-semibold text-foreground">
                                         ${formatUsdt(user.usdt_balance)}{' '}
-                                        <span className="text-muted-foreground text-xs">
+                                        <span className="text-xs text-muted-foreground">
                                             USDT
                                         </span>
                                     </span>
                                 </Link>
                             </SheetClose>
 
-                            <div className="border-border/60 flex flex-col gap-0.5 border-t p-2">
+                            <div className="flex flex-col gap-0.5 border-t border-border/60 p-2">
                                 <div
                                     aria-disabled="true"
                                     className={mobileDisabledItemClass}
@@ -277,14 +277,14 @@ export function MobileMenu() {
                                 </SheetClose>
                             </div>
 
-                            <div className="border-border/60 border-t p-2">
+                            <div className="border-t border-border/60 p-2">
                                 <SheetClose asChild>
                                     <Link
                                         href={logout()}
                                         method="post"
                                         as="button"
                                         onClick={handleLogout}
-                                        className="text-muted-foreground hover:text-destructive active:text-destructive hover:bg-destructive/10 active:bg-destructive/10 [&_svg]:text-muted-foreground hover:[&_svg]:text-destructive active:[&_svg]:text-destructive flex w-full cursor-pointer items-center gap-3 rounded-xl px-3 py-3 text-sm font-medium transition-colors duration-150 ease-out"
+                                        className="flex w-full cursor-pointer items-center gap-3 rounded-xl px-3 py-3 text-sm font-medium text-muted-foreground transition-colors duration-150 ease-out hover:bg-destructive/10 hover:text-destructive active:bg-destructive/10 active:text-destructive [&_svg]:text-muted-foreground hover:[&_svg]:text-destructive active:[&_svg]:text-destructive"
                                     >
                                         <LogOut className="size-5" />
                                         Log out

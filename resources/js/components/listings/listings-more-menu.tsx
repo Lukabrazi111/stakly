@@ -7,7 +7,10 @@ import {
     DropdownMenuItem,
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { create as listingsCreate, mine as listingsMine } from '@/routes/listings';
+import {
+    create as listingsCreate,
+    mine as listingsMine,
+} from '@/routes/listings';
 import { index as matchesIndex } from '@/routes/matches';
 
 /**
@@ -42,7 +45,7 @@ export function ListingsMoreMenu() {
                     // pink wash + border highlight, no text-shadow noise.
                     // `data-[state=open]` keeps the highlight on while the
                     // dropdown is open so users see which trigger owns it.
-                    className="border-border/60 hover:bg-primary/10 hover:border-primary/40 hover:[text-shadow:none] data-[state=open]:bg-primary/10 data-[state=open]:border-primary/40 border max-md:px-4"
+                    className="border border-border/60 hover:border-primary/40 hover:bg-primary/10 hover:[text-shadow:none] data-[state=open]:border-primary/40 data-[state=open]:bg-primary/10 max-md:px-4"
                     aria-label="Open more actions menu"
                 >
                     <MoreHorizontal className="size-4" />
@@ -52,7 +55,7 @@ export function ListingsMoreMenu() {
             <DropdownMenuContent
                 align="end"
                 sideOffset={6}
-                className="border-border/60 bg-card/95 w-52 rounded-xl p-1.5 backdrop-blur-md"
+                className="w-52 rounded-xl border-border/60 bg-card/95 p-1.5 backdrop-blur-md"
             >
                 <DropdownMenuItem asChild>
                     <Link href={listingsCreate().url} prefetch>

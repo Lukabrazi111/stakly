@@ -31,7 +31,7 @@ export function LoginForm({
                     {status && (
                         <p
                             role="status"
-                            className="text-success text-center text-sm"
+                            className="text-center text-sm text-success"
                         >
                             {status}
                         </p>
@@ -63,7 +63,7 @@ export function LoginForm({
                                 <button
                                     type="button"
                                     onClick={onSwitchToForgotPassword}
-                                    className="text-muted-foreground hover:text-primary cursor-pointer text-xs transition-colors"
+                                    className="cursor-pointer text-xs text-muted-foreground transition-colors hover:text-primary"
                                 >
                                     Forgot password?
                                 </button>
@@ -81,7 +81,7 @@ export function LoginForm({
 
                         <label
                             htmlFor="remember"
-                            className="text-muted-foreground flex cursor-pointer items-center gap-2.5 text-sm"
+                            className="flex cursor-pointer items-center gap-2.5 text-sm text-muted-foreground"
                         >
                             <Checkbox
                                 id="remember"
@@ -104,12 +104,12 @@ export function LoginForm({
                         Sign in
                     </Button>
 
-                    <p className="text-muted-foreground text-center text-sm">
+                    <p className="text-center text-sm text-muted-foreground">
                         Don't have an account?{' '}
                         <button
                             type="button"
                             onClick={onSwitchToRegister}
-                            className="text-foreground hover:text-primary cursor-pointer font-medium transition-colors"
+                            className="cursor-pointer font-medium text-foreground transition-colors hover:text-primary"
                         >
                             Sign up
                         </button>

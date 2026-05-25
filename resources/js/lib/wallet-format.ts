@@ -50,9 +50,9 @@ export function formatTransactionDate(iso: string | null): string {
 
     // Same calendar day: show time only.
     if (
-        date.getFullYear() === now.getFullYear()
-        && date.getMonth() === now.getMonth()
-        && date.getDate() === now.getDate()
+        date.getFullYear() === now.getFullYear() &&
+        date.getMonth() === now.getMonth() &&
+        date.getDate() === now.getDate()
     ) {
         return date.toLocaleTimeString('en-US', {
             hour: 'numeric',

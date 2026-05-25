@@ -1,3 +1,4 @@
+import { router } from '@inertiajs/react';
 import { CheckCircle2, Loader2 } from 'lucide-react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { useEffect, useState } from 'react';
@@ -13,14 +14,6 @@ interface WaitingForGameCardProps {
      * unmounts this card in favor of `SettlementSummary`.
      */
     hasAutoFetchedCard: boolean;
-    /**
-     * Bumps every time the parent re-receives the match prop from an
-     * Inertia partial reload. The "Last checked Ns ago" timer resets to
-     * 0 on each bump — Stakly's match-page poll cycle (every 8s while
-     * Pending) is what fires the page-visit `DispatchAutoFetchAction`
-     * trigger on the backend, so "last checked" reflects the truth.
-     */
-    pollTick: number;
 }
 
 const PLATFORM_LABEL: Record<ListingPlatform, string> = {
@@ -59,12 +52,11 @@ export function WaitingForGameCard({
     platform,
     snapshots,
     hasAutoFetchedCard,
-    pollTick,
 }: WaitingForGameCardProps) {
     const reduceMotion = useReducedMotion();
 
     return (
-        <section className="border-border/60 bg-card/60 overflow-hidden rounded-2xl border">
+        <section className="overflow-hidden rounded-2xl border border-border/60 bg-card/60">
             <AnimatePresence mode="wait" initial={false}>
                 {hasAutoFetchedCard ? (
                     <motion.div
@@ -89,7 +81,6 @@ export function WaitingForGameCard({
                         <LookingState
                             platform={platform}
                             snapshots={snapshots}
-                            pollTick={pollTick}
                             reduceMotion={reduceMotion ?? false}
                         />
                     </motion.div>
@@ -102,76 +93,76 @@ export function WaitingForGameCard({
 function LookingState({
     platform,
     snapshots,
-    pollTick,
     reduceMotion,
 }: {
     platform: ListingPlatform;
     snapshots: MatchSnapshots;
-    pollTick: number;
     reduceMotion: boolean;
 }) {
-    const secondsAgo = useSecondsSince(pollTick);
+    const secondsAgo = useSecondsSinceLastVisit();
 
     const platformLabel = PLATFORM_LABEL[platform];
     const buildProfileUrl = PLATFORM_PROFILE_URL[platform];
 
     return (
         <div className="flex items-start gap-4">
-            <div className="bg-warning/10 ring-warning/20 shrink-0 rounded-full p-2.5 ring-1">
+            <div className="shrink-0 rounded-full bg-warning/10 p-2.5 ring-1 ring-warning/20">
                 {reduceMotion ? (
                     <Loader2
-                        className="text-warning size-5"
+                        className="size-5 text-warning"
                         aria-hidden="true"
                     />
                 ) : (
                     <Loader2
-                        className="text-warning size-5 animate-spin"
+                        className="size-5 animate-spin text-warning"
                         aria-hidden="true"
                     />
                 )}
             </div>
 
             <div className="min-w-0 flex-1">
-                <h2 className="font-display text-foreground text-lg font-semibold">
+                <h2 className="font-display text-lg font-semibold text-foreground">
                     Play your match on {platformLabel}
                 </h2>
 
-                <p className="text-muted-foreground mt-1 text-sm">
+                <p className="mt-1 text-sm text-muted-foreground">
                     Stakly settles automatically as soon as your game on{' '}
                     {platformLabel} finishes — no buttons to press.
                 </p>
 
-                {snapshots.creator_username !== null
-                    && snapshots.taker_username !== null && (
-                    <div className="border-border/60 bg-background/40 mt-4 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border px-3 py-2.5 text-sm">
-                        <span className="text-muted-foreground text-xs uppercase tracking-wide">
-                            Watching for
-                        </span>
-                        <a
-                            href={buildProfileUrl(snapshots.creator_username)}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-foreground hover:text-primary font-medium transition-colors"
-                        >
-                            {snapshots.creator_username}
-                        </a>
-                        <span className="text-muted-foreground">vs</span>
-                        <a
-                            href={buildProfileUrl(snapshots.taker_username)}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-foreground hover:text-primary font-medium transition-colors"
-                        >
-                            {snapshots.taker_username}
-                        </a>
-                    </div>
-                )}
+                {snapshots.creator_username !== null &&
+                    snapshots.taker_username !== null && (
+                        <div className="mt-4 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border border-border/60 bg-background/40 px-3 py-2.5 text-sm">
+                            <span className="text-xs tracking-wide text-muted-foreground uppercase">
+                                Watching for
+                            </span>
+                            <a
+                                href={buildProfileUrl(
+                                    snapshots.creator_username,
+                                )}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="font-medium text-foreground transition-colors hover:text-primary"
+                            >
+                                {snapshots.creator_username}
+                            </a>
+                            <span className="text-muted-foreground">vs</span>
+                            <a
+                                href={buildProfileUrl(snapshots.taker_username)}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="font-medium text-foreground transition-colors hover:text-primary"
+                            >
+                                {snapshots.taker_username}
+                            </a>
+                        </div>
+                    )}
 
                 <div
-                    className="text-muted-foreground mt-3 flex items-center gap-2 text-xs"
+                    className="mt-3 flex items-center gap-2 text-xs text-muted-foreground"
                     aria-live="polite"
                 >
-                    <span className="bg-warning size-1.5 rounded-full" />
+                    <span className="size-1.5 rounded-full bg-warning" />
                     <span>Looking for your game…</span>
                     <span aria-hidden="true">•</span>
                     <span className="tabular-nums">
@@ -186,20 +177,20 @@ function LookingState({
 function FoundState({ platform }: { platform: ListingPlatform }) {
     return (
         <div className="flex items-start gap-4">
-            <div className="bg-success/10 ring-success/20 shrink-0 rounded-full p-2.5 ring-1">
+            <div className="shrink-0 rounded-full bg-success/10 p-2.5 ring-1 ring-success/20">
                 <CheckCircle2
-                    className="text-success size-5"
+                    className="size-5 text-success"
                     aria-hidden="true"
                 />
             </div>
 
             <div className="min-w-0 flex-1">
-                <h2 className="font-display text-foreground text-lg font-semibold">
+                <h2 className="font-display text-lg font-semibold text-foreground">
                     Game found — settling now…
                 </h2>
-                <p className="text-muted-foreground mt-1 text-sm">
-                    We found your game on {PLATFORM_LABEL[platform]}. Payout
-                    and platform fee post to the ledger in a moment.
+                <p className="mt-1 text-sm text-muted-foreground">
+                    We found your game on {PLATFORM_LABEL[platform]}. Payout and
+                    platform fee post to the ledger in a moment.
                 </p>
             </div>
         </div>
@@ -207,19 +198,26 @@ function FoundState({ platform }: { platform: ListingPlatform }) {
 }
 
 /**
- * Returns the seconds elapsed since the most recent `resetKey` change.
- * Re-renders once per second while mounted; resets to 0 when `resetKey`
- * bumps (Inertia partial reload returns a new prop reference even when
- * data is unchanged, so this fires on every poll tick).
+ * Returns the seconds elapsed since the most recent successful Inertia
+ * visit (or since mount if no visit has completed yet). Re-renders once
+ * per second while mounted; resets to 0 every time Inertia's router
+ * fires `success` — that fires on every successful partial reload from
+ * the match page's 8s polling loop.
+ *
+ * Subscribing to `router.on('success', ...)` directly removes the need
+ * for the parent to maintain a poll-tick counter and pass it down. The
+ * timer owns its own reset signal, decoupled from prop-change detection.
  */
-function useSecondsSince(resetKey: number): number {
+function useSecondsSinceLastVisit(): number {
     const [resetAt, setResetAt] = useState(() => Date.now());
     const [now, setNow] = useState(() => Date.now());
 
     useEffect(() => {
-        setResetAt(Date.now());
-        setNow(Date.now());
-    }, [resetKey]);
+        return router.on('success', () => {
+            setResetAt(Date.now());
+            setNow(Date.now());
+        });
+    }, []);
 
     useEffect(() => {
         const id = window.setInterval(() => setNow(Date.now()), 1000);

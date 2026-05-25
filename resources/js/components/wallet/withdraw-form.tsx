@@ -37,12 +37,13 @@ export function WithdrawForm({ balance, minWithdrawal }: Props) {
     const exceedsBalance = amountNumber > balance;
     const belowMin = amountNumber > 0 && amountNumber < minWithdrawal;
     const hasAddress = data.address.trim().length > 0;
-    const canSubmit = !processing
-        && hasAddress
-        && data.amount !== ''
-        && amountNumber > 0
-        && !exceedsBalance
-        && !belowMin;
+    const canSubmit =
+        !processing &&
+        hasAddress &&
+        data.amount !== '' &&
+        amountNumber > 0 &&
+        !exceedsBalance &&
+        !belowMin;
 
     const handleMax = () => {
         // toFixed(2) ensures the input matches the server's `decimal:0,2` rule.
@@ -70,8 +71,9 @@ export function WithdrawForm({ balance, minWithdrawal }: Props) {
                     aria-invalid={errors.address ? true : undefined}
                     className="font-mono"
                 />
-                <p className="text-muted-foreground text-xs">
-                    Send to a TRC20 (Tron) USDT address only. Other networks lose funds.
+                <p className="text-xs text-muted-foreground">
+                    Send to a TRC20 (Tron) USDT address only. Other networks
+                    lose funds.
                 </p>
                 <InputError message={errors.address} />
             </div>
@@ -98,7 +100,7 @@ export function WithdrawForm({ balance, minWithdrawal }: Props) {
                             }
                             className="pr-16"
                         />
-                        <span className="text-muted-foreground pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 text-sm font-medium">
+                        <span className="pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 text-sm font-medium text-muted-foreground">
                             USDT
                         </span>
                     </div>
@@ -115,18 +117,18 @@ export function WithdrawForm({ balance, minWithdrawal }: Props) {
                 <div className="flex items-center justify-between text-xs">
                     <span className="text-muted-foreground">
                         Min:{' '}
-                        <span className="text-foreground font-medium">
+                        <span className="font-medium text-foreground">
                             {formatUsdt(minWithdrawal)} USDT
                         </span>
                     </span>
-                    <span className="text-muted-foreground inline-flex items-center gap-1">
+                    <span className="inline-flex items-center gap-1 text-muted-foreground">
                         <Wallet className="size-3" />
                         Available:{' '}
                         <span
                             className={
                                 exceedsBalance
-                                    ? 'text-destructive font-medium'
-                                    : 'text-foreground font-medium'
+                                    ? 'font-medium text-destructive'
+                                    : 'font-medium text-foreground'
                             }
                         >
                             {formatUsdt(balance)} USDT
@@ -134,12 +136,12 @@ export function WithdrawForm({ balance, minWithdrawal }: Props) {
                     </span>
                 </div>
                 {exceedsBalance && (
-                    <p className="text-destructive text-xs">
+                    <p className="text-xs text-destructive">
                         Amount exceeds your available balance.
                     </p>
                 )}
                 {belowMin && (
-                    <p className="text-destructive text-xs">
+                    <p className="text-xs text-destructive">
                         Minimum withdrawal is {formatUsdt(minWithdrawal)} USDT.
                     </p>
                 )}

@@ -51,14 +51,14 @@ export function MineListingRow({ listing }: Props) {
         setCancelOpen(true);
     };
 
-    const endingSoon
-        = listing.status === 'open' && isEndingSoon(listing.expires_at);
+    const endingSoon =
+        listing.status === 'open' && isEndingSoon(listing.expires_at);
 
     return (
-        <article className="hover:bg-primary/5 border-border/40 group relative flex flex-col gap-2 border-t px-4 py-4 transition-colors duration-200 ease-out first:border-t-0 md:flex-row md:items-center md:gap-4 md:px-5">
+        <article className="group relative flex flex-col gap-2 border-t border-border/40 px-4 py-4 transition-colors duration-200 ease-out first:border-t-0 hover:bg-primary/5 md:flex-row md:items-center md:gap-4 md:px-5">
             <Link
                 href={showListing(listing.id).url}
-                className="focus-visible:ring-primary focus-visible:ring-offset-background absolute inset-0 rounded-lg focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none"
+                className="absolute inset-0 rounded-lg focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none"
                 aria-label={`View listing #${listing.id}`}
             />
 
@@ -79,10 +79,10 @@ export function MineListingRow({ listing }: Props) {
 
                 {/* Stake */}
                 <div className="pointer-events-none relative flex shrink-0 items-baseline gap-1 md:w-28">
-                    <span className="font-display text-gradient-primary text-xl font-bold leading-none">
+                    <span className="text-gradient-primary font-display text-xl leading-none font-bold">
                         ${listing.stake_amount}
                     </span>
-                    <span className="text-muted-foreground text-xs">USDT</span>
+                    <span className="text-xs text-muted-foreground">USDT</span>
                 </div>
             </div>
 
@@ -93,7 +93,7 @@ export function MineListingRow({ listing }: Props) {
                     {listing.time_control.map((tc) => (
                         <span
                             key={tc}
-                            className="border-border/60 bg-background/60 text-muted-foreground inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs font-medium"
+                            className="inline-flex items-center gap-1 rounded-full border border-border/60 bg-background/60 px-2.5 py-0.5 text-xs font-medium text-muted-foreground"
                         >
                             <Clock className="size-3" />
                             {timeControlLabels[tc]}
@@ -164,7 +164,7 @@ function IconButton({
             disabled={disabled}
             aria-label={label}
             title={label}
-            className={`text-muted-foreground focus-visible:ring-primary/25 focus-visible:ring-offset-background relative inline-flex size-8 cursor-pointer items-center justify-center rounded-full transition-colors duration-150 ease-out focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50 ${hoverClasses} ${className}`}
+            className={`relative inline-flex size-8 cursor-pointer items-center justify-center rounded-full text-muted-foreground transition-colors duration-150 ease-out focus-visible:ring-2 focus-visible:ring-primary/25 focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50 ${hoverClasses} ${className}`}
         >
             {children}
         </button>

@@ -27,18 +27,17 @@ export function MineTabs({ current }: Props) {
             return;
         }
 
-        router.get(
-            mineRoute().url,
-            buildMineQuery({ tab }),
-            { preserveState: false, preserveScroll: false },
-        );
+        router.get(mineRoute().url, buildMineQuery({ tab }), {
+            preserveState: false,
+            preserveScroll: false,
+        });
     };
 
     return (
         <div
             role="tablist"
             aria-label="Listings view"
-            className="border-border/60 mb-6 flex items-center gap-6 border-b"
+            className="mb-6 flex items-center gap-6 border-b border-border/60"
         >
             {TABS.map((tab) => {
                 const active = current === tab.value;
@@ -50,7 +49,7 @@ export function MineTabs({ current }: Props) {
                         role="tab"
                         aria-selected={active}
                         onClick={() => handleSelect(tab.value)}
-                        className={`focus-visible:ring-primary/25 focus-visible:ring-offset-background relative -mb-px cursor-pointer border-b-2 px-1 py-3 text-sm font-medium transition-colors duration-150 ease-out focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none ${
+                        className={`relative -mb-px cursor-pointer border-b-2 px-1 py-3 text-sm font-medium transition-colors duration-150 ease-out focus-visible:ring-2 focus-visible:ring-primary/25 focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none ${
                             active
                                 ? 'border-primary text-foreground'
                                 : 'border-transparent text-muted-foreground hover:text-foreground'

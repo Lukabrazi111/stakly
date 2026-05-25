@@ -19,7 +19,8 @@ const appName = import.meta.env.VITE_APP_NAME || 'Laravel';
 // before .env was edited). Restart `sail npm run dev` after any
 // VITE_REVERB_* change for these to be picked up.
 const reverbPort = Number(import.meta.env.VITE_REVERB_PORT ?? 8080);
-const reverbScheme = (import.meta.env.VITE_REVERB_SCHEME as string | undefined) ?? 'http';
+const reverbScheme =
+    (import.meta.env.VITE_REVERB_SCHEME as string | undefined) ?? 'http';
 
 configureEcho({
     broadcaster: 'reverb',

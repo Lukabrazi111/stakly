@@ -46,28 +46,28 @@ export function MatchInfoCard({
     const getInitials = useInitials();
 
     return (
-        <section className="border-border/60 bg-card/60 rounded-2xl border">
-            <header className="border-border/60 border-b px-6 py-4">
-                <h2 className="text-foreground text-sm font-semibold">
+        <section className="rounded-2xl border border-border/60 bg-card/60">
+            <header className="border-b border-border/60 px-6 py-4">
+                <h2 className="text-sm font-semibold text-foreground">
                     Match info
                 </h2>
             </header>
-            <dl className="divide-border/60 divide-y">
+            <dl className="divide-y divide-border/60">
                 <Link
                     href={userShow(opponent.username).url}
-                    className="group hover:bg-primary/5 focus-visible:ring-primary flex items-center justify-between gap-3 px-6 py-4 transition-colors focus-visible:ring-2 focus-visible:outline-none"
+                    className="group flex items-center justify-between gap-3 px-6 py-4 transition-colors hover:bg-primary/5 focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none"
                 >
-                    <dt className="text-muted-foreground text-sm">Opponent</dt>
+                    <dt className="text-sm text-muted-foreground">Opponent</dt>
                     <dd className="flex items-center gap-2.5">
                         <Avatar className="size-7">
-                            <AvatarFallback className="bg-gradient-primary text-primary-foreground text-[10px] font-semibold">
+                            <AvatarFallback className="bg-gradient-primary text-[10px] font-semibold text-primary-foreground">
                                 {getInitials(opponent.name)}
                             </AvatarFallback>
                         </Avatar>
-                        <span className="text-foreground text-sm font-medium">
+                        <span className="text-sm font-medium text-foreground">
                             {opponent.name}
                         </span>
-                        <ChevronRight className="text-muted-foreground group-hover:text-primary size-4 transition-colors" />
+                        <ChevronRight className="size-4 text-muted-foreground transition-colors group-hover:text-primary" />
                     </dd>
                 </Link>
 
@@ -88,12 +88,12 @@ export function MatchInfoCard({
                     so the copy is always accurate (we only auto-verify
                     on the platform the listing was created for). */}
                 <div className="flex items-center justify-between gap-3 px-6 py-4">
-                    <dt className="text-muted-foreground text-sm">
+                    <dt className="text-sm text-muted-foreground">
                         Verification
                     </dt>
-                    <dd className="text-foreground inline-flex items-center gap-1.5 text-sm font-medium">
+                    <dd className="inline-flex items-center gap-1.5 text-sm font-medium text-foreground">
                         <ShieldCheck
-                            className="text-success size-4"
+                            className="size-4 text-success"
                             strokeWidth={2}
                             aria-hidden="true"
                         />
@@ -119,12 +119,12 @@ function Row({
 }) {
     return (
         <div className="flex items-center justify-between gap-3 px-6 py-4">
-            <dt className="text-muted-foreground text-sm">{label}</dt>
+            <dt className="text-sm text-muted-foreground">{label}</dt>
             <dd
                 className={
                     accent
                         ? 'text-gradient-primary text-sm font-semibold'
-                        : 'text-foreground text-sm font-medium'
+                        : 'text-sm font-medium text-foreground'
                 }
             >
                 {value}

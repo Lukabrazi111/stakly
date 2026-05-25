@@ -77,16 +77,16 @@ function RequesterWaitingBanner({
     reason: string | null;
 }) {
     return (
-        <section className="border-warning/40 bg-warning/5 mb-6 rounded-2xl border p-5">
+        <section className="mb-6 rounded-2xl border border-warning/40 bg-warning/5 p-5">
             <div className="flex items-start gap-3">
-                <span className="bg-warning/15 text-warning inline-flex size-9 shrink-0 items-center justify-center rounded-full">
+                <span className="inline-flex size-9 shrink-0 items-center justify-center rounded-full bg-warning/15 text-warning">
                     <Clock className="size-4" strokeWidth={2} />
                 </span>
                 <div className="min-w-0 flex-1">
-                    <h3 className="text-foreground text-sm font-semibold">
+                    <h3 className="text-sm font-semibold text-foreground">
                         Cancellation request sent
                     </h3>
-                    <p className="text-muted-foreground mt-1 text-sm">
+                    <p className="mt-1 text-sm text-muted-foreground">
                         Waiting for {opponent.name} to accept or decline.
                     </p>
                     {reason !== null && (
@@ -136,20 +136,19 @@ function RespondBanner({
     };
 
     return (
-        <section className="border-warning/40 bg-warning/5 mb-6 rounded-2xl border p-5">
+        <section className="mb-6 rounded-2xl border border-warning/40 bg-warning/5 p-5">
             <div className="flex items-start gap-3">
-                <span className="bg-warning/15 text-warning inline-flex size-9 shrink-0 items-center justify-center rounded-full">
+                <span className="inline-flex size-9 shrink-0 items-center justify-center rounded-full bg-warning/15 text-warning">
                     <Handshake className="size-4" strokeWidth={2} />
                 </span>
                 <div className="min-w-0 flex-1">
-                    <h3 className="text-foreground text-sm font-semibold">
+                    <h3 className="text-sm font-semibold text-foreground">
                         {requester.name} wants to cancel this match
                     </h3>
-                    <p className="text-muted-foreground mt-1 text-sm">
-                        If you accept, both stakes are refunded and the
-                        match ends with no winner. If you decline, the
-                        match continues and {requester.name} can't request
-                        again for 30 minutes.
+                    <p className="mt-1 text-sm text-muted-foreground">
+                        If you accept, both stakes are refunded and the match
+                        ends with no winner. If you decline, the match continues
+                        and {requester.name} can't request again for 30 minutes.
                     </p>
 
                     {reason !== null && (
@@ -185,11 +184,11 @@ function RespondBanner({
 
 function ReasonBlock({ label, reason }: { label: string; reason: string }) {
     return (
-        <div className="border-border/60 bg-card/60 mt-3 rounded-lg border p-3">
-            <p className="text-muted-foreground text-[10px] font-medium tracking-wide uppercase">
+        <div className="mt-3 rounded-lg border border-border/60 bg-card/60 p-3">
+            <p className="text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
                 {label}
             </p>
-            <p className="text-foreground mt-1 text-sm whitespace-pre-wrap">
+            <p className="mt-1 text-sm whitespace-pre-wrap text-foreground">
                 {reason}
             </p>
         </div>

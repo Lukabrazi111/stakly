@@ -31,8 +31,8 @@ export function MarqueeStrip({ items }: MarqueeStripProps) {
     );
 
     return (
-        <div className="bg-card/70 border-border/50 sticky top-16 z-40 overflow-hidden border-y py-3 backdrop-blur-lg">
-            <div className="animate-marquee motion-reduce:animate-none flex w-max motion-reduce:flex-wrap motion-reduce:justify-center">
+        <div className="sticky top-16 z-40 overflow-hidden border-y border-border/50 bg-card/70 py-3 backdrop-blur-lg">
+            <div className="flex w-max animate-marquee motion-reduce:animate-none motion-reduce:flex-wrap motion-reduce:justify-center">
                 {row('a')}
                 {row('b', true)}
             </div>

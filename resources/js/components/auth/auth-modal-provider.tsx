@@ -97,9 +97,7 @@ export function useAuthModal() {
     const ctx = useContext(AuthModalContext);
 
     if (!ctx) {
-        throw new Error(
-            'useAuthModal must be used inside <AuthModalProvider>',
-        );
+        throw new Error('useAuthModal must be used inside <AuthModalProvider>');
     }
 
     return ctx;
@@ -115,25 +113,22 @@ export function AuthModalProvider({ children }: { children: ReactNode }) {
         // history), strip the param so the modal never opens for them and the
         // URL doesn't bait a refresh into reopening it.
         if (
-            readAuthFromDom()
-            && new URLSearchParams(window.location.search).has('auth')
+            readAuthFromDom() &&
+            new URLSearchParams(window.location.search).has('auth')
         ) {
             writeAuthParam(null, 'replace');
         }
 
-        const syncFromUrl = () =>
-            setState(computeState(readAuthFromDom()));
+        const syncFromUrl = () => setState(computeState(readAuthFromDom()));
 
         window.addEventListener('popstate', syncFromUrl);
 
         const removeInertiaListener = router.on('navigate', (event) => {
-            const isAuth = Boolean(
-                event.detail.page?.props?.auth?.user,
-            );
+            const isAuth = Boolean(event.detail.page?.props?.auth?.user);
 
             if (
-                isAuth
-                && new URLSearchParams(window.location.search).has('auth')
+                isAuth &&
+                new URLSearchParams(window.location.search).has('auth')
             ) {
                 writeAuthParam(null, 'replace');
             }

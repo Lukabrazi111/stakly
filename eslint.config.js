@@ -70,6 +70,17 @@ export default [
                     fixStyle: 'separate-type-imports',
                 },
             ],
+            // react-hooks/set-state-in-effect targets a real anti-pattern
+            // (derived state stored in useState), but it false-positives on
+            // legitimate "external resource" patterns — most notably object
+            // URL management, which requires setState in useEffect to handle
+            // React strict mode's mount-cleanup-remount sequence correctly.
+            // useMemo + cleanup-only effect is not equivalent: it leaks
+            // revoked URLs in strict mode. We accept the rule's misses on
+            // genuine derived-state cases in exchange for not gating CI on
+            // a rule with documented false positives. Catch derived-state
+            // misuse in code review instead.
+            'react-hooks/set-state-in-effect': 'off',
             'import/order': [
                 'error',
                 {

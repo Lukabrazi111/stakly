@@ -41,10 +41,10 @@ export function BackLink({ fallback, label = 'Back', className }: Props) {
         // Let modifier-clicks take the normal Link path — those open in
         // new tabs/windows where `history.back()` wouldn't make sense.
         if (
-            event.metaKey
-            || event.ctrlKey
-            || event.shiftKey
-            || event.button !== 0
+            event.metaKey ||
+            event.ctrlKey ||
+            event.shiftKey ||
+            event.button !== 0
         ) {
             return;
         }
@@ -64,8 +64,8 @@ export function BackLink({ fallback, label = 'Back', className }: Props) {
             href={fallback}
             onClick={handleClick}
             className={
-                className
-                ?? 'text-muted-foreground hover:text-foreground inline-flex items-center gap-1.5 text-sm transition-colors'
+                className ??
+                'inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground'
             }
         >
             <ChevronLeft className="size-4" />

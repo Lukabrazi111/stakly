@@ -109,8 +109,8 @@ export function ChatMessageBubble({
                     />
                 )}
 
-                {!hasOptimisticFile
-                    && images.map((image) => (
+                {!hasOptimisticFile &&
+                    images.map((image) => (
                         <ImageAttachment
                             key={image.media_id}
                             image={image}
@@ -123,9 +123,9 @@ export function ChatMessageBubble({
                         className={cn(
                             'rounded-2xl px-3.5 py-2 text-sm leading-snug break-words whitespace-pre-wrap',
                             isOwn
-                                ? 'bg-primary text-primary-foreground rounded-br-md'
-                                : 'border-border/60 bg-card text-foreground rounded-bl-md border',
-                            isFailed && 'border-destructive/60 border',
+                                ? 'rounded-br-md bg-primary text-primary-foreground'
+                                : 'rounded-bl-md border border-border/60 bg-card text-foreground',
+                            isFailed && 'border border-destructive/60',
                         )}
                     >
                         {message.content}
@@ -153,7 +153,7 @@ export function ChatMessageBubble({
                     <PendingFooter />
                 ) : (
                     <time
-                        className="text-muted-foreground text-[10px] tabular-nums"
+                        className="text-[10px] text-muted-foreground tabular-nums"
                         dateTime={message.created_at ?? undefined}
                     >
                         {formatBubbleTime(message.created_at)}
@@ -188,7 +188,7 @@ function ImageAttachment({ image, isOwn }: ImageAttachmentProps) {
                 type="button"
                 onClick={() => setOpen(true)}
                 className={cn(
-                    'border-border/60 group bg-card focus-visible:ring-primary focus-visible:ring-offset-background overflow-hidden rounded-2xl border transition-shadow hover:shadow-glow-sm focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none',
+                    'group overflow-hidden rounded-2xl border border-border/60 bg-card transition-shadow hover:shadow-glow-sm focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none',
                     isOwn ? 'rounded-br-md' : 'rounded-bl-md',
                 )}
                 aria-label={`Open image: ${image.name}`}
@@ -235,7 +235,8 @@ interface LinkCardProps {
  * sizing that shifts layout on bytes-arrived.
  */
 function LinkCard({ link, isOwn }: LinkCardProps) {
-    const hostname = link.site_name ?? safeHostname(link.canonical_url ?? link.url);
+    const hostname =
+        link.site_name ?? safeHostname(link.canonical_url ?? link.url);
 
     return (
         <a
@@ -243,7 +244,7 @@ function LinkCard({ link, isOwn }: LinkCardProps) {
             target="_blank"
             rel="noopener noreferrer nofollow"
             className={cn(
-                'group border-border/60 bg-card/80 hover:border-primary/40 focus-visible:border-primary/60 focus-visible:ring-primary/40 focus-visible:ring-offset-background flex w-full max-w-[320px] gap-3 overflow-hidden rounded-2xl border p-2.5 transition-all duration-200 hover:shadow-glow-sm focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none',
+                'group flex w-full max-w-[320px] gap-3 overflow-hidden rounded-2xl border border-border/60 bg-card/80 p-2.5 transition-all duration-200 hover:border-primary/40 hover:shadow-glow-sm focus-visible:border-primary/60 focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none',
                 isOwn ? 'rounded-br-md' : 'rounded-bl-md',
             )}
         >
@@ -254,25 +255,25 @@ function LinkCard({ link, isOwn }: LinkCardProps) {
                     width={64}
                     height={64}
                     loading="lazy"
-                    className="bg-muted size-16 shrink-0 rounded-lg object-cover"
+                    className="size-16 shrink-0 rounded-lg bg-muted object-cover"
                 />
             ) : (
-                <div className="bg-muted/60 text-muted-foreground/60 flex size-16 shrink-0 items-center justify-center rounded-lg">
+                <div className="flex size-16 shrink-0 items-center justify-center rounded-lg bg-muted/60 text-muted-foreground/60">
                     <LinkIcon className="size-5" />
                 </div>
             )}
 
             <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-                <h4 className="text-foreground group-hover:text-primary line-clamp-2 text-sm font-semibold leading-snug transition-colors">
+                <h4 className="line-clamp-2 text-sm leading-snug font-semibold text-foreground transition-colors group-hover:text-primary">
                     {link.title}
                 </h4>
                 {link.description && (
-                    <p className="text-muted-foreground line-clamp-2 text-xs leading-snug">
+                    <p className="line-clamp-2 text-xs leading-snug text-muted-foreground">
                         {link.description}
                     </p>
                 )}
                 {hostname && (
-                    <span className="text-muted-foreground/70 mt-auto truncate pt-0.5 text-[10px] tracking-wide uppercase">
+                    <span className="mt-auto truncate pt-0.5 text-[10px] tracking-wide text-muted-foreground/70 uppercase">
                         {hostname}
                     </span>
                 )}
@@ -304,7 +305,7 @@ function OptimisticImage({
     return (
         <div
             className={cn(
-                'border-border/60 bg-card relative overflow-hidden rounded-2xl border',
+                'relative overflow-hidden rounded-2xl border border-border/60 bg-card',
                 isOwn ? 'rounded-br-md' : 'rounded-bl-md',
                 isFailed && 'border-destructive/60',
             )}
@@ -318,8 +319,8 @@ function OptimisticImage({
                 )}
             />
             {!isFailed && (
-                <div className="bg-background/60 absolute inset-0 flex items-center justify-center backdrop-blur-[1px]">
-                    <Loader2 className="text-primary size-6 animate-spin" />
+                <div className="absolute inset-0 flex items-center justify-center bg-background/60 backdrop-blur-[1px]">
+                    <Loader2 className="size-6 animate-spin text-primary" />
                 </div>
             )}
         </div>
@@ -328,7 +329,7 @@ function OptimisticImage({
 
 function PendingFooter() {
     return (
-        <span className="text-muted-foreground inline-flex items-center gap-1 text-[10px]">
+        <span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground">
             <Loader2 className="size-2.5 animate-spin" />
             Sending…
         </span>
@@ -342,7 +343,7 @@ interface FailedFooterProps {
 
 function FailedFooter({ onRetry, onDismiss }: FailedFooterProps) {
     return (
-        <div className="text-destructive inline-flex items-center gap-2 text-[11px]">
+        <div className="inline-flex items-center gap-2 text-[11px] text-destructive">
             <TriangleAlert className="size-3" />
             <span>Failed to send</span>
             <Button
@@ -350,7 +351,7 @@ function FailedFooter({ onRetry, onDismiss }: FailedFooterProps) {
                 variant="ghost"
                 size="sm"
                 onClick={onRetry}
-                className="text-destructive hover:bg-destructive/10 hover:text-destructive hover:[text-shadow:none] h-6 gap-1 px-2 text-[11px]"
+                className="h-6 gap-1 px-2 text-[11px] text-destructive hover:bg-destructive/10 hover:text-destructive hover:[text-shadow:none]"
             >
                 <RotateCw className="size-3" />
                 Retry
@@ -361,7 +362,7 @@ function FailedFooter({ onRetry, onDismiss }: FailedFooterProps) {
                 size="sm"
                 onClick={onDismiss}
                 aria-label="Dismiss"
-                className="text-muted-foreground hover:text-foreground hover:[text-shadow:none] h-6 px-1.5"
+                className="h-6 px-1.5 text-muted-foreground hover:text-foreground hover:[text-shadow:none]"
             >
                 <X className="size-3" />
             </Button>
@@ -374,7 +375,7 @@ function SenderAvatar({ name }: { name: string }) {
 
     return (
         <Avatar className="size-7 shrink-0">
-            <AvatarFallback className="bg-gradient-primary text-primary-foreground text-[10px] font-semibold">
+            <AvatarFallback className="bg-gradient-primary text-[10px] font-semibold text-primary-foreground">
                 {getInitials(name)}
             </AvatarFallback>
         </Avatar>
@@ -453,20 +454,20 @@ function GameCardAttachment({ card, isOwn }: GameCardAttachmentProps) {
             rel="noopener noreferrer"
             aria-label={`Open Lichess game ${card.game_id}`}
             className={cn(
-                'group border-border/60 bg-card/80 hover:border-primary/40 focus-visible:border-primary/60 focus-visible:ring-primary/40 focus-visible:ring-offset-background flex w-full max-w-[320px] cursor-pointer flex-col gap-2 overflow-hidden rounded-2xl border p-3 transition-all duration-200 hover:shadow-glow-sm focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none',
+                'group flex w-full max-w-[320px] cursor-pointer flex-col gap-2 overflow-hidden rounded-2xl border border-border/60 bg-card/80 p-3 transition-all duration-200 hover:border-primary/40 hover:shadow-glow-sm focus-visible:border-primary/60 focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none',
                 isOwn ? 'rounded-br-md' : 'rounded-bl-md',
             )}
         >
             <div className="flex items-center justify-between gap-2">
                 <div className="flex min-w-0 items-center gap-2">
-                    <span className="from-primary/40 to-accent/40 bg-gradient-to-br text-foreground inline-flex size-8 shrink-0 items-center justify-center rounded-lg">
+                    <span className="inline-flex size-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-primary/40 to-accent/40 text-foreground">
                         <Crown className="size-4" strokeWidth={1.75} />
                     </span>
                     <div className="flex min-w-0 flex-col">
-                        <span className="text-foreground text-xs font-semibold tracking-tight">
+                        <span className="text-xs font-semibold tracking-tight text-foreground">
                             Lichess game
                         </span>
-                        <span className="text-muted-foreground/80 truncate text-[10px] tracking-wide uppercase">
+                        <span className="truncate text-[10px] tracking-wide text-muted-foreground/80 uppercase">
                             {[speedLabel, card.rated ? 'Rated' : 'Casual']
                                 .filter(Boolean)
                                 .join(' · ')}
@@ -474,12 +475,12 @@ function GameCardAttachment({ card, isOwn }: GameCardAttachmentProps) {
                     </div>
                 </div>
                 {card.verified ? (
-                    <span className="bg-success/15 text-success inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold tracking-wide uppercase">
+                    <span className="inline-flex items-center gap-1 rounded-full bg-success/15 px-2 py-0.5 text-[10px] font-semibold tracking-wide text-success uppercase">
                         <BadgeCheck className="size-3" strokeWidth={2} />
                         Verified
                     </span>
                 ) : (
-                    <span className="border-border/60 text-muted-foreground inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold tracking-wide uppercase">
+                    <span className="inline-flex items-center gap-1 rounded-full border border-border/60 px-2 py-0.5 text-[10px] font-semibold tracking-wide text-muted-foreground uppercase">
                         Unverified
                     </span>
                 )}
@@ -492,7 +493,7 @@ function GameCardAttachment({ card, isOwn }: GameCardAttachmentProps) {
                         color="white"
                         isWinner={card.winner_color === 'white'}
                     />
-                    <span className="text-muted-foreground/60 text-[10px] tracking-wide uppercase">
+                    <span className="text-[10px] tracking-wide text-muted-foreground/60 uppercase">
                         vs
                     </span>
                     <PlayerBadge
@@ -504,12 +505,12 @@ function GameCardAttachment({ card, isOwn }: GameCardAttachmentProps) {
             )}
 
             {winnerLabel && (
-                <p className="text-foreground text-xs leading-snug">
+                <p className="text-xs leading-snug text-foreground">
                     {winnerLabel}
                 </p>
             )}
 
-            <div className="text-muted-foreground/70 group-hover:text-primary mt-auto inline-flex items-center gap-1 text-[10px] tracking-wide uppercase transition-colors">
+            <div className="mt-auto inline-flex items-center gap-1 text-[10px] tracking-wide text-muted-foreground/70 uppercase transition-colors group-hover:text-primary">
                 lichess.org
                 <ExternalLink className="size-3" />
             </div>
@@ -538,7 +539,7 @@ function PlayerBadge({ username, color, isWinner }: PlayerBadgeProps) {
                 className={cn(
                     'size-2 shrink-0 rounded-full',
                     color === 'white'
-                        ? 'border-border/80 border bg-white'
+                        ? 'border border-border/80 bg-white'
                         : 'bg-foreground/80',
                 )}
             />
@@ -580,9 +581,7 @@ function describeWinner(card: ChatGameCardAttachment): string | null {
         const text = reason[status];
 
         if (text !== undefined) {
-            return text === ''
-                ? `${winner} won.`
-                : `${winner} won ${text}.`;
+            return text === '' ? `${winner} won.` : `${winner} won ${text}.`;
         }
 
         return `${winner} won.`;

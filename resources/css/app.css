@@ -138,9 +138,7 @@
     --shadow-button-glow-hover: 0 0 24px -2px var(--gradient-glow);
 
     /* white text glow — used by ghost button hover; mirrors gradient button glow but on text */
-    --text-shadow-glow:
-        0 0 6px var(--foreground),
-        0 0 15px var(--foreground);
+    --text-shadow-glow: 0 0 6px var(--foreground), 0 0 15px var(--foreground);
 
     /* charts */
     --chart-1: #ec4899;

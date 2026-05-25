@@ -51,11 +51,10 @@ export function MinePagination({ currentPage, lastPage, tab }: Props) {
             return;
         }
 
-        router.get(
-            mineRoute().url,
-            buildMineQuery({ tab, page }),
-            { preserveState: true, preserveScroll: false },
-        );
+        router.get(mineRoute().url, buildMineQuery({ tab, page }), {
+            preserveState: true,
+            preserveScroll: false,
+        });
     };
 
     const pages = visiblePages(currentPage, lastPage);
@@ -78,7 +77,7 @@ export function MinePagination({ currentPage, lastPage, tab }: Props) {
                     <span
                         key={`ellipsis-${idx}`}
                         aria-hidden
-                        className="text-muted-foreground inline-flex h-9 w-9 items-center justify-center text-sm"
+                        className="inline-flex h-9 w-9 items-center justify-center text-sm text-muted-foreground"
                     >
                         {ELLIPSIS}
                     </span>
@@ -116,8 +115,8 @@ function PageButton({
     children,
     ...props
 }: PageButtonProps) {
-    const base
-        = 'inline-flex h-9 min-w-9 cursor-pointer items-center justify-center rounded-full px-3 text-sm font-medium transition-colors duration-150 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/25 focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-40';
+    const base =
+        'inline-flex h-9 min-w-9 cursor-pointer items-center justify-center rounded-full px-3 text-sm font-medium transition-colors duration-150 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/25 focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-40';
 
     const stateClasses = active
         ? 'border-primary/40 bg-primary/15 text-foreground border'

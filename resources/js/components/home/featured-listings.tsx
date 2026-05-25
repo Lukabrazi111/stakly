@@ -30,7 +30,11 @@ interface Props {
  * `useReducedMotion` collapses to a plain opacity fade with zero delay
  * when the user opts out of motion via OS settings.
  */
-export function FeaturedListings({ listings, selectedGameName, isSelectedGameLive }: Props) {
+export function FeaturedListings({
+    listings,
+    selectedGameName,
+    isSelectedGameLive,
+}: Props) {
     const reduceMotion = useReducedMotion();
 
     const hasListings = listings.length > 0;
@@ -42,15 +46,16 @@ export function FeaturedListings({ listings, selectedGameName, isSelectedGameLiv
                     <h2 className="font-display text-2xl font-bold tracking-tight md:text-3xl">
                         Ending soon
                     </h2>
-                    <p className="text-muted-foreground mt-1.5 text-sm">
-                        Open {selectedGameName} listings closing in the next few hours.
+                    <p className="mt-1.5 text-sm text-muted-foreground">
+                        Open {selectedGameName} listings closing in the next few
+                        hours.
                     </p>
                 </div>
 
                 {hasListings && (
                     <Link
                         href={listingsIndex()}
-                        className="text-muted-foreground hover:text-primary group inline-flex shrink-0 items-center gap-1.5 text-sm font-medium transition-colors"
+                        className="group inline-flex shrink-0 items-center gap-1.5 text-sm font-medium text-muted-foreground transition-colors hover:text-primary"
                     >
                         View all
                         <ArrowRight className="size-4 transition-transform duration-200 ease-out group-hover:translate-x-0.5" />
@@ -60,7 +65,11 @@ export function FeaturedListings({ listings, selectedGameName, isSelectedGameLiv
 
             <AnimatePresence mode="wait" initial={false}>
                 <motion.div
-                    key={hasListings ? `grid-${selectedGameName}` : `empty-${selectedGameName}`}
+                    key={
+                        hasListings
+                            ? `grid-${selectedGameName}`
+                            : `empty-${selectedGameName}`
+                    }
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
                     exit={{ opacity: 0 }}
@@ -147,16 +156,16 @@ interface EmptyStateProps {
 
 function EmptyState({ gameName, isLive }: EmptyStateProps) {
     return (
-        <div className="border-border/60 bg-card/60 flex flex-col items-center justify-center gap-3 rounded-2xl border border-dashed px-6 py-12 text-center">
-            <div className="bg-primary/10 text-primary inline-flex size-12 items-center justify-center rounded-full">
+        <div className="flex flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-border/60 bg-card/60 px-6 py-12 text-center">
+            <div className="inline-flex size-12 items-center justify-center rounded-full bg-primary/10 text-primary">
                 <Sparkles className="size-5" />
             </div>
-            <p className="text-foreground text-sm font-medium">
+            <p className="text-sm font-medium text-foreground">
                 {isLive
                     ? `No ${gameName} listings closing soon.`
                     : `${gameName} is rolling out.`}
             </p>
-            <p className="text-muted-foreground max-w-sm text-sm">
+            <p className="max-w-sm text-sm text-muted-foreground">
                 {isLive
                     ? 'Be the first — post a listing and find an opponent.'
                     : 'Chess is live now. Pick it above to see what’s open.'}

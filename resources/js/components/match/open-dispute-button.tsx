@@ -62,10 +62,10 @@ export function OpenDisputeButton({ matchId }: OpenDisputeButtonProps) {
                         <DialogTitle>Report a problem?</DialogTitle>
                         <DialogDescription>
                             This flags the match for admin review. A Stakly
-                            admin will read the chat and any evidence you
-                            post, then decide who wins the pot (or refund
-                            both stakes as a draw). Your stake stays in
-                            escrow until they resolve.
+                            admin will read the chat and any evidence you post,
+                            then decide who wins the pot (or refund both stakes
+                            as a draw). Your stake stays in escrow until they
+                            resolve.
                         </DialogDescription>
                     </DialogHeader>
                     <DialogFooter>

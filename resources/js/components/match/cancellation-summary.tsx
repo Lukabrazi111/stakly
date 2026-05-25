@@ -27,28 +27,28 @@ export function CancellationSummary({ match }: CancellationSummaryProps) {
               : null;
 
     return (
-        <section className="border-border/60 bg-card/60 rounded-2xl border p-6">
+        <section className="rounded-2xl border border-border/60 bg-card/60 p-6">
             <div className="flex items-start gap-3">
-                <span className="bg-muted text-muted-foreground inline-flex size-10 shrink-0 items-center justify-center rounded-full">
+                <span className="inline-flex size-10 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground">
                     <Handshake className="size-5" strokeWidth={1.75} />
                 </span>
                 <div className="min-w-0 flex-1">
-                    <h2 className="text-foreground font-display text-lg font-semibold">
+                    <h2 className="font-display text-lg font-semibold text-foreground">
                         Match cancelled
                     </h2>
-                    <p className="text-muted-foreground mt-1 text-sm">
-                        By mutual agreement. Both stakes refunded —
-                        ${listing.stake_amount} returned to each player.
+                    <p className="mt-1 text-sm text-muted-foreground">
+                        By mutual agreement. Both stakes refunded — $
+                        {listing.stake_amount} returned to each player.
                     </p>
-                    <p className="text-muted-foreground/80 mt-2 text-xs">
+                    <p className="mt-2 text-xs text-muted-foreground/80">
                         Cancellations don't count toward your match record.
                     </p>
                     {requester !== null && cancellation.reason !== null && (
-                        <div className="border-border/60 bg-background/40 mt-4 rounded-lg border p-3">
-                            <p className="text-muted-foreground text-[10px] font-medium tracking-wide uppercase">
+                        <div className="mt-4 rounded-lg border border-border/60 bg-background/40 p-3">
+                            <p className="text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
                                 {requester.name}'s reason
                             </p>
-                            <p className="text-foreground mt-1 text-sm whitespace-pre-wrap">
+                            <p className="mt-1 text-sm whitespace-pre-wrap text-foreground">
                                 {cancellation.reason}
                             </p>
                         </div>

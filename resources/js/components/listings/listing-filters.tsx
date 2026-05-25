@@ -1,11 +1,15 @@
 import { router } from '@inertiajs/react';
 import { SlidersHorizontal } from 'lucide-react';
-import { useState  } from 'react';
-import type {ReactNode} from 'react';
+import { useState } from 'react';
+import type { ReactNode } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import {
+    Popover,
+    PopoverContent,
+    PopoverTrigger,
+} from '@/components/ui/popover';
 import {
     Select,
     SelectContent,
@@ -24,7 +28,10 @@ import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { buildListingsQuery } from '@/lib/listings-query';
 import { index as listingsIndex } from '@/routes/listings';
-import type { ListingFilters as ListingFiltersType, TimeControl } from '@/types';
+import type {
+    ListingFilters as ListingFiltersType,
+    TimeControl,
+} from '@/types';
 
 interface Props {
     filters: ListingFiltersType;
@@ -86,12 +93,12 @@ export function ListingFilters({ filters, activeCount }: Props) {
             // looks busy layered on top of a background + border.
             // `data-[state=open]` keeps the highlight on while the popover
             // is open so users see which trigger owns it.
-            className="border-border/60 hover:bg-primary/10 hover:border-primary/40 hover:[text-shadow:none] data-[state=open]:bg-primary/10 data-[state=open]:border-primary/40 border"
+            className="border border-border/60 hover:border-primary/40 hover:bg-primary/10 hover:[text-shadow:none] data-[state=open]:border-primary/40 data-[state=open]:bg-primary/10"
         >
             <SlidersHorizontal className="size-4" />
             Filters
             {activeCount > 0 && (
-                <span className="bg-primary/20 text-primary ml-1 inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-xs font-semibold">
+                <span className="ml-1 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-primary/20 px-1.5 text-xs font-semibold text-primary">
                     {activeCount}
                 </span>
             )}
@@ -99,10 +106,7 @@ export function ListingFilters({ filters, activeCount }: Props) {
     );
 
     const form = open && (
-        <FilterForm
-            filters={filters}
-            onClose={() => setOpen(false)}
-        />
+        <FilterForm filters={filters} onClose={() => setOpen(false)} />
     );
 
     if (isMobile) {
@@ -111,7 +115,7 @@ export function ListingFilters({ filters, activeCount }: Props) {
                 <SheetTrigger asChild>{trigger}</SheetTrigger>
                 <SheetContent
                     side="right"
-                    className="bg-card/95 border-border/60 flex w-full flex-col gap-0 border-l p-0 backdrop-blur-xl sm:max-w-md"
+                    className="flex w-full flex-col gap-0 border-l border-border/60 bg-card/95 p-0 backdrop-blur-xl sm:max-w-md"
                 >
                     <SheetTitle className="sr-only">Filters</SheetTitle>
                     <SheetDescription className="sr-only">
@@ -129,7 +133,7 @@ export function ListingFilters({ filters, activeCount }: Props) {
             <PopoverContent
                 align="end"
                 sideOffset={8}
-                className="bg-card/95 border-border/60 w-[420px] rounded-xl border p-0 backdrop-blur-md"
+                className="w-[420px] rounded-xl border border-border/60 bg-card/95 p-0 backdrop-blur-md"
             >
                 {form}
             </PopoverContent>
@@ -182,7 +186,7 @@ function FilterForm({ filters, onClose }: FormProps) {
 
     return (
         <>
-            <header className="border-border/60 border-b px-5 py-3">
+            <header className="border-b border-border/60 px-5 py-3">
                 <h2 className="font-display text-lg font-bold">Filters</h2>
             </header>
 
@@ -191,8 +195,12 @@ function FilterForm({ filters, onClose }: FormProps) {
                     <RangePair
                         minValue={draft.stake_min}
                         maxValue={draft.stake_max}
-                        onMinChange={(v) => setDraft({ ...draft, stake_min: v })}
-                        onMaxChange={(v) => setDraft({ ...draft, stake_max: v })}
+                        onMinChange={(v) =>
+                            setDraft({ ...draft, stake_min: v })
+                        }
+                        onMaxChange={(v) =>
+                            setDraft({ ...draft, stake_max: v })
+                        }
                         max={100000}
                         inputMode="decimal"
                     />
@@ -202,8 +210,12 @@ function FilterForm({ filters, onClose }: FormProps) {
                     <RangePair
                         minValue={draft.skill_min}
                         maxValue={draft.skill_max}
-                        onMinChange={(v) => setDraft({ ...draft, skill_min: v })}
-                        onMaxChange={(v) => setDraft({ ...draft, skill_max: v })}
+                        onMinChange={(v) =>
+                            setDraft({ ...draft, skill_min: v })
+                        }
+                        onMaxChange={(v) =>
+                            setDraft({ ...draft, skill_max: v })
+                        }
                         max={3500}
                         inputMode="numeric"
                     />
@@ -249,7 +261,9 @@ function FilterForm({ filters, onClose }: FormProps) {
                             <SelectValue placeholder="Any region" />
                         </SelectTrigger>
                         <SelectContent>
-                            <SelectItem value={ANY_VALUE}>Any region</SelectItem>
+                            <SelectItem value={ANY_VALUE}>
+                                Any region
+                            </SelectItem>
                             {REGIONS.map((region) => (
                                 <SelectItem key={region} value={region}>
                                     {region}
@@ -273,7 +287,9 @@ function FilterForm({ filters, onClose }: FormProps) {
                             <SelectValue placeholder="Any language" />
                         </SelectTrigger>
                         <SelectContent>
-                            <SelectItem value={ANY_VALUE}>Any language</SelectItem>
+                            <SelectItem value={ANY_VALUE}>
+                                Any language
+                            </SelectItem>
                             {LANGUAGES.map((lang) => (
                                 <SelectItem key={lang} value={lang}>
                                     {lang}
@@ -284,7 +300,7 @@ function FilterForm({ filters, onClose }: FormProps) {
                 </Field>
             </div>
 
-            <footer className="border-border/60 flex gap-3 border-t px-5 py-3">
+            <footer className="flex gap-3 border-t border-border/60 px-5 py-3">
                 <Button
                     variant="ghost"
                     size="pill"
@@ -344,7 +360,7 @@ function RangePair({
                 onChange={(e) => onMinChange(e.target.value)}
                 className="flex-1"
             />
-            <span className="text-muted-foreground text-xs">to</span>
+            <span className="text-xs text-muted-foreground">to</span>
             <Input
                 type="number"
                 inputMode={inputMode}

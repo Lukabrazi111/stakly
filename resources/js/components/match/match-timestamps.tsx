@@ -13,14 +13,19 @@ interface MatchTimestampsProps {
  * 2026, 09:13 PM" — at a glance, without forcing the user to scroll into
  * chat or read system messages.
  */
-export function MatchTimestamps({ startedAt, finishedAt }: MatchTimestampsProps) {
+export function MatchTimestamps({
+    startedAt,
+    finishedAt,
+}: MatchTimestampsProps) {
     if (!startedAt) {
         return null;
     }
 
     return (
-        <div className="text-muted-foreground mt-2 flex flex-wrap items-center gap-x-2 text-xs">
-            <time dateTime={startedAt}>Started {formatAbsoluteTime(startedAt)}</time>
+        <div className="mt-2 flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
+            <time dateTime={startedAt}>
+                Started {formatAbsoluteTime(startedAt)}
+            </time>
             {finishedAt && (
                 <>
                     <span aria-hidden>·</span>

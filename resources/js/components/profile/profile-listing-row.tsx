@@ -33,20 +33,20 @@ const STATUS_TONE: Record<ListingStatus, string> = {
  */
 export function ProfileListingRow({ listing }: Props) {
     return (
-        <article className="border-border/60 bg-card/60 hover:border-primary/30 hover:bg-card group relative flex items-center gap-3 rounded-xl border p-4 transition-all duration-200 ease-out md:gap-4">
+        <article className="group relative flex items-center gap-3 rounded-xl border border-border/60 bg-card/60 p-4 transition-all duration-200 ease-out hover:border-primary/30 hover:bg-card md:gap-4">
             <Link
                 href={showListing(listing.id).url}
-                className="focus-visible:ring-primary focus-visible:ring-offset-background absolute inset-0 rounded-xl focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none"
+                className="absolute inset-0 rounded-xl focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none"
                 aria-label={`View listing #${listing.id}`}
             />
 
             {/* Stake — leftmost, prominent. pointer-events-none so clicks
                 + cursor fall through to the overlay Link. */}
             <div className="pointer-events-none relative flex shrink-0 items-baseline gap-1">
-                <span className="font-display text-gradient-primary text-xl font-bold leading-none md:text-2xl">
+                <span className="text-gradient-primary font-display text-xl leading-none font-bold md:text-2xl">
                     ${listing.stake_amount}
                 </span>
-                <span className="text-muted-foreground hidden text-xs sm:inline">
+                <span className="hidden text-xs text-muted-foreground sm:inline">
                     USDT
                 </span>
             </div>
@@ -61,7 +61,7 @@ export function ProfileListingRow({ listing }: Props) {
                 {listing.time_control.map((tc) => (
                     <span
                         key={tc}
-                        className="border-border/60 bg-background/60 text-muted-foreground inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs font-medium"
+                        className="inline-flex items-center gap-1 rounded-full border border-border/60 bg-background/60 px-2.5 py-0.5 text-xs font-medium text-muted-foreground"
                     >
                         <Clock className="size-3" />
                         {timeControlLabels[tc]}

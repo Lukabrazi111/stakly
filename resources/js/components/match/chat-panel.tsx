@@ -138,7 +138,7 @@ export function ChatPanel({
         <div
             className={cn(
                 'relative flex h-full min-h-0 flex-col',
-                !bare && 'border-border/60 bg-card/60 rounded-2xl border',
+                !bare && 'rounded-2xl border border-border/60 bg-card/60',
             )}
             onDragEnter={handleDragEnter}
             onDragOver={handleDragOver}
@@ -146,9 +146,9 @@ export function ChatPanel({
             onDrop={handleDrop}
         >
             {!bare && (
-                <header className="border-border/60 flex items-center gap-2 border-b px-4 py-3">
-                    <MessageSquare className="text-muted-foreground size-4" />
-                    <h2 className="text-foreground text-sm font-semibold">
+                <header className="flex items-center gap-2 border-b border-border/60 px-4 py-3">
+                    <MessageSquare className="size-4 text-muted-foreground" />
+                    <h2 className="text-sm font-semibold text-foreground">
                         Match chat
                     </h2>
                 </header>
@@ -194,12 +194,12 @@ export function ChatPanel({
                 Pointer-events-none so the drop target underneath still fires
                 onDrop; the overlay is purely visual. */}
             {isDragOver && !isReadOnly && (
-                <div className="border-primary/60 bg-primary/10 pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed backdrop-blur-sm">
-                    <ImagePlus className="text-primary size-8" />
-                    <p className="text-foreground text-sm font-medium">
+                <div className="pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-primary/60 bg-primary/10 backdrop-blur-sm">
+                    <ImagePlus className="size-8 text-primary" />
+                    <p className="text-sm font-medium text-foreground">
                         Drop image to attach
                     </p>
-                    <p className="text-muted-foreground text-xs">
+                    <p className="text-xs text-muted-foreground">
                         JPEG, PNG, or WebP up to 5 MB
                     </p>
                 </div>
@@ -210,7 +210,7 @@ export function ChatPanel({
 
 function EmptyState() {
     return (
-        <div className="text-muted-foreground flex h-full flex-col items-center justify-center gap-2 px-6 text-center text-xs">
+        <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center text-xs text-muted-foreground">
             <MessageSquare className="size-6 opacity-40" />
             <p>
                 No messages yet. Share your chess.com / Lichess game URL when
@@ -222,7 +222,7 @@ function EmptyState() {
 
 function ReadOnlyFooter() {
     return (
-        <div className="border-border/60 text-muted-foreground flex items-center gap-2 border-t px-4 py-3 text-xs">
+        <div className="flex items-center gap-2 border-t border-border/60 px-4 py-3 text-xs text-muted-foreground">
             <Lock className="size-3.5" />
             <span>This match is settled — chat is read-only.</span>
         </div>

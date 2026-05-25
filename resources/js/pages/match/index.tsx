@@ -1,9 +1,9 @@
 import { Head, router } from '@inertiajs/react';
 import { Swords } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { MatchesFilterChips } from '@/components/match/matches-filter-chips';
 import { MatchListRow } from '@/components/match/match-list-row';
 import { MatchListRowSkeleton } from '@/components/match/match-list-row-skeleton';
+import { MatchesFilterChips } from '@/components/match/matches-filter-chips';
 import { MatchesPagination } from '@/components/match/matches-pagination';
 import PlayerHubLayout from '@/layouts/player-hub-layout';
 import { index as matchesIndex } from '@/routes/matches';
@@ -20,8 +20,8 @@ export default function MatchesIndex({ matches, filters }: MatchesIndexProps) {
         const isMatchesVisit = (url: string): boolean => {
             try {
                 return (
-                    new URL(url, window.location.origin).pathname
-                    === matchesPath
+                    new URL(url, window.location.origin).pathname ===
+                    matchesPath
                 );
             } catch {
                 return false;
@@ -58,7 +58,7 @@ export default function MatchesIndex({ matches, filters }: MatchesIndexProps) {
                     <h1 className="font-display text-3xl font-bold tracking-tight md:text-4xl">
                         Your matches
                     </h1>
-                    <p className="text-muted-foreground mt-2 text-sm">
+                    <p className="mt-2 text-sm text-muted-foreground">
                         Every match you've created or taken.{' '}
                         <span className="text-foreground/70">
                             {matches.meta.total}{' '}
@@ -72,10 +72,10 @@ export default function MatchesIndex({ matches, filters }: MatchesIndexProps) {
                 </div>
 
                 {!isEmpty || isLoading ? (
-                    <div className="border-border/60 bg-card/40 overflow-hidden rounded-2xl border">
+                    <div className="overflow-hidden rounded-2xl border border-border/60 bg-card/40">
                         {/* Column header — desktop only. Mobile rows stack
                             vertically so labeled columns don't apply. */}
-                        <div className="border-border/40 text-muted-foreground hidden border-b px-5 py-3 text-xs uppercase tracking-wide md:flex md:items-center md:gap-6">
+                        <div className="hidden border-b border-border/40 px-5 py-3 text-xs tracking-wide text-muted-foreground uppercase md:flex md:items-center md:gap-6">
                             <div className="md:w-52">Opponent</div>
                             <div className="flex flex-1 items-center gap-6">
                                 <div className="flex-1">Status</div>
@@ -90,11 +90,11 @@ export default function MatchesIndex({ matches, filters }: MatchesIndexProps) {
 
                         {isLoading
                             ? Array.from({ length: SKELETON_ROW_COUNT }).map(
-                                (_, i) => <MatchListRowSkeleton key={i} />,
-                            )
+                                  (_, i) => <MatchListRowSkeleton key={i} />,
+                              )
                             : matches.data.map((match) => (
-                                <MatchListRow key={match.id} match={match} />
-                            ))}
+                                  <MatchListRow key={match.id} match={match} />
+                              ))}
                     </div>
                 ) : (
                     <EmptyState filtering={isFiltering} />
@@ -116,14 +116,14 @@ interface EmptyStateProps {
 
 function EmptyState({ filtering }: EmptyStateProps) {
     return (
-        <div className="border-border/60 bg-card/40 flex flex-col items-center gap-3 rounded-2xl border border-dashed px-6 py-16 text-center">
-            <div className="bg-primary/10 text-primary rounded-full p-3">
+        <div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed border-border/60 bg-card/40 px-6 py-16 text-center">
+            <div className="rounded-full bg-primary/10 p-3 text-primary">
                 <Swords className="size-6" />
             </div>
-            <h2 className="font-display text-foreground text-xl font-semibold">
+            <h2 className="font-display text-xl font-semibold text-foreground">
                 {filtering ? 'No matches in this view' : 'No matches yet'}
             </h2>
-            <p className="text-muted-foreground max-w-sm text-sm">
+            <p className="max-w-sm text-sm text-muted-foreground">
                 {filtering
                     ? 'Try a different filter, or clear it to see every match.'
                     : 'Create a listing or take someone else’s to start your first match.'}

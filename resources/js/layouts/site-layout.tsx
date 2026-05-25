@@ -37,7 +37,7 @@ export default function SiteLayout({
     useFlashToast();
 
     return (
-        <div className="bg-background text-foreground flex min-h-screen flex-col">
+        <div className="flex min-h-screen flex-col bg-background text-foreground">
             <SiteHeader />
             <MarqueeStrip items={marqueeItems} />
             <main className="flex-1">{children}</main>

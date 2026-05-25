@@ -83,7 +83,7 @@ export function MobileChatTrigger({
                     {unreadCount > 0 && (
                         <span
                             aria-hidden
-                            className="bg-background text-primary ml-1 inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-xs font-semibold"
+                            className="ml-1 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-background px-1.5 text-xs font-semibold text-primary"
                         >
                             {unreadCount > 99 ? '99+' : unreadCount}
                         </span>
@@ -93,7 +93,7 @@ export function MobileChatTrigger({
                     side="bottom"
                     className="flex h-[88vh] flex-col p-0"
                 >
-                    <SheetHeader className="border-border/60 border-b">
+                    <SheetHeader className="border-b border-border/60">
                         <SheetTitle>Match chat</SheetTitle>
                         <SheetDescription className="sr-only">
                             Chat with your opponent. Messages are part of the

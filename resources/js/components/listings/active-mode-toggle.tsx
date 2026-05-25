@@ -52,6 +52,7 @@ export function ActiveModeToggle({ listingsCount }: Props) {
             if (processing) {
                 return;
             }
+
             setProcessing(true);
             router.post(
                 activeModeUpdate().url,
@@ -61,6 +62,7 @@ export function ActiveModeToggle({ listingsCount }: Props) {
                     onFinish: () => setProcessing(false),
                 },
             );
+
             return;
         }
 
@@ -92,7 +94,7 @@ export function ActiveModeToggle({ listingsCount }: Props) {
                     is a no-op; labels right-align (items-end) to sit flush
                     against the switch for a tight, compact group. */}
                 <div className="flex flex-col items-start sm:items-end">
-                    <span className="text-foreground text-sm font-medium">
+                    <span className="text-sm font-medium text-foreground">
                         {active ? 'Active Mode' : 'Inactive Mode'}
                     </span>
                     <span
@@ -116,7 +118,7 @@ export function ActiveModeToggle({ listingsCount }: Props) {
                     }
                     onClick={handleToggleClick}
                     disabled={processing}
-                    className={`focus-visible:ring-primary/25 focus-visible:ring-offset-background relative inline-flex h-7 w-12 shrink-0 cursor-pointer items-center rounded-full transition-colors duration-200 ease-out focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50 ${
+                    className={`relative inline-flex h-7 w-12 shrink-0 cursor-pointer items-center rounded-full transition-colors duration-200 ease-out focus-visible:ring-2 focus-visible:ring-primary/25 focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50 ${
                         active
                             ? 'bg-success shadow-[inset_0_0_0_1px_var(--color-success)]'
                             : 'bg-muted shadow-[inset_0_0_0_1px_var(--color-border)]'

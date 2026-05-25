@@ -104,12 +104,12 @@ export function RegisterForm({ onSwitchToLogin }: RegisterFormProps) {
                         Create account
                     </Button>
 
-                    <p className="text-muted-foreground text-center text-sm">
+                    <p className="text-center text-sm text-muted-foreground">
                         Already have an account?{' '}
                         <button
                             type="button"
                             onClick={onSwitchToLogin}
-                            className="text-foreground hover:text-primary cursor-pointer font-medium transition-colors"
+                            className="cursor-pointer font-medium text-foreground transition-colors hover:text-primary"
                         >
                             Sign in
                         </button>

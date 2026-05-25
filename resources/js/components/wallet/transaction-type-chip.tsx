@@ -1,4 +1,11 @@
-import { ArrowDownToLine, ArrowUpFromLine, Coins, Lock, Trophy, Undo2 } from 'lucide-react';
+import {
+    ArrowDownToLine,
+    ArrowUpFromLine,
+    Coins,
+    Lock,
+    Trophy,
+    Undo2,
+} from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { WalletTransactionType } from '@/types';
 

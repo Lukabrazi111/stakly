@@ -9,7 +9,7 @@ export function ListingRowSkeleton() {
     return (
         <div
             aria-hidden
-            className="border-border/60 bg-card/60 flex flex-col gap-4 rounded-2xl border p-4 md:flex-row md:items-center md:gap-6 md:p-5"
+            className="flex flex-col gap-4 rounded-2xl border border-border/60 bg-card/60 p-4 md:flex-row md:items-center md:gap-6 md:p-5"
         >
             {/* Creator */}
             <div className="flex min-w-0 items-center gap-3 md:w-48 md:shrink-0">
@@ -28,12 +28,12 @@ export function ListingRowSkeleton() {
             </div>
 
             {/* Time remaining */}
-            <div className="md:w-28 md:shrink-0 md:flex md:justify-end">
+            <div className="md:flex md:w-28 md:shrink-0 md:justify-end">
                 <Skeleton className="h-4 w-20" />
             </div>
 
             {/* Stake */}
-            <div className="md:w-32 md:shrink-0 md:flex md:justify-end">
+            <div className="md:flex md:w-32 md:shrink-0 md:justify-end">
                 <Skeleton className="h-7 w-20" />
             </div>
 

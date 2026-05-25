@@ -93,7 +93,7 @@ export default function TwoFactorChallenge() {
                                                 <InputOTPSlot
                                                     key={index}
                                                     index={index}
-                                                    className="border-border bg-card h-12 w-11 rounded-lg border text-lg font-semibold first:rounded-l-lg last:rounded-r-lg"
+                                                    className="h-12 w-11 rounded-lg border border-border bg-card text-lg font-semibold first:rounded-l-lg last:rounded-r-lg"
                                                 />
                                             ),
                                         )}
@@ -114,11 +114,11 @@ export default function TwoFactorChallenge() {
                             Continue
                         </Button>
 
-                        <p className="text-muted-foreground text-center text-sm">
+                        <p className="text-center text-sm text-muted-foreground">
                             <button
                                 type="button"
                                 onClick={() => toggleRecoveryMode(clearErrors)}
-                                className="text-foreground hover:text-primary cursor-pointer font-medium transition-colors"
+                                className="cursor-pointer font-medium text-foreground transition-colors hover:text-primary"
                             >
                                 {viewMeta.toggleText}
                             </button>

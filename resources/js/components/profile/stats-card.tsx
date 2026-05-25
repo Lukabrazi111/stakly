@@ -12,12 +12,18 @@ export function StatsCard({ stats }: Props) {
 
     return (
         <section>
-            <h2 className="font-display text-foreground mb-3 text-lg font-semibold">
+            <h2 className="mb-3 font-display text-lg font-semibold text-foreground">
                 Stats
             </h2>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3">
-                <StatTile label="Open listings" value={String(stats.open_listings)} />
-                <StatTile label="Total listings" value={String(stats.total_listings)} />
+                <StatTile
+                    label="Open listings"
+                    value={String(stats.open_listings)}
+                />
+                <StatTile
+                    label="Total listings"
+                    value={String(stats.total_listings)}
+                />
                 <StatTile label="Member since" value={joinedDate} />
                 {/* M6-dependent stats — placeholders until match flow lands. */}
                 <StatTile label="Win rate" />
@@ -41,19 +47,19 @@ function StatTile({ label, value }: StatTileProps) {
         <div
             className={`rounded-xl border p-4 ${
                 isEmpty
-                    ? 'border-border/60 bg-card/40 border-dashed'
+                    ? 'border-dashed border-border/60 bg-card/40'
                     : 'border-border/60 bg-card/60'
             }`}
         >
-            <div className="text-muted-foreground text-xs uppercase tracking-wide">
+            <div className="text-xs tracking-wide text-muted-foreground uppercase">
                 {label}
             </div>
             {isEmpty ? (
-                <div className="text-muted-foreground mt-2 text-sm">
+                <div className="mt-2 text-sm text-muted-foreground">
                     No matches yet
                 </div>
             ) : (
-                <div className="text-foreground mt-2 text-2xl font-semibold">
+                <div className="mt-2 text-2xl font-semibold text-foreground">
                     {value}
                 </div>
             )}

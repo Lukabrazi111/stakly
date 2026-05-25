@@ -73,22 +73,23 @@ export default function ListingsCreate({
         duration_hours: durations.includes(24) ? 24 : (durations[0] ?? 24),
     });
 
-    const stakeNumber = data.stake_amount === '' ? 0 : Number(data.stake_amount);
+    const stakeNumber =
+        data.stake_amount === '' ? 0 : Number(data.stake_amount);
     const balanceNumber = Number(balance);
     const exceedsBalance = stakeNumber > balanceNumber;
     const hasTimeControl = data.time_control.length > 0;
-    const canSubmit
-        = !processing
-        && !atCap
-        && !exceedsBalance
-        && data.stake_amount !== ''
-        && stakeNumber > 0
-        && hasTimeControl;
+    const canSubmit =
+        !processing &&
+        !atCap &&
+        !exceedsBalance &&
+        data.stake_amount !== '' &&
+        stakeNumber > 0 &&
+        hasTimeControl;
 
     // Linked-account gate (M8 Phase 5). The viewer hit this page without a
     // verified chess provider → swap the form for a notice card. Server
     // re-checks in `CreateListingAction` so a hand-crafted POST also fails.
-    if (! hasChessLink) {
+    if (!hasChessLink) {
         return (
             <SiteLayout>
                 <Head title="Create a listing" />
@@ -98,20 +99,21 @@ export default function ListingsCreate({
                         <h1 className="font-display text-3xl font-bold tracking-tight md:text-4xl">
                             Create a listing
                         </h1>
-                        <p className="text-muted-foreground mt-2 text-sm">
-                            One more step before you can post on the marketplace.
+                        <p className="mt-2 text-sm text-muted-foreground">
+                            One more step before you can post on the
+                            marketplace.
                         </p>
                     </header>
 
-                    <div className="border-border/60 bg-card flex flex-col items-start gap-4 rounded-2xl border p-6">
-                        <div className="bg-primary/10 text-primary inline-flex size-10 items-center justify-center rounded-lg">
+                    <div className="flex flex-col items-start gap-4 rounded-2xl border border-border/60 bg-card p-6">
+                        <div className="inline-flex size-10 items-center justify-center rounded-lg bg-primary/10 text-primary">
                             <Link2 className="size-5" aria-hidden="true" />
                         </div>
                         <div className="flex flex-col gap-1">
                             <h2 className="font-display text-xl font-bold tracking-tight">
                                 Link a chess account first
                             </h2>
-                            <p className="text-muted-foreground text-sm leading-relaxed">
+                            <p className="text-sm leading-relaxed text-muted-foreground">
                                 Stakly verifies match outcomes against your
                                 chess.com or Lichess account. Link one to post
                                 listings and take matches — it takes about a
@@ -138,31 +140,33 @@ export default function ListingsCreate({
                     <h1 className="font-display text-3xl font-bold tracking-tight md:text-4xl">
                         Create a listing
                     </h1>
-                    <p className="text-muted-foreground mt-2 text-sm">
-                        Set your terms — opponents will pick yours from the marketplace.
+                    <p className="mt-2 text-sm text-muted-foreground">
+                        Set your terms — opponents will pick yours from the
+                        marketplace.
                     </p>
                 </header>
 
                 {atCap && (
                     <div
                         role="status"
-                        className="border-warning/40 bg-warning/10 text-warning mb-8 flex items-start gap-3 rounded-xl border p-4"
+                        className="mb-8 flex items-start gap-3 rounded-xl border border-warning/40 bg-warning/10 p-4 text-warning"
                     >
                         <AlertCircle
                             className="size-5 shrink-0"
                             aria-hidden="true"
                         />
                         <div className="flex-1">
-                            <p className="text-foreground text-sm font-medium">
-                                You&apos;re at the {maxActiveListings}-listing cap
+                            <p className="text-sm font-medium text-foreground">
+                                You&apos;re at the {maxActiveListings}-listing
+                                cap
                             </p>
-                            <p className="text-muted-foreground mt-0.5 text-sm">
+                            <p className="mt-0.5 text-sm text-muted-foreground">
                                 Cancel one of your active listings (Open or
-                                Paused) before creating another, or wait for
-                                one to settle.{' '}
+                                Paused) before creating another, or wait for one
+                                to settle.{' '}
                                 <Link
                                     href={listingsMine().url}
-                                    className="text-primary hover:text-primary/80 font-medium underline-offset-2 transition-colors hover:underline"
+                                    className="font-medium text-primary underline-offset-2 transition-colors hover:text-primary/80 hover:underline"
                                 >
                                     Go to My listings →
                                 </Link>
@@ -180,15 +184,15 @@ export default function ListingsCreate({
                 >
                     {/* Game (chess only in v1) */}
                     <FormSection title="Game">
-                        <div className="border-glow flex items-center gap-3 rounded-xl border p-4">
-                            <div className="bg-gradient-primary inline-flex size-10 items-center justify-center rounded-lg">
-                                <Crown className="text-primary-foreground size-5" />
+                        <div className="flex items-center gap-3 rounded-xl border border-glow p-4">
+                            <div className="inline-flex size-10 items-center justify-center rounded-lg bg-gradient-primary">
+                                <Crown className="size-5 text-primary-foreground" />
                             </div>
                             <div>
-                                <div className="text-foreground font-semibold">
+                                <div className="font-semibold text-foreground">
                                     Chess
                                 </div>
-                                <div className="text-muted-foreground text-xs">
+                                <div className="text-xs text-muted-foreground">
                                     More games coming soon.
                                 </div>
                             </div>
@@ -204,7 +208,10 @@ export default function ListingsCreate({
                                 type="single"
                                 value={data.platform}
                                 onValueChange={(value) => {
-                                    if (value === 'chess_com' || value === 'lichess') {
+                                    if (
+                                        value === 'chess_com' ||
+                                        value === 'lichess'
+                                    ) {
                                         setData('platform', value);
                                     }
                                 }}
@@ -214,13 +221,13 @@ export default function ListingsCreate({
                                     <ToggleGroupItem
                                         key={p}
                                         value={p}
-                                        className="data-[state=on]:border-primary data-[state=on]:bg-primary/10 data-[state=on]:text-foreground border-border/60 h-12 rounded-xl border"
+                                        className="h-12 rounded-xl border border-border/60 data-[state=on]:border-primary data-[state=on]:bg-primary/10 data-[state=on]:text-foreground"
                                     >
                                         {PLATFORM_LABEL[p]}
                                     </ToggleGroupItem>
                                 ))}
                             </ToggleGroup>
-                            <p className="text-muted-foreground mt-2 text-xs">
+                            <p className="mt-2 text-xs text-muted-foreground">
                                 Match outcome will be verified against{' '}
                                 {PLATFORM_LABEL[data.platform]}.
                             </p>
@@ -248,24 +255,24 @@ export default function ListingsCreate({
                                     className="pr-16"
                                     aria-invalid={exceedsBalance || undefined}
                                 />
-                                <span className="text-muted-foreground pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 text-sm font-medium">
+                                <span className="pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 text-sm font-medium text-muted-foreground">
                                     USDT
                                 </span>
                             </div>
-                            <div className="text-muted-foreground text-xs">
+                            <div className="text-xs text-muted-foreground">
                                 Available:{' '}
                                 <span
                                     className={
                                         exceedsBalance
-                                            ? 'text-destructive font-medium'
-                                            : 'text-foreground font-medium'
+                                            ? 'font-medium text-destructive'
+                                            : 'font-medium text-foreground'
                                     }
                                 >
                                     ${balanceNumber.toFixed(2)} USDT
                                 </span>
                             </div>
                             {exceedsBalance && (
-                                <p className="text-destructive text-xs">
+                                <p className="text-xs text-destructive">
                                     Stake exceeds your available balance.
                                 </p>
                             )}
@@ -283,22 +290,28 @@ export default function ListingsCreate({
                                     variant="outline"
                                     value={data.time_control}
                                     onValueChange={(value) =>
-                                        setData('time_control', value as TimeControl[])
+                                        setData(
+                                            'time_control',
+                                            value as TimeControl[],
+                                        )
                                     }
                                     className="flex flex-wrap"
                                 >
-                                    {TIME_CONTROL_OPTIONS.map(([value, label]) => (
-                                        <ToggleGroupItem
-                                            key={value}
-                                            value={value}
-                                            className="rounded-full px-5 py-2"
-                                        >
-                                            {label}
-                                        </ToggleGroupItem>
-                                    ))}
+                                    {TIME_CONTROL_OPTIONS.map(
+                                        ([value, label]) => (
+                                            <ToggleGroupItem
+                                                key={value}
+                                                value={value}
+                                                className="rounded-full px-5 py-2"
+                                            >
+                                                {label}
+                                            </ToggleGroupItem>
+                                        ),
+                                    )}
                                 </ToggleGroup>
-                                <p className="text-muted-foreground text-xs">
-                                    Pick at least one — the opponent picks which to play.
+                                <p className="text-xs text-muted-foreground">
+                                    Pick at least one — the opponent picks which
+                                    to play.
                                 </p>
                                 <InputError message={errors.time_control} />
                             </div>
@@ -318,7 +331,7 @@ export default function ListingsCreate({
                                         className="flex-1"
                                         aria-label="Minimum Elo"
                                     />
-                                    <span className="text-muted-foreground text-xs">
+                                    <span className="text-xs text-muted-foreground">
                                         to
                                     </span>
                                     <Input
@@ -334,7 +347,7 @@ export default function ListingsCreate({
                                         aria-label="Maximum Elo"
                                     />
                                 </div>
-                                <p className="text-muted-foreground text-xs">
+                                <p className="text-xs text-muted-foreground">
                                     Leave blank to match any skill.
                                 </p>
                                 <InputError message={errors.skill_min} />
@@ -350,14 +363,22 @@ export default function ListingsCreate({
                                 <Label htmlFor="region">Region</Label>
                                 <Select
                                     value={data.region}
-                                    onValueChange={(value) => setData('region', value)}
+                                    onValueChange={(value) =>
+                                        setData('region', value)
+                                    }
                                 >
-                                    <SelectTrigger id="region" className="w-full">
+                                    <SelectTrigger
+                                        id="region"
+                                        className="w-full"
+                                    >
                                         <SelectValue />
                                     </SelectTrigger>
                                     <SelectContent>
                                         {regions.map((region) => (
-                                            <SelectItem key={region} value={region}>
+                                            <SelectItem
+                                                key={region}
+                                                value={region}
+                                            >
                                                 {region}
                                             </SelectItem>
                                         ))}
@@ -386,8 +407,9 @@ export default function ListingsCreate({
                                         </ToggleGroupItem>
                                     ))}
                                 </ToggleGroup>
-                                <p className="text-muted-foreground text-xs">
-                                    Pick one or more, or leave empty for any language.
+                                <p className="text-xs text-muted-foreground">
+                                    Pick one or more, or leave empty for any
+                                    language.
                                 </p>
                                 <InputError message={errors.language} />
                             </div>
@@ -408,15 +430,20 @@ export default function ListingsCreate({
                                 </SelectTrigger>
                                 <SelectContent>
                                     {durations.map((hours) => (
-                                        <SelectItem key={hours} value={String(hours)}>
-                                            {hours === 1 ? '1 hour' : `${hours} hours`}
+                                        <SelectItem
+                                            key={hours}
+                                            value={String(hours)}
+                                        >
+                                            {hours === 1
+                                                ? '1 hour'
+                                                : `${hours} hours`}
                                         </SelectItem>
                                     ))}
                                 </SelectContent>
                             </Select>
-                            <p className="text-muted-foreground text-xs">
-                                The listing auto-expires if nobody takes it. Your stake
-                                is refunded automatically.
+                            <p className="text-xs text-muted-foreground">
+                                The listing auto-expires if nobody takes it.
+                                Your stake is refunded automatically.
                             </p>
                             <InputError message={errors.duration_hours} />
                         </div>
@@ -449,7 +476,7 @@ interface FormSectionProps {
 function FormSection({ title, children }: FormSectionProps) {
     return (
         <section>
-            <h2 className="font-display text-foreground mb-3 text-base font-semibold">
+            <h2 className="mb-3 font-display text-base font-semibold text-foreground">
                 {title}
             </h2>
             {children}

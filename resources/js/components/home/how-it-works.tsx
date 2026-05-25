@@ -37,16 +37,20 @@ export function HowItWorks() {
         <section id="how-it-works" className="scroll-mt-28">
             <div className="mx-auto max-w-7xl px-4 py-20 md:py-28">
                 <div className="mx-auto max-w-2xl text-center">
-                    <p className="text-muted-foreground mb-3 text-xs tracking-widest uppercase">
+                    <p className="mb-3 text-xs tracking-widest text-muted-foreground uppercase">
                         How it works
                     </p>
-                    <h2 className="font-display text-foreground text-3xl font-extrabold tracking-tight md:text-5xl">
+                    <h2 className="font-display text-3xl font-extrabold tracking-tight text-foreground md:text-5xl">
                         Three steps from{' '}
-                        <span className="text-gradient-primary">listing to payout</span>.
+                        <span className="text-gradient-primary">
+                            listing to payout
+                        </span>
+                        .
                     </h2>
-                    <p className="text-muted-foreground mt-4 text-base md:text-lg">
-                        Stakly is custodial by design — your funds are held in escrow until
-                        the game API confirms the result. No screenshots, no waiting.
+                    <p className="mt-4 text-base text-muted-foreground md:text-lg">
+                        Stakly is custodial by design — your funds are held in
+                        escrow until the game API confirms the result. No
+                        screenshots, no waiting.
                     </p>
                 </div>
 
@@ -57,34 +61,34 @@ export function HowItWorks() {
                         return (
                             <li
                                 key={step.number}
-                                className="border-border bg-card relative overflow-hidden rounded-2xl border p-6 transition-colors hover:border-primary/40 md:p-8"
+                                className="relative overflow-hidden rounded-2xl border border-border bg-card p-6 transition-colors hover:border-primary/40 md:p-8"
                             >
-                                <div className="bg-primary/5 absolute -top-12 -right-12 size-40 rounded-full blur-3xl" />
+                                <div className="absolute -top-12 -right-12 size-40 rounded-full bg-primary/5 blur-3xl" />
 
                                 <div className="relative flex items-center justify-between">
-                                    <span className="font-display text-muted-foreground/40 text-5xl font-extrabold tracking-tight">
+                                    <span className="font-display text-5xl font-extrabold tracking-tight text-muted-foreground/40">
                                         {step.number}
                                     </span>
-                                    <span className="border-border/60 bg-background/60 inline-flex size-11 items-center justify-center rounded-full border">
+                                    <span className="inline-flex size-11 items-center justify-center rounded-full border border-border/60 bg-background/60">
                                         <Icon
-                                            className="text-primary size-5"
+                                            className="size-5 text-primary"
                                             strokeWidth={1.75}
                                             aria-hidden
                                         />
                                     </span>
                                 </div>
 
-                                <h3 className="font-display text-foreground relative mt-6 text-xl font-bold tracking-tight">
+                                <h3 className="relative mt-6 font-display text-xl font-bold tracking-tight text-foreground">
                                     {step.title}
                                 </h3>
-                                <p className="text-muted-foreground relative mt-2 text-sm leading-relaxed">
+                                <p className="relative mt-2 text-sm leading-relaxed text-muted-foreground">
                                     {step.description}
                                 </p>
 
                                 {index < steps.length - 1 && (
                                     <div
                                         aria-hidden
-                                        className="from-border absolute top-1/2 -right-3 hidden h-px w-6 -translate-y-1/2 bg-gradient-to-r to-transparent md:block"
+                                        className="absolute top-1/2 -right-3 hidden h-px w-6 -translate-y-1/2 bg-gradient-to-r from-border to-transparent md:block"
                                     />
                                 )}
                             </li>

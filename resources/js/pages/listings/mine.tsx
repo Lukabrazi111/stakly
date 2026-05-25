@@ -9,10 +9,7 @@ import { MineTabs } from '@/components/listings/mine-tabs';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import PlayerHubLayout from '@/layouts/player-hub-layout';
-import {
-    create as listingsCreate,
-    mine as mineRoute,
-} from '@/routes/listings';
+import { create as listingsCreate, mine as mineRoute } from '@/routes/listings';
 import type { ListingsMineProps } from '@/types';
 
 const SKELETON_ROW_COUNT = 4;
@@ -71,7 +68,7 @@ export default function ListingsMine({
                         <h1 className="font-display text-3xl font-bold tracking-tight md:text-4xl">
                             My listings
                         </h1>
-                        <p className="text-muted-foreground mt-2 text-sm">
+                        <p className="mt-2 text-sm text-muted-foreground">
                             Manage what&apos;s on the board.{' '}
                             <span
                                 className={`font-medium ${atCap ? 'text-warning' : 'text-foreground/70'}`}
@@ -110,12 +107,10 @@ export default function ListingsMine({
                 <MineTabs current={tab} />
 
                 {!isEmpty || isLoading ? (
-                    <div className="border-border/60 bg-card/40 overflow-hidden rounded-2xl border">
+                    <div className="overflow-hidden rounded-2xl border border-border/60 bg-card/40">
                         {/* Column header — desktop only */}
-                        <div className="border-border/40 text-muted-foreground hidden border-b px-5 py-3 text-xs uppercase tracking-wide md:flex md:items-center md:gap-4">
-                            <div className="md:w-24 md:text-center">
-                                Status
-                            </div>
+                        <div className="hidden border-b border-border/40 px-5 py-3 text-xs tracking-wide text-muted-foreground uppercase md:flex md:items-center md:gap-4">
+                            <div className="md:w-24 md:text-center">Status</div>
                             <div className="md:w-28">Stake</div>
                             <div className="flex-1">Time control</div>
                             <div className="md:w-24 md:text-right">Expires</div>
@@ -124,14 +119,14 @@ export default function ListingsMine({
 
                         {isLoading
                             ? Array.from({ length: SKELETON_ROW_COUNT }).map(
-                                (_, i) => <MineRowSkeleton key={i} />,
-                            )
+                                  (_, i) => <MineRowSkeleton key={i} />,
+                              )
                             : listings.data.map((listing) => (
-                                <MineListingRow
-                                    key={listing.id}
-                                    listing={listing}
-                                />
-                            ))}
+                                  <MineListingRow
+                                      key={listing.id}
+                                      listing={listing}
+                                  />
+                              ))}
                     </div>
                 ) : (
                     <EmptyState
@@ -158,26 +153,26 @@ interface EmptyStateProps {
 }
 
 function EmptyState({ tab, atCap, isInactive }: EmptyStateProps) {
-    const heading
-        = tab === 'all'
+    const heading =
+        tab === 'all'
             ? 'No listings yet'
             : isInactive
-                ? 'Nothing listed while inactive'
-                : 'No listings on the board';
+              ? 'Nothing listed while inactive'
+              : 'No listings on the board';
 
-    const body
-        = tab === 'all'
+    const body =
+        tab === 'all'
             ? 'Once you post a listing, it shows up here — across every status.'
             : isInactive
-                ? 'Your listings are hidden globally. Switch to Active Mode (toggle in the header) or post a new listing.'
-                : 'Post one to find an opponent at your skill level.';
+              ? 'Your listings are hidden globally. Switch to Active Mode (toggle in the header) or post a new listing.'
+              : 'Post one to find an opponent at your skill level.';
 
     return (
-        <div className="border-border/60 bg-card/40 flex flex-col items-center gap-3 rounded-2xl border border-dashed px-6 py-16 text-center">
-            <h2 className="font-display text-foreground text-xl font-semibold">
+        <div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed border-border/60 bg-card/40 px-6 py-16 text-center">
+            <h2 className="font-display text-xl font-semibold text-foreground">
                 {heading}
             </h2>
-            <p className="text-muted-foreground max-w-sm text-sm">{body}</p>
+            <p className="max-w-sm text-sm text-muted-foreground">{body}</p>
             {!atCap && (
                 <Button
                     variant="gradient"
@@ -199,9 +194,9 @@ function MineRowSkeleton() {
     return (
         <div
             aria-hidden
-            className="border-border/40 flex flex-col gap-3 border-t px-4 py-4 first:border-t-0 md:flex-row md:items-center md:gap-4 md:px-5"
+            className="flex flex-col gap-3 border-t border-border/40 px-4 py-4 first:border-t-0 md:flex-row md:items-center md:gap-4 md:px-5"
         >
-            <div className="md:w-24 md:flex md:justify-center">
+            <div className="md:flex md:w-24 md:justify-center">
                 <Skeleton className="h-6 w-20 rounded-full" />
             </div>
             <div className="md:w-28">

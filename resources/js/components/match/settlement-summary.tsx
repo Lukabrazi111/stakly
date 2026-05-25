@@ -117,7 +117,7 @@ export function SettlementSummary({
                             'You won.'
                         ) : (
                             <>
-                                <span className="text-foreground font-medium">
+                                <span className="font-medium text-foreground">
                                     {winner.name}
                                 </span>{' '}
                                 <span>(@{winner.username})</span> won.

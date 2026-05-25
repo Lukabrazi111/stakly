@@ -20,13 +20,16 @@ const TYPE_LABELS: Record<WalletTransactionType, string> = {
     fee: 'Fee',
 };
 
-export default function WalletHistory({ transactions, filters, types }: WalletHistoryProps) {
+export default function WalletHistory({
+    transactions,
+    filters,
+    types,
+}: WalletHistoryProps) {
     const goToFilter = (type: WalletTransactionType | null) => {
-        router.get(
-            historyRoute().url,
-            buildWalletHistoryQuery({ type }),
-            { preserveState: false, preserveScroll: false },
-        );
+        router.get(historyRoute().url, buildWalletHistoryQuery({ type }), {
+            preserveState: false,
+            preserveScroll: false,
+        });
     };
 
     const isEmpty = transactions.data.length === 0;
@@ -43,7 +46,7 @@ export default function WalletHistory({ transactions, filters, types }: WalletHi
                     <h1 className="font-display text-3xl font-bold tracking-tight md:text-4xl">
                         Transaction history
                     </h1>
-                    <p className="text-muted-foreground mt-2 text-sm">
+                    <p className="mt-2 text-sm text-muted-foreground">
                         Every credit and debit on your account, newest first.
                     </p>
                 </header>
@@ -67,16 +70,16 @@ export default function WalletHistory({ transactions, filters, types }: WalletHi
                 </div>
 
                 {isEmpty ? (
-                    <div className="border-border/60 rounded-2xl border border-dashed p-10 text-center">
-                        <div className="bg-primary/10 text-primary mx-auto inline-flex size-12 items-center justify-center rounded-full">
+                    <div className="rounded-2xl border border-dashed border-border/60 p-10 text-center">
+                        <div className="mx-auto inline-flex size-12 items-center justify-center rounded-full bg-primary/10 text-primary">
                             <Inbox className="size-5" />
                         </div>
-                        <p className="text-foreground mt-3 text-sm font-medium">
+                        <p className="mt-3 text-sm font-medium text-foreground">
                             {hasActiveFilter
                                 ? 'No transactions match this filter'
                                 : 'No transactions yet'}
                         </p>
-                        <p className="text-muted-foreground mt-1 text-sm">
+                        <p className="mt-1 text-sm text-muted-foreground">
                             {hasActiveFilter
                                 ? 'Try a different type or clear the filter.'
                                 : 'Make a deposit to get started.'}
@@ -85,7 +88,7 @@ export default function WalletHistory({ transactions, filters, types }: WalletHi
                             <button
                                 type="button"
                                 onClick={() => goToFilter(null)}
-                                className="text-primary hover:text-primary/80 mt-4 inline-block cursor-pointer text-sm font-medium transition-colors"
+                                className="mt-4 inline-block cursor-pointer text-sm font-medium text-primary transition-colors hover:text-primary/80"
                             >
                                 Clear filter
                             </button>
@@ -121,15 +124,19 @@ interface FilterChipProps {
 }
 
 function FilterChip({ active, onClick, children }: FilterChipProps) {
-    const base
-        = 'inline-flex cursor-pointer items-center rounded-full border px-3.5 py-1.5 text-xs font-medium transition-colors duration-150 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/25 focus-visible:ring-offset-2 focus-visible:ring-offset-background';
+    const base =
+        'inline-flex cursor-pointer items-center rounded-full border px-3.5 py-1.5 text-xs font-medium transition-colors duration-150 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/25 focus-visible:ring-offset-2 focus-visible:ring-offset-background';
 
     const stateClasses = active
         ? 'border-primary/40 bg-primary/15 text-foreground'
         : 'border-border/60 bg-card/60 text-muted-foreground hover:bg-primary/10 hover:text-foreground';
 
     return (
-        <button type="button" onClick={onClick} className={`${base} ${stateClasses}`}>
+        <button
+            type="button"
+            onClick={onClick}
+            className={`${base} ${stateClasses}`}
+        >
             {children}
         </button>
     );

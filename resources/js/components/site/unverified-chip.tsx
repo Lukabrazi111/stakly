@@ -51,10 +51,7 @@ export function UnverifiedChip({ className }: Props) {
         window.addEventListener('stakly:verify-cooldown-changed', sync);
 
         return () =>
-            window.removeEventListener(
-                'stakly:verify-cooldown-changed',
-                sync,
-            );
+            window.removeEventListener('stakly:verify-cooldown-changed', sync);
     }, []);
 
     const disabled = sending || cooldown > 0;
@@ -105,7 +102,7 @@ export function UnverifiedChip({ className }: Props) {
             type="button"
             onClick={resend}
             disabled={disabled}
-            className={`border-warning/30 bg-warning/10 text-warning hover:bg-warning/20 hover:border-warning/50 focus-visible:ring-warning focus-visible:ring-offset-background inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors duration-200 ease-out focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-warning/10 disabled:hover:border-warning/30 ${className ?? ''}`}
+            className={`inline-flex items-center gap-2 rounded-full border border-warning/30 bg-warning/10 px-3 py-1.5 text-xs font-medium text-warning transition-colors duration-200 ease-out hover:border-warning/50 hover:bg-warning/20 focus-visible:ring-2 focus-visible:ring-warning focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:border-warning/30 disabled:hover:bg-warning/10 ${className ?? ''}`}
             title={
                 cooldown > 0
                     ? `Wait ${cooldown}s before requesting another email`

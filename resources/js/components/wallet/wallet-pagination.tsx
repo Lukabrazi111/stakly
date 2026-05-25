@@ -18,7 +18,10 @@ const ELLIPSIS = '…';
  * to a generic `Pagination` so the route helper + query builder stay
  * statically typed end-to-end.
  */
-function visiblePages(current: number, last: number): (number | typeof ELLIPSIS)[] {
+function visiblePages(
+    current: number,
+    last: number,
+): (number | typeof ELLIPSIS)[] {
     if (last <= 7) {
         return Array.from({ length: last }, (_, i) => i + 1);
     }
@@ -81,7 +84,7 @@ export function WalletPagination({ currentPage, lastPage, filters }: Props) {
                     <span
                         key={`ellipsis-${idx}`}
                         aria-hidden
-                        className="text-muted-foreground inline-flex h-9 w-9 items-center justify-center text-sm"
+                        className="inline-flex h-9 w-9 items-center justify-center text-sm text-muted-foreground"
                     >
                         {ELLIPSIS}
                     </span>
@@ -119,8 +122,8 @@ function PageButton({
     children,
     ...props
 }: PageButtonProps) {
-    const base
-        = 'inline-flex h-9 min-w-9 cursor-pointer items-center justify-center rounded-full px-3 text-sm font-medium transition-colors duration-150 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/25 focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-40';
+    const base =
+        'inline-flex h-9 min-w-9 cursor-pointer items-center justify-center rounded-full px-3 text-sm font-medium transition-colors duration-150 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/25 focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-40';
 
     const stateClasses = active
         ? 'border-primary/40 bg-primary/15 text-foreground border'

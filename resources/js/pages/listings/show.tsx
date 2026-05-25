@@ -61,7 +61,8 @@ export default function ListingShow({ listing, match }: ListingShowProps) {
     const isOpen = listing.status === 'open';
     const canCancel = isOwner && isOpen;
     const endingSoon = isEndingSoon(listing.expires_at);
-    const hasEnoughBalance = (auth.user?.usdt_balance ?? 0) >= listing.stake_amount;
+    const hasEnoughBalance =
+        (auth.user?.usdt_balance ?? 0) >= listing.stake_amount;
     // M8 Phase 5 Slice B platform-specific take-gate: the viewer must have
     // verified the LISTING'S platform, not just "any chess provider." A user
     // with only chess.com linked can't take a Lichess listing because they
@@ -117,35 +118,40 @@ export default function ListingShow({ listing, match }: ListingShowProps) {
                     <div className="space-y-6 md:col-span-2">
                         {/* Creator card — avatar + name + meta link to user profile;
                             status badge stays outside the link as informational. */}
-                        <section className="border-border/60 bg-card/60 rounded-2xl border p-6">
+                        <section className="rounded-2xl border border-border/60 bg-card/60 p-6">
                             <div className="flex items-center gap-4">
                                 <Link
-                                    href={userShow(listing.creator.username).url}
-                                    className="focus-visible:ring-primary focus-visible:ring-offset-background flex min-w-0 flex-1 items-center gap-4 rounded-lg focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none"
+                                    href={
+                                        userShow(listing.creator.username).url
+                                    }
+                                    className="flex min-w-0 flex-1 items-center gap-4 rounded-lg focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none"
                                 >
                                     <Avatar className="size-16 overflow-hidden rounded-full">
-                                        <AvatarFallback className="bg-gradient-primary text-primary-foreground text-xl font-semibold">
+                                        <AvatarFallback className="bg-gradient-primary text-xl font-semibold text-primary-foreground">
                                             {getInitials(listing.creator.name)}
                                         </AvatarFallback>
                                     </Avatar>
 
                                     <div className="min-w-0 flex-1">
-                                        <h1 className="font-display text-foreground hover:text-primary truncate text-2xl font-bold tracking-tight transition-colors">
+                                        <h1 className="truncate font-display text-2xl font-bold tracking-tight text-foreground transition-colors hover:text-primary">
                                             {listing.creator.name}
                                         </h1>
-                                        <div className="text-muted-foreground mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
+                                        <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
                                             {listing.region && (
                                                 <span className="inline-flex items-center gap-1.5">
                                                     <Globe className="size-3.5" />
                                                     {listing.region}
                                                 </span>
                                             )}
-                                            {listing.language && listing.language.length > 0 && (
-                                                <span className="inline-flex items-center gap-1.5">
-                                                    <Languages className="size-3.5" />
-                                                    {listing.language.join(', ')}
-                                                </span>
-                                            )}
+                                            {listing.language &&
+                                                listing.language.length > 0 && (
+                                                    <span className="inline-flex items-center gap-1.5">
+                                                        <Languages className="size-3.5" />
+                                                        {listing.language.join(
+                                                            ', ',
+                                                        )}
+                                                    </span>
+                                                )}
                                         </div>
                                     </div>
                                 </Link>
@@ -161,8 +167,8 @@ export default function ListingShow({ listing, match }: ListingShowProps) {
                         </section>
 
                         {/* Listing details card */}
-                        <section className="border-border/60 bg-card/60 rounded-2xl border p-6">
-                            <h2 className="font-display text-foreground mb-5 text-lg font-semibold">
+                        <section className="rounded-2xl border border-border/60 bg-card/60 p-6">
+                            <h2 className="mb-5 font-display text-lg font-semibold text-foreground">
                                 Match details
                             </h2>
                             <dl className="grid gap-5 sm:grid-cols-2">
@@ -177,13 +183,19 @@ export default function ListingShow({ listing, match }: ListingShowProps) {
                                 <Detail
                                     label="Time control"
                                     icon={<Clock className="size-4" />}
-                                    value={formatTimeControls(listing.time_control)}
+                                    value={formatTimeControls(
+                                        listing.time_control,
+                                    )}
                                 />
                                 <Detail
                                     label="Expires"
                                     icon={<Clock className="size-4" />}
-                                    value={formatTimeRemaining(listing.expires_at)}
-                                    valueClass={endingSoon ? 'text-warning' : undefined}
+                                    value={formatTimeRemaining(
+                                        listing.expires_at,
+                                    )}
+                                    valueClass={
+                                        endingSoon ? 'text-warning' : undefined
+                                    }
                                 />
                                 {listing.region && (
                                     <Detail
@@ -198,15 +210,15 @@ export default function ListingShow({ listing, match }: ListingShowProps) {
 
                     {/* Right: booking widget */}
                     <aside className="md:col-span-1">
-                        <div className="border-border/60 bg-card/60 rounded-2xl border p-6 md:sticky md:top-24">
+                        <div className="rounded-2xl border border-border/60 bg-card/60 p-6 md:sticky md:top-24">
                             <div className="text-center">
-                                <div className="text-muted-foreground text-[11px] uppercase tracking-widest">
+                                <div className="text-[11px] tracking-widest text-muted-foreground uppercase">
                                     Stake
                                 </div>
-                                <div className="font-display text-gradient-primary mt-2 text-5xl font-bold leading-none">
+                                <div className="mt-2 text-gradient-primary font-display text-5xl leading-none font-bold">
                                     ${listing.stake_amount}
                                 </div>
-                                <div className="text-muted-foreground mt-1 text-xs">
+                                <div className="mt-1 text-xs text-muted-foreground">
                                     USDT
                                 </div>
                             </div>
@@ -249,17 +261,17 @@ export default function ListingShow({ listing, match }: ListingShowProps) {
                                             </Button>
                                             <Link
                                                 href={listingsIndex().url}
-                                                className="text-muted-foreground hover:text-foreground text-center text-xs transition-colors"
+                                                className="text-center text-xs text-muted-foreground transition-colors hover:text-foreground"
                                             >
                                                 Browse other listings →
                                             </Link>
                                         </>
                                     )}
 
-                                    {isOpen
-                                        && !isOwnerInactive
-                                        && auth.user
-                                        && !hasMatchingPlatform && (
+                                    {isOpen &&
+                                        !isOwnerInactive &&
+                                        auth.user &&
+                                        !hasMatchingPlatform && (
                                             <>
                                                 <Button
                                                     variant="gradient"
@@ -267,11 +279,19 @@ export default function ListingShow({ listing, match }: ListingShowProps) {
                                                     disabled
                                                     className="w-full"
                                                 >
-                                                    Link {PLATFORM_LABEL[listing.platform]} to take
+                                                    Link{' '}
+                                                    {
+                                                        PLATFORM_LABEL[
+                                                            listing.platform
+                                                        ]
+                                                    }{' '}
+                                                    to take
                                                 </Button>
                                                 <Link
-                                                    href={linkedAccountsEdit().url}
-                                                    className="text-muted-foreground hover:text-foreground text-center text-xs transition-colors"
+                                                    href={
+                                                        linkedAccountsEdit().url
+                                                    }
+                                                    className="text-center text-xs text-muted-foreground transition-colors hover:text-foreground"
                                                 >
                                                     {auth.user.has_chess_link
                                                         ? `Link a ${PLATFORM_LABEL[listing.platform]} account →`
@@ -280,64 +300,76 @@ export default function ListingShow({ listing, match }: ListingShowProps) {
                                             </>
                                         )}
 
-                                    {isOpen
-                                        && !isOwnerInactive
-                                        && auth.user
-                                        && hasMatchingPlatform
-                                        && hasEnoughBalance && (
-                                        <Dialog
-                                            open={takeOpen}
-                                            onOpenChange={setTakeOpen}
-                                        >
-                                            <DialogTrigger asChild>
-                                                <Button
-                                                    variant="gradient"
-                                                    size="pill"
-                                                    className="w-full"
-                                                >
-                                                    Take
-                                                </Button>
-                                            </DialogTrigger>
-                                            <DialogContent>
-                                                <DialogHeader>
-                                                    <DialogTitle>
-                                                        Take this match?
-                                                    </DialogTitle>
-                                                    <DialogDescription>
-                                                        You&apos;re about to stake{' '}
-                                                        <span className="text-foreground font-semibold">
-                                                            ${listing.stake_amount} USDT
-                                                        </span>{' '}
-                                                        on this match. Once it
-                                                        starts, your stake is locked
-                                                        until the match settles, you
-                                                        and your opponent open a
-                                                        dispute, or the 4-hour
-                                                        confirmation window expires.
-                                                    </DialogDescription>
-                                                </DialogHeader>
-                                                <DialogFooter>
-                                                    <Button
-                                                        variant="ghost"
-                                                        onClick={() =>
-                                                            setTakeOpen(false)
-                                                        }
-                                                    >
-                                                        Cancel
-                                                    </Button>
+                                    {isOpen &&
+                                        !isOwnerInactive &&
+                                        auth.user &&
+                                        hasMatchingPlatform &&
+                                        hasEnoughBalance && (
+                                            <Dialog
+                                                open={takeOpen}
+                                                onOpenChange={setTakeOpen}
+                                            >
+                                                <DialogTrigger asChild>
                                                     <Button
                                                         variant="gradient"
-                                                        onClick={handleTake}
-                                                        disabled={takeProcessing}
+                                                        size="pill"
+                                                        className="w-full"
                                                     >
-                                                        {takeProcessing
-                                                            ? 'Processing…'
-                                                            : 'Confirm & take'}
+                                                        Take
                                                     </Button>
-                                                </DialogFooter>
-                                            </DialogContent>
-                                        </Dialog>
-                                    )}
+                                                </DialogTrigger>
+                                                <DialogContent>
+                                                    <DialogHeader>
+                                                        <DialogTitle>
+                                                            Take this match?
+                                                        </DialogTitle>
+                                                        <DialogDescription>
+                                                            You&apos;re about to
+                                                            stake{' '}
+                                                            <span className="font-semibold text-foreground">
+                                                                $
+                                                                {
+                                                                    listing.stake_amount
+                                                                }{' '}
+                                                                USDT
+                                                            </span>{' '}
+                                                            on this match. Once
+                                                            it starts, your
+                                                            stake is locked
+                                                            until the match
+                                                            settles, you and
+                                                            your opponent open a
+                                                            dispute, or the
+                                                            4-hour confirmation
+                                                            window expires.
+                                                        </DialogDescription>
+                                                    </DialogHeader>
+                                                    <DialogFooter>
+                                                        <Button
+                                                            variant="ghost"
+                                                            onClick={() =>
+                                                                setTakeOpen(
+                                                                    false,
+                                                                )
+                                                            }
+                                                        >
+                                                            Cancel
+                                                        </Button>
+                                                        <Button
+                                                            variant="gradient"
+                                                            onClick={handleTake}
+                                                            disabled={
+                                                                takeProcessing
+                                                            }
+                                                        >
+                                                            {takeProcessing
+                                                                ? 'Processing…'
+                                                                : 'Confirm & take'}
+                                                        </Button>
+                                                    </DialogFooter>
+                                                </DialogContent>
+                                            </Dialog>
+                                        )}
 
                                     {isOpen &&
                                         !isOwnerInactive &&
@@ -355,25 +387,28 @@ export default function ListingShow({ listing, match }: ListingShowProps) {
                                                 </Button>
                                                 <Link
                                                     href={walletDeposit().url}
-                                                    className="text-muted-foreground hover:text-foreground text-center text-xs transition-colors"
+                                                    className="text-center text-xs text-muted-foreground transition-colors hover:text-foreground"
                                                 >
-                                                    Deposit USDT to take this match →
+                                                    Deposit USDT to take this
+                                                    match →
                                                 </Link>
                                             </>
                                         )}
 
-                                    {isOpen && !isOwnerInactive && !auth.user && (
-                                        <Button
-                                            variant="gradient"
-                                            size="pill"
-                                            className="w-full"
-                                            asChild
-                                        >
-                                            <Link href="/?auth=login">
-                                                Log in to take
-                                            </Link>
-                                        </Button>
-                                    )}
+                                    {isOpen &&
+                                        !isOwnerInactive &&
+                                        !auth.user && (
+                                            <Button
+                                                variant="gradient"
+                                                size="pill"
+                                                className="w-full"
+                                                asChild
+                                            >
+                                                <Link href="/?auth=login">
+                                                    Log in to take
+                                                </Link>
+                                            </Button>
+                                        )}
 
                                     {!isOpen && (
                                         <Button
@@ -390,58 +425,54 @@ export default function ListingShow({ listing, match }: ListingShowProps) {
 
                             {canCancel && (
                                 <>
-                                    <div className="border-border/60 my-6 border-t" />
+                                    <div className="my-6 border-t border-border/60" />
                                     <Dialog
-                                                open={cancelOpen}
-                                                onOpenChange={setCancelOpen}
+                                        open={cancelOpen}
+                                        onOpenChange={setCancelOpen}
+                                    >
+                                        <DialogTrigger asChild>
+                                            <Button
+                                                variant="outline"
+                                                size="default"
+                                                className="w-full rounded-full border-destructive/30 bg-transparent text-destructive shadow-none hover:border-destructive/50 hover:bg-destructive/10 hover:text-destructive"
                                             >
-                                                <DialogTrigger asChild>
-                                                    <Button
-                                                        variant="outline"
-                                                        size="default"
-                                                        className="border-destructive/30 bg-transparent text-destructive hover:bg-destructive/10 hover:text-destructive hover:border-destructive/50 w-full shadow-none rounded-full"
-                                                    >
-                                                        Cancel listing
-                                                    </Button>
-                                                </DialogTrigger>
-                                                <DialogContent>
-                                                    <DialogHeader>
-                                                        <DialogTitle>
-                                                            Cancel this listing?
-                                                        </DialogTitle>
-                                                        <DialogDescription>
-                                                            Your{' '}
-                                                            <span className="text-foreground font-semibold">
-                                                                $
-                                                                {listing.stake_amount}{' '}
-                                                                USDT
-                                                            </span>{' '}
-                                                            stake will be
-                                                            refunded immediately.
-                                                            This can&apos;t be
-                                                            undone.
-                                                        </DialogDescription>
-                                                    </DialogHeader>
-                                                    <DialogFooter>
-                                                        <Button
-                                                            variant="ghost"
-                                                            onClick={() =>
-                                                                setCancelOpen(
-                                                                    false,
-                                                                )
-                                                            }
-                                                        >
-                                                            Keep listing
-                                                        </Button>
-                                                        <Button
-                                                            variant="destructive"
-                                                            onClick={handleCancel}
-                                                        >
-                                                            Cancel &amp; refund
-                                                        </Button>
-                                                    </DialogFooter>
-                                                </DialogContent>
-                                            </Dialog>
+                                                Cancel listing
+                                            </Button>
+                                        </DialogTrigger>
+                                        <DialogContent>
+                                            <DialogHeader>
+                                                <DialogTitle>
+                                                    Cancel this listing?
+                                                </DialogTitle>
+                                                <DialogDescription>
+                                                    Your{' '}
+                                                    <span className="font-semibold text-foreground">
+                                                        ${listing.stake_amount}{' '}
+                                                        USDT
+                                                    </span>{' '}
+                                                    stake will be refunded
+                                                    immediately. This can&apos;t
+                                                    be undone.
+                                                </DialogDescription>
+                                            </DialogHeader>
+                                            <DialogFooter>
+                                                <Button
+                                                    variant="ghost"
+                                                    onClick={() =>
+                                                        setCancelOpen(false)
+                                                    }
+                                                >
+                                                    Keep listing
+                                                </Button>
+                                                <Button
+                                                    variant="destructive"
+                                                    onClick={handleCancel}
+                                                >
+                                                    Cancel &amp; refund
+                                                </Button>
+                                            </DialogFooter>
+                                        </DialogContent>
+                                    </Dialog>
                                 </>
                             )}
                         </div>
@@ -462,11 +493,11 @@ interface DetailProps {
 function Detail({ label, icon, value, valueClass }: DetailProps) {
     return (
         <div>
-            <dt className="text-muted-foreground text-xs uppercase tracking-wide">
+            <dt className="text-xs tracking-wide text-muted-foreground uppercase">
                 {label}
             </dt>
             <dd
-                className={`text-foreground mt-1.5 inline-flex items-center gap-2 text-sm font-medium ${valueClass ?? ''}`}
+                className={`mt-1.5 inline-flex items-center gap-2 text-sm font-medium text-foreground ${valueClass ?? ''}`}
             >
                 {icon}
                 {value}

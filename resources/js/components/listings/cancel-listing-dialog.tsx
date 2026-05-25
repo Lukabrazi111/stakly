@@ -58,7 +58,7 @@ export function CancelListingDialog({
                     <DialogTitle>Cancel this listing?</DialogTitle>
                     <DialogDescription>
                         Your{' '}
-                        <span className="text-foreground font-semibold">
+                        <span className="font-semibold text-foreground">
                             ${listing.stake_amount} USDT
                         </span>{' '}
                         stake will be refunded immediately. This can&apos;t be

@@ -107,7 +107,6 @@ interface Props {
 }
 
 export function GameSelector({ selectedId, onSelect }: Props) {
-
     return (
         <section className="relative">
             <div className="mx-auto max-w-7xl px-4">

@@ -1,5 +1,12 @@
 import { Form, Head } from '@inertiajs/react';
-import { Check, Copy, ExternalLink, Link2, RotateCcw, ShieldCheck } from 'lucide-react';
+import {
+    Check,
+    Copy,
+    ExternalLink,
+    Link2,
+    RotateCcw,
+    ShieldCheck,
+} from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
 import LinkedAccountController from '@/actions/App/Http/Controllers/Settings/LinkedAccountController';
@@ -78,14 +85,14 @@ function ProviderRow({
     const isPending = pending?.provider === provider.value;
 
     return (
-        <article className="border-border/60 bg-card/60 rounded-xl border p-4 md:p-5">
+        <article className="rounded-xl border border-border/60 bg-card/60 p-4 md:p-5">
             <header className="mb-3 flex items-center gap-2">
-                <Link2 className="text-muted-foreground size-4" />
-                <h3 className="font-display text-foreground text-base font-semibold">
+                <Link2 className="size-4 text-muted-foreground" />
+                <h3 className="font-display text-base font-semibold text-foreground">
                     {provider.displayName}
                 </h3>
                 {isVerified && (
-                    <span className="bg-success/15 text-success border-success/30 ml-auto inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs font-medium">
+                    <span className="ml-auto inline-flex items-center gap-1 rounded-full border border-success/30 bg-success/15 px-2.5 py-0.5 text-xs font-medium text-success">
                         <ShieldCheck className="size-3" />
                         Linked
                     </span>
@@ -107,10 +114,10 @@ function VerifiedRow({ provider }: { provider: Provider }) {
     return (
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="space-y-1">
-                <p className="text-muted-foreground text-xs uppercase tracking-wide">
+                <p className="text-xs tracking-wide text-muted-foreground uppercase">
                     Username
                 </p>
-                <code className="text-foreground font-mono text-sm">
+                <code className="font-mono text-sm text-foreground">
                     {provider.username}
                 </code>
             </div>
@@ -159,24 +166,24 @@ function PendingRow({
 
     return (
         <div className="space-y-4">
-            <p className="text-muted-foreground text-sm">
+            <p className="text-sm text-muted-foreground">
                 Linking{' '}
-                <code className="text-foreground font-mono">
+                <code className="font-mono text-foreground">
                     {pending.username}
                 </code>
                 . Paste this code into your{' '}
-                <span className="text-foreground font-medium">
+                <span className="font-medium text-foreground">
                     {provider.targetFieldLabel}
                 </span>{' '}
                 field on {provider.displayName} (
                 {provider.targetFieldInstructions}), save it there, then come
-                back and verify. After we verify, you can safely remove the
-                code from your profile — we only check it once.
+                back and verify. After we verify, you can safely remove the code
+                from your profile — we only check it once.
             </p>
 
-            <div className="border-primary/40 bg-primary/5 flex items-center gap-2 rounded-xl border p-3">
+            <div className="flex items-center gap-2 rounded-xl border border-primary/40 bg-primary/5 p-3">
                 <code
-                    className="text-foreground flex-1 break-all font-mono text-sm font-medium select-all"
+                    className="flex-1 font-mono text-sm font-medium break-all text-foreground select-all"
                     title={pending.code}
                 >
                     {pending.code}
@@ -190,7 +197,7 @@ function PendingRow({
                     className="shrink-0"
                 >
                     {copied ? (
-                        <Check className="text-success size-4" />
+                        <Check className="size-4 text-success" />
                     ) : (
                         <Copy className="size-4" />
                     )}
@@ -202,7 +209,7 @@ function PendingRow({
                     href={providerUrl}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="text-primary hover:text-primary/80 inline-flex items-center gap-1.5 text-sm font-medium underline-offset-4 hover:underline"
+                    className="inline-flex items-center gap-1.5 text-sm font-medium text-primary underline-offset-4 hover:text-primary/80 hover:underline"
                 >
                     Open {provider.displayName} settings
                     <ExternalLink className="size-3.5" />
@@ -256,7 +263,11 @@ function RequestForm({ provider }: { provider: Provider }) {
         >
             {({ processing, errors }) => (
                 <>
-                    <input type="hidden" name="provider" value={provider.value} />
+                    <input
+                        type="hidden"
+                        name="provider"
+                        value={provider.value}
+                    />
                     <div className="flex-1 space-y-1.5">
                         <Label htmlFor={`username-${provider.value}`}>
                             {provider.displayName} username

@@ -1,5 +1,5 @@
 import { Head, router, usePage } from '@inertiajs/react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { CancellationRequestBanner } from '@/components/match/cancellation-request-banner';
 import { CancellationSummary } from '@/components/match/cancellation-summary';
 import { ChatPanel } from '@/components/match/chat-panel';
@@ -16,7 +16,7 @@ import { BackLink } from '@/components/site/back-link';
 import { useMatchChat } from '@/hooks/use-match-chat';
 import SiteLayout from '@/layouts/site-layout';
 import { show as listingShow } from '@/routes/listings';
-import type { MatchShowProps, MatchStatus } from '@/types';
+import type { Match, MatchShowProps, MatchStatus } from '@/types';
 
 const CANCEL_COOLDOWN_MINUTES = 30;
 
@@ -28,23 +28,25 @@ const CANCEL_COOLDOWN_MINUTES = 30;
  * requestCancellation`'s cooldown gate so the disabled button matches
  * the server's decision.
  */
-function cooldownRemainingFor(
-    match: import('@/types').Match,
-    viewerId: number,
-): number {
+function cooldownRemainingFor(match: Match, viewerId: number): number {
     const { cancellation } = match;
+
     if (cancellation.requested_by_id !== viewerId) {
         return 0;
     }
+
     if (cancellation.rejected_at === null) {
         return 0;
     }
+
     const rejectedAtMs = new Date(cancellation.rejected_at).getTime();
     const cooldownEndMs = rejectedAtMs + CANCEL_COOLDOWN_MINUTES * 60 * 1000;
     const remainingMs = cooldownEndMs - Date.now();
+
     if (remainingMs <= 0) {
         return 0;
     }
+
     return Math.ceil(remainingMs / 60_000);
 }
 
@@ -92,21 +94,12 @@ export default function MatchShow({ match, messages }: MatchShowProps) {
             chat.messages.some((message) =>
                 message.attachments.some(
                     (attachment) =>
-                        attachment.type === 'game_card'
-                        && attachment.source === 'auto_fetch',
+                        attachment.type === 'game_card' &&
+                        attachment.source === 'auto_fetch',
                 ),
             ),
         [chat.messages],
     );
-
-    // Inertia partial reload returns a fresh `match` object reference on
-    // every poll tick. The WaitingForGameCard's "Last checked Ns ago"
-    // counter resets each time this bumps. Bumping is the signal that
-    // the backend's page-visit auto-fetch trigger just fired.
-    const [pollTick, setPollTick] = useState(0);
-    useEffect(() => {
-        setPollTick((n) => n + 1);
-    }, [match]);
 
     // Snapshot the match status on first render so we can tell apart:
     //   - "user watched this match settle" — initial=pending, current=settled
@@ -115,11 +108,12 @@ export default function MatchShow({ match, messages }: MatchShowProps) {
     //     → no entrance animation. The result is historical info, not a
     //     new reveal; animating it on every refresh / back-nav / direct
     //     link would slow down reading content the user already knows.
-    // useRef's initializer runs once; the value survives every prop
-    // update including Inertia partial reloads from the 8s polling loop.
-    const initialStatusRef = useRef(match.status);
-    const settledCardShouldAnimate =
-        initialStatusRef.current !== 'settled';
+    // `useState`'s initializer captures once on first render and never
+    // re-runs; the value survives every prop update including Inertia
+    // partial reloads from the 8s polling loop. (`useRef` works too but
+    // the react-hooks plugin flags `.current` reads during render.)
+    const [initialStatus] = useState(match.status);
+    const settledCardShouldAnimate = initialStatus !== 'settled';
 
     // A Settled match with no winner is a draw — both stakes were refunded
     // via `SettleDrawMatchAction`, no platform fee charged. Backend
@@ -200,37 +194,37 @@ export default function MatchShow({ match, messages }: MatchShowProps) {
 
                 <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_460px] lg:gap-6">
                     <div className="min-w-0">
-
-                {/* Stack on mobile, row on sm: so neither truncates at 375px */}
-                <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                    <div>
-                        <h1 className="font-display text-3xl font-bold tracking-tight text-foreground">
-                            Match #{match.id}
-                        </h1>
-                        <p className="mt-1 text-sm text-muted-foreground">
-                            You are the {youAre.toLowerCase()}.
-                        </p>
-                        <MatchTimestamps
-                            startedAt={match.created_at}
-                            finishedAt={match.settled_at}
-                        />
-                    </div>
-                    {/* Status + countdown live together on the right side
+                        {/* Stack on mobile, row on sm: so neither truncates at 375px */}
+                        <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                            <div>
+                                <h1 className="font-display text-3xl font-bold tracking-tight text-foreground">
+                                    Match #{match.id}
+                                </h1>
+                                <p className="mt-1 text-sm text-muted-foreground">
+                                    You are the {youAre.toLowerCase()}.
+                                </p>
+                                <MatchTimestamps
+                                    startedAt={match.created_at}
+                                    finishedAt={match.settled_at}
+                                />
+                            </div>
+                            {/* Status + countdown live together on the right side
                         of the header. Wraps to a new line on narrow widths
                         so neither chip truncates. */}
-                    <div className="flex flex-wrap items-center gap-2">
-                        <span
-                            className={`inline-flex w-fit shrink-0 items-center rounded-full border px-3 py-1.5 text-xs font-medium ${STATUS_TONE[match.status]}`}
-                        >
-                            {STATUS_LABEL[match.status]}
-                        </span>
-                        {match.status === 'pending' && matchDeadline && (
-                            <MatchTimer deadline={matchDeadline} />
-                        )}
-                    </div>
-                </div>
+                            <div className="flex flex-wrap items-center gap-2">
+                                <span
+                                    className={`inline-flex w-fit shrink-0 items-center rounded-full border px-3 py-1.5 text-xs font-medium ${STATUS_TONE[match.status]}`}
+                                >
+                                    {STATUS_LABEL[match.status]}
+                                </span>
+                                {match.status === 'pending' &&
+                                    matchDeadline && (
+                                        <MatchTimer deadline={matchDeadline} />
+                                    )}
+                            </div>
+                        </div>
 
-                {/* Action area — varies by status. For Pending we render
+                        {/* Action area — varies by status. For Pending we render
                     the WaitingForGameCard (M16 — no buttons; the auto-
                     fetch / SettleFromCard pipeline does the work) +
                     escape-hatch links (cancel, dispute). For Settled the
@@ -239,73 +233,75 @@ export default function MatchShow({ match, messages }: MatchShowProps) {
                     nothing here — their status notification is the full-
                     width banner at the top of the page, and the Match
                     info card below covers the historical details. */}
-                {match.status === 'pending' && auth.user && (
-                    <div className="mb-6">
-                        <WaitingForGameCard
-                            platform={match.listing.platform}
-                            snapshots={match.snapshots}
-                            hasAutoFetchedCard={hasAutoFetchedCard}
-                            pollTick={pollTick}
-                        />
+                        {match.status === 'pending' && auth.user && (
+                            <div className="mb-6">
+                                <WaitingForGameCard
+                                    platform={match.listing.platform}
+                                    snapshots={match.snapshots}
+                                    hasAutoFetchedCard={hasAutoFetchedCard}
+                                />
 
-                        {/* Escape hatches — Request cancellation
+                                {/* Escape hatches — Request cancellation
                             (mutual no-fault) + Report a problem
                             (one-sided escalation). Hidden when a
                             cancellation request is already open so we
                             don't show "Request cancellation" while a
                             request is in flight; the top banner carries
                             the relevant actions. */}
-                        {match.cancellation.requested_at === null && (
-                            <div className="mt-4 flex flex-col items-center justify-center gap-3 sm:flex-row sm:gap-6">
-                                <RequestCancellationButton
-                                    matchId={match.id}
-                                    cooldownMinutesRemaining={cooldownRemainingFor(
-                                        match,
-                                        auth.user.id,
-                                    )}
-                                />
-                                <OpenDisputeButton matchId={match.id} />
+                                {match.cancellation.requested_at === null && (
+                                    <div className="mt-4 flex flex-col items-center justify-center gap-3 sm:flex-row sm:gap-6">
+                                        <RequestCancellationButton
+                                            matchId={match.id}
+                                            cooldownMinutesRemaining={cooldownRemainingFor(
+                                                match,
+                                                auth.user.id,
+                                            )}
+                                        />
+                                        <OpenDisputeButton matchId={match.id} />
+                                    </div>
+                                )}
                             </div>
                         )}
-                    </div>
-                )}
 
-                {match.status === 'settled' && (
-                    <div className="mb-6">
-                        <SettlementSummary
-                            winner={match.winner}
-                            pot={pot}
-                            fee={fee}
-                            payout={winnerPayout}
-                            iAmWinner={
-                                !isDraw && auth.user?.id === match.winner?.id
-                            }
-                            animateEntrance={settledCardShouldAnimate}
-                        />
-                    </div>
-                )}
+                        {match.status === 'settled' && (
+                            <div className="mb-6">
+                                <SettlementSummary
+                                    winner={match.winner}
+                                    pot={pot}
+                                    fee={fee}
+                                    payout={winnerPayout}
+                                    iAmWinner={
+                                        !isDraw &&
+                                        auth.user?.id === match.winner?.id
+                                    }
+                                    animateEntrance={settledCardShouldAnimate}
+                                />
+                            </div>
+                        )}
 
-                {/* Compact match-info card: opponent + parameters in one
+                        {/* Compact match-info card: opponent + parameters in one
                     Bybit-style key:value list. Pot is always shown so
                     players don't have to mentally compute stake × 2.
                     Winner payout is shown only during gameplay (Pending /
                     Disputed / ManualReview) — Settled matches already
                     break down pot/fee/payout in the SettlementSummary
                     card, so repeating winner payout here would triple-up. */}
-                <MatchInfoCard
-                    opponent={opponent}
-                    stakeEach={match.listing.stake_amount}
-                    pot={pot}
-                    winnerPayout={
-                        match.status !== 'settled' ? winnerPayout : undefined
-                    }
-                    timeControl={match.listing.time_control}
-                    platform={match.listing.platform}
-                />
+                        <MatchInfoCard
+                            opponent={opponent}
+                            stakeEach={match.listing.stake_amount}
+                            pot={pot}
+                            winnerPayout={
+                                match.status !== 'settled'
+                                    ? winnerPayout
+                                    : undefined
+                            }
+                            timeControl={match.listing.time_control}
+                            platform={match.listing.platform}
+                        />
 
-                <div className="mt-6">
-                    <MatchFaq />
-                </div>
+                        <div className="mt-6">
+                            <MatchFaq />
+                        </div>
                     </div>
 
                     {/* Desktop right-rail chat. Sticky at top-28 (112px) so

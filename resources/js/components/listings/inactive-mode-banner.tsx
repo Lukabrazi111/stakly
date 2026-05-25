@@ -19,17 +19,14 @@ export function InactiveModeBanner() {
     return (
         <div
             role="status"
-            className="border-warning/40 bg-warning/10 text-warning mb-6 flex items-start gap-3 rounded-xl border p-4"
+            className="mb-6 flex items-start gap-3 rounded-xl border border-warning/40 bg-warning/10 p-4 text-warning"
         >
-            <AlertCircle
-                className="size-5 shrink-0"
-                aria-hidden="true"
-            />
+            <AlertCircle className="size-5 shrink-0" aria-hidden="true" />
             <div className="flex-1">
-                <p className="text-foreground text-sm font-medium">
+                <p className="text-sm font-medium text-foreground">
                     You&apos;re in Inactive Mode
                 </p>
-                <p className="text-muted-foreground mt-0.5 text-sm">
+                <p className="mt-0.5 text-sm text-muted-foreground">
                     Your listings are hidden from the public marketplace and
                     your profile. Toggle Active Mode above to bring them back.
                 </p>

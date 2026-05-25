@@ -58,7 +58,7 @@ export function AuthModal() {
 
                 <div
                     aria-hidden
-                    className="data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 pointer-events-none fixed inset-0 z-50 flex items-center justify-center duration-300"
+                    className="pointer-events-none fixed inset-0 z-50 flex items-center justify-center duration-300 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:fade-in-0"
                 >
                     <div
                         className="size-[460px] rounded-full blur-[100px]"
@@ -73,7 +73,7 @@ export function AuthModal() {
                     onOpenAutoFocus={(e) => {
                         e.preventDefault();
                     }}
-                    className="border-glow bg-card data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 fixed top-[50%] left-[50%] z-50 w-full max-w-[calc(100%-2rem)] translate-x-[-50%] translate-y-[-50%] overflow-hidden rounded-2xl border p-0 duration-200 sm:max-w-md"
+                    className="fixed top-[50%] left-[50%] z-50 w-full max-w-[calc(100%-2rem)] translate-x-[-50%] translate-y-[-50%] overflow-hidden rounded-2xl border border-glow bg-card p-0 duration-200 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 sm:max-w-md"
                 >
                     <DialogTitle className="sr-only">
                         Authenticate to Stakly
@@ -84,7 +84,7 @@ export function AuthModal() {
 
                     <DialogPrimitive.Close
                         aria-label="Close"
-                        className="text-muted-foreground hover:text-foreground hover:bg-primary/10 focus-visible:ring-primary/25 focus-visible:ring-offset-background absolute top-3.5 right-3.5 z-10 inline-flex size-9 cursor-pointer items-center justify-center rounded-full transition-colors duration-150 ease-out focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none disabled:pointer-events-none"
+                        className="absolute top-3.5 right-3.5 z-10 inline-flex size-9 cursor-pointer items-center justify-center rounded-full text-muted-foreground transition-colors duration-150 ease-out hover:bg-primary/10 hover:text-foreground focus-visible:ring-2 focus-visible:ring-primary/25 focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none disabled:pointer-events-none"
                     >
                         <X className="size-4" />
                         <span className="sr-only">Close</span>
@@ -114,10 +114,10 @@ export function AuthModal() {
                                 className="flex flex-col gap-6 p-8 pt-10"
                             >
                                 <div className="flex flex-col gap-2 text-center">
-                                    <h2 className="font-display text-foreground text-2xl font-bold tracking-tight">
+                                    <h2 className="font-display text-2xl font-bold tracking-tight text-foreground">
                                         {META[view].title}
                                     </h2>
-                                    <p className="text-muted-foreground text-sm">
+                                    <p className="text-sm text-muted-foreground">
                                         {META[view].description}
                                     </p>
                                 </div>

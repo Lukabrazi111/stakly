@@ -95,7 +95,7 @@ export function PlayerSidebar() {
     return (
         <aside
             aria-label="Player management navigation"
-            className={`bg-card/40 border-border/60 sticky top-28 hidden h-[calc(100vh-7rem)] shrink-0 self-start border-r transition-[width] duration-200 ease-out md:flex md:flex-col ${
+            className={`sticky top-28 hidden h-[calc(100vh-7rem)] shrink-0 self-start border-r border-border/60 bg-card/40 transition-[width] duration-200 ease-out md:flex md:flex-col ${
                 collapsed ? 'md:w-16' : 'md:w-60'
             }`}
         >
@@ -111,15 +111,13 @@ export function PlayerSidebar() {
                         collapsed ? 'Expand sidebar' : 'Collapse sidebar'
                     }
                     aria-expanded={!collapsed}
-                    className="text-muted-foreground hover:bg-primary/10 hover:text-primary focus-visible:ring-primary/25 focus-visible:ring-offset-background inline-flex size-9 cursor-pointer items-center justify-center rounded-md transition-colors duration-150 ease-out focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none"
+                    className="inline-flex size-9 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors duration-150 ease-out hover:bg-primary/10 hover:text-primary focus-visible:ring-2 focus-visible:ring-primary/25 focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none"
                 >
-                    {collapsed
-                        ? (
-                                <PanelLeftOpen className="size-4" />
-                            )
-                        : (
-                                <PanelLeftClose className="size-4" />
-                            )}
+                    {collapsed ? (
+                        <PanelLeftOpen className="size-4" />
+                    ) : (
+                        <PanelLeftClose className="size-4" />
+                    )}
                 </button>
             </div>
 
@@ -137,9 +135,7 @@ export function PlayerSidebar() {
                                 prefetch
                                 aria-current={isActive ? 'page' : undefined}
                                 className={`group relative flex items-center gap-3 rounded-md py-2.5 text-sm font-medium transition-colors duration-150 ease-out ${
-                                    collapsed
-                                        ? 'justify-center px-0'
-                                        : 'px-3'
+                                    collapsed ? 'justify-center px-0' : 'px-3'
                                 } ${
                                     isActive
                                         ? 'bg-primary/15 text-foreground'
@@ -154,7 +150,7 @@ export function PlayerSidebar() {
                                 {isActive && (
                                     <span
                                         aria-hidden
-                                        className="bg-primary absolute top-1/2 left-0 h-6 w-1 -translate-y-1/2 rounded-r-full shadow-[0_0_10px_-1px_var(--gradient-glow)]"
+                                        className="absolute top-1/2 left-0 h-6 w-1 -translate-y-1/2 rounded-r-full bg-primary shadow-[0_0_10px_-1px_var(--gradient-glow)]"
                                     />
                                 )}
                                 <Icon
@@ -174,19 +170,14 @@ export function PlayerSidebar() {
                                     <TooltipTrigger asChild>
                                         {link}
                                     </TooltipTrigger>
-                                    <TooltipContent
-                                        side="right"
-                                        sideOffset={8}
-                                    >
+                                    <TooltipContent side="right" sideOffset={8}>
                                         {item.label}
                                     </TooltipContent>
                                 </Tooltip>
                             );
                         }
 
-                        return (
-                            <Fragment key={item.href}>{link}</Fragment>
-                        );
+                        return <Fragment key={item.href}>{link}</Fragment>;
                     })}
                 </nav>
             </TooltipProvider>

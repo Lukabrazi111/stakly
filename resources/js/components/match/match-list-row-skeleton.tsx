@@ -9,7 +9,7 @@ export function MatchListRowSkeleton() {
     return (
         <div
             aria-hidden
-            className="border-border/40 flex flex-col gap-4 border-t px-4 py-4 first:border-t-0 md:flex-row md:items-center md:gap-6 md:px-5"
+            className="flex flex-col gap-4 border-t border-border/40 px-4 py-4 first:border-t-0 md:flex-row md:items-center md:gap-6 md:px-5"
         >
             {/* Opponent */}
             <div className="flex min-w-0 items-center gap-3 md:w-52 md:shrink-0">

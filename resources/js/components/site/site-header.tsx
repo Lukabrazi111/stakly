@@ -24,24 +24,24 @@ export function SiteHeader() {
     const isUnverified = Boolean(user && !user.email_verified_at);
 
     return (
-        <header className="border-border/50 bg-background/80 sticky top-0 z-50 w-full border-b backdrop-blur-lg">
+        <header className="sticky top-0 z-50 w-full border-b border-border/50 bg-background/80 backdrop-blur-lg">
             <div className="mx-auto flex h-16 max-w-7xl items-center justify-between gap-6 px-4">
                 <Link
                     href="/"
                     aria-label="Stakly home"
-                    className="text-gradient-primary font-display rounded-md text-2xl font-bold tracking-tight focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                    className="rounded-md text-gradient-primary font-display text-2xl font-bold tracking-tight focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none"
                 >
                     stakly
                 </Link>
 
                 <div className="hidden max-w-md flex-1 md:block">
                     <div className="relative">
-                        <Search className="text-muted-foreground absolute top-1/2 left-4 size-4 -translate-y-1/2" />
+                        <Search className="absolute top-1/2 left-4 size-4 -translate-y-1/2 text-muted-foreground" />
                         <input
                             type="search"
                             placeholder="Search listings, players, games..."
                             aria-label="Search"
-                            className="border-border bg-card text-foreground placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-ring focus-visible:shadow-glow-sm h-10 w-full rounded-full border pr-4 pl-11 text-sm transition-shadow duration-200 ease-out focus-visible:ring-1 focus-visible:outline-none"
+                            className="h-10 w-full rounded-full border border-border bg-card pr-4 pl-11 text-sm text-foreground transition-shadow duration-200 ease-out placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-1 focus-visible:shadow-glow-sm focus-visible:ring-ring focus-visible:outline-none"
                         />
                     </div>
                 </div>
@@ -49,19 +49,19 @@ export function SiteHeader() {
                 <nav className="hidden items-center gap-1 md:flex">
                     <Link
                         href={listingsIndex()}
-                        className="text-foreground hover:text-primary px-3 py-2 text-sm transition-colors"
+                        className="px-3 py-2 text-sm text-foreground transition-colors hover:text-primary"
                     >
                         Listings
                     </Link>
                     <Link
                         href="#"
-                        className="text-foreground hover:text-primary px-3 py-2 text-sm transition-colors"
+                        className="px-3 py-2 text-sm text-foreground transition-colors hover:text-primary"
                     >
                         How it Works
                     </Link>
                     <Link
                         href="#"
-                        className="text-foreground hover:text-primary px-3 py-2 text-sm transition-colors"
+                        className="px-3 py-2 text-sm text-foreground transition-colors hover:text-primary"
                     >
                         Support
                     </Link>

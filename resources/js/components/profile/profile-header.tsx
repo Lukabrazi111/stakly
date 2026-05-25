@@ -20,20 +20,20 @@ export function ProfileHeader({ user }: Props) {
     }).format(new Date(user.member_since));
 
     return (
-        <section className="border-border/60 bg-card/60 rounded-2xl border p-6 md:p-8">
+        <section className="rounded-2xl border border-border/60 bg-card/60 p-6 md:p-8">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
                 <div className="flex items-center gap-4">
                     <Avatar className="size-20 overflow-hidden rounded-full">
-                        <AvatarFallback className="bg-gradient-primary text-primary-foreground text-2xl font-semibold">
+                        <AvatarFallback className="bg-gradient-primary text-2xl font-semibold text-primary-foreground">
                             {getInitials(user.name)}
                         </AvatarFallback>
                     </Avatar>
 
                     <div className="min-w-0">
-                        <h1 className="font-display text-foreground truncate text-3xl font-bold tracking-tight md:text-4xl">
+                        <h1 className="truncate font-display text-3xl font-bold tracking-tight text-foreground md:text-4xl">
                             {user.name}
                         </h1>
-                        <div className="text-muted-foreground mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
+                        <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
                             <span>@{user.username}</span>
                             <span className="text-border">·</span>
                             <span>Joined {joinedDate}</span>
@@ -49,7 +49,7 @@ export function ProfileHeader({ user }: Props) {
             </div>
 
             {user.bio && (
-                <p className="text-foreground/80 mt-6 text-sm leading-relaxed">
+                <p className="mt-6 text-sm leading-relaxed text-foreground/80">
                     {user.bio}
                 </p>
             )}

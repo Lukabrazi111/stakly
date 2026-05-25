@@ -20,7 +20,8 @@ export default function Welcome({ featured }: Props) {
     const [selectedGame, setSelectedGame] = useState<GameTileId>('chess');
 
     const { listings, name, isLive } = useMemo(() => {
-        const tile = GAME_TILES.find((g) => g.id === selectedGame) ?? GAME_TILES[0];
+        const tile =
+            GAME_TILES.find((g) => g.id === selectedGame) ?? GAME_TILES[0];
         const isLive = !tile.comingSoon;
 
         return {
@@ -36,7 +37,10 @@ export default function Welcome({ featured }: Props) {
         <SiteLayout>
             <Head title="Stake your skill. Find your match." />
             <Hero />
-            <GameSelector selectedId={selectedGame} onSelect={setSelectedGame} />
+            <GameSelector
+                selectedId={selectedGame}
+                onSelect={setSelectedGame}
+            />
             <FeaturedListings
                 listings={listings}
                 selectedGameName={name}

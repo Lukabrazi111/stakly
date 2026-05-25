@@ -1,5 +1,10 @@
 import { Paperclip, Send, X } from 'lucide-react';
-import type { ChangeEvent, ClipboardEvent, FormEvent, KeyboardEvent } from 'react';
+import type {
+    ChangeEvent,
+    ClipboardEvent,
+    FormEvent,
+    KeyboardEvent,
+} from 'react';
 import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -38,9 +43,12 @@ export function ChatInput({
     const [previewUrl, setPreviewUrl] = useState<string | null>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
-    // Local object-URL preview so the user sees the thumb before send. Revoke
-    // on unmount / file-change to prevent the browser from holding a blob in
-    // memory after the upload completes.
+    // Local object-URL preview so the user sees the thumb before send.
+    // Revoke on unmount / file-change to prevent the browser from holding
+    // a blob in memory after the upload completes. setState-inside-effect
+    // is the right shape here — useMemo + cleanup-only effect breaks under
+    // React strict mode (the URL gets revoked during the strict double-mount
+    // and the image src then points at a dead blob).
     useEffect(() => {
         if (!file) {
             setPreviewUrl(null);
@@ -70,6 +78,7 @@ export function ChatInput({
         onSend(trimmed, file);
         setContent('');
         onFileChange(null);
+
         if (fileInputRef.current) {
             fileInputRef.current.value = '';
         }
@@ -128,6 +137,7 @@ export function ChatInput({
 
     const clearFile = () => {
         onFileChange(null);
+
         if (fileInputRef.current) {
             fileInputRef.current.value = '';
         }
@@ -136,31 +146,31 @@ export function ChatInput({
     return (
         <form
             onSubmit={submit}
-            className="border-border/60 bg-card/40 border-t"
+            className="border-t border-border/60 bg-card/40"
         >
             {/* File preview strip — only when a file is queued. Shows the
                 local object-URL thumb + a clear button + (when in flight)
                 an upload progress bar. */}
             {hasFile && (
-                <div className="border-border/40 flex items-center gap-3 border-b px-3 py-2">
+                <div className="flex items-center gap-3 border-b border-border/40 px-3 py-2">
                     {previewUrl && (
                         <img
                             src={previewUrl}
                             alt={file.name}
-                            className="border-border/60 size-12 shrink-0 rounded-md border object-cover"
+                            className="size-12 shrink-0 rounded-md border border-border/60 object-cover"
                         />
                     )}
                     <div className="min-w-0 flex-1">
-                        <p className="text-foreground truncate text-xs font-medium">
+                        <p className="truncate text-xs font-medium text-foreground">
                             {file.name}
                         </p>
-                        <p className="text-muted-foreground text-[11px]">
+                        <p className="text-[11px] text-muted-foreground">
                             {formatBytes(file.size)}
                         </p>
                         {uploadProgress !== null && (
-                            <div className="bg-border/60 mt-1.5 h-1 w-full overflow-hidden rounded-full">
+                            <div className="mt-1.5 h-1 w-full overflow-hidden rounded-full bg-border/60">
                                 <div
-                                    className="bg-primary h-full transition-[width] duration-150 ease-out"
+                                    className="h-full bg-primary transition-[width] duration-150 ease-out"
                                     style={{ width: `${uploadProgress}%` }}
                                 />
                             </div>
@@ -207,7 +217,9 @@ export function ChatInput({
                         onKeyDown={handleKeyDown}
                         onPaste={handlePaste}
                         placeholder={
-                            hasFile ? 'Add a caption (optional)…' : 'Type a message…'
+                            hasFile
+                                ? 'Add a caption (optional)…'
+                                : 'Type a message…'
                         }
                         rows={1}
                         aria-label="Chat message"
@@ -215,9 +227,10 @@ export function ChatInput({
                         className="max-h-32 min-h-9 resize-none py-2 text-sm"
                     />
                     {overLimit && (
-                        <p className="text-destructive text-[11px]">
+                        <p className="text-[11px] text-destructive">
                             {trimmed.length.toLocaleString()} /{' '}
-                            {MAX_CONTENT_LENGTH.toLocaleString()} — message too long.
+                            {MAX_CONTENT_LENGTH.toLocaleString()} — message too
+                            long.
                         </p>
                     )}
                 </div>

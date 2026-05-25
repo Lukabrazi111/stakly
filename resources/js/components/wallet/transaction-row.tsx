@@ -1,6 +1,10 @@
 import { Link } from '@inertiajs/react';
 import { TransactionTypeChip } from '@/components/wallet/transaction-type-chip';
-import { formatSignedAmount, formatTransactionDate, formatUsdt } from '@/lib/wallet-format';
+import {
+    formatSignedAmount,
+    formatTransactionDate,
+    formatUsdt,
+} from '@/lib/wallet-format';
 import { show as showListing } from '@/routes/listings';
 import { show as showMatch } from '@/routes/matches';
 import type { WalletTransaction } from '@/types';
@@ -30,14 +34,15 @@ const MATCH_LINKED_TYPES: ReadonlySet<WalletTransaction['type']> = new Set([
  */
 export function TransactionRow({ transaction }: Props) {
     const isCredit = transaction.amount > 0;
-    const description = transaction.description ?? defaultDescription(transaction.type);
+    const description =
+        transaction.description ?? defaultDescription(transaction.type);
 
-    const linksToMatch
-        = MATCH_LINKED_TYPES.has(transaction.type)
-            && transaction.related_match !== null;
+    const linksToMatch =
+        MATCH_LINKED_TYPES.has(transaction.type) &&
+        transaction.related_match !== null;
 
     return (
-        <article className="border-border/60 bg-card/60 flex flex-col gap-3 rounded-xl border p-4 transition-colors md:flex-row md:items-center md:gap-4">
+        <article className="flex flex-col gap-3 rounded-xl border border-border/60 bg-card/60 p-4 transition-colors md:flex-row md:items-center md:gap-4">
             <div className="flex items-center justify-between gap-3 md:w-44 md:shrink-0">
                 <TransactionTypeChip type={transaction.type} />
                 <span
@@ -50,14 +55,16 @@ export function TransactionRow({ transaction }: Props) {
             </div>
 
             <div className="min-w-0 flex-1">
-                <div className="text-foreground truncate text-sm">
+                <div className="truncate text-sm text-foreground">
                     {description}
                     {linksToMatch && transaction.related_match && (
                         <>
                             {' '}
                             <Link
-                                href={showMatch(transaction.related_match.id).url}
-                                className="text-primary hover:text-primary/80 font-medium underline-offset-2 transition-colors hover:underline"
+                                href={
+                                    showMatch(transaction.related_match.id).url
+                                }
+                                className="font-medium text-primary underline-offset-2 transition-colors hover:text-primary/80 hover:underline"
                             >
                                 Match #{transaction.related_match.id}
                             </Link>
@@ -67,15 +74,18 @@ export function TransactionRow({ transaction }: Props) {
                         <>
                             {' '}
                             <Link
-                                href={showListing(transaction.related_listing.id).url}
-                                className="text-primary hover:text-primary/80 font-medium underline-offset-2 transition-colors hover:underline"
+                                href={
+                                    showListing(transaction.related_listing.id)
+                                        .url
+                                }
+                                className="font-medium text-primary underline-offset-2 transition-colors hover:text-primary/80 hover:underline"
                             >
                                 Listing #{transaction.related_listing.id}
                             </Link>
                         </>
                     )}
                 </div>
-                <div className="text-muted-foreground mt-0.5 text-xs">
+                <div className="mt-0.5 text-xs text-muted-foreground">
                     {formatTransactionDate(transaction.created_at)}
                 </div>
             </div>
@@ -88,13 +98,13 @@ export function TransactionRow({ transaction }: Props) {
                 >
                     {formatSignedAmount(transaction.amount)} USDT
                 </div>
-                <div className="text-muted-foreground mt-0.5 font-mono text-xs">
+                <div className="mt-0.5 font-mono text-xs text-muted-foreground">
                     Balance: {formatUsdt(transaction.balance_after)}
                 </div>
             </div>
 
             {/* Mobile-only balance-after line, since the desktop column is hidden. */}
-            <div className="text-muted-foreground -mt-1 font-mono text-xs md:hidden">
+            <div className="-mt-1 font-mono text-xs text-muted-foreground md:hidden">
                 Balance: {formatUsdt(transaction.balance_after)}
             </div>
         </article>

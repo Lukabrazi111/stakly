@@ -94,7 +94,9 @@ export function RequestCancellationButton({
     };
 
     const handleSubmit = () => {
-        if (!canSubmit) return;
+        if (!canSubmit) {
+            return;
+        }
 
         const reasonPayload = isOther
             ? otherText.trim() === ''
@@ -121,6 +123,7 @@ export function RequestCancellationButton({
         if (!next && !processing) {
             resetForm();
         }
+
         setOpen(next);
     };
 
@@ -139,7 +142,7 @@ export function RequestCancellationButton({
                 onClick={() => !isCooldown && setOpen(true)}
                 disabled={isCooldown}
                 title={cooldownTitle}
-                className="inline-flex cursor-pointer items-center gap-1.5 rounded-sm text-xs text-muted-foreground underline-offset-4 transition-colors hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:no-underline disabled:hover:text-muted-foreground"
+                className="inline-flex cursor-pointer items-center gap-1.5 rounded-sm text-xs text-muted-foreground underline-offset-4 transition-colors hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:text-muted-foreground disabled:hover:no-underline"
             >
                 <Handshake className="size-3.5" aria-hidden="true" />
                 {triggerLabel}
@@ -151,9 +154,8 @@ export function RequestCancellationButton({
                         <DialogTitle>Request to cancel match</DialogTitle>
                         <DialogDescription>
                             Both stakes will be refunded if your opponent
-                            accepts. If they decline, the match continues
-                            and you'll wait 30 minutes before you can
-                            request again.
+                            accepts. If they decline, the match continues and
+                            you'll wait 30 minutes before you can request again.
                         </DialogDescription>
                     </DialogHeader>
 
@@ -161,7 +163,7 @@ export function RequestCancellationButton({
                         className="flex flex-col gap-2 py-2"
                         disabled={processing}
                     >
-                        <legend className="text-foreground mb-1 text-sm font-medium">
+                        <legend className="mb-1 text-sm font-medium text-foreground">
                             Reason
                         </legend>
                         {PRESET_REASONS.map((reason) => (
@@ -197,7 +199,7 @@ export function RequestCancellationButton({
                                     // styling).
                                     className="border-0"
                                 />
-                                <p className="text-muted-foreground text-right text-xs tabular-nums">
+                                <p className="text-right text-xs text-muted-foreground tabular-nums">
                                     {otherText.length}/{REASON_MAX}
                                 </p>
                             </div>
@@ -279,9 +281,7 @@ function ReasonOption({ label, checked, onSelect }: ReasonOptionProps) {
                         : 'border-muted-foreground/40 bg-background',
                 )}
             >
-                {checked && (
-                    <span className="bg-primary size-2 rounded-full" />
-                )}
+                {checked && <span className="size-2 rounded-full bg-primary" />}
             </span>
             <span
                 className={cn(

@@ -43,7 +43,7 @@ export default function SettingsLayout({ children }: PropsWithChildren) {
                                 'inline-flex shrink-0 items-center gap-2 rounded-full border px-4 py-2 text-sm font-medium transition-colors duration-150 ease-out',
                                 isActive
                                     ? 'border-primary/40 bg-primary/15 text-foreground [&_svg]:!text-primary'
-                                    : 'border-border/60 text-muted-foreground hover:bg-primary/10 hover:text-foreground hover:[&_svg]:!text-primary [&_svg]:text-muted-foreground',
+                                    : 'border-border/60 text-muted-foreground hover:bg-primary/10 hover:text-foreground [&_svg]:text-muted-foreground hover:[&_svg]:!text-primary',
                             )}
                         >
                             <Icon className="size-4" />

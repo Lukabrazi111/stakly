@@ -196,9 +196,7 @@ export function ListingFiltersBar({ filters, sorts }: Props) {
             </div>
 
             {/* Row 2: full-width stake input on mobile only. */}
-            {isMobile && (
-                <StakeAmountInput filters={filters} fullWidth />
-            )}
+            {isMobile && <StakeAmountInput filters={filters} fullWidth />}
 
             {count > 0 && (
                 <div className="flex flex-wrap items-center gap-2">
@@ -248,7 +246,7 @@ export function ListingFiltersBar({ filters, sorts }: Props) {
                     <button
                         type="button"
                         onClick={clearAll}
-                        className="text-muted-foreground hover:text-foreground ml-1 cursor-pointer text-xs font-medium underline-offset-4 transition-colors hover:underline"
+                        className="ml-1 cursor-pointer text-xs font-medium text-muted-foreground underline-offset-4 transition-colors hover:text-foreground hover:underline"
                     >
                         Clear all
                     </button>
@@ -297,7 +295,7 @@ function StakeAmountInput({ filters, fullWidth }: StakeAmountInputProps) {
 
     return (
         <div
-            className={`border-border/60 bg-card/60 focus-within:border-primary/40 focus-within:ring-primary/25 hover:border-border h-9 items-center rounded-md border transition-[color,box-shadow] focus-within:ring-2 ${
+            className={`h-9 items-center rounded-md border border-border/60 bg-card/60 transition-[color,box-shadow] focus-within:border-primary/40 focus-within:ring-2 focus-within:ring-primary/25 hover:border-border ${
                 fullWidth ? 'flex w-full' : 'inline-flex'
             }`}
         >
@@ -310,11 +308,11 @@ function StakeAmountInput({ filters, fullWidth }: StakeAmountInputProps) {
                 value={value}
                 onChange={(e) => setValue(e.target.value)}
                 aria-label="Maximum stake"
-                className={`placeholder:text-muted-foreground bg-transparent px-3 text-sm outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none ${
+                className={`[appearance:textfield] bg-transparent px-3 text-sm outline-none placeholder:text-muted-foreground [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none ${
                     fullWidth ? 'min-w-0 flex-1' : 'w-32'
                 }`}
             />
-            <span className="bg-border/60 h-5 w-px shrink-0" aria-hidden />
+            <span className="h-5 w-px shrink-0 bg-border/60" aria-hidden />
             <CurrencyDropdown />
         </div>
     );
@@ -327,7 +325,7 @@ function CurrencyDropdown() {
                 <button
                     type="button"
                     aria-label="Select currency"
-                    className="text-foreground hover:text-primary inline-flex h-full cursor-pointer items-center gap-1.5 rounded-r-md px-3 text-sm font-medium outline-none transition-colors"
+                    className="inline-flex h-full cursor-pointer items-center gap-1.5 rounded-r-md px-3 text-sm font-medium text-foreground transition-colors outline-none hover:text-primary"
                 >
                     <CurrencyBadge currency={DEFAULT_CURRENCY} />
                     USDT
@@ -337,18 +335,18 @@ function CurrencyDropdown() {
             <DropdownMenuContent
                 align="end"
                 sideOffset={6}
-                className="border-border/60 bg-card/95 w-44 rounded-xl backdrop-blur-md"
+                className="w-44 rounded-xl border-border/60 bg-card/95 backdrop-blur-md"
             >
                 {CURRENCIES.map((currency) => (
                     <DropdownMenuItem
                         key={currency.id}
                         disabled={!currency.available}
-                        className="text-muted-foreground focus:bg-primary/10 focus:text-foreground flex cursor-pointer items-center gap-2 rounded-md px-2.5 py-2 text-sm transition-colors duration-150 ease-out"
+                        className="flex cursor-pointer items-center gap-2 rounded-md px-2.5 py-2 text-sm text-muted-foreground transition-colors duration-150 ease-out focus:bg-primary/10 focus:text-foreground"
                     >
                         <CurrencyBadge currency={currency.id} />
                         <span>{currency.id}</span>
                         {!currency.available && (
-                            <span className="bg-background/80 text-muted-foreground ml-auto rounded-full px-2 py-0.5 text-[10px] tracking-wide uppercase">
+                            <span className="ml-auto rounded-full bg-background/80 px-2 py-0.5 text-[10px] tracking-wide text-muted-foreground uppercase">
                                 Soon
                             </span>
                         )}
@@ -382,13 +380,13 @@ interface ActiveChipProps {
 
 function ActiveChip({ label, onRemove }: ActiveChipProps) {
     return (
-        <span className="border-primary/30 bg-primary/10 text-foreground inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium">
+        <span className="inline-flex items-center gap-1.5 rounded-full border border-primary/30 bg-primary/10 px-3 py-1 text-xs font-medium text-foreground">
             {label}
             <button
                 type="button"
                 onClick={onRemove}
                 aria-label={`Remove ${label} filter`}
-                className="text-muted-foreground hover:text-primary -mr-1 inline-flex size-4 cursor-pointer items-center justify-center rounded-full transition-colors"
+                className="-mr-1 inline-flex size-4 cursor-pointer items-center justify-center rounded-full text-muted-foreground transition-colors hover:text-primary"
             >
                 <X className="size-3" />
             </button>

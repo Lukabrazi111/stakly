@@ -17,7 +17,11 @@ interface Props {
  * `copied` state gives optimistic confirmation; the Sonner toast is the
  * authoritative success cue.
  */
-export function AddressDisplay({ address, truncate = false, className = '' }: Props) {
+export function AddressDisplay({
+    address,
+    truncate = false,
+    className = '',
+}: Props) {
     const [copied, setCopied] = useState(false);
 
     const handleCopy = async () => {
@@ -31,16 +35,17 @@ export function AddressDisplay({ address, truncate = false, className = '' }: Pr
         }
     };
 
-    const displayed = truncate && address.length > 14
-        ? `${address.slice(0, 8)}…${address.slice(-8)}`
-        : address;
+    const displayed =
+        truncate && address.length > 14
+            ? `${address.slice(0, 8)}…${address.slice(-8)}`
+            : address;
 
     return (
         <div
-            className={`border-border/60 bg-card/60 flex items-center gap-2 rounded-xl border p-3 ${className}`}
+            className={`flex items-center gap-2 rounded-xl border border-border/60 bg-card/60 p-3 ${className}`}
         >
             <code
-                className="text-foreground flex-1 break-all font-mono text-sm select-all"
+                className="flex-1 font-mono text-sm break-all text-foreground select-all"
                 title={address}
             >
                 {displayed}
@@ -54,7 +59,7 @@ export function AddressDisplay({ address, truncate = false, className = '' }: Pr
                 className="shrink-0"
             >
                 {copied ? (
-                    <Check className="text-success size-4" />
+                    <Check className="size-4 text-success" />
                 ) : (
                     <Copy className="size-4" />
                 )}

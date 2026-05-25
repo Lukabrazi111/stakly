@@ -1,3 +1,4 @@
+import type { RequestPayload } from '@inertiajs/core';
 import { router } from '@inertiajs/react';
 import { useEcho } from '@laravel/echo-react';
 import { useCallback, useRef, useState } from 'react';
@@ -45,73 +46,76 @@ export function useMatchChat(
     // need to drive renders — only the preview URL does.
     const pendingFilesRef = useRef<Map<string, File>>(new Map());
 
-    useEcho<ChatMessage>(
-        `match.${matchId}`,
-        '.message.sent',
-        (payload) => {
-            setMessages((prev) => {
-                // 1) Optimistic replacement: payload's correlation_id matches
-                //    a still-pending local bubble. Replace it in place so the
-                //    bubble doesn't reorder or flicker. Revoke the blob URL +
-                //    drop the held File reference now that the real
-                //    attachments URL has landed.
-                if (payload.correlation_id) {
-                    const idx = prev.findIndex(
-                        (m) =>
-                            m.correlation_id === payload.correlation_id
-                            && m.pending,
-                    );
+    useEcho<ChatMessage>(`match.${matchId}`, '.message.sent', (payload) => {
+        setMessages((prev) => {
+            // 1) Optimistic replacement: payload's correlation_id matches
+            //    a still-pending local bubble. Replace it in place so the
+            //    bubble doesn't reorder or flicker. Revoke the blob URL +
+            //    drop the held File reference now that the real
+            //    attachments URL has landed.
+            if (payload.correlation_id) {
+                const idx = prev.findIndex(
+                    (m) =>
+                        m.correlation_id === payload.correlation_id &&
+                        m.pending,
+                );
 
-                    if (idx !== -1) {
-                        const old = prev[idx];
+                if (idx !== -1) {
+                    const old = prev[idx];
 
-                        if (old.optimistic_file?.preview_url) {
-                            URL.revokeObjectURL(old.optimistic_file.preview_url);
-                        }
-                        pendingFilesRef.current.delete(payload.correlation_id);
-
-                        const next = [...prev];
-                        next[idx] = payload;
-
-                        return next;
+                    if (old.optimistic_file?.preview_url) {
+                        URL.revokeObjectURL(old.optimistic_file.preview_url);
                     }
-                }
 
-                // 2) Replace by server id — the queued link-preview
-                //    fetcher re-broadcasts the same message id with
-                //    populated `attachments` once OG metadata lands. The
-                //    bubble updates in place (no scroll, no reorder).
-                //    Also covers a redundant broadcast arriving twice
-                //    (e.g. dev StrictMode double-subscribe) — replacing
-                //    with identical payload is a no-op render.
-                const existingIdx = prev.findIndex((m) => m.id === payload.id);
+                    pendingFilesRef.current.delete(payload.correlation_id);
 
-                if (existingIdx !== -1) {
                     const next = [...prev];
-                    next[existingIdx] = payload;
+                    next[idx] = payload;
 
                     return next;
                 }
+            }
 
-                // 3) Append — normal new message from the opponent, or a
-                //    sender broadcast without a correlation_id (e.g. system
-                //    message produced by a lifecycle Action).
-                return [...prev, payload];
-            });
-        },
-    );
+            // 2) Replace by server id — the queued link-preview
+            //    fetcher re-broadcasts the same message id with
+            //    populated `attachments` once OG metadata lands. The
+            //    bubble updates in place (no scroll, no reorder).
+            //    Also covers a redundant broadcast arriving twice
+            //    (e.g. dev StrictMode double-subscribe) — replacing
+            //    with identical payload is a no-op render.
+            const existingIdx = prev.findIndex((m) => m.id === payload.id);
+
+            if (existingIdx !== -1) {
+                const next = [...prev];
+                next[existingIdx] = payload;
+
+                return next;
+            }
+
+            // 3) Append — normal new message from the opponent, or a
+            //    sender broadcast without a correlation_id (e.g. system
+            //    message produced by a lifecycle Action).
+            return [...prev, payload];
+        });
+    });
 
     const performSend = useCallback(
         (content: string, file: File | null, correlationId: string) => {
             setIsPending(true);
             setUploadProgress(file ? 0 : null);
 
-            const payload: Record<string, unknown> = {
+            // Typed as Inertia's RequestPayload so `router.post` accepts it
+            // without a cast. `Record<string, unknown>` (the previous
+            // annotation) is wider than the FormDataConvertible union that
+            // RequestPayload allows, and TS rightly rejects it.
+            const payload: RequestPayload = {
                 correlation_id: correlationId,
             };
+
             if (content.length > 0) {
                 payload.content = content;
             }
+
             if (file) {
                 payload.file = file;
             }
@@ -127,9 +131,9 @@ export function useMatchChat(
                 },
                 onError: (errors) => {
                     const message =
-                        errors.content
-                        ?? errors.file
-                        ?? 'Could not send. Please try again.';
+                        errors.content ??
+                        errors.file ??
+                        'Could not send. Please try again.';
                     toast.error(message);
 
                     // Flip the matching pending bubble to failed so the user

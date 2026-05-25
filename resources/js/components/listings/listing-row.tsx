@@ -36,31 +36,31 @@ export function ListingRow({ listing }: Props) {
     const endingSoon = isEndingSoon(listing.expires_at);
 
     return (
-        <article className="border-border/60 bg-card/60 hover:border-primary/30 hover:bg-card hover:shadow-glow-sm group relative flex flex-col gap-4 rounded-2xl border p-4 transition-all duration-200 ease-out hover:-translate-y-0.5 md:flex-row md:items-center md:gap-6 md:p-5">
+        <article className="group relative flex flex-col gap-4 rounded-2xl border border-border/60 bg-card/60 p-4 transition-all duration-200 ease-out hover:-translate-y-0.5 hover:border-primary/30 hover:bg-card hover:shadow-glow-sm md:flex-row md:items-center md:gap-6 md:p-5">
             {/* Overlay: entire row → listing detail */}
             <Link
                 href={showListing(listing.id).url}
                 aria-label={`View listing from ${listing.creator.name}`}
-                className="focus-visible:ring-primary focus-visible:ring-offset-background absolute inset-0 rounded-2xl focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none"
+                className="absolute inset-0 rounded-2xl focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none"
             />
 
             {/* Creator zone — relative, sits above the overlay → user profile */}
             <Link
                 href={userShow(listing.creator.username).url}
-                className="focus-visible:ring-primary focus-visible:ring-offset-background relative flex min-w-0 items-center gap-3 rounded-lg focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none md:w-48 md:shrink-0"
+                className="relative flex min-w-0 items-center gap-3 rounded-lg focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none md:w-48 md:shrink-0"
             >
                 <Avatar className="size-11 shrink-0 overflow-hidden rounded-full">
-                    <AvatarFallback className="bg-gradient-primary text-primary-foreground text-sm font-semibold">
+                    <AvatarFallback className="bg-gradient-primary text-sm font-semibold text-primary-foreground">
                         {getInitials(listing.creator.name)}
                     </AvatarFallback>
                 </Avatar>
 
                 <div className="flex min-w-0 flex-col">
-                    <span className="text-foreground hover:text-primary truncate text-sm font-semibold transition-colors">
+                    <span className="truncate text-sm font-semibold text-foreground transition-colors hover:text-primary">
                         {listing.creator.name}
                     </span>
                     {listing.region && (
-                        <span className="text-muted-foreground inline-flex items-center gap-1 text-xs">
+                        <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
                             <Globe className="size-3" />
                             {listing.region}
                         </span>
@@ -71,7 +71,7 @@ export function ListingRow({ listing }: Props) {
             {/* Listing body — no Link wrapper; clicks bubble to overlay */}
             <div className="pointer-events-none relative flex flex-1 flex-wrap items-center gap-3 md:flex-nowrap md:gap-6">
                 <div className="flex flex-wrap items-center gap-2 md:flex-1">
-                    <span className="border-border/60 bg-background/60 text-muted-foreground inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium">
+                    <span className="inline-flex items-center gap-1.5 rounded-full border border-border/60 bg-background/60 px-3 py-1 text-xs font-medium text-muted-foreground">
                         <Trophy className="size-3" />
                         {formatSkillRange(listing.skill_min, listing.skill_max)}
                     </span>
@@ -79,7 +79,7 @@ export function ListingRow({ listing }: Props) {
                     {listing.time_control.map((tc) => (
                         <span
                             key={tc}
-                            className="border-border/60 bg-background/60 text-muted-foreground inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium"
+                            className="inline-flex items-center gap-1.5 rounded-full border border-border/60 bg-background/60 px-3 py-1 text-xs font-medium text-muted-foreground"
                         >
                             <Clock className="size-3" />
                             {timeControlLabels[tc]}
@@ -87,11 +87,11 @@ export function ListingRow({ listing }: Props) {
                     ))}
 
                     {listing.language && listing.language.length > 0 && (
-                        <span className="border-border/60 bg-background/60 text-muted-foreground inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium">
+                        <span className="inline-flex items-center gap-1.5 rounded-full border border-border/60 bg-background/60 px-3 py-1 text-xs font-medium text-muted-foreground">
                             <Languages className="size-3" />
                             {listing.language.slice(0, 3).join(', ')}
-                            {listing.language.length > 3
-                                && ` +${listing.language.length - 3}`}
+                            {listing.language.length > 3 &&
+                                ` +${listing.language.length - 3}`}
                         </span>
                     )}
                 </div>
@@ -106,10 +106,10 @@ export function ListingRow({ listing }: Props) {
                 </div>
 
                 <div className="flex items-baseline gap-1 md:w-32 md:shrink-0 md:justify-end">
-                    <span className="font-display text-gradient-primary text-2xl font-bold leading-none">
+                    <span className="text-gradient-primary font-display text-2xl leading-none font-bold">
                         ${listing.stake_amount}
                     </span>
-                    <span className="text-muted-foreground text-xs">USDT</span>
+                    <span className="text-xs text-muted-foreground">USDT</span>
                 </div>
             </div>
 

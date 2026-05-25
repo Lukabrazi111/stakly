@@ -6,7 +6,10 @@ import PlayerHubLayout from '@/layouts/player-hub-layout';
 import { index as walletIndex } from '@/routes/wallet';
 import type { WalletWithdrawProps } from '@/types';
 
-export default function WalletWithdraw({ balance, minWithdrawal }: WalletWithdrawProps) {
+export default function WalletWithdraw({
+    balance,
+    minWithdrawal,
+}: WalletWithdrawProps) {
     return (
         <PlayerHubLayout>
             <Head title="Withdraw — Wallet" />
@@ -18,9 +21,9 @@ export default function WalletWithdraw({ balance, minWithdrawal }: WalletWithdra
                     <h1 className="font-display text-3xl font-bold tracking-tight md:text-4xl">
                         Withdraw USDT
                     </h1>
-                    <p className="text-muted-foreground mt-2 text-sm">
-                        Send USDT to a TRC20 address. Network fees are paid from the
-                        amount sent.
+                    <p className="mt-2 text-sm text-muted-foreground">
+                        Send USDT to a TRC20 address. Network fees are paid from
+                        the amount sent.
                     </p>
                 </header>
 

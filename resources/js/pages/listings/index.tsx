@@ -22,7 +22,10 @@ export default function ListingsIndex({
 
         const isListingsVisit = (url: string): boolean => {
             try {
-                return new URL(url, window.location.origin).pathname === listingsPath;
+                return (
+                    new URL(url, window.location.origin).pathname ===
+                    listingsPath
+                );
             } catch {
                 return false;
             }
@@ -55,7 +58,7 @@ export default function ListingsIndex({
                     <h1 className="font-display text-3xl font-bold tracking-tight md:text-4xl">
                         Listings
                     </h1>
-                    <p className="text-muted-foreground mt-2 text-sm">
+                    <p className="mt-2 text-sm text-muted-foreground">
                         Find an opponent and stake your skill.{' '}
                         <span className="text-foreground/70">
                             {listings.meta.total}{' '}
@@ -70,12 +73,14 @@ export default function ListingsIndex({
 
                 {isLoading ? (
                     <div className="flex flex-col gap-3">
-                        {Array.from({ length: SKELETON_ROW_COUNT }).map((_, i) => (
-                            <ListingRowSkeleton key={i} />
-                        ))}
+                        {Array.from({ length: SKELETON_ROW_COUNT }).map(
+                            (_, i) => (
+                                <ListingRowSkeleton key={i} />
+                            ),
+                        )}
                     </div>
                 ) : listings.data.length === 0 ? (
-                    <p className="text-muted-foreground py-16 text-center text-sm">
+                    <p className="py-16 text-center text-sm text-muted-foreground">
                         No listings match your filters yet.
                     </p>
                 ) : (

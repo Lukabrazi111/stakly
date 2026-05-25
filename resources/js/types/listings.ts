@@ -5,11 +5,7 @@
 
 import type { GameId } from '@/config/games';
 
-export type ListingStatus =
-    | 'open'
-    | 'taken'
-    | 'expired'
-    | 'cancelled';
+export type ListingStatus = 'open' | 'taken' | 'expired' | 'cancelled';
 
 export type TimeControl = 'blitz' | 'rapid' | 'classical';
 
