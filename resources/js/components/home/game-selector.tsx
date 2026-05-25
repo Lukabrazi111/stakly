@@ -156,12 +156,17 @@ export function GameSelector({ selectedId, onSelect }: Props) {
                                     // the tile is still actionable (e.g. re-selecting to
                                     // refresh the panel).
                                     'hover:-translate-y-1 hover:shadow-glow-sm motion-reduce:hover:translate-y-0',
-                                    // Selected = ONLY the border color changes. No
-                                    // glow shadow, no lift at rest, no gradient
-                                    // brightness bump, no icon scale — keeps the
-                                    // selected state quiet and lets hover do the talking.
+                                    // Selected = solid `border-primary` (full-saturation
+                                    // pink) + `shadow-glow` halo (the soft standard
+                                    // Stakly halo). We don't use the shared
+                                    // `border-glow` utility here because its
+                                    // semi-transparent fuchsia border reads too softly
+                                    // for an active-selection cue — the other three
+                                    // `border-glow` consumers (auth modal, profile
+                                    // dropdown, link-account banner) are static
+                                    // decorative borders where that softness is right.
                                     isSelected
-                                        ? 'border-primary'
+                                        ? 'border-primary shadow-glow'
                                         : 'border-border/60 hover:border-primary/60',
                                 )}
                             >
