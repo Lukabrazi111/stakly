@@ -216,39 +216,57 @@ User-shared Bybit screenshots saved to `images-examples/bybit-profile-redesign/`
 
 ### Phases
 
-**Phase 1 — Visual restructure foundation**
+**Phase 1 — Visual restructure foundation** ✅
 
-- [ ] Profile-page cards switch to full `bg-card` (no transparency) + consistent border treatment so they visibly float above `bg-background`.
-- [ ] Page-level layout grid: hero card → trust strip → tabbed activity card → owner-only management card. Define spacing tokens between sections (`gap-6` or similar consistently).
-- [ ] Audit shadcn primitive overrides used in the new components (`Dialog`, `Tabs`, `Card`) — confirm they read correctly on the new surface.
-- [ ] Use `ui-ux-pro-max` skill for the layout + typography + spacing decisions.
-- [ ] **Out of M19 Phase 1**: system-wide card token sweep (changing every page's cards). That can be its own polish slice once the profile redesign validates the look.
+- [x] Profile-page cards switch to full `bg-card` (no transparency) + consistent border treatment so they visibly float above `bg-background`.
+- [x] Page-level layout grid + spacing token (`gap-6` between sections).
+- [x] Audited shadcn primitive overrides — Card default already opaque, no changes needed.
+- [x] **Out of M19 Phase 1**: system-wide card token sweep stays out.
 
-**Phase 2 — Hero redesign**
+**Phase 2 — Hero redesign** ✅ (with deviations)
 
-- [ ] `ProfileHeader` revamp: larger avatar (with `shadow-glow-sm` ring on hover), display-font name, member-since pill, bio rendered prominently when set.
-- [ ] **Completion rate chip moved into the hero row** as the headline trust signal (currently sitting between header and stats — promote it).
-- [ ] Verification chips with platform-tinted borders. Chess.com (brown / tan), Lichess (neutral gray). Design tokens prepared for FACEIT (orange) / Riot (red) / Steam (blue) even though those providers don't exist yet — M15 lands the providers, M19 lands the chip system.
-- [ ] Active / Inactive mode pill (owner-only) — quick-status indicator with flip toggle.
-- [ ] Linked accounts as a horizontally-scrolling chip strip on mobile.
-- [ ] Edit-profile button stays where it is (owner-only top-right of hero).
+- [x] `ProfileHeader` revamp: larger avatar (`size-20 md:size-24` + `shadow-glow-sm` on hover), display-font name, member-since pill, bio prominent.
+- [x] Verification chips with platform-tinted borders (chess.com brown, Lichess gray, FACEIT/Riot/Steam tones prepared in comments for M15).
+- [x] Linked accounts as horizontally-scrolling chip strip on mobile.
+- [x] Edit-profile button stays top-right (owner-only).
+- ~~Completion rate chip moved into the hero row~~ → **removed** per user feedback (Data overview tile below already shows the same info; chip in hero felt redundant). `CompletionRateChip` component deleted.
+- ~~Active / Inactive mode pill (owner-only) in hero~~ → **removed** per user feedback (mode toggle stays on `/listings/mine` via existing `ActiveModeToggle`; surfacing it in hero added clutter). `ActiveModePill` component deleted.
 
-**Phase 3 — Trust strip + Data Overview**
+**Phase 3 — Trust strip + Data Overview** ✅
 
-- [ ] Trust signals as a dedicated row immediately below the hero (not mixed into stats grid).
-- [ ] Stats grid restyled — 2-up for visitor (Total matches + Total volume), 3-up for owner (+ Win rate).
-- [ ] **Repeat-pair widget** (formerly M18 Slice C) — "You've played N matches against this user" shown only when an authenticated viewer is on someone else's profile AND has 2+ shared matches. Hidden on own-profile and zero-shared-history cases. Backend: aggregate the repeat-pair count in `UserController::show` (single query: count `game_matches` where both participants match the pair).
-- [ ] **Win-rate gradient bar** (formerly M18 Slice C) — own-profile only, thin `bg-gradient-primary` width-proportional bar visualising win rate, beneath the win-rate tile.
-- [ ] Game-agnostic note: the headline stats (matches, volume, completion rate, win rate) stay unified across games. Per-game splits are a future Slice.
+- [x] Trust strip below hero as dedicated row, not mixed into stats grid. New `TrustStrip` component.
+- [x] Stats grid 2-up visitor / 3-up owner (kept existing structure).
+- [x] **Repeat-pair widget** — "You've played N settled matches against this player" callout, gated to authenticated viewer on someone else's profile with 2+ shared matches. Backend: single COUNT query in `UserController::show` (JOIN to listings, both pair directions, settled-only).
+- [x] **Win-rate gradient bar** — thin `bg-gradient-primary` width-proportional bar beneath W/D/L in the WinRateTile. Own-profile only (existing gate on `win_rate` payload).
+- [x] Game-agnostic note: headline stats stay unified across games.
 
-**Phase 4 — Tabbed activity section**
+**Phase 4 — Tabbed activity section** ✅ (+ migrated `/listings/mine` to same primitive)
 
-- [ ] Tabbed section below the trust strip. Three tabs visible to everyone: **Match History** (default) | **Open Listings** | **Reviews** (placeholder).
-- [ ] **Match History tab** — restyle existing `MatchHistorySection` rows for visual hierarchy. Build a `MatchRow` component that dispatches by `match.listing.game` to a per-game renderer. Chess renderer ships in M19 (existing data); CS2 / Dota / Valorant / LoL renderers land with M15 adapters.
-- [ ] **Open Listings tab** — surface existing `ListingsSection` content; visually consistent with the match-history rows.
-- [ ] **Reviews tab** — placeholder card: "Reviews coming soon — Stakly is designing a coercion-resistant review system. Until then, reputation is shown via completion rate + match history."
-- [ ] Tab state syncs to URL query (`?tab=listings`) so deep-link / refresh / browser-back navigate within a profile.
-- [ ] Mobile: tabs scroll horizontally on overflow; sticky tab header optional.
+- [x] Tabbed section: Match History (default) | Open Listings | Reviews (placeholder).
+- [x] **shadcn Tabs primitive installed** (`radix-ui` umbrella, no extra dep needed) + Stakly-skinned at the source: brand pink underline (`after:bg-primary`), `ring-2 ring-primary/25` focus ring, dropped dead `dark:` variants, two variants (`default` pill + `line` underline). Lives in `components/ui/tabs.tsx`.
+- [x] **Open Listings tab** — existing `ListingsSection` reused (dropped its own h2 since the tab label replaces it).
+- [x] **Reviews tab** — placeholder card with the coercion-resistant-design caveat.
+- [x] Tab state syncs to `?tab=` via pushState + popstate listener (auth-modal-provider pattern). Pure client-side switching — data is already loaded, no re-fetch needed.
+- [x] **MineTabs migrated to the same shadcn Tabs primitive** for cross-page consistency (was hand-rolled `<button role="tab">` before). Kept `router.get()` re-fetch (different data per tab) + added optimistic local state + `preserveState: true` so the underline transition stays smooth on click.
+- ~~Mobile horizontal scroll on tabs~~ → **removed** (3 tabs fit any viewport; the overflow-x-auto caused a vertical-scroll artifact exposing the underline overshoot).
+- ~~Per-game `MatchRow` dispatcher~~ → **deferred to M15** (chess is the only renderer needed today; the per-game-shape work belongs with the multi-game adapter milestone).
+
+### Phase 4 extras (not originally in spec)
+
+Shipped while Phase 4 was in flight, all related to discoverability + layout consistency:
+
+- **"My profile" link enabled** in both `ProfileMenu` (avatar dropdown) and `MobileMenu` (drawer) — was disabled with a "Soon" badge. Both now link to `/users/{auth.user.username}`.
+- **Profile link added to `PlayerSidebar`** as the top item (icon: lucide `User`). Active state matches when `url === /users/{auth.user.username}`.
+- **Layout switch on profile**: own-profile view renders inside `PlayerHubLayout` (sidebar visible), visitor view stays in `SiteLayout` (no sidebar). Picked by `auth.user.id === profile.id`. Bybit-style integration.
+- **Width normalization**: profile + `/wallet/history` migrated from `max-w-4xl` → `max-w-5xl` (matches `/listings/mine`, `/matches`, `/wallet`). Padding standardized to `px-4 py-10 md:px-6 md:py-14` across the player hub. `/wallet/deposit` + `/wallet/withdraw` kept at `max-w-lg` (narrow forms, intentional).
+- **Seeder rework** (`MatchHistorySeeder`): every marketplace user now gets 4–6 matches via a skill-tier cycle (`index mod 4` → strong / balanced / balanced / casual) instead of just 4 named users. Visiting any random profile shows realistic stats (29–73% win rates) instead of accidental 100% from tiny opponent-only samples.
+
+### Resume here (next session)
+
+**Phase 5 — Owner-only management section** is next. Before building, ask the user:
+- Where do the toggles live: profile owner-section (per spec) OR fold into existing `/settings/profile` page (less duplication)?
+- Sub-tabs (per spec) OR stacked sections (simpler)?
+- ProfileVisibilityController vs extend existing ProfileController?
 
 **Phase 5 — Owner-only management section**
 
