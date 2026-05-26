@@ -67,7 +67,7 @@ function StatTile({ label, value }: StatTileProps) {
             className={`rounded-xl border p-4 ${
                 isEmpty
                     ? 'border-dashed border-border/60 bg-card/40'
-                    : 'border-border/60 bg-card/60'
+                    : 'border-border/60 bg-card'
             }`}
         >
             <div className="text-xs tracking-wide text-muted-foreground uppercase">
@@ -95,21 +95,35 @@ interface WinRateTileProps {
 // `win_rate` in the payload, so this matches the same empty story when
 // somehow rendered with zero values). Percentage falls back to "—" when
 // every settled match was a draw (decided denominator is 0).
+//
+// M19 Phase 3 — adds a width-proportional gradient bar beneath the W/D/L
+// breakdown so the win rate has a visual weight, not just a number.
 function WinRateTile({ winRate }: WinRateTileProps) {
     const { wins, draws, losses, percentage } = winRate;
     const display = percentage === null ? '—' : `${percentage}%`;
 
     return (
-        <div className="rounded-xl border border-border/60 bg-card/60 p-4">
+        <div className="rounded-xl border border-border/60 bg-card p-4">
             <div className="text-xs tracking-wide text-muted-foreground uppercase">
                 Win rate
             </div>
-            <div className="mt-2 text-2xl font-semibold text-foreground">
+            <div className="mt-2 text-2xl font-semibold text-foreground tabular-nums">
                 {display}
             </div>
-            <div className="mt-1 text-xs text-muted-foreground">
+            <div className="mt-1 text-xs text-muted-foreground tabular-nums">
                 {wins}W · {draws}D · {losses}L
             </div>
+            {percentage !== null && (
+                <div
+                    className="mt-3 h-1 overflow-hidden rounded-full bg-muted"
+                    role="presentation"
+                >
+                    <div
+                        className="h-full rounded-full bg-gradient-primary transition-[width] duration-500 ease-out"
+                        style={{ width: `${percentage}%` }}
+                    />
+                </div>
+            )}
         </div>
     );
 }

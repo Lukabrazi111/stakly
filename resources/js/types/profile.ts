@@ -88,6 +88,12 @@ export interface ProfileShowProps {
     user: UserProfile;
     stats: ProfileStats;
     trust: ProfileTrust;
+    // M19 Phase 3 — count of *settled* matches between the viewer and the
+    // profile user. 0 for guests and for the profile owner viewing
+    // themselves (the FE only renders the repeat-pair callout when an
+    // authenticated viewer is on someone else's profile with 2+ shared
+    // matches; the controller skips the query in the other cases).
+    repeat_pair_count: number;
     openListings: { data: Listing[] };
     matchHistory: { data: Match[] };
 }

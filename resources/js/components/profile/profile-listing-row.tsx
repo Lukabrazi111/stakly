@@ -33,7 +33,7 @@ const STATUS_TONE: Record<ListingStatus, string> = {
  */
 export function ProfileListingRow({ listing }: Props) {
     return (
-        <article className="group relative flex items-center gap-3 rounded-xl border border-border/60 bg-card/60 p-4 transition-all duration-200 ease-out hover:border-primary/30 hover:bg-card md:gap-4">
+        <article className="group relative flex items-center gap-3 rounded-xl border border-border/60 bg-card p-4 transition-all duration-200 ease-out hover:border-primary/30 hover:bg-secondary md:gap-4">
             <Link
                 href={showListing(listing.id).url}
                 className="absolute inset-0 rounded-xl focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none"

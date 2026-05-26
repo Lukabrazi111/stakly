@@ -209,7 +209,8 @@ class UserController extends Controller
                 ? (int) round(($settledLifetime / $denomLifetime) * 100)
                 : null,
             // Raw counts feed both the chip (settled_lifetime as the
-            // experience signal) and the "more info" modal breakdown.
+            // experience signal) and the Data Overview tiles below the
+            // hero (settled / cancelled / disputed breakdown).
             'settled_30d' => $settled30d,
             'settled_lifetime' => $settledLifetime,
             'cancellations_30d' => $cancellations30d,
@@ -217,10 +218,40 @@ class UserController extends Controller
             'disputes_lifetime' => (int) $trustAggregate->disputes_lifetime,
         ];
 
+        // M19 Phase 3 — repeat-pair count. Surfaces "you've played N matches
+        // against this user" to authenticated visitors. Settled-only (the
+        // only authoritative "we played" signal — pending/cancelled/disputed
+        // don't count). Skipped entirely on own-profile and guest views.
+        //
+        // One SQL: join to listings (the creator side) so we can pair-match
+        // in both directions with a single query rather than two whereHas
+        // subqueries.
+        $repeatPairCount = 0;
+        $viewer = $request->user();
+        if ($viewer && $viewer->id !== $user->id) {
+            // `game_matches.status` is qualified — JOIN to `listings`
+            // brings two `status` columns into scope (matches + listings),
+            // unqualified `status` is ambiguous to Postgres.
+            $repeatPairCount = GameMatch::query()
+                ->where('game_matches.status', MatchStatus::Settled)
+                ->join('listings', 'listings.id', '=', 'game_matches.listing_id')
+                ->where(function ($q) use ($user, $viewer) {
+                    $q->where(function ($q) use ($user, $viewer) {
+                        $q->where('game_matches.taker_user_id', $viewer->id)
+                            ->where('listings.user_id', $user->id);
+                    })->orWhere(function ($q) use ($user, $viewer) {
+                        $q->where('game_matches.taker_user_id', $user->id)
+                            ->where('listings.user_id', $viewer->id);
+                    });
+                })
+                ->count();
+        }
+
         return Inertia::render('users/show', [
             'user' => (new UserProfileResource($user))->resolve(),
             'stats' => $stats,
             'trust' => $trust,
+            'repeat_pair_count' => $repeatPairCount,
             'openListings' => ListingResource::collection($openListings),
             'matchHistory' => GameMatchResource::collection($matchHistory),
         ]);

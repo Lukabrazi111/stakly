@@ -33,7 +33,7 @@ export function ProfileMatchRow({ match, profileUserId }: Props) {
         match.winner !== null && match.winner.id === profileUserId;
 
     return (
-        <article className="flex flex-col gap-3 rounded-xl border border-border/60 bg-card/60 p-4 md:flex-row md:items-center md:gap-5">
+        <article className="flex flex-col gap-3 rounded-xl border border-border/60 bg-card p-4 md:flex-row md:items-center md:gap-5">
             {/* Result chip — leads visually so the outcome is instantly clear */}
             <span
                 className={`inline-flex shrink-0 items-center gap-1.5 self-start rounded-full border px-3 py-1 text-xs font-medium md:self-center ${
