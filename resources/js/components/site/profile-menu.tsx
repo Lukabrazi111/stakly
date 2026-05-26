@@ -23,6 +23,7 @@ import { logout } from '@/routes';
 import { mine as listingsMine } from '@/routes/listings';
 import { index as matchesIndex } from '@/routes/matches';
 import { edit as editProfile } from '@/routes/profile';
+import { show as userShow } from '@/routes/users';
 import { index as walletIndex } from '@/routes/wallet';
 import type { User } from '@/types/auth';
 
@@ -32,17 +33,6 @@ interface Props {
 
 const menuItemClass =
     'text-muted-foreground hover:text-foreground focus:text-foreground hover:bg-primary/10 focus:bg-primary/10 hover:[&_svg]:!text-primary focus:[&_svg]:!text-primary flex w-full cursor-pointer items-center rounded-md px-2.5 py-2 text-sm transition-colors duration-150 ease-out';
-
-const disabledMenuItemClass =
-    'text-muted-foreground/60 flex w-full items-center rounded-md px-2.5 py-2 text-sm';
-
-function SoonBadge() {
-    return (
-        <span className="ml-auto rounded-full bg-background/80 px-2 py-0.5 text-[10px] tracking-wide text-muted-foreground uppercase backdrop-blur">
-            Soon
-        </span>
-    );
-}
 
 export function ProfileMenu({ user }: Props) {
     const getInitials = useInitials();
@@ -124,13 +114,15 @@ export function ProfileMenu({ user }: Props) {
                     </DropdownMenuLabel>
                     <DropdownMenuSeparator className="bg-border/60" />
                     <DropdownMenuGroup className="py-1">
-                        <DropdownMenuItem
-                            disabled
-                            className={disabledMenuItemClass}
-                        >
-                            <UserIcon className="mr-2 size-4" />
-                            <span>My profile</span>
-                            <SoonBadge />
+                        <DropdownMenuItem asChild>
+                            <Link
+                                href={userShow(user.username).url}
+                                prefetch
+                                className={menuItemClass}
+                            >
+                                <UserIcon className="mr-2 size-4" />
+                                My profile
+                            </Link>
                         </DropdownMenuItem>
                         <DropdownMenuItem asChild>
                             <Link

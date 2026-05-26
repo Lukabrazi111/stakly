@@ -31,6 +31,7 @@ import {
 } from '@/routes/listings';
 import { index as matchesIndex } from '@/routes/matches';
 import { edit as editProfile } from '@/routes/profile';
+import { show as userShow } from '@/routes/users';
 import { index as walletIndex } from '@/routes/wallet';
 
 interface NavLink {
@@ -46,17 +47,6 @@ const navLinks: NavLink[] = [
 
 const mobileMenuItemClass =
     'text-muted-foreground hover:text-foreground active:text-foreground hover:bg-primary/10 active:bg-primary/10 [&_svg]:text-muted-foreground hover:[&_svg]:text-primary active:[&_svg]:text-primary flex w-full cursor-pointer items-center gap-3 rounded-xl px-3 py-3 text-sm font-medium transition-colors duration-150 ease-out';
-
-const mobileDisabledItemClass =
-    'text-muted-foreground/60 [&_svg]:text-muted-foreground/60 flex w-full items-center gap-3 rounded-xl px-3 py-3 text-sm font-medium';
-
-function SoonBadge() {
-    return (
-        <span className="ml-auto rounded-full bg-background/80 px-2 py-0.5 text-[10px] tracking-wide text-muted-foreground uppercase backdrop-blur">
-            Soon
-        </span>
-    );
-}
 
 export function MobileMenu() {
     const [open, setOpen] = useState(false);
@@ -227,14 +217,16 @@ export function MobileMenu() {
                             </SheetClose>
 
                             <div className="flex flex-col gap-0.5 border-t border-border/60 p-2">
-                                <div
-                                    aria-disabled="true"
-                                    className={mobileDisabledItemClass}
-                                >
-                                    <UserIcon className="size-5" />
-                                    <span>My profile</span>
-                                    <SoonBadge />
-                                </div>
+                                <SheetClose asChild>
+                                    <Link
+                                        href={userShow(user.username).url}
+                                        prefetch
+                                        className={mobileMenuItemClass}
+                                    >
+                                        <UserIcon className="size-5" />
+                                        My profile
+                                    </Link>
+                                </SheetClose>
                                 <SheetClose asChild>
                                     <Link
                                         href={listingsMine().url}

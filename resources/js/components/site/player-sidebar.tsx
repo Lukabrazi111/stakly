@@ -4,6 +4,7 @@ import {
     PanelLeftClose,
     PanelLeftOpen,
     Swords,
+    User as UserIcon,
     Wallet as WalletIcon,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
@@ -16,6 +17,7 @@ import {
 } from '@/components/ui/tooltip';
 import { mine as listingsMine } from '@/routes/listings';
 import { index as matchesIndex } from '@/routes/matches';
+import { show as userShow } from '@/routes/users';
 import { index as walletIndex } from '@/routes/wallet';
 
 interface NavItem {
@@ -64,14 +66,28 @@ function readCollapsed(): boolean {
  * identify each item.
  */
 export function PlayerSidebar() {
-    const { url } = usePage();
+    const { url, props } = usePage();
+    const username = props.auth.user?.username;
     const [collapsed, setCollapsed] = useState(readCollapsed);
 
     useEffect(() => {
         window.localStorage.setItem(STORAGE_KEY, String(collapsed));
     }, [collapsed]);
 
+    // Profile is owner-specific (matchPrefix uses the auth username). Other
+    // items are user-agnostic, so they live in a static array; the profile
+    // item is prepended only when we have a username to build the URL with.
     const items: NavItem[] = [
+        ...(username
+            ? [
+                  {
+                      href: userShow(username).url,
+                      label: 'My profile',
+                      icon: UserIcon,
+                      matchPrefix: userShow(username).url,
+                  },
+              ]
+            : []),
         {
             href: listingsMine().url,
             label: 'My listings',
