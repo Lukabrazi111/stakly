@@ -1,6 +1,5 @@
 <?php
 
-use App\Enums\MatchOutcome;
 use App\Enums\MatchStatus;
 use App\Models\GameMatch;
 use App\Models\Listing;
@@ -14,23 +13,6 @@ test('status casts to the MatchStatus enum', function () {
     $match = GameMatch::factory()->create();
 
     expect($match->status)->toBe(MatchStatus::Pending);
-});
-
-test('confirmed-outcome columns cast to MatchOutcome enum (when set)', function () {
-    $match = GameMatch::factory()->create([
-        'creator_confirmed_outcome' => MatchOutcome::Won,
-        'taker_confirmed_outcome' => MatchOutcome::Lost,
-    ]);
-
-    expect($match->creator_confirmed_outcome)->toBe(MatchOutcome::Won)
-        ->and($match->taker_confirmed_outcome)->toBe(MatchOutcome::Lost);
-});
-
-test('confirmed-outcome columns are null by default', function () {
-    $match = GameMatch::factory()->create();
-
-    expect($match->creator_confirmed_outcome)->toBeNull()
-        ->and($match->taker_confirmed_outcome)->toBeNull();
 });
 
 test('datetime columns cast to Carbon instances', function () {

@@ -3,7 +3,6 @@
 namespace App\Models;
 
 use App\Enums\LinkedAccountProvider;
-use App\Enums\MatchOutcome;
 use App\Enums\MatchStatus;
 use Database\Factories\GameMatchFactory;
 use Illuminate\Database\Eloquent\Builder;
@@ -36,19 +35,10 @@ class GameMatch extends Model
 
     public const SIDE_TAKER = 'taker';
 
-    /**
-     * `creator_confirmed_outcome` + `taker_confirmed_outcome` are deprecated
-     * as of M16 — the player Won/Lost/Drawn confirm flow was removed, the
-     * game API is now the only outcome source. Columns kept nullable for
-     * historical audit of pre-M16 matches; no new writes happen. A future
-     * cleanup migration drops them once the suite is fully migrated.
-     */
     protected $fillable = [
         'listing_id',
         'taker_user_id',
         'status',
-        'creator_confirmed_outcome',
-        'taker_confirmed_outcome',
         'winner_user_id',
         'dispute_opened_at',
         'dispute_opened_by',
@@ -66,8 +56,6 @@ class GameMatch extends Model
     {
         return [
             'status' => MatchStatus::class,
-            'creator_confirmed_outcome' => MatchOutcome::class,
-            'taker_confirmed_outcome' => MatchOutcome::class,
             'dispute_opened_at' => 'datetime',
             'settled_at' => 'datetime',
             'api_response' => 'array',
