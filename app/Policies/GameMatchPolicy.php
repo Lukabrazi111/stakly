@@ -12,8 +12,8 @@ use App\Models\User;
  * registration needed.
  *
  * The two participants (listing creator + taker) are the only ones who can
- * view, confirm, or dispute a match. Match URLs are private — sharing them
- * doesn't grant access.
+ * view, request cancellation, or dispute a match. Match URLs are private —
+ * sharing them doesn't grant access.
  */
 class GameMatchPolicy
 {

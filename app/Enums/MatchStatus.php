@@ -3,15 +3,19 @@
 namespace App\Enums;
 
 /**
- * Match lifecycle states. See milestones.md M6 + M10 for the full state machine.
+ * Match lifecycle states. See milestones.md M6 + M10 + M16 for the full state
+ * machine.
  *
- * Pending      — match created, waiting for both players to confirm an outcome.
- * Disputed     — players disagreed (or someone opened a dispute / a timeout
- *                fired with no confirmations). Game-API queried for tiebreaker.
- * Settled      — winner determined, payout + fee posted to the ledger. Terminal.
- * ManualReview — game-API couldn't determine a winner. Money stays locked
- *                until an admin resolves manually. Terminal pending M12 admin
- *                tooling.
+ * Pending      — match created, auto-fetch polling the game API for a result.
+ *                4-hour deadline: if no result is found, the match flips to
+ *                ManualReview via `ResolveMatchTimeoutAction`.
+ * Disputed     — a participant clicked "Report a problem" while Pending. The
+ *                game API is queried; resolves to Settled or ManualReview.
+ * Settled      — winner determined (or draw — `winner_user_id IS NULL`),
+ *                payout + fee posted to the ledger. Terminal.
+ * ManualReview — game API couldn't determine a winner OR the match timed out
+ *                without a result. Money stays locked until an admin resolves
+ *                manually via the Filament panel (M12).
  * Cancelled    — both players agreed to call the match off (one requested,
  *                the other accepted). Both stakes refunded via `Wallet::release`,
  *                no platform fee charged. Terminal. Distinct from `Settled` w/ no

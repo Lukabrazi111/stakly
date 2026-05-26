@@ -6,6 +6,7 @@ use App\Models\Listing;
 use App\Models\User;
 use App\Models\WalletTransaction;
 use App\Services\Wallet;
+use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 
 beforeEach(function () {
@@ -318,4 +319,39 @@ test('zero amount throws InvalidArgumentException', function () {
         ->toThrow(InvalidArgumentException::class);
 
     expect($user->walletTransactions()->count())->toBe(0);
+});
+
+// ============================================================================
+// 3.9 — User-deletion guards: restrict-delete FKs on listings + wallet_transactions
+//        prevent dropping a user who still has escrowed money or ledger history.
+// ============================================================================
+
+test('user with wallet_transactions cannot be deleted (restrict FK on ledger)', function () {
+    $user = User::factory()->create();
+    Wallet::deposit($user, '100');
+
+    // Wrap in DB::transaction so the FK violation rolls back via SAVEPOINT
+    // rather than aborting the outer test transaction (RefreshDatabase).
+    expect(fn () => DB::transaction(fn () => $user->delete()))
+        ->toThrow(QueryException::class);
+
+    expect(User::find($user->id))->not->toBeNull();
+});
+
+test('user with listings cannot be deleted (restrict FK on listings)', function () {
+    $user = User::factory()->create();
+    Listing::factory()->for($user)->create();
+
+    expect(fn () => DB::transaction(fn () => $user->delete()))
+        ->toThrow(QueryException::class);
+
+    expect(User::find($user->id))->not->toBeNull();
+});
+
+test('fresh user with no listings and no ledger rows CAN be deleted', function () {
+    $user = User::factory()->create();
+
+    $user->delete();
+
+    expect(User::find($user->id))->toBeNull();
 });

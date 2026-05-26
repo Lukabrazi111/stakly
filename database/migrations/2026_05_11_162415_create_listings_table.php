@@ -8,12 +8,12 @@ return new class extends Migration
 {
     /**
      * The marketplace listings — each row is one player's open offer to play
-     * an opponent for `stake_amount` USDT. M3 scope is the index/browse UI;
-     * "take listing" + escrow are M4/M6.
+     * an opponent for `stake_amount` USDT.
      *
-     * TODO (M6/M7 escrow): switch `user_id` foreign key from cascade-delete
-     * to restrict-delete or soft-delete the listing, because a listing
-     * holding escrowed USDT cannot silently disappear when a user is removed.
+     * `user_id` is restrict-delete (not cascade): a listing may hold escrowed
+     * USDT, so Postgres refuses to delete a user who still has listings. Any
+     * future account-removal flow must liquidate listings via the proper
+     * `CancelListingAction` / `ExpireListingAction` paths first.
      */
     public function up(): void
     {
@@ -22,7 +22,7 @@ return new class extends Migration
 
             $table->foreignId('user_id')
                 ->constrained()
-                ->cascadeOnDelete();
+                ->restrictOnDelete();
 
             // v1 only chess; column kept for v2 (Dota etc.).
             $table->string('game')->default('chess');

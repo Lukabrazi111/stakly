@@ -125,19 +125,20 @@ export default function MatchShow({ match, messages }: MatchShowProps) {
     // stake). For wins, it's pot minus platform fee.
     const winnerPayout = isDraw ? match.listing.stake_amount : pot - fee;
 
-    // 4-hour confirmation window from match creation. Backend Phase 7 will
-    // enforce this with a scheduled job; the timer here is the player-facing
-    // countdown so they know how long they have.
+    // 4-hour deadline from match creation. `ResolveMatchTimeoutAction`
+    // flips Pending matches past this to ManualReview via the
+    // `matches:resolve-timeouts` cron sweep.
     const matchDeadline = match.created_at
         ? new Date(new Date(match.created_at).getTime() + 4 * 60 * 60 * 1000)
         : null;
 
     // Polling: refresh the match resource every 8s while Pending so the
-    // "waiting for opponent" view updates without manual refresh. Stops
-    // automatically when status flips to a terminal state. `only: ['match']`
-    // is a partial reload — no navigation, scroll position is preserved
-    // implicitly (Inertia v3 dropped the explicit `preserveScroll` option
-    // for reload calls). WebSocket layer (Reverb / Pusher) deferred to M10.
+    // page picks up auto-fetch settlements + status changes that don't
+    // emit a chat broadcast. Stops automatically when status flips to a
+    // terminal state. `only: ['match']` is a partial reload — no
+    // navigation, scroll position is preserved implicitly. Real-time chat
+    // updates ride the Echo channel via `useMatchChat`, independent of
+    // this polling.
     useEffect(() => {
         if (match.status !== 'pending') {
             return;

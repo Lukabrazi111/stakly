@@ -2,7 +2,7 @@ import { Clock } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
 interface MatchTimerProps {
-    /** Deadline by which both players should have confirmed an outcome. */
+    /** Deadline by which the game API must verify a result before the match flips to ManualReview. */
     deadline: Date;
 }
 
@@ -10,18 +10,18 @@ const MS_30_MIN = 30 * 60 * 1000;
 const MS_1_HOUR = 60 * 60 * 1000;
 
 /**
- * Compact countdown chip for the 4-hour confirmation window. Sits next to
- * the status badge in the match page header — small enough to live inline,
- * but ticks every second and shifts color as the deadline approaches so
- * it reads as live, not decorative.
+ * Compact countdown chip for the 4-hour API-resolution deadline. Sits next
+ * to the status badge in the match page header — small enough to live
+ * inline, but ticks every second and shifts color as the deadline
+ * approaches so it reads as live, not decorative.
  *
  * Tiers (matched to the page header badge style):
  *   > 1h     — pink (primary, brand neutral) — distinct from the amber
  *              "Pending" badge sitting next to it
  *   30m–1h   — amber (warning)
  *   < 30m    — red (destructive) + pulse
- *   expired  — muted gray, "Expired" label (backend Phase 7 timeout job
- *              will resolve the match in the next sweep)
+ *   expired  — muted gray, "Expired" label (`ResolveMatchTimeoutAction`
+ *              flips the match to ManualReview in the next cron sweep)
  */
 export function MatchTimer({ deadline }: MatchTimerProps) {
     const [now, setNow] = useState(() => Date.now());
@@ -55,8 +55,8 @@ export function MatchTimer({ deadline }: MatchTimerProps) {
         : `${hours}h ${minutes.toString().padStart(2, '0')}m ${seconds.toString().padStart(2, '0')}s`;
 
     const ariaLabel = isExpired
-        ? 'Match confirmation window has expired'
-        : `Time to confirm: ${hours} hours ${minutes} minutes ${seconds} seconds`;
+        ? 'Match deadline expired'
+        : `Time remaining: ${hours} hours ${minutes} minutes ${seconds} seconds`;
 
     return (
         <time

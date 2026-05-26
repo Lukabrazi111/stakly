@@ -16,9 +16,10 @@ return new class extends Migration
      *
      * No `updated_at`. No soft deletes. Rows are immutable INSERTs.
      *
-     * TODO (post-launch): `user_id` cascade-delete loses ledger history if a
-     * user is removed. Switch to restrict / soft-delete the user once real
-     * money flows through this table.
+     * `user_id` is restrict-delete (not cascade): ledger rows are immutable
+     * audit data — a user can't be deleted while any of theirs exist. Any
+     * future account-removal flow must handle ledger reassignment or
+     * anonymization explicitly.
      */
     public function up(): void
     {
@@ -27,7 +28,7 @@ return new class extends Migration
 
             $table->foreignId('user_id')
                 ->constrained()
-                ->cascadeOnDelete();
+                ->restrictOnDelete();
 
             // App\Enums\WalletTransactionType cast on the model.
             $table->string('type');
