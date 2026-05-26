@@ -333,3 +333,75 @@ After live-testing the Phase 2 panel, two polish slices landed on top:
 - **Admin doesn't write in chat (yet).** Phase 2 ships read-only chat. Admin's resolve flow includes a required-reason textarea that lands in the audit table, plus the auto-posted system message after settlement narrates the outcome to players. If real disputes show admin needs to ask for more evidence, a Phase 4 ("request evidence" system message button) or full admin-in-chat lands later. Validating need before building.
 - **No real-time admin notifications in M12.** Filament's default polling is fine for current dispute volume. Email/push when a new dispute opens lands as a separate ask if volume justifies.
 - **Bulk resolution actions deliberately out.** One match at a time — admin reviews evidence before paying. Bulk actions are a footgun on money-moving flows.
+
+---
+
+## M17 — Admin operational tooling ✅ shipped 2026-05-24
+
+Replaced Filament's placeholder dashboard (`AccountWidget` + `FilamentInfoWidget`) with a real ops surface: at-a-glance health stats + real-time bell-icon notifications when something needs admin attention. Pulled forward ahead of M13 because M12 just shipped — admin previously had no signal that a dispute opened without manually refreshing `/admin/disputes`.
+
+**Phase 1 — Dashboard widgets**: `OpsOverview` widget (consolidated after live-testing showed 4 per-stat widgets each rendered full-width and stacked tall). One `StatsOverviewWidget` with `getColumns() => 2` for a 2x2 scorecard. Urgency-first ordering: Open disputes (action item) · Matches today (volume) · Platform earnings this month (revenue trend) · Active users 7d (engagement trend). Top row = "right now," bottom row = "trends." 30s polling. Per-stat queries are private methods on the widget; `getStats()` reads as a recipe. 10 Livewire-driven feature tests in `DashboardWidgetsTest.php` — includes `staleListingAndMatch()` helper for ActiveUsers fixtures since factory chains auto-create users that pollute the active count.
+
+**Phase 2 — In-panel real-time notifications**: `notifications.data` column migrated to `jsonb` (Postgres requirement for Filament's `data->>'format'` bell-icon query). `->databaseNotifications()` + `->databaseNotificationsPolling('30s')` enabled in `AdminPanelProvider`. `App\Actions\Admin\NotifyAdminsAction` broadcasts Filament notifications via `sendToDatabase($admins, isEventDispatched: true)` to users with the `admin` Spatie role (excludes `is_platform`). Uses `whereHas('roles', ...)` not Spatie's `role()` scope so it gracefully no-ops if the role isn't seeded. Triggers wired into `OpenDisputeAction` ("Dispute opened — match #N", warning) + `ResolveMatchTimeoutAction` ("Match auto-flagged — #N", danger). Both fire AFTER the DB transaction commits — broadcast events are more reliable after-commit, and rolled-back disputes don't ghost-notify. 7 feature tests covering role scoping, graceful no-op, lifecycle hooks (success + race-loss paths).
+
+**Polish iteration**: `$slug = 'disputes'` on `GameMatchResource` for the pretty `/admin/disputes` URL; widget + notification URL builders use `GameMatchResource::getUrl()` (survives slug renames).
+
+### Decisions
+
+- **One consolidated widget, not four.** Filament renders multiple `StatsOverviewWidget`s as full-width per widget, forcing a tall vertical stack. Consolidating into one widget + overriding `getColumns()` produces the Stripe/Linear-style scorecard layout.
+- **`isEventDispatched: true` on `sendToDatabase`.** Triggers Filament's broadcast event so notifications appear without a refresh.
+- **After-commit lifecycle hooks.** `OpenDisputeAction` + `ResolveMatchTimeoutAction` fire `NotifyAdminsAction` after the DB transaction commits — guarantees the notification only fires on actually-committed disputes (no rolled-back ghost notifications).
+- **`whereHas('roles', ...)` over `role()` scope.** Spatie's `role()` throws `RoleDoesNotExist` if the role isn't seeded — annoying in fresh test setups. `whereHas` returns empty instead.
+
+### Phase 3 (deferred) — Email backup
+
+Out-of-panel email alerts for admins not in the panel. Deferred until real ops shows in-panel alone is insufficient. Trigger to revisit: an admin reports missing a real dispute because they weren't logged in. Until then, in-panel + browser-tab habit is the coverage. Sketch when picked up: mail dispatcher to every admin on `NotifyAdminsAction` fire (alongside the in-panel notification, not instead); per-admin opt-out; optional Slack webhook variant.
+
+---
+
+## M18 Phases 1 + 2 + Phase 3 Slices A + B.1 ✅ shipped 2026-05-25 → 2026-05-26
+
+Partial archive — broader M18 still active in `milestones.md` (Slice B.2 + B.3 in-flight; the full visual + structural redesign moved out to M19). This entry covers the shipped slices.
+
+### Phase 1 — Editable identity + avatar (2026-05-25)
+
+The smallest unit of "I'm a real person, not a bot." Schema: `users.bio` (varchar 500). Avatar via Spatie Media Library (`profile-avatar` collection on `User`, web-safe MIME types, ~2 MB cap, automatic 512×512 + 128×128 thumbnail conversions). Client-side crop modal via `react-image-crop` (~10 KB MIT-licensed, the standard React choice for circular avatar cropping). `/settings/profile` extended to manage avatar + bio. `UserProfileResource` exposes `avatar_url` + `avatar_thumb_url`. Avatars are public-by-nature so they live on the public disk (`storage/app/public/`) — separate from chat attachments which need authenticated streaming. Public profile renders the avatar in a circular frame with a magenta glow on hover; fallback to gradient-initials when no upload.
+
+**Phase 1 polish — propagation + remove avatar**: `ListingResource` + `GameMatchResource` (creator / taker / winner) expose `avatar_thumb_url`; 6 list components (chat-message-bubble, match-info-card, match-list-row, listing-row, listing-card, profile-match-row) render `<AvatarImage>` when present, falling back to initials. `DELETE /settings/profile/avatar` route + ghost-variant "Remove" button on the settings page (visible only when an avatar exists, no preview staged). Idempotent.
+
+### Phase 2 — Stats hero (2026-05-25)
+
+Two-tile stats row on the public profile: **Total matches** (settled-only count) + **Total volume staked** (sum of the user's own stake across settled matches, not pot total). Third tile (**Win rate**) visible to owner only — computed `wins / (wins + losses)` (draws excluded from denominator), rendered as `67%` (or `—` when no decided matches) with `W·D·L` breakdown underneath. Single CASE-aggregation Eloquent query. Empty-state ("No matches yet") uses dashed-border tile variant. All stats are all-time.
+
+**Why win rate is owner-only**: showing it publicly creates a farming vector — strong players hunt low-win-rate opponents. Skill matching is already handled at the listing layer (`skill_min` / `skill_max`); the chess.com / Lichess rating reachable via link-out is the *public* skill signal.
+
+Broader visual restyle (hero section, Active Mode pill, verification badges) deferred to M19's full redesign.
+
+### Phase 3 Slice A — link-out + schema normalisation (2026-05-25)
+
+Verified chess handles link out: chess.com / Lichess usernames on the public profile are now anchors to the external profile (`https://www.chess.com/member/{user}` / `https://lichess.org/@/{user}`), opening in a new tab with an `ExternalLink` icon. The click-through is the public skill signal — Alice sees the full external rating + history + activity rather than an inline rating, avoiding API-integration / cache / refresh-job complexity.
+
+Linked-account schema normalised out of `users`: `chess_com_username` / `chess_com_verified_at` / `lichess_username` / `lichess_verified_at` and 4 `pending_verification_*` columns moved into two new tables — `linked_accounts` (UNIQUE(user_id, provider) + UNIQUE(provider, username)) and `pending_verifications` (UNIQUE(user_id), TTL-bound, plaintext code). New `LinkedAccount` + `PendingVerification` models; `User` keeps backwards-compat accessors that read off the eager-loaded `linkedAccounts` relation so callers (`UserProfileResource`, Filament infolists, controllers) don't need to migrate at once. Done while pre-real-users so M15 multi-game expansion adds provider rows instead of widening the `users` table.
+
+### Phase 3 Slice B.1 — completion rate chip on profile (2026-05-26)
+
+Pivoted mid-design from the originally-scoped dispute/cancellation rate badges. The Bybit P2P model — composite "completion rate" + 3-free-cancellation buffer + listing-row display + "more info" modal — fixed the original design's flaws: (1) cancellation rate badge punished the cooperative-exit feature (mutual cancellation is *good* behavior); (2) dispute predicate marked both parties of a dispute, including the victim; (3) threshold colors (green/amber/red) were calibrated on pre-launch guesses.
+
+`UserController::show` aggregation reworked: drops `TRUST_MIN_SAMPLE`, adds `FREE_CANCELLATIONS_PER_PERIOD = 3`. Single SQL pass computes `settled_30d` / `settled_lifetime` / `cancellations_30d` / `cancellations_lifetime` / `disputes_lifetime`. Formula: `settled / (settled + max(0, cancellations - 3))` for the 30-day rate; lifetime has no buffer. Null when denominator is 0. `ProfileTrust` TS interface; `ProfileShowProps` extended. `CompletionRateChip` component — pill `{rate}% · {n} matches`, prefers 30d rate, falls back to lifetime, hides when `settled_lifetime === 0`. Click stub for the Slice B.2 modal (in-flight). Mounted between `ProfileHeader` and `StatsCard` on `users/show.tsx`. 9 new feature tests covering: empty-user nulls, single-match 100%, 3-free buffer absorbs, 4th cancellation pulls rate to 83%, other-party cancellations don't count, 31-day-old match drops 30d / stays lifetime, lifetime has no buffer (5/9 = 56%), `disputes_lifetime` catches disputed-then-settled + currently-disputed, pending matches excluded.
+
+**Cleanup ships landed alongside Slice B.1**:
+- `MatchOutcome` enum removed + `creator_confirmed_outcome` / `taker_confirmed_outcome` columns dropped from `game_matches` (orphaned after M16; pre-real-users so just edited the migration + `migrate:fresh`).
+- M16 stale-comment sweep: `MatchStatus` docblock, `GameMatchPolicy` class doc, `PostSystemMessageAction` docblock, `match-timer.tsx` (prop comment + function docstring + aria-label), `match/show.tsx` (the "4-hour confirmation window" comment + the obsolete "Reverb deferred to M10" line).
+- Restrict-delete FKs on `listings.user_id` and `wallet_transactions.user_id` (was cascade). Users with escrowed money or ledger history are now undeletable at the DB level. Three new tests in `WalletTest.php` using the `DB::transaction(fn() => $u->delete())` SAVEPOINT pattern to recover from the FK violation inside the outer test transaction.
+
+### Decisions
+
+- **Avatar default is initials-on-gradient** for users who don't upload. Keeps the look consistent.
+- **Bio is plain text** with line breaks, escaped on render. Length cap 500. Heavier anti-abuse (URL stripping, link sanitization) is M13.
+- **Live rating display considered + dropped.** Link-out covers the trust need without an API integration / cache / refresh job.
+- **Schema normalisation done now**, pre-real-users — cheapest moment. M15 multi-game expansion adds provider rows without re-migrating.
+- **Win rate is owner-only.** Public win rate would invite strong players to hunt weak ones. Chess.com / Lichess rating is the public skill signal.
+- **Completion rate = single composite metric**, not per-failure-mode rates. See the architectural decision in `milestones.md`.
+- **3-free cancellations per 30 days on the 30d rate; no buffer on lifetime.** Mutual cancellation stays usable cooperatively in the short term; lifetime is the unvarnished record.
+- **No "ManualReview-stuck" counted as incomplete.** Admin always settles MR eventually; counting MR-in-flight as incomplete would penalize users for admin latency. Considered + dropped.
+- **Restrict-delete FKs** on listings + wallet_transactions. Users with escrowed money / ledger history are undeletable at the DB level. The right safety net for a custodial money platform.

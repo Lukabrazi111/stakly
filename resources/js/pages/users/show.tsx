@@ -1,4 +1,5 @@
 import { Head } from '@inertiajs/react';
+import { CompletionRateChip } from '@/components/profile/completion-rate-chip';
 import { LinkedAccountsSection } from '@/components/profile/linked-accounts-section';
 import { ListingsSection } from '@/components/profile/listings-section';
 import { MatchHistorySection } from '@/components/profile/match-history-section';
@@ -10,6 +11,7 @@ import type { ProfileShowProps } from '@/types';
 export default function UserShow({
     user,
     stats,
+    trust,
     openListings,
     matchHistory,
 }: ProfileShowProps) {
@@ -21,6 +23,7 @@ export default function UserShow({
                 <ProfileHeader user={user} />
 
                 <div className="mt-10 flex flex-col gap-10">
+                    <CompletionRateChip trust={trust} />
                     <StatsCard stats={stats} />
                     <ListingsSection listings={openListings.data} />
                     <MatchHistorySection

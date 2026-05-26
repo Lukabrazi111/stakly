@@ -26,6 +26,15 @@ class UserController extends Controller
     private const MATCH_HISTORY_LIMIT = 10;
 
     /**
+     * Cancellations forgiven per rolling 30-day window before the completion
+     * rate starts dropping. Mutual cancellation is the cooperative-exit
+     * feature — penalizing users for using it as designed would misalign
+     * incentives, so the first N per 30 days are "free." Beyond N, each
+     * one pulls the 30-day rate down. Lifetime has no buffer.
+     */
+    private const FREE_CANCELLATIONS_PER_PERIOD = 3;
+
+    /**
      * Public read-only profile page. Resolved by `username` via the
      * `User::getRouteKeyName()` override. No auth — anyone can view.
      *
@@ -144,9 +153,74 @@ class UserController extends Controller
             ];
         }
 
+        // M18 Phase 3 Slice B — completion rate (Bybit-inspired). A single
+        // composite metric: "of your engaged matches, how many got to
+        // Settled?" Higher = better.
+        //
+        // Definitions:
+        //   Completed   — match reached Settled status, regardless of path
+        //                 (clean auto-fetch / dispute → API / admin-settled).
+        //   Incomplete  — user-initiated cancellations beyond the 3-free
+        //                 buffer. MR-in-flight + currently-Disputed matches
+        //                 don't count either way (they're "pending
+        //                 resolution"; admin always settles MR eventually).
+        //
+        // The 3-free buffer applies to the 30-day window only. Lifetime has
+        // no buffer — every cancellation counts (the unvarnished track
+        // record).
+        //
+        // No status filter on the FROM: `disputes_lifetime` (raw modal
+        // signal) counts matches where `dispute_opened_at` was ever set,
+        // regardless of final status. Pending matches are excluded
+        // naturally — every CASE branch requires status = settled or
+        // cancelled, or dispute_opened_at IS NOT NULL.
+        $thirtyDaysAgo = now()->subDays(30);
+
+        $trustAggregate = GameMatch::query()
+            ->forParticipant($user->id)
+            ->selectRaw(
+                "COUNT(CASE WHEN game_matches.status = 'settled' AND game_matches.settled_at >= ? THEN 1 END) AS settled_30d,
+                 COUNT(CASE WHEN game_matches.cancellation_requested_by = ? AND game_matches.status = 'cancelled' AND game_matches.cancelled_at >= ? THEN 1 END) AS cancellations_30d,
+                 COUNT(CASE WHEN game_matches.status = 'settled' THEN 1 END) AS settled_lifetime,
+                 COUNT(CASE WHEN game_matches.cancellation_requested_by = ? AND game_matches.status = 'cancelled' THEN 1 END) AS cancellations_lifetime,
+                 COUNT(CASE WHEN game_matches.dispute_opened_at IS NOT NULL THEN 1 END) AS disputes_lifetime",
+                [$thirtyDaysAgo, $user->id, $thirtyDaysAgo, $user->id],
+            )
+            ->first();
+
+        $settled30d = (int) $trustAggregate->settled_30d;
+        $cancellations30d = (int) $trustAggregate->cancellations_30d;
+        $settledLifetime = (int) $trustAggregate->settled_lifetime;
+        $cancellationsLifetime = (int) $trustAggregate->cancellations_lifetime;
+
+        $incomplete30d = max(0, $cancellations30d - self::FREE_CANCELLATIONS_PER_PERIOD);
+        $incompleteLifetime = $cancellationsLifetime;
+
+        $denom30d = $settled30d + $incomplete30d;
+        $denomLifetime = $settledLifetime + $incompleteLifetime;
+
+        $trust = [
+            // Per-window completion rate. Null when the window has no
+            // engaged matches — FE picks the available window or hides.
+            'rate_30d' => $denom30d > 0
+                ? (int) round(($settled30d / $denom30d) * 100)
+                : null,
+            'rate_lifetime' => $denomLifetime > 0
+                ? (int) round(($settledLifetime / $denomLifetime) * 100)
+                : null,
+            // Raw counts feed both the chip (settled_lifetime as the
+            // experience signal) and the "more info" modal breakdown.
+            'settled_30d' => $settled30d,
+            'settled_lifetime' => $settledLifetime,
+            'cancellations_30d' => $cancellations30d,
+            'cancellations_lifetime' => $cancellationsLifetime,
+            'disputes_lifetime' => (int) $trustAggregate->disputes_lifetime,
+        ];
+
         return Inertia::render('users/show', [
             'user' => (new UserProfileResource($user))->resolve(),
             'stats' => $stats,
+            'trust' => $trust,
             'openListings' => ListingResource::collection($openListings),
             'matchHistory' => GameMatchResource::collection($matchHistory),
         ]);

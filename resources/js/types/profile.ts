@@ -56,6 +56,28 @@ export interface ProfileStats {
     } | null;
 }
 
+// M18 Phase 3 Slice B — completion rate trust signal (Bybit-inspired).
+// Composite metric: "of your engaged matches, how many got to Settled?"
+// Higher = better. The chip shows the rate + lifetime settled count; the
+// "more info" modal (Slice B.2) breaks down the raw counts.
+//
+// `rate_30d` / `rate_lifetime` are integer percentages (0–100) or null when
+// the respective window has no engaged matches (settled + post-buffer
+// cancellations for 30d; settled + all cancellations for lifetime).
+// `disputes_lifetime` counts matches where `dispute_opened_at` was ever
+// set, regardless of final status — raw signal for the modal, not a
+// penalty input. Cancellation buffer (3-free per 30d) applies only to the
+// 30d rate; lifetime has no buffer.
+export interface ProfileTrust {
+    rate_30d: number | null;
+    rate_lifetime: number | null;
+    settled_30d: number;
+    settled_lifetime: number;
+    cancellations_30d: number;
+    cancellations_lifetime: number;
+    disputes_lifetime: number;
+}
+
 // Page-level props for `pages/users/show.tsx` (built in Phase 4).
 // `user` is the resolved/unwrapped resource (no `data` envelope), since the
 // controller calls `(new UserProfileResource($user))->resolve()`.
@@ -65,6 +87,7 @@ export interface ProfileStats {
 export interface ProfileShowProps {
     user: UserProfile;
     stats: ProfileStats;
+    trust: ProfileTrust;
     openListings: { data: Listing[] };
     matchHistory: { data: Match[] };
 }

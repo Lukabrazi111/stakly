@@ -410,3 +410,198 @@ test('flipping the owner back to active republishes their listings on the public
     $this->get('/users/pam')
         ->assertInertia(fn ($page) => $page->has('openListings.data', 2));
 });
+
+// ─── Trust signal (M18 Phase 3 Slice B — completion rate) ────────────────
+
+test('trust payload is all zeros for a user with no matches', function () {
+    User::factory()->create(['username' => 'tina']);
+
+    $this->get('/users/tina')
+        ->assertInertia(fn ($page) => $page
+            ->where('trust.rate_30d', null)
+            ->where('trust.rate_lifetime', null)
+            ->where('trust.settled_30d', 0)
+            ->where('trust.settled_lifetime', 0)
+            ->where('trust.cancellations_30d', 0)
+            ->where('trust.cancellations_lifetime', 0)
+            ->where('trust.disputes_lifetime', 0)
+        );
+});
+
+test('trust rate is 100 with a single settled match and no cancellations', function () {
+    $alice = User::factory()->create(['username' => 'uma']);
+    $bob = User::factory()->create();
+
+    $listing = Listing::factory()->taken()->for($alice)->create();
+    GameMatch::factory()->for($listing)->for($bob, 'taker')->settled($alice)->create();
+
+    $this->get('/users/uma')
+        ->assertInertia(fn ($page) => $page
+            ->where('trust.rate_30d', 100)
+            ->where('trust.rate_lifetime', 100)
+            ->where('trust.settled_30d', 1)
+            ->where('trust.settled_lifetime', 1)
+        );
+});
+
+test('3-free buffer absorbs the first 3 user-initiated cancellations in 30d', function () {
+    $alice = User::factory()->create(['username' => 'vera']);
+    $bob = User::factory()->create();
+
+    foreach (range(1, 5) as $i) {
+        $listing = Listing::factory()->taken()->for($alice)->create();
+        GameMatch::factory()->for($listing)->for($bob, 'taker')->settled($alice)->create();
+    }
+
+    // 3 cancellations initiated by Alice — under buffer, shouldn't pull the rate.
+    foreach (range(1, 3) as $i) {
+        $listing = Listing::factory()->taken()->for($alice)->create();
+        GameMatch::factory()->for($listing)->for($bob, 'taker')->cancelled($alice)->create();
+    }
+
+    $this->get('/users/vera')
+        ->assertInertia(fn ($page) => $page
+            ->where('trust.rate_30d', 100)
+            ->where('trust.settled_30d', 5)
+            ->where('trust.cancellations_30d', 3)
+        );
+});
+
+test('4th cancellation in 30d starts pulling the rate down', function () {
+    $alice = User::factory()->create(['username' => 'wendy']);
+    $bob = User::factory()->create();
+
+    foreach (range(1, 5) as $i) {
+        $listing = Listing::factory()->taken()->for($alice)->create();
+        GameMatch::factory()->for($listing)->for($bob, 'taker')->settled($alice)->create();
+    }
+
+    // 4 cancellations — 1 over buffer; incomplete = 1, denom = 5+1 = 6, rate = 5/6 = 83%.
+    foreach (range(1, 4) as $i) {
+        $listing = Listing::factory()->taken()->for($alice)->create();
+        GameMatch::factory()->for($listing)->for($bob, 'taker')->cancelled($alice)->create();
+    }
+
+    $this->get('/users/wendy')
+        ->assertInertia(fn ($page) => $page
+            ->where('trust.rate_30d', 83)
+            ->where('trust.cancellations_30d', 4)
+        );
+});
+
+test('cancellations initiated by the OTHER party do not count', function () {
+    $alice = User::factory()->create(['username' => 'xavier']);
+    $bob = User::factory()->create();
+
+    foreach (range(1, 5) as $i) {
+        $listing = Listing::factory()->taken()->for($alice)->create();
+        GameMatch::factory()->for($listing)->for($bob, 'taker')->settled($alice)->create();
+    }
+
+    // 10 cancellations all initiated by Bob — shouldn't appear on Alice's record.
+    foreach (range(1, 10) as $i) {
+        $listing = Listing::factory()->taken()->for($alice)->create();
+        GameMatch::factory()->for($listing)->for($bob, 'taker')->cancelled($bob)->create();
+    }
+
+    $this->get('/users/xavier')
+        ->assertInertia(fn ($page) => $page
+            ->where('trust.rate_30d', 100)
+            ->where('trust.rate_lifetime', 100)
+            ->where('trust.cancellations_30d', 0)
+            ->where('trust.cancellations_lifetime', 0)
+        );
+});
+
+test('settled matches older than 30 days drop out of the 30d window but stay in lifetime', function () {
+    $alice = User::factory()->create(['username' => 'yara']);
+    $bob = User::factory()->create();
+
+    // 1 recent settled match.
+    $recent = Listing::factory()->taken()->for($alice)->create();
+    GameMatch::factory()->for($recent)->for($bob, 'taker')->settled($alice)->create();
+
+    // 1 old settled match (31 days ago) — outside 30d window.
+    $old = Listing::factory()->taken()->for($alice)->create();
+    GameMatch::factory()
+        ->for($old)
+        ->for($bob, 'taker')
+        ->settled($alice)
+        ->create(['settled_at' => now()->subDays(31)]);
+
+    $this->get('/users/yara')
+        ->assertInertia(fn ($page) => $page
+            ->where('trust.settled_30d', 1)
+            ->where('trust.settled_lifetime', 2)
+        );
+});
+
+test('lifetime rate has no cancellation buffer — every cancellation counts', function () {
+    $alice = User::factory()->create(['username' => 'zoe']);
+    $bob = User::factory()->create();
+
+    foreach (range(1, 5) as $i) {
+        $listing = Listing::factory()->taken()->for($alice)->create();
+        GameMatch::factory()->for($listing)->for($bob, 'taker')->settled($alice)->create();
+    }
+    foreach (range(1, 4) as $i) {
+        $listing = Listing::factory()->taken()->for($alice)->create();
+        GameMatch::factory()->for($listing)->for($bob, 'taker')->cancelled($alice)->create();
+    }
+
+    // Lifetime: 5 / (5 + 4) = 56% (no buffer). 30d: 5 / (5 + max(0, 4-3)) = 83%.
+    $this->get('/users/zoe')
+        ->assertInertia(fn ($page) => $page
+            ->where('trust.rate_lifetime', 56)
+            ->where('trust.rate_30d', 83)
+        );
+});
+
+test('disputes_lifetime counts every match with dispute_opened_at set regardless of final status', function () {
+    $alice = User::factory()->create(['username' => 'amber']);
+    $bob = User::factory()->create();
+
+    // Clean settled match — no dispute.
+    $clean = Listing::factory()->taken()->for($alice)->create();
+    GameMatch::factory()->for($clean)->for($bob, 'taker')->settled($alice)->create();
+
+    // Settled match that was disputed mid-flight, then resolved by API.
+    $disputedSettled = Listing::factory()->taken()->for($alice)->create();
+    GameMatch::factory()
+        ->for($disputedSettled)
+        ->for($bob, 'taker')
+        ->settled($alice)
+        ->create([
+            'dispute_opened_at' => now()->subDays(1),
+            'dispute_opened_by' => $bob->id,
+        ]);
+
+    // Currently-disputed match (in flight).
+    $current = Listing::factory()->taken()->for($alice)->create();
+    GameMatch::factory()->for($current)->for($bob, 'taker')->disputed($bob)->create();
+
+    $this->get('/users/amber')
+        ->assertInertia(fn ($page) => $page
+            ->where('trust.disputes_lifetime', 2)
+            ->where('trust.settled_lifetime', 2)
+        );
+});
+
+test('pending matches do not count toward any trust counter', function () {
+    $alice = User::factory()->create(['username' => 'becky']);
+    $bob = User::factory()->create();
+
+    foreach (range(1, 5) as $i) {
+        $listing = Listing::factory()->taken()->for($alice)->create();
+        GameMatch::factory()->for($listing)->for($bob, 'taker')->create();
+    }
+
+    $this->get('/users/becky')
+        ->assertInertia(fn ($page) => $page
+            ->where('trust.rate_30d', null)
+            ->where('trust.rate_lifetime', null)
+            ->where('trust.settled_30d', 0)
+            ->where('trust.settled_lifetime', 0)
+            ->where('trust.disputes_lifetime', 0)
+        );
+});
