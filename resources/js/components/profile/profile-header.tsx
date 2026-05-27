@@ -55,10 +55,12 @@ export function ProfileHeader({ user }: Props) {
                 )}
             </div>
 
-            {/* Chip strip — verification + member-since. Horizontal scroll
-                on mobile so chips don't wrap into tall stacks; reverts to
-                wrap on sm+ where the row has room. */}
-            <div className="-mx-2 mt-5 flex flex-nowrap items-center gap-2 overflow-x-auto px-2 pb-1 sm:flex-wrap sm:overflow-visible sm:pb-0 [&::-webkit-scrollbar]:hidden">
+            {/* Chip strip — verification + member-since. Wraps on every
+                viewport. The earlier horizontal-scroll-on-mobile pattern
+                clipped chips mid-pill against the card edge (visible in
+                Safari + Chrome at iPhone widths); wrapping shows every
+                chip at the cost of a slightly taller card. */}
+            <div className="mt-5 flex flex-wrap items-center gap-2">
                 {user.chess_com_username && (
                     <VerificationChip
                         provider="chess_com"

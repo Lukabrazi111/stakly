@@ -111,6 +111,78 @@ test('match prop is populated for the taker on a Taken listing', function () {
         );
 });
 
+// ─── Pot breakdown payload (M23 Phase 2) ─────────────────────────────────
+
+test('listing carries fee_rate from config for the pot breakdown', function () {
+    // M23 Phase 2 — detail page renders pot / fee / payout breakdown
+    // pre-take. Frontend reads `listing.fee_rate` (mirror of
+    // `match.fee_rate` on `GameMatchResource`) and computes the math
+    // client-side so the rate is single-sourced from config and never
+    // duplicated on the FE.
+    $listing = Listing::factory()->open()->create();
+
+    $this->get("/listings/{$listing->id}")
+        ->assertInertia(fn ($page) => $page
+            ->where('listing.fee_rate', (float) config('stakly.platform_fee_rate'))
+        );
+});
+
+// ─── Detail-page creator card payload (M23 Phase 1) ──────────────────────
+
+test('creator carries bio, member_since, and linked_accounts on the detail page', function () {
+    // Detail-page creator card (M23 Phase 1) renders bio, a Joined month-year
+    // pill from member_since, and one VerificationChip per linked account.
+    // Each chip needs (provider, username) to click out to the external profile
+    // — that's a richer shape than the marketplace row's verified_providers
+    // (provider list only). All three fields should be on the resource.
+    $creator = User::factory()
+        ->active()
+        ->withChessCom('grandmaster99')
+        ->withLichess('blitzqueen')
+        ->create(['bio' => 'Endgame specialist, blitz enthusiast.']);
+    $listing = Listing::factory()->open()->for($creator)->create();
+
+    $this->get("/listings/{$listing->id}")
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->where('listing.creator.bio', 'Endgame specialist, blitz enthusiast.')
+            ->where('listing.creator.member_since', $creator->created_at->toIso8601String())
+            ->where('listing.creator.linked_accounts', function ($accounts) {
+                $rows = collect($accounts)->values()->all();
+                if (count($rows) !== 2) {
+                    return false;
+                }
+                $byProvider = collect($rows)->keyBy(fn ($r) => $r['provider'] ?? null);
+
+                return ($byProvider['chess_com']['username'] ?? null) === 'grandmaster99'
+                    && ($byProvider['lichess']['username'] ?? null) === 'blitzqueen';
+            })
+        );
+});
+
+test('creator.bio is null when the user has not set one', function () {
+    $creator = User::factory()->active()->create(['bio' => null]);
+    $listing = Listing::factory()->open()->for($creator)->create();
+
+    $this->get("/listings/{$listing->id}")
+        ->assertInertia(fn ($page) => $page
+            ->where('listing.creator.bio', null)
+        );
+});
+
+test('creator.linked_accounts is an empty array when the user has linked none', function () {
+    // No bio-code flow completed — Marketplace gate prevents this user from
+    // *creating* a listing in practice, but the show endpoint must still
+    // serialize cleanly with an empty array (rather than null or omitted).
+    $creator = User::factory()->active()->create();
+    $listing = Listing::factory()->open()->for($creator)->create();
+
+    $this->get("/listings/{$listing->id}")
+        ->assertInertia(fn ($page) => $page
+            ->where('listing.creator.linked_accounts', [])
+        );
+});
+
 // ─── Creator active mode exposed (M6 Phase 6.5) ───────────────────────────
 
 test('creator.is_active_mode is exposed on the listing detail resource', function () {

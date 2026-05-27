@@ -100,8 +100,12 @@ class ListingController extends Controller
         // `scopeOnPublicMarketplace`, but this detail page bypasses that scope
         // (direct URL access stays viewable so owners can share + manage), so
         // the resource needs the flag.
+        // M23 Phase 1 — detail page renders bio + member_since on the
+        // creator card, so we widen the user column whitelist beyond what
+        // the marketplace row needs. `bio` is capped at 500 chars (see the
+        // users migration) so payload cost is bounded.
         $listing->load([
-            'user:id,name,username,is_active_mode',
+            'user:id,name,username,is_active_mode,bio,created_at',
             'user.linkedAccounts',
             'gameMatch:id,listing_id,taker_user_id',
         ]);

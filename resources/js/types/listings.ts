@@ -41,6 +41,14 @@ export interface ListingCreator {
     // `BadgeCheck` icon appears in the meta line ONLY when the creator has
     // verified on 2+ providers ("went the extra mile" credential).
     verified_providers: ListingPlatform[];
+    // M23 Phase 1 — detail-page creator card uplift. `bio` and `member_since`
+    // mirror the profile-page hero. `linked_accounts` carries the
+    // (provider, username) pairs the detail-page chip strip needs to click
+    // out to each external profile — different shape from `verified_providers`
+    // above (which only carries the provider id, sufficient for the badge).
+    bio: string | null;
+    member_since: string | null;
+    linked_accounts: Array<{ provider: ListingPlatform; username: string }>;
 }
 
 // The external provider the match must be played on (M8 Phase 5 Slice B).
@@ -53,6 +61,11 @@ export interface Listing {
     game: GameId;
     platform: ListingPlatform;
     stake_amount: number;
+    // M23 Phase 2 — platform fee rate at the JSON boundary (mirrors
+    // `GameMatch.fee_rate`). Frontend uses this to render the pot
+    // breakdown on the detail page (pot = stake × 2, fee = pot × fee_rate,
+    // winner payout = pot − fee).
+    fee_rate: number;
     skill_min: number | null;
     skill_max: number | null;
     // Array of one or more time controls the creator is willing to play.
