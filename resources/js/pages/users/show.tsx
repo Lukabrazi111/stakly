@@ -55,11 +55,12 @@ export default function UserShow({
                         trust={trust}
                         repeatPairCount={repeat_pair_count}
                     />
-                    <StatsCard stats={stats} />
+                    <StatsCard stats={stats} isOwnProfile={isOwnProfile} />
                     <ProfileTabs
                         matches={matchHistory.data}
                         listings={openListings.data}
                         profileUserId={user.id}
+                        isOwnProfile={isOwnProfile}
                     />
 
                     {isOwnProfile && (

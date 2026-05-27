@@ -281,7 +281,7 @@ Owner-only block below the public tabs, visible only when `auth.user.id === prof
 
 **Phase 6 — Polish: empty-state, mobile, animations, a11y**
 
-- [ ] **Empty-state copy** across the page: replace "No matches yet" with inviting CTAs ("Browse the marketplace →" / "Create your first listing →"). Stats with zero values render dashed-border tiles (existing pattern) with the CTA inline.
+- [x] **Empty-state copy** across the page (Slice A of Phase 6, 2026-05-27): `MatchHistorySection` + `ListingsSection` + `StatsCard` thread an `isOwnProfile` flag down from `users/show.tsx`. Owner empty states get inviting CTAs ("Browse the marketplace →" linking to `/listings`, "Create your first listing →" linking to `/listings/create`); visitor empty states stay descriptive. Stats card empty state collapses two repeating "No matches yet" dashed tiles into one card with a single CTA — small deviation from spec ("CTA inline" in each tile), but the previous two-tile shape repeated the same empty copy twice; one card reads cleaner.
 - [ ] **Mobile-first audit** — hero collapses gracefully (avatar smaller, inline with name), stats stack 1-up, tabs work with thumb-scroll, repeat-pair widget hides on small screens if space is tight.
 - [ ] **Interaction polish** — hover states on every interactive surface (chip, tab, button) using the existing `hover:shadow-glow-sm` pattern. Tab switch animation via `motion` (subtle slide / fade — don't fight Radix's defaults).
 - [ ] **Accessibility audit** — keyboard nav across tabs, `aria-label`s on chips, focus rings consistent with the rest of the app, color contrast for the new card surface against text tokens (WCAG AA minimum on `text-foreground` against `bg-card`).

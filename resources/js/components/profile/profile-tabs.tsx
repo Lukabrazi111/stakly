@@ -25,6 +25,7 @@ interface Props {
     matches: Match[];
     listings: Listing[];
     profileUserId: number;
+    isOwnProfile: boolean;
 }
 
 /**
@@ -38,7 +39,12 @@ interface Props {
  * would be wasted work. Mirrors the auth-modal-provider's URL handling
  * pattern (per CLAUDE.md).
  */
-export function ProfileTabs({ matches, listings, profileUserId }: Props) {
+export function ProfileTabs({
+    matches,
+    listings,
+    profileUserId,
+    isOwnProfile,
+}: Props) {
     const [tab, setTab] = React.useState<ProfileTab>(readTabFromUrl);
 
     React.useEffect(() => {
@@ -80,11 +86,15 @@ export function ProfileTabs({ matches, listings, profileUserId }: Props) {
                 <MatchHistorySection
                     matches={matches}
                     profileUserId={profileUserId}
+                    isOwnProfile={isOwnProfile}
                 />
             </TabsContent>
 
             <TabsContent value="listings" className="mt-5">
-                <ListingsSection listings={listings} />
+                <ListingsSection
+                    listings={listings}
+                    isOwnProfile={isOwnProfile}
+                />
             </TabsContent>
 
             <TabsContent value="reviews" className="mt-5">
