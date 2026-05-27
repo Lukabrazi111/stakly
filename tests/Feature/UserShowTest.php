@@ -705,3 +705,29 @@ test('repeat_pair_count ignores settled matches with unrelated third parties', f
         ->get('/users/gina')
         ->assertInertia(fn ($page) => $page->where('repeat_pair_count', 1));
 });
+
+// ─── Open Graph metadata (M19 Phase 5) ───────────────────────────────────
+
+test('og payload carries the profile-specific title + absolute url', function () {
+    User::factory()->create(['username' => 'alice', 'name' => 'Alice']);
+
+    $response = $this->get('/users/alice');
+
+    $response->assertOk();
+    $response->assertInertia(fn ($page) => $page
+        ->where('og.title', 'Alice on Stakly')
+        ->where('og.type', 'profile')
+        ->where('og.url', route('users.show', 'alice'))
+        ->has('og.description')
+        ->has('og.image')
+    );
+});
+
+test('og image is an absolute url (crawlers reject relative paths)', function () {
+    User::factory()->create(['username' => 'bob']);
+
+    $this->get('/users/bob')->assertInertia(fn ($page) => $page
+        ->where('og.image', fn (string $image) => str_starts_with($image, 'http'))
+        ->where('og.url', fn (string $url) => str_starts_with($url, 'http'))
+    );
+});

@@ -254,6 +254,23 @@ class UserController extends Controller
             'repeat_pair_count' => $repeatPairCount,
             'openListings' => ListingResource::collection($openListings),
             'matchHistory' => GameMatchResource::collection($matchHistory),
+            // M19 Phase 5 — Open Graph metadata for link previews. The
+            // frontend renders these into `<meta>` tags inside Inertia's
+            // `<Head>`; SSR (via `@inertiajs/vite`) ensures the tags reach
+            // crawlers (Discord, Telegram, Twitter), not just post-hydration.
+            //
+            // `image` points at the apple-touch-icon (180×180) as a
+            // placeholder — drop a 1200×630 branded card at
+            // `public/og-default.png` and swap the path when ready. OG
+            // crawlers prefer larger images for in-feed thumbnails; the
+            // current placeholder will render small but still works.
+            'og' => [
+                'title' => "{$user->name} on Stakly",
+                'description' => 'Stakly P2P gaming staking — stake your skill, settle in USDT.',
+                'image' => asset('apple-touch-icon.png'),
+                'url' => route('users.show', $user),
+                'type' => 'profile',
+            ],
         ]);
     }
 }

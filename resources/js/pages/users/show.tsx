@@ -1,4 +1,5 @@
 import { Head, usePage } from '@inertiajs/react';
+import { OwnerAccountSection } from '@/components/profile/owner-account-section';
 import { ProfileHeader } from '@/components/profile/profile-header';
 import { ProfileTabs } from '@/components/profile/profile-tabs';
 import { StatsCard } from '@/components/profile/stats-card';
@@ -14,6 +15,7 @@ export default function UserShow({
     repeat_pair_count,
     openListings,
     matchHistory,
+    og,
 }: ProfileShowProps) {
     const { auth } = usePage().props;
     const isOwnProfile = auth.user?.id === user.id;
@@ -26,7 +28,24 @@ export default function UserShow({
 
     return (
         <Layout>
-            <Head title={`${user.name}'s profile`} />
+            <Head>
+                <title>{`${user.name}'s profile`}</title>
+                {/* M19 Phase 5 — Open Graph + Twitter card meta for link
+                    previews in Discord, Telegram, Twitter, etc. SSR
+                    (via @inertiajs/vite) renders these into the initial
+                    HTML so crawlers see them. */}
+                <meta name="description" content={og.description} />
+                <meta property="og:site_name" content="Stakly" />
+                <meta property="og:title" content={og.title} />
+                <meta property="og:description" content={og.description} />
+                <meta property="og:image" content={og.image} />
+                <meta property="og:url" content={og.url} />
+                <meta property="og:type" content={og.type} />
+                <meta name="twitter:card" content="summary" />
+                <meta name="twitter:title" content={og.title} />
+                <meta name="twitter:description" content={og.description} />
+                <meta name="twitter:image" content={og.image} />
+            </Head>
 
             <div className="mx-auto max-w-5xl px-4 py-10 md:px-6 md:py-14">
                 <ProfileHeader user={user} />
@@ -42,6 +61,13 @@ export default function UserShow({
                         listings={openListings.data}
                         profileUserId={user.id}
                     />
+
+                    {isOwnProfile && (
+                        <OwnerAccountSection
+                            profileUrl={og.url}
+                            username={user.username}
+                        />
+                    )}
                 </div>
             </div>
         </Layout>

@@ -12,7 +12,7 @@ Frontend-first build. UI against real DB infrastructure + seeded fake data; back
 - **M14** — Outcome pipeline hardening (reframed from "automated outcome adapters" — observability + reliability + coverage of the auto-fetch pipeline; Slice A shipped, Phase 1 next)
 - **M18** — Profile expansion (Phases 1 + 2 shipped, Phase 3 Slice A + Slice B.1 shipped — completion rate chip on profile; **next: Phase 3 Slice B.2 — "more info" modal, then Slice B.3 — listing-row chip integration**, then M19 absorbs former Slice C + Phase 4)
 - **M19** — Profile page redesign + management hub (Bybit-inspired IA + Stakly identity + game-agnostic from day one; folds former M18 Slice C + Phase 4)
-- **M20** — Notifications (email infrastructure + per-event preferences UI in M19's Notifications tab)
+- **M20** — Notifications (email infrastructure + per-event preferences UI; M20 owns the surface end-to-end)
 - **M21** — Blacklist + safety (block users from listings + chat, with anti-evasion considerations)
 - **M15** — Multi-game expansion (FACEIT, OpenDota, Riot adapters)
 - **M9** — Chain Integration [paused — pending crypto-payment-gateway specialist]
@@ -171,7 +171,7 @@ The thumbs-up / thumbs-down rating slot (Bybit's "👍 98 / 👎 0" in their "mo
 
 ### Former Slice C + Phase 4 → moved to M19
 
-The repeat-pair widget, win-rate gradient bar, privacy toggles, and share button / OG meta tags originally scoped under M18 are absorbed into M19's redesign. They mount cleanly into the new layout (Trust strip + owner-only management section); building them under the current layout would mean re-positioning when M19 lands. See **M19 Phase 3** (repeat-pair + win-rate bar) and **M19 Phase 5** (privacy toggles + share + OG meta).
+The repeat-pair widget, win-rate gradient bar, and share button / OG meta tags originally scoped under M18 are absorbed into M19's redesign. They mount cleanly into the new layout (Trust strip + owner-only management section); building them under the current layout would mean re-positioning when M19 lands. See **M19 Phase 3** (repeat-pair + win-rate bar) and **M19 Phase 5** (share + OG meta). Privacy toggles were trimmed from M19 Phase 5 on 2026-05-27 — see M19 "Not in M19" for the reasoning.
 
 ### Not in M18
 
@@ -261,27 +261,23 @@ Shipped while Phase 4 was in flight, all related to discoverability + layout con
 - **Width normalization**: profile + `/wallet/history` migrated from `max-w-4xl` → `max-w-5xl` (matches `/listings/mine`, `/matches`, `/wallet`). Padding standardized to `px-4 py-10 md:px-6 md:py-14` across the player hub. `/wallet/deposit` + `/wallet/withdraw` kept at `max-w-lg` (narrow forms, intentional).
 - **Seeder rework** (`MatchHistorySeeder`): every marketplace user now gets 4–6 matches via a skill-tier cycle (`index mod 4` → strong / balanced / balanced / casual) instead of just 4 named users. Visiting any random profile shows realistic stats (29–73% win rates) instead of accidental 100% from tiny opponent-only samples.
 
-### Resume here (next session)
+### Resume here
 
-**Phase 5 — Owner-only management section** is next. Before building, ask the user:
-- Where do the toggles live: profile owner-section (per spec) OR fold into existing `/settings/profile` page (less duplication)?
-- Sub-tabs (per spec) OR stacked sections (simpler)?
-- ProfileVisibilityController vs extend existing ProfileController?
+**Phase 5 trimmed scope (decided 2026-05-27):** ship only the share profile button + OG meta tags. Privacy toggles and Notifications/Blacklist placeholder tabs dropped — see Phase 5 below + "Not in M19" for the reasoning. After Phase 5: Phase 6 polish, then archive M19 + merge `feat/redesign` → `main`.
 
-**Phase 5 — Owner-only management section**
+**Phase 5 — Share profile + OG meta**
 
-Visible only when `auth.user.id === profile.id`. Visually demarcated (subtle `bg-secondary` shading, "Your account" heading) below the public tabbed section. Sub-tabbed.
+Owner-only block below the public tabs, visible only when `auth.user.id === profile.id`. Visually demarcated with subtle `bg-secondary` shading + "Your account" heading. Single block — not sub-tabbed (the originally-planned Privacy / Notifications / Blacklist tabs are dropped, see below).
 
-- [ ] **Privacy & Settings tab** (replaces former M18 Phase 4):
-  - [ ] Toggle: hide completion rate (renders "this user has chosen not to display their completion rate" placeholder in place of the chip on both profile + listing rows).
-  - [ ] Toggle: hide stake amounts on public match history (match outcomes still visible, dollar figures redacted).
-  - [ ] Share profile button — copy URL + QR code via existing `qrcode.react`.
-  - [ ] Open Graph meta tags on `/users/{username}` so links shared into Discord / Telegram / Twitter render a card with avatar + name + "Stakly P2P gaming staking" tagline. Static branded template first; per-user OG image is future polish.
-  - [ ] Schema: add `users.hide_completion_rate` + `users.hide_stake_amounts` boolean columns (pre-real-users, so edit the migration directly).
-  - [ ] Backend: persist toggles via existing `/settings/profile` update flow OR a new dedicated `ProfileVisibilityController` (preference: extend the existing flow to keep the surface tight).
-  - [ ] Both toggles default to `false` (visible).
-- [ ] **Notifications tab** — placeholder card: "Notification preferences coming with **M20**. Today, Stakly sends email only for account verification + password reset."
-- [ ] **Blacklist tab** — placeholder card: "User blocking coming with **M21**. Until then, abusive behavior should be reported via dispute (`Report a problem` on the match page)."
+- [x] **Share profile button** — `ShareProfileButton` component (popover with QR + copy URL) inside an `OwnerAccountSection` shell. Uses existing `qrcode.react` dep + Sonner toast pattern. Visible only when `auth.user.id === user.id`.
+- [x] **Open Graph meta tags** on `/users/{username}` — title / description / image / url / type + Twitter summary card variants. Rendered via Inertia `<Head>`; SSR (via `@inertiajs/vite`) puts them in the initial HTML for crawlers. `og:image` points at `apple-touch-icon.png` as a placeholder; swap to a 1200×630 branded card at `public/og-default.png` when one lands.
+- [x] Tests: `UserShowTest` covers the `og` payload shape (title + type + absolute url + presence of description/image) and verifies image + url are absolute (relative paths break crawlers). Owner-section visibility is a pure FE conditional on `auth.user.id === user.id`; manual verification covers it.
+- [x] Pint + suite green (765 tests / 3224 assertions).
+
+**Trimmed from original spec (decided 2026-05-27):**
+
+- Privacy toggles (hide completion rate, hide stake amounts) — anti-marketplace-trust on a money platform. Ship if/when real users ask AND the request is genuine privacy (not "I want to hide that I cancel a lot"). No schema, no backend, no UI today. See "Not in M19".
+- Notifications + Blacklist placeholder tabs — placeholder UI advertising vaporware adds noise + a maintenance cost for zero value today. When M20 and M21 land they bring their own owner-side surface.
 
 **Phase 6 — Polish: empty-state, mobile, animations, a11y**
 
@@ -293,11 +289,12 @@ Visible only when `auth.user.id === profile.id`. Visually demarcated (subtle `bg
 
 ### Not in M19
 
-- **Notifications feature itself** (M19 ships the preferences UI shell with a placeholder; real email infrastructure + per-event triggers land in M20).
-- **Blacklist feature itself** (M19 ships the tab placeholder; real block-list infrastructure lands in M21).
-- **Reviews feature** — deferred pending a coercion-resistant design. M19 ships only the placeholder tab.
+- **Notifications feature itself** — real email + per-event triggers land in M20 with their own owner-side UI; M19 no longer ships a placeholder tab (decided 2026-05-27, see Phase 5).
+- **Blacklist feature itself** — real block-list infrastructure lands in M21 with its own UI; M19 no longer ships a placeholder tab.
+- **Privacy toggles (hide completion rate, hide stake amounts)** — deferred 2026-05-27. Hiding trust signals fights the marketplace-trust pitch on a money platform. Ship only if a real user asks AND the request is genuine privacy (not concealing a poor cancel/dispute record). No schema, backend, or UI in M19.
+- **Reviews feature** — deferred pending a coercion-resistant design. M19 ships only the public-section placeholder tab.
 - **Per-game stat splits** ("chess: 12 matches 100% · CS2: 5 matches 80%") — composite rate stays unified for v1; splits can ship as a Slice later if usage data calls for it.
-- **Profile editing forms (avatar / bio / linked accounts / security / password)** — those stay at `/settings/*`. M19's owner-only section is about *visibility / management on the profile surface*, not duplicating the settings pages. A link from Privacy & Settings to `/settings/profile` for full editing is reasonable.
+- **Profile editing forms (avatar / bio / linked accounts / security / password)** — those stay at `/settings/*`. M19's owner-only block is about share + OG meta, not duplicating the settings pages.
 - **System-wide card surface token sweep** (every page's cards switching to full `bg-card`). Audit + apply as a separate polish slice after M19 validates the look.
 - **Custom OG image per user** (dynamic server-rendered image with avatar + stats) — Phase 5 ships a static branded template; per-user dynamic OG is future polish.
 
@@ -305,7 +302,7 @@ Visible only when `auth.user.id === profile.id`. Visually demarcated (subtle `bg
 
 ## M20 — Notifications (email + preferences)
 
-Stakly currently sends almost no user-facing notifications (Fortify email-verification + password-reset only). M20 adds match-event emails + a per-user preferences surface that lands in M19's Notifications tab (which ships as a placeholder).
+Stakly currently sends almost no user-facing notifications (Fortify email-verification + password-reset only). M20 adds match-event emails + a per-user preferences surface — M20 owns the UI surface end-to-end (M19 dropped its placeholder tab on 2026-05-27).
 
 ### Phases
 
@@ -329,7 +326,7 @@ Stakly currently sends almost no user-facing notifications (Fortify email-verifi
 
 - [ ] `notification_preferences` table (or JSON column on users) — per-event opt-in/out.
 - [ ] Default: all event types ON.
-- [ ] UI mounts in M19 Phase 5's Notifications tab (replaces the placeholder). Toggle per event with sensible groupings.
+- [ ] UI lives on a new `/settings/notifications` page (M19 dropped the placeholder tab on 2026-05-27; M20 owns the surface end-to-end). Toggle per event with sensible groupings.
 - [ ] Always-on events: account-security (verification, password reset, login from new device). User cannot turn these off.
 
 ### Not in M20
@@ -376,7 +373,7 @@ Block specific users from interacting with you. Real safety feature with abuse-v
 
 **Phase 4 — Blacklist UI**
 
-- [ ] List of blocked users mounts in M19 Phase 5's Blacklist tab (replaces the placeholder).
+- [ ] List of blocked users lives on a new `/settings/blacklist` page (M19 dropped the placeholder tab on 2026-05-27; M21 owns the surface end-to-end).
 - [ ] Block-action UI on the OTHER user's public profile (small menu when viewing as visitor): "Block this user". Optional reason field.
 - [ ] Unblock from the list.
 - [ ] Tests: block flow, unblock flow, marketplace filtering.
