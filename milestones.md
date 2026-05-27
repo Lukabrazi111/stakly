@@ -2,14 +2,13 @@
 
 Frontend-first build. UI against real DB infrastructure + seeded fake data; backend logic (escrow, payouts, on-chain integration) lands per page once the UI is validated. Milestones are work-chunk labels, not version commitments — decisions inside any of them are revisitable.
 
-> **Shipped milestones live in `milestones_archived.md`** (M1, M2, M2.5, M3, M3.5, M4, M5, M6, M7, M8 all phases, M10, M11, M12 all phases, M14 Slice A, M16 all phases, M17, M18, M19, M22). This file is for active + upcoming work + the cross-cutting architectural decisions that earlier milestones established.
+> **Shipped milestones live in `milestones_archived.md`** (M1, M2, M2.5, M3, M3.5, M4, M5, M6, M7, M8 all phases, M10, M11, M12 all phases, M14 Slice A, M16 all phases, M17, M18, M19, M22, M23). This file is for active + upcoming work + the cross-cutting architectural decisions that earlier milestones established.
 
 ## Phases (map)
 
 **Active / upcoming:**
 
 - **M13** — Chat anti-abuse + moderation [parked — design needs review]
-- **M23** — Listings detail page polish (apply M22's trust + visual treatment to `/listings/{id}`; Phase 1 next)
 - **M14** — Outcome pipeline hardening (reframed from "automated outcome adapters" — observability + reliability + coverage of the auto-fetch pipeline; Slice A shipped, Phase 1 next)
 - **M20** — Notifications (email infrastructure + per-event preferences UI; M20 owns the surface end-to-end)
 - **M21** — Blacklist + safety (block users from listings + chat, with anti-evasion considerations)
@@ -63,62 +62,6 @@ Chat is the highest-abuse-surface feature on the platform. M13 builds the polici
 - [ ] Configurable blocked words list (slurs, harassment terms). Filtered server-side in `SendMessageAction` — message is replaced with a placeholder + flagged for admin.
 - [ ] Admin moderation panel: list flagged + reported users, ban/mute tools, history of actions per user.
 - [ ] Mute = can't send messages for N hours (configurable). Ban = account suspended (manual unban only).
-
----
-
-## M23 — Listings detail page polish
-
-M22 lifted `/listings` to feel like a Bybit-class marketplace; the detail page (`/listings/{id}`) is still on the older shadcn-defaults shape. The creator card is a sparse avatar + name + region with no trust info, the surface tokens are still `bg-card/60` translucent (M19 + M22 moved cards to opaque `bg-card`), the time-left field doesn't escalate as the deadline approaches, and the stake card doesn't show pot / fee / payout context. Bob landing on the detail page after a confident click should see MORE trust + financial detail than the row gave him, not less.
-
-M23 brings parity with the listings page aesthetic and adds the details a detail page is uniquely positioned to show.
-
-### Phases
-
-**Phase 1 — Creator card uplift + visual parity** ✅ shipped 2026-05-28
-
-The detail page's "left-column" creator card and match details card. Bring surface tokens in line with the rest of the redesign and add the trust info the row already shows.
-
-- [x] **Surface tokens**: switch all detail-page cards from `bg-card/60` → `bg-card` for consistency with the listings row + M19 profile cards.
-- [x] **Creator card** uplift:
-  - [x] Add `SellerTrustMeta` under the creator name (same component as the listings row).
-  - [x] Add `VerifiedPlatformChip` for the listing's required platform.
-  - [x] Add linked-accounts chip strip (chess.com + Lichess chips that link out, mirrors profile-page `VerificationChip` family).
-  - [x] Member-since pill (matches profile-page hero pattern).
-  - [x] Render bio if present (`whitespace-pre-line`, same as profile-page hero).
-- [x] **Match details card** additions:
-  - [x] Language (currently missing from the 2-col grid — already on the row). Region + Language moved out of the creator card into the grid (cleaner "who vs what" separation).
-  - [x] Time-left urgency tier on Expires (`getTimeUrgency` from M22 Phase 2, paints the field amber < 1h, destructive < 15m).
-  - [x] Listing creation date as a small muted line at the card foot.
-- [x] Pint + suite green. Suite **775 / 3309 / all green** (up from 772 / 3280 — added 3 ListingShow payload-shape tests for `bio` / `member_since` / `linked_accounts`).
-
-**Phase 2 — Stake action card breakdown** ✅ shipped 2026-05-28
-
-The right-column stake card today shows just the stake number + a single CTA. Bob needs to know what he's getting into — pot total, platform fee, what the winner actually walks away with. Same numbers we already compute on the match detail page; just surface them here pre-take so there are no surprises after he commits.
-
-- [x] **Pot breakdown** (visible to non-owner viewers on Open listings):
-  - [x] "Your stake" + "Opponent stake" lines summing to a **Pot total** ($X × 2).
-  - [x] Platform fee — `ListingResource` now carries top-level `fee_rate` (mirror `GameMatchResource`), frontend computes the breakdown inline.
-  - [x] Winner payout = pot − fee (gradient-accent climax row).
-  - [x] Layout: dense label-value rows below the stake hero number, single divider, then CTA.
-- [x] **CTA section** polish:
-  - [x] Non-owner eligible viewers — existing Take Dialog flow preserved.
-  - [x] Wrong-platform viewers — outline pill "Link {platform} to take" linking to /settings/linked-accounts (consolidates the old disabled-gradient + tiny separate link into one click).
-  - [x] Owner Cancel listing button retains its slot below the (hidden) breakdown — `mt-6` on the take-area wrapper now conditional so spacing reads right whether breakdown shows or not.
-- [x] Pint + suite green. Suite **776 / 3317 / all green** (added 1 fee_rate payload test).
-
-### Decisions
-
-- **Detail page gets MORE info than the row, not less.** Row is scan; detail is consider. The completion-rate meta + bio + linked-accounts strip + pot breakdown all live on the detail page where Bob has time to read.
-- **Surface token sweep starts here but doesn't go system-wide.** The system-wide `bg-card/60` → `bg-card` audit is still deferred (per M19's "Not in M19"). M23 only touches the listings detail page; other surfaces remain on their existing tokens until a dedicated audit slice.
-- **Take dialog stays.** The detail page's confirmation dialog ("You're about to stake $X USDT. Once it starts, your stake is locked...") is good UX — keep it. M23 polishes around it, doesn't replace.
-- **No `TakeButton` component refactor on the detail page.** The detail page's eligibility tree has unique branches (insufficient-balance, owner-inactive) that don't fit the shared component. M22 Phase 3 deferred this intentionally; M23 keeps the deferral.
-
-### Not in M23
-
-- **Match-history sidebar of the creator on the detail page.** "This player's recent matches" could live in the left column but the data load + visual cost isn't worth it before users ask. Defer until requested.
-- **Live other-listings strip** ("More from this player"). Same reasoning.
-- **Take-time prediction** ("Average time to start: 6m"). Bybit-style metric; we don't track this. Defer indefinitely.
-- **System-wide card token sweep.** Detail-page-only here; other pages stay on their tokens.
 
 ---
 
