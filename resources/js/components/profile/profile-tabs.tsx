@@ -70,10 +70,7 @@ export function ProfileTabs({ matches, listings, profileUserId }: Props) {
 
     return (
         <Tabs value={tab} onValueChange={handleChange} className="w-full">
-            <TabsList
-                variant="line"
-                aria-label="Profile activity sections"
-            >
+            <TabsList variant="line" aria-label="Profile activity sections">
                 <TabsTrigger value="matches">Match History</TabsTrigger>
                 <TabsTrigger value="listings">Open Listings</TabsTrigger>
                 <TabsTrigger value="reviews">Reviews</TabsTrigger>
