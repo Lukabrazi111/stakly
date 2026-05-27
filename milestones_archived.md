@@ -334,6 +334,36 @@ After live-testing the Phase 2 panel, two polish slices landed on top:
 - **No real-time admin notifications in M12.** Filament's default polling is fine for current dispute volume. Email/push when a new dispute opens lands as a separate ask if volume justifies.
 - **Bulk resolution actions deliberately out.** One match at a time — admin reviews evidence before paying. Bulk actions are a footgun on money-moving flows.
 
+### Follow-up backlog
+
+Ideas captured during M12 build + polish that aren't worth doing now but should land later as Stakly's ops surface grows. Pull individual items into a slice whenever they become valuable.
+
+**Dispute review workflow**
+
+- **Request-evidence action.** A 4th resolve button that doesn't settle — posts a system message in chat ("Stakly support needs the chess.com game URL — please post within 48h or this will be settled as draw") with a configurable deadline. Lets admin gather more info without choosing a side. Useful when chat evidence is thin but the dispute isn't yet "irrecoverable."
+- **Inline admin notes** on a match. Private notes admins write to each other ("waiting on legal", "this user has 3 prior reports") — not visible to players, separate from the resolution audit log. Just a `match_admin_notes` table + a notes panel in the View page.
+- **Admin-writes-in-chat** (full support panel). Admin posts as "Stakly Support" with a verified badge; players reply in normal chat. Decided in M12 Phase 2 design discussion to defer until real disputes show we need it — most disputes resolve fine on chat evidence already posted. Revisit if "I'd settle this but I need one more piece" becomes a recurring admin frustration.
+- **Partial refund tool.** Currently the "draw" action refunds both stakes fully. Nuanced cases (one player clearly forfeited but other played in bad faith) might warrant 70/30 splits. Wallet primitives already support arbitrary amounts; just needs an action UI + audit shape.
+
+**Admin productivity**
+
+- **Audit log as its own Filament resource.** Move `match_admin_resolutions` from the inline HTML render on the View page to a proper `MatchAdminResolutionResource` at `/admin/resolutions`. Filterable by admin, action, date range. Useful for self-audit ("what did I resolve this week?") and team-audit ("who's settling to creator most often?").
+- **Aging-dispute reminders** (cron-driven). Every N hours, fire a notification for any dispute still open beyond a threshold (e.g. 4h). Separate from the open-event notification — catches the "I missed it the first time" case. Needs a scheduled task + dedup to avoid spamming the same dispute every cron tick.
+
+> Dashboard widgets + real-time admin notifications were already promoted to **M17** (sibling archive entry).
+
+**Player context in dispute review**
+
+- **User history sidebar** in Creator / Taker cards: "X disputes opened, Y won, Z lost", "wallet balance", "matches played in last 30d", "open reports against this user" (depends on M13). Gives admin "is this a habitual disputer?" context without leaving the page.
+- **Quick links to game APIs.** Buttons in the chat history that take admin straight to chess.com / Lichess game search for the snapshotted usernames. Saves the copy-paste step when admin wants to manually verify a claim.
+- **Provider snapshot view.** Show the snapshotted username from `match_provider_snapshots` (what they were linked as at match creation), not just current linked accounts. Matters when a player unlinked and relinked a different account post-match.
+- **Listing context popover.** Quick view of the original listing (description, time control, language, region) for context — currently the admin has to leave the page to see the listing.
+
+**Filtering + search**
+
+- **Better search.** Currently the matches list is sortable but not searchable. Add search by player username, player email, or stake range. Existing filter only covers status.
+- **Audit log CSV export.** Download `match_admin_resolutions` filtered by date range — useful for any future accounting or operational review.
+
 ---
 
 ## M17 — Admin operational tooling ✅ shipped 2026-05-24
@@ -359,9 +389,9 @@ Out-of-panel email alerts for admins not in the panel. Deferred until real ops s
 
 ---
 
-## M18 Phases 1 + 2 + Phase 3 Slices A + B.1 ✅ shipped 2026-05-25 → 2026-05-26
+## M18 — Profile expansion ✅ shipped 2026-05-25 → 2026-05-26
 
-Partial archive — broader M18 still active in `milestones.md` (Slice B.2 + B.3 in-flight; the full visual + structural redesign moved out to M19). This entry covers the shipped slices.
+Multi-slice profile content expansion: avatar + bio + linked-accounts schema normalisation + stats hero + completion-rate chip on profile. **Closed out 2026-05-27** when the originally-planned Slice B.2 (more-info modal) + Slice B.3 (listing-row chip) were superseded — M19 Phase 2 deleted the completion-rate chip from the hero as redundant with the Data Overview tile, leaving nothing for B.2 to modal-open or for B.3 to render on listing rows. Former Slice C (repeat-pair widget + win-rate gradient bar) and the originally-scoped Phase 4 (share button + OG meta) absorbed into M19 Phase 3 + Phase 5 and shipped there.
 
 ### Phase 1 — Editable identity + avatar (2026-05-25)
 
@@ -405,3 +435,87 @@ Pivoted mid-design from the originally-scoped dispute/cancellation rate badges. 
 - **3-free cancellations per 30 days on the 30d rate; no buffer on lifetime.** Mutual cancellation stays usable cooperatively in the short term; lifetime is the unvarnished record.
 - **No "ManualReview-stuck" counted as incomplete.** Admin always settles MR eventually; counting MR-in-flight as incomplete would penalize users for admin latency. Considered + dropped.
 - **Restrict-delete FKs** on listings + wallet_transactions. Users with escrowed money / ledger history are undeletable at the DB level. The right safety net for a custodial money platform.
+
+### Deferred from M18 (still load-bearing)
+
+- **Player-to-player reviews / ratings after matches.** Deferred pending a coercion-resistant design. The straightforward "rate every match 1–5 stars" pattern invites coercion ("give me 5 stars or I'll dispute") on a P2P money platform. Trigger to revisit: a design that mitigates that pressure (anonymized aggregation, scoped to large-volume users, etc.). When reviews are eventually added, the Bybit-style thumbs-up/down summary (`👍 98 / 👎 0`) slots into a "more info" modal alongside completion rate.
+- **Achievement badges / gamification.** Tempting but feels off-brand for a money platform. Revisit if usage data shows users want it.
+- **Activity feed / follow graph.** Stakly isn't a social network; defer indefinitely.
+- **Account deletion / data export.** Belongs in a separate compliance-focused milestone — user-owned scope per the no-legal-concerns rule.
+- **Skill progression chart (rating over time).** Would need to snapshot ratings into Stakly DB rather than fetch live. Defer to a future "stats deepening" slice.
+
+---
+
+## M19 — Profile page redesign + management hub ✅ shipped 2026-05-27
+
+Bybit-inspired information architecture (header → trust → tabbed activity → owner-only management) wearing Stakly's dark + pink/purple identity. Same URL, single page, dual mode: visitors see the read-only public sections, owner sees those plus a clearly demarcated owner-only block. Mode-switching keyed off `auth.user.id === profile.id`. Game-agnostic from day one so M15's multi-game expansion drops adapters in without re-layout.
+
+### Phase 1 — Visual restructure foundation
+
+Profile-page cards switched from translucent `bg-card/60` to full-opacity `bg-card` + consistent border treatment so they visibly float above `bg-background`. Page-level layout grid + `gap-6` between sections. System-wide card token sweep stayed out of scope.
+
+### Phase 2 — Hero redesign
+
+`ProfileHeader` revamped: larger avatar (`size-20 md:size-24`) with magenta glow on hover, display-font name, member-since pill, bio prominent. Verification chips with platform-tinted borders (chess.com brown, Lichess gray; FACEIT orange / Riot red / Steam blue tokens prepped in code comments for M15). Linked accounts as horizontally-scrolling chip strip on mobile. Edit-profile button stays top-right (owner-only).
+
+**Deviations from spec, decided during testing:**
+
+- ~~Completion rate chip moved into the hero row~~ → removed. The Data Overview tile below already shows the same info; chip in hero felt redundant. `CompletionRateChip` component deleted entirely (this also moots the originally-planned M18 Phase 3 Slice B.2 modal + Slice B.3 listing-row chip — there's no chip to modal anymore).
+- ~~Active / Inactive mode pill (owner-only) in hero~~ → removed. The toggle stays on `/listings/mine` via existing `ActiveModeToggle`; surfacing it in hero added clutter. `ActiveModePill` component deleted.
+
+### Phase 3 — Trust strip + Data Overview
+
+`TrustStrip` component below the hero as a dedicated row, not mixed into the stats grid. Three trust tiles (completion 30d / completion lifetime / disputes lifetime) plus a conditional repeat-pair callout above ("You've played N settled matches against this player") gated to authenticated viewers on someone else's profile with 2+ shared matches. Backend repeat-pair = single COUNT join to `listings`, both pair directions. Stats grid stays 2-up visitor / 3-up owner. Win-rate gradient bar beneath W/D/L in the WinRateTile (own-profile only, brand-gradient width-proportional). Game-agnostic — headline stats stay unified across games.
+
+### Phase 4 — Tabbed activity section + MineTabs migration
+
+Three-tab section (Match History default | Open Listings | Reviews placeholder) via newly-installed shadcn Tabs primitive, Stakly-skinned at the source: brand pink underline (`after:bg-primary`), `bg-primary/15` active fill, `bg-primary/10` hover, `ring-2 ring-primary/25` focus, `dark:` variants dropped (Stakly is dark-only). Two variants — `default` pill + `line` underline. Lives in `components/ui/tabs.tsx`. Tab state syncs to `?tab=` via pushState + popstate (auth-modal-provider pattern). Pure client-side switching — data is already loaded by the controller, no re-fetch on tab click.
+
+`MineTabs` migrated to the same primitive (was hand-rolled `<button role="tab">`) for cross-page consistency. Kept `router.get()` re-fetch (data differs per tab) + added optimistic local state + `preserveState: true` so the underline transition completes smoothly.
+
+**Phase 4 extras (not in original spec):**
+
+- "My profile" link enabled in `ProfileMenu` (avatar dropdown) + `MobileMenu` (was disabled with "Soon" badge); both link to `/users/{auth.user.username}`.
+- Profile link added to `PlayerSidebar` as the top item (lucide `User`). Active when `url === /users/{auth.user.username}`.
+- **Layout switch on profile:** own-profile renders inside `PlayerHubLayout` (sidebar visible), visitor view stays in `SiteLayout`. Bybit P2P-User-Center-style integration. Picked by `auth.user?.id === user.id`.
+- **Width normalization:** profile + `/wallet/history` migrated `max-w-4xl` → `max-w-5xl` to match `/listings/mine`, `/matches`, `/wallet`. Padding standardized to `px-4 py-10 md:px-6 md:py-14` across the player hub. `/wallet/deposit` + `/wallet/withdraw` kept at `max-w-lg` (narrow forms, intentional).
+- **Seeder rework (`MatchHistorySeeder`):** every marketplace user now gets 4–6 matches via a skill-tier cycle (`index mod 4` → strong / balanced / balanced / casual). Visiting any random profile shows realistic stats (29–73% win rates) instead of accidental 100% from tiny opponent-only samples.
+
+### Phase 5 — Share profile + OG meta (owner-only block)
+
+Trimmed scope from the original spec — privacy toggles + Notifications/Blacklist placeholder tabs dropped (see Decisions). Owner-only "Your account" block below the public tabs, visible only when `auth.user.id === profile.id`, subtle `bg-secondary` shading. Single block, not sub-tabbed.
+
+- **Share profile button** (`ShareProfileButton`) — popover with QR code via existing `qrcode.react` + copy-URL with Sonner toast. Mirrors wallet/deposit QR treatment and `AddressDisplay` copy pattern.
+- **Open Graph + Twitter card meta** on `/users/{username}` via Inertia `<Head>`. SSR (via `@inertiajs/vite`) puts the tags in the initial HTML so crawlers see them. `og:title` = "{name} on Stakly", `og:type` = "profile", `og:url` and `og:image` absolute (relative paths break crawlers). `og:image` points at `apple-touch-icon.png` as a placeholder — swap to a 1200×630 branded card at `public/og-default.png` when one lands.
+
+Two feature tests added: og payload shape + absolute-url enforcement.
+
+### Phase 6 — Polish (Slices A + B + C)
+
+**Slice A — Empty states.** Threaded `isOwnProfile` from `users/show.tsx` down to `MatchHistorySection`, `ListingsSection`, and `StatsCard`. Owner empty states get inviting CTAs ("Browse the marketplace →" linking to `/listings`, "Create your first listing →" linking to `/listings/create`); visitor empty states stay descriptive. Stats card empty state collapses the previous two repeating "No matches yet" dashed tiles into a single card with one CTA.
+
+**Slice B — Interaction polish + mobile audit.** Fixed the `outline` button variant in `components/ui/button.tsx` at the source — was leaking shadcn defaults (`bg-background`, `border-input`, `hover:bg-accent` = purple), now uses Stakly tokens (`border-border/60`, `bg-card/60`, `hover:border-primary/40 hover:bg-primary/10` = pink wash). Fix at source improves 9 callsites uniformly. Tab content fade-in on switch via `tw-animate-css` `data-[state=active]:animate-in fade-in-0 duration-200`. Mobile audit: code-review pass at 375px — profile page already responsive, no code changes needed.
+
+**Slice C — Accessibility.** Focus rings normalized to `ring-primary/25` across `ProfileMatchRow` + `ProfileListingRow` (were full-opacity `ring-primary`, inconsistent with the rest of the app). `aria-hidden="true"` on decorative icons (Trophy / Handshake / X result chips, Clock meta icons, Share2 / Check / Copy in the share popover). Empty-state CTA arrows wrapped in `<span aria-hidden="true">` so screen readers don't announce "right pointing arrow." Keyboard nav across tabs handled natively by Radix (Arrow / Home / End). Contrast spot-check: `text-foreground` on `bg-card` ≈ 17:1 (WCAG AAA pass); `text-muted-foreground` on `bg-card` ≈ 5.2:1 (AA pass).
+
+### Decisions
+
+- **Owner-only block uses `bg-secondary`, not `bg-card`.** Visual differentiation from the public sections without being garish — reads as "this section is for you."
+- **Privacy toggles deferred.** Hiding completion rate fights the marketplace-trust pitch on a money platform. Ship if/when real users ask AND the request is genuine privacy (not concealing a poor record). No schema, backend, or UI in M19. See `feedback_trust_signals_default_on` in memory.
+- **Placeholder tabs for Notifications + Blacklist dropped.** Placeholder UI advertising vaporware adds noise + a maintenance cost for zero value today. M20 + M21 will own their UI surfaces end-to-end (likely `/settings/notifications` and `/settings/blacklist`). See `feedback_no_placeholder_ui` in memory.
+- **Multi-game readiness from day one.** Every game-aware component dispatches by `Game` / `LinkedAccountProvider` enum so M15's FACEIT / Riot / Steam adapters drop in without re-layout. M19 ships only chess renderers (the only functional game today), but the contracts exist.
+- **`hover:shadow-glow-sm` reserved for the avatar.** Glow on every clickable surface would dilute the brand signal. Buttons + chips get the lighter pink-wash hover.
+- **Static branded OG image deferred** until a 1200×630 PNG asset exists. Apple-touch-icon (180×180) is the placeholder — links still render with an image in Discord / Telegram, just smaller than the OG standard.
+- **No tab-switch animation via `motion`.** CLAUDE.md's "tw-animate-css for Radix primitives" rule overrode the spec's `motion` suggestion. Lighter code, no AnimatePresence wrapping, no risk of fighting Radix.
+- **Per-game `MatchRow` dispatcher deferred to M15.** Chess is the only renderer needed today; the per-game-shape work belongs with the multi-game adapter milestone.
+
+### Not in M19
+
+- **Notifications feature itself** — M20 owns the UI surface end-to-end.
+- **Blacklist feature itself** — M21 owns the UI surface end-to-end.
+- **Privacy toggles** — deferred pending real user demand + the genuine-privacy check.
+- **Reviews feature** — deferred pending a coercion-resistant design. M19 ships only the public-section placeholder tab.
+- **Per-game stat splits** — composite rate stays unified; splits can ship as a slice later if usage data calls for it.
+- **System-wide card surface token sweep** — separate polish slice after M19 validates the look.
+- **Custom OG image per user** (dynamic server-rendered card with stats) — Phase 5 ships a static placeholder; per-user dynamic OG is future polish.
+- **Profile editing forms (avatar / bio / linked accounts / security / password)** — those stay at `/settings/*`; M19's owner-only block is share + OG only, not duplicating settings.

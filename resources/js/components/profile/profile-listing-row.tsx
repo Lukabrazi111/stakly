@@ -36,7 +36,7 @@ export function ProfileListingRow({ listing }: Props) {
         <article className="group relative flex items-center gap-3 rounded-xl border border-border/60 bg-card p-4 transition-all duration-200 ease-out hover:border-primary/30 hover:bg-secondary md:gap-4">
             <Link
                 href={showListing(listing.id).url}
-                className="absolute inset-0 rounded-xl focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none"
+                className="absolute inset-0 rounded-xl focus-visible:ring-2 focus-visible:ring-primary/25 focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none"
                 aria-label={`View listing #${listing.id}`}
             />
 
@@ -63,7 +63,7 @@ export function ProfileListingRow({ listing }: Props) {
                         key={tc}
                         className="inline-flex items-center gap-1 rounded-full border border-border/60 bg-background/60 px-2.5 py-0.5 text-xs font-medium text-muted-foreground"
                     >
-                        <Clock className="size-3" />
+                        <Clock className="size-3" aria-hidden="true" />
                         {timeControlLabels[tc]}
                     </span>
                 ))}

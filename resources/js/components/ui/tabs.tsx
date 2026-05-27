@@ -106,7 +106,16 @@ function TabsContent({
     return (
         <TabsPrimitive.Content
             data-slot="tabs-content"
-            className={cn('flex-1 outline-none', className)}
+            // Active content fades in on tab switch via `tw-animate-css`
+            // (CLAUDE.md's "Radix primitives use tw-animate-css, not motion"
+            // rule). Radix unmounts the inactive content, so there's no exit
+            // animation to worry about — the entering content fade is the
+            // polish. Duration matches the underline's transition feel.
+            className={cn(
+                'flex-1 outline-none',
+                'data-[state=active]:animate-in data-[state=active]:fade-in-0 data-[state=active]:duration-200',
+                className,
+            )}
             {...props}
         />
     );

@@ -42,7 +42,7 @@ export function ShareProfileButton({ profileUrl, username }: Props) {
         <Popover>
             <PopoverTrigger asChild>
                 <Button type="button" variant="outline" size="sm">
-                    <Share2 className="size-4" />
+                    <Share2 className="size-4" aria-hidden="true" />
                     Share profile
                 </Button>
             </PopoverTrigger>
@@ -85,9 +85,12 @@ export function ShareProfileButton({ profileUrl, username }: Props) {
                         className="size-8 shrink-0"
                     >
                         {copied ? (
-                            <Check className="size-3.5 text-success" />
+                            <Check
+                                className="size-3.5 text-success"
+                                aria-hidden="true"
+                            />
                         ) : (
-                            <Copy className="size-3.5" />
+                            <Copy className="size-3.5" aria-hidden="true" />
                         )}
                     </Button>
                 </div>

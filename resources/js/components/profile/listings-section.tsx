@@ -27,7 +27,8 @@ export function ListingsSection({ listings, isOwnProfile }: Props) {
                         href={createListing().url}
                         className="mt-4 inline-flex text-sm font-medium text-primary transition-colors hover:text-primary/80"
                     >
-                        Create your first listing →
+                        Create your first listing{' '}
+                        <span aria-hidden="true">→</span>
                     </Link>
                 )}
             </div>

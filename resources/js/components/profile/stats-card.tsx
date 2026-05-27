@@ -49,7 +49,8 @@ export function StatsCard({ stats, isOwnProfile }: Props) {
                             href={listingsIndex().url}
                             className="mt-4 inline-flex text-sm font-medium text-primary transition-colors hover:text-primary/80"
                         >
-                            Browse the marketplace →
+                            Browse the marketplace{' '}
+                            <span aria-hidden="true">→</span>
                         </Link>
                     )}
                 </div>
