@@ -1,5 +1,7 @@
 import { Link } from '@inertiajs/react';
 import { Clock, Trophy } from 'lucide-react';
+import { SellerTrustMeta } from '@/components/listings/seller-trust-meta';
+import { VerifiedPlatformChip } from '@/components/listings/verified-platform-chip';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { useInitials } from '@/hooks/use-initials';
@@ -57,9 +59,20 @@ export function ListingCard({ listing }: Props) {
                             {getInitials(listing.creator.name)}
                         </AvatarFallback>
                     </Avatar>
-                    <span className="truncate text-sm font-semibold text-foreground transition-colors hover:text-primary">
-                        {listing.creator.name}
-                    </span>
+                    <div className="flex min-w-0 flex-col gap-0.5">
+                        <span className="truncate text-sm font-semibold text-foreground transition-colors hover:text-primary">
+                            {listing.creator.name}
+                        </span>
+                        {/* M22 Phase 1 — Bybit-style inline trust meta
+                            under the name. */}
+                        <SellerTrustMeta
+                            rate={listing.creator.completion_rate_30d}
+                            settled={listing.creator.settled_lifetime}
+                            verifiedProviders={
+                                listing.creator.verified_providers
+                            }
+                        />
+                    </div>
                 </Link>
 
                 <span
@@ -82,8 +95,12 @@ export function ListingCard({ listing }: Props) {
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2">
+                    {/* M22 Phase 1 — platform chip leads the badges row;
+                        seller-trust meta lives in the creator block above. */}
+                    <VerifiedPlatformChip platform={listing.platform} />
+
                     <span className="inline-flex items-center gap-1 rounded-full border border-border/60 bg-background/60 px-2.5 py-0.5 text-[11px] font-medium text-muted-foreground">
-                        <Trophy className="size-3" />
+                        <Trophy className="size-3" aria-hidden="true" />
                         {formatSkillRange(listing.skill_min, listing.skill_max)}
                     </span>
                     {listing.time_control.map((tc) => (

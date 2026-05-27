@@ -1,8 +1,10 @@
 <?php
 
 use App\Enums\TimeControl;
+use App\Models\GameMatch;
 use App\Models\Listing;
 use App\Models\User;
+use Illuminate\Support\Facades\DB;
 
 test('listings index is publicly accessible', function () {
     $response = $this->get('/listings');
@@ -323,4 +325,149 @@ test('flipping the owner back to active republishes their listings to the market
 
     $this->get('/listings')
         ->assertInertia(fn ($page) => $page->has('listings.data', 2));
+});
+
+// ─── Seller trust signals on the row (M22 Phase 1) ────────────────────────
+
+test('creator payload exposes completion_rate_30d + settled_lifetime', function () {
+    $creator = User::factory()->active()->create();
+    Listing::factory()->open()->for($creator)->create();
+
+    $this->get('/listings')->assertInertia(fn ($page) => $page
+        ->has('listings.data.0.creator.completion_rate_30d')
+        ->has('listings.data.0.creator.settled_lifetime')
+    );
+});
+
+test('creator with no match history shows settled_lifetime=0 + null rate', function () {
+    // Fresh user, no matches — chip should hide on the frontend, but the
+    // backend payload must still be well-formed.
+    $creator = User::factory()->active()->create();
+    Listing::factory()->open()->for($creator)->create();
+
+    $this->get('/listings')->assertInertia(fn ($page) => $page
+        ->where('listings.data.0.creator.settled_lifetime', 0)
+        ->where('listings.data.0.creator.completion_rate_30d', null)
+    );
+});
+
+test('completion_rate_30d reflects settled matches in the 30-day window', function () {
+    $creator = User::factory()->active()->create();
+
+    // Three settled wins inside the 30-day window for `$creator` as creator.
+    foreach (range(1, 3) as $_) {
+        $opponent = User::factory()->create();
+        $listing = Listing::factory()->taken()->for($creator)->create();
+        GameMatch::factory()
+            ->for($listing)
+            ->for($opponent, 'taker')
+            ->settled($creator)
+            ->create();
+    }
+
+    // The open listing under test (separate from the historical ones).
+    Listing::factory()->open()->for($creator)->create();
+
+    $this->get('/listings')
+        ->assertInertia(fn ($page) => $page
+            ->where('listings.data.0.creator.completion_rate_30d', 100)
+            ->where('listings.data.0.creator.settled_lifetime', 3)
+        );
+});
+
+test('3-free cancellation buffer matches the UserController formula', function () {
+    // Mirror of the `3-free buffer absorbs` scenario in UserShowTest —
+    // proves the listings-index trust calculation stays in sync with the
+    // profile page when the formula changes.
+    $creator = User::factory()->active()->create();
+
+    // 5 settled matches.
+    foreach (range(1, 5) as $_) {
+        $opponent = User::factory()->create();
+        $listing = Listing::factory()->taken()->for($creator)->create();
+        GameMatch::factory()
+            ->for($listing)
+            ->for($opponent, 'taker')
+            ->settled($creator)
+            ->create();
+    }
+
+    // 3 cancellations initiated by the creator — all absorbed by the buffer.
+    foreach (range(1, 3) as $_) {
+        $opponent = User::factory()->create();
+        $listing = Listing::factory()->cancelled()->for($creator)->create();
+        GameMatch::factory()
+            ->for($listing)
+            ->for($opponent, 'taker')
+            ->cancelled($creator)
+            ->create();
+    }
+
+    Listing::factory()->open()->for($creator)->create();
+
+    $this->get('/listings')
+        ->assertInertia(fn ($page) => $page
+            ->where('listings.data.0.creator.completion_rate_30d', 100)
+            ->where('listings.data.0.creator.settled_lifetime', 5)
+        );
+});
+
+test('creator carries verified_providers list for the cross-platform badge', function () {
+    $creator = User::factory()->active()->withChessCom()->withLichess()->create();
+    Listing::factory()->open()->for($creator)->create();
+
+    $this->get('/listings')->assertInertia(fn ($page) => $page
+        ->where('listings.data.0.creator.verified_providers', function ($providers) {
+            // Inertia's `where` callback passes the value as a Collection
+            // when the underlying prop is an array. Set semantics — order
+            // depends on the linked-accounts insert order, just check
+            // contents.
+            $values = collect($providers)->values()->all();
+
+            return count($values) === 2
+                && in_array('chess_com', $values, true)
+                && in_array('lichess', $values, true);
+        })
+    );
+});
+
+test('creator with only one linked provider lists just that one', function () {
+    $creator = User::factory()->active()->withChessCom()->create();
+    Listing::factory()->open()->for($creator)->create();
+
+    $this->get('/listings')->assertInertia(fn ($page) => $page
+        ->where('listings.data.0.creator.verified_providers', ['chess_com'])
+    );
+});
+
+test('seller trust does NOT N+1 — one aggregation query regardless of listing count', function () {
+    // 20 distinct creators, each with one open listing — would N+1 to 20
+    // separate trust queries without batching. Page size is 12 so /listings
+    // returns at most 12 listings; we just need enough unique creators on
+    // the same page to detect the N+1.
+    User::factory()
+        ->count(12)
+        ->active()
+        ->create()
+        ->each(fn (User $u) => Listing::factory()->open()->for($u)->create());
+
+    DB::enableQueryLog();
+    $this->get('/listings')->assertOk();
+    $queries = collect(DB::getQueryLog());
+    DB::disableQueryLog();
+
+    // The trust aggregation is a single query that joins `game_matches` and
+    // `listings` and reads aggregation columns from both. Anchored by
+    // detecting the join shape that's unique to the SellerTrust helper —
+    // a SELECT against `game_matches` that joins `listings` and reads
+    // `creator_id` / `taker_user_id` / `settled_at` / `cancelled_at`.
+    $trustQueries = $queries->filter(function ($q) {
+        $sql = strtolower($q['query']);
+
+        return str_contains($sql, 'from "game_matches"')
+            && str_contains($sql, 'join "listings"')
+            && str_contains($sql, 'creator_id');
+    });
+
+    expect($trustQueries)->toHaveCount(1);
 });

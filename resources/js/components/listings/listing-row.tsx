@@ -1,5 +1,7 @@
 import { Link } from '@inertiajs/react';
 import { Clock, Globe, Languages, Trophy } from 'lucide-react';
+import { SellerTrustMeta } from '@/components/listings/seller-trust-meta';
+import { VerifiedPlatformChip } from '@/components/listings/verified-platform-chip';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { useInitials } from '@/hooks/use-initials';
@@ -59,24 +61,50 @@ export function ListingRow({ listing }: Props) {
                     </AvatarFallback>
                 </Avatar>
 
-                <div className="flex min-w-0 flex-col">
+                <div className="flex min-w-0 flex-col gap-0.5">
                     <span className="truncate text-sm font-semibold text-foreground transition-colors hover:text-primary">
                         {listing.creator.name}
                     </span>
-                    {listing.region && (
-                        <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-                            <Globe className="size-3" />
-                            {listing.region}
-                        </span>
-                    )}
+                    {/* M22 Phase 1 — meta row under the name. Mirrors
+                        Bybit's "503 Order(s) | 91% | 6m" pattern: small gray
+                        text combining region + seller-trust inline so Bob's
+                        eye lands on "should I trust this seller" right next
+                        to the seller's name, not in the badge field. */}
+                    <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-muted-foreground">
+                        {listing.region && (
+                            <span className="inline-flex items-center gap-1">
+                                <Globe className="size-3" aria-hidden="true" />
+                                {listing.region}
+                            </span>
+                        )}
+                        {listing.region &&
+                            listing.creator.settled_lifetime > 0 && (
+                                <span aria-hidden="true" className="opacity-60">
+                                    ·
+                                </span>
+                            )}
+                        <SellerTrustMeta
+                            rate={listing.creator.completion_rate_30d}
+                            settled={listing.creator.settled_lifetime}
+                            verifiedProviders={
+                                listing.creator.verified_providers
+                            }
+                        />
+                    </div>
                 </div>
             </Link>
 
             {/* Listing body — no Link wrapper; clicks bubble to overlay */}
             <div className="pointer-events-none relative flex flex-1 flex-wrap items-center gap-3 md:flex-nowrap md:gap-6">
                 <div className="flex flex-wrap items-center gap-2 md:flex-1">
+                    {/* M22 Phase 1 — platform chip leads the badges row.
+                        Seller-trust meta moved up into the creator block
+                        under the name (Bybit-style "503 Order(s) | 91%"
+                        inline pattern). */}
+                    <VerifiedPlatformChip platform={listing.platform} />
+
                     <span className="inline-flex items-center gap-1.5 rounded-full border border-border/60 bg-background/60 px-3 py-1 text-xs font-medium text-muted-foreground">
-                        <Trophy className="size-3" />
+                        <Trophy className="size-3" aria-hidden="true" />
                         {formatSkillRange(listing.skill_min, listing.skill_max)}
                     </span>
 
