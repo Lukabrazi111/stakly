@@ -1,12 +1,14 @@
 import { Link } from '@inertiajs/react';
 import { Clock, Trophy } from 'lucide-react';
+import { SellerTrustMeta } from '@/components/listings/seller-trust-meta';
+import { TakeButton } from '@/components/listings/take-button';
+import { VerifiedPlatformChip } from '@/components/listings/verified-platform-chip';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Button } from '@/components/ui/button';
 import { useInitials } from '@/hooks/use-initials';
 import {
     formatSkillRange,
     formatTimeRemaining,
-    isEndingSoon,
+    getTimeUrgency,
     timeControlLabels,
 } from '@/lib/listings-format';
 import { show as showListing } from '@/routes/listings';
@@ -31,7 +33,15 @@ interface Props {
  */
 export function ListingCard({ listing }: Props) {
     const getInitials = useInitials();
-    const endingSoon = isEndingSoon(listing.expires_at);
+    const urgency = getTimeUrgency(listing.expires_at);
+
+    // M22 Phase 2 — tiered urgency on the time-remaining indicator.
+    const urgencyTone =
+        urgency === 'critical'
+            ? 'text-destructive'
+            : urgency === 'warning'
+              ? 'text-warning'
+              : 'text-muted-foreground';
 
     return (
         <article className="group relative flex h-full flex-col gap-4 rounded-2xl border border-border/60 bg-card/60 p-5 transition-all duration-200 ease-out hover:-translate-y-0.5 hover:border-primary/30 hover:bg-card hover:shadow-glow-sm">
@@ -57,17 +67,26 @@ export function ListingCard({ listing }: Props) {
                             {getInitials(listing.creator.name)}
                         </AvatarFallback>
                     </Avatar>
-                    <span className="truncate text-sm font-semibold text-foreground transition-colors hover:text-primary">
-                        {listing.creator.name}
-                    </span>
+                    <div className="flex min-w-0 flex-col gap-0.5">
+                        <span className="truncate text-sm font-semibold text-foreground transition-colors hover:text-primary">
+                            {listing.creator.name}
+                        </span>
+                        {/* M22 Phase 1 — Bybit-style inline trust meta
+                            under the name. */}
+                        <SellerTrustMeta
+                            rate={listing.creator.completion_rate_30d}
+                            settled={listing.creator.settled_lifetime}
+                            verifiedProviders={
+                                listing.creator.verified_providers
+                            }
+                        />
+                    </div>
                 </Link>
 
                 <span
-                    className={`pointer-events-none inline-flex shrink-0 items-center gap-1 text-xs font-medium ${
-                        endingSoon ? 'text-warning' : 'text-muted-foreground'
-                    }`}
+                    className={`pointer-events-none inline-flex shrink-0 items-center gap-1 text-xs font-medium ${urgencyTone}`}
                 >
-                    <Clock className="size-3.5" />
+                    <Clock className="size-3.5" aria-hidden="true" />
                     {formatTimeRemaining(listing.expires_at)}
                 </span>
             </header>
@@ -82,8 +101,12 @@ export function ListingCard({ listing }: Props) {
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2">
+                    {/* M22 Phase 1 — platform chip leads the badges row;
+                        seller-trust meta lives in the creator block above. */}
+                    <VerifiedPlatformChip platform={listing.platform} />
+
                     <span className="inline-flex items-center gap-1 rounded-full border border-border/60 bg-background/60 px-2.5 py-0.5 text-[11px] font-medium text-muted-foreground">
-                        <Trophy className="size-3" />
+                        <Trophy className="size-3" aria-hidden="true" />
                         {formatSkillRange(listing.skill_min, listing.skill_max)}
                     </span>
                     {listing.time_control.map((tc) => (
@@ -98,19 +121,15 @@ export function ListingCard({ listing }: Props) {
                 </div>
             </div>
 
-            {/* Take CTA — its own Link with `relative` so it sits above the
-                overlay and captures hover + click. Same destination as the
-                overlay (listing detail), but having its own pointer events
-                means cursor + hover-glow boost work naturally like any
-                other gradient button. */}
-            <Button
-                variant="gradient"
-                size="pill"
-                asChild
-                className="relative mt-auto w-full"
-            >
-                <Link href={showListing(listing.id).url}>Take</Link>
-            </Button>
+            {/* Take CTA — `TakeButton` (M22 Phase 3) telegraphs eligibility
+                at scan time: gradient "Take" when eligible, "Sign in to
+                take" for guests (opens auth modal), outline "Link
+                {platform} to take" when wrong-platform-verified, "Your
+                listing" chip + Manage when the viewer is the creator.
+                `relative` keeps it above the absolute overlay Link so it
+                captures its own clicks; `mt-auto` pins it to the bottom of
+                the flex-column card. */}
+            <TakeButton listing={listing} className="relative mt-auto w-full" />
         </article>
     );
 }

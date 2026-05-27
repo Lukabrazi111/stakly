@@ -54,6 +54,24 @@ class ListingResource extends JsonResource
                 // same state explicitly. Server still enforces the gate
                 // independently in `GameMatchController::take`.
                 'is_active_mode' => (bool) $this->user->is_active_mode,
+                // M22 Phase 1 — seller trust signals batch-loaded by
+                // `App\Services\SellerTrust::attachTo()` in the controller.
+                // PII-safe — both fields are aggregates of public match
+                // history. Defensive defaults when `seller_trust` wasn't
+                // attached (factory / partial-test paths).
+                'completion_rate_30d' => $this->seller_trust['rate_30d'] ?? null,
+                'settled_lifetime' => (int) ($this->seller_trust['settled_lifetime'] ?? 0),
+                // M22 Phase 1 (badge tier) — verified provider list drives
+                // the earned cross-platform badge on the listing row meta.
+                // Requires `user.linkedAccounts` eager-loaded; falls back
+                // to empty array when not loaded (defensive).
+                'verified_providers' => $this->user->relationLoaded('linkedAccounts')
+                    ? $this->user->linkedAccounts
+                        ->pluck('provider')
+                        ->map(fn ($provider) => $provider->value)
+                        ->values()
+                        ->all()
+                    : [],
             ],
         ];
     }

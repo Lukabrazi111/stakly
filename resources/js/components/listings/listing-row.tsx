@@ -1,12 +1,14 @@
 import { Link } from '@inertiajs/react';
 import { Clock, Globe, Languages, Trophy } from 'lucide-react';
+import { SellerTrustMeta } from '@/components/listings/seller-trust-meta';
+import { TakeButton } from '@/components/listings/take-button';
+import { VerifiedPlatformChip } from '@/components/listings/verified-platform-chip';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Button } from '@/components/ui/button';
 import { useInitials } from '@/hooks/use-initials';
 import {
     formatSkillRange,
     formatTimeRemaining,
-    isEndingSoon,
+    getTimeUrgency,
     timeControlLabels,
 } from '@/lib/listings-format';
 import { show as showListing } from '@/routes/listings';
@@ -33,7 +35,16 @@ interface Props {
 export function ListingRow({ listing }: Props) {
     const getInitials = useInitials();
     const timeRemaining = formatTimeRemaining(listing.expires_at);
-    const endingSoon = isEndingSoon(listing.expires_at);
+    const urgency = getTimeUrgency(listing.expires_at);
+
+    // M22 Phase 2 — tiered urgency tone on the time-remaining indicator.
+    // Same brand tokens already used elsewhere for warning / destructive.
+    const urgencyTone =
+        urgency === 'critical'
+            ? 'text-destructive'
+            : urgency === 'warning'
+              ? 'text-warning'
+              : 'text-muted-foreground';
 
     return (
         <article className="group relative flex flex-col gap-4 rounded-2xl border border-border/60 bg-card/60 p-4 transition-all duration-200 ease-out hover:-translate-y-0.5 hover:border-primary/30 hover:bg-card hover:shadow-glow-sm md:flex-row md:items-center md:gap-6 md:p-5">
@@ -59,24 +70,50 @@ export function ListingRow({ listing }: Props) {
                     </AvatarFallback>
                 </Avatar>
 
-                <div className="flex min-w-0 flex-col">
+                <div className="flex min-w-0 flex-col gap-0.5">
                     <span className="truncate text-sm font-semibold text-foreground transition-colors hover:text-primary">
                         {listing.creator.name}
                     </span>
-                    {listing.region && (
-                        <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-                            <Globe className="size-3" />
-                            {listing.region}
-                        </span>
-                    )}
+                    {/* M22 Phase 1 — meta row under the name. Mirrors
+                        Bybit's "503 Order(s) | 91% | 6m" pattern: small gray
+                        text combining region + seller-trust inline so Bob's
+                        eye lands on "should I trust this seller" right next
+                        to the seller's name, not in the badge field. */}
+                    <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-muted-foreground">
+                        {listing.region && (
+                            <span className="inline-flex items-center gap-1">
+                                <Globe className="size-3" aria-hidden="true" />
+                                {listing.region}
+                            </span>
+                        )}
+                        {listing.region &&
+                            listing.creator.settled_lifetime > 0 && (
+                                <span aria-hidden="true" className="opacity-60">
+                                    ·
+                                </span>
+                            )}
+                        <SellerTrustMeta
+                            rate={listing.creator.completion_rate_30d}
+                            settled={listing.creator.settled_lifetime}
+                            verifiedProviders={
+                                listing.creator.verified_providers
+                            }
+                        />
+                    </div>
                 </div>
             </Link>
 
             {/* Listing body — no Link wrapper; clicks bubble to overlay */}
             <div className="pointer-events-none relative flex flex-1 flex-wrap items-center gap-3 md:flex-nowrap md:gap-6">
                 <div className="flex flex-wrap items-center gap-2 md:flex-1">
+                    {/* M22 Phase 1 — platform chip leads the badges row.
+                        Seller-trust meta moved up into the creator block
+                        under the name (Bybit-style "503 Order(s) | 91%"
+                        inline pattern). */}
+                    <VerifiedPlatformChip platform={listing.platform} />
+
                     <span className="inline-flex items-center gap-1.5 rounded-full border border-border/60 bg-background/60 px-3 py-1 text-xs font-medium text-muted-foreground">
-                        <Trophy className="size-3" />
+                        <Trophy className="size-3" aria-hidden="true" />
                         {formatSkillRange(listing.skill_min, listing.skill_max)}
                     </span>
 
@@ -101,36 +138,33 @@ export function ListingRow({ listing }: Props) {
                 </div>
 
                 <div
-                    className={`inline-flex items-center gap-1.5 text-xs font-medium md:w-28 md:shrink-0 md:justify-end ${
-                        endingSoon ? 'text-warning' : 'text-muted-foreground'
-                    }`}
+                    className={`inline-flex items-center gap-1.5 text-xs font-medium md:w-28 md:shrink-0 md:justify-end ${urgencyTone}`}
                 >
-                    <Clock className="size-3.5" />
+                    <Clock className="size-3.5" aria-hidden="true" />
                     {timeRemaining}
                 </div>
 
+                {/* M22 Phase 2 — stake is the row's visual anchor. Bumped
+                    from text-2xl → text-3xl so it competes properly with
+                    the Take button (matches the featured-card weight). */}
                 <div className="flex items-baseline gap-1 md:w-32 md:shrink-0 md:justify-end">
-                    <span className="text-gradient-primary font-display text-2xl leading-none font-bold">
+                    <span className="text-gradient-primary font-display text-3xl leading-none font-bold">
                         ${listing.stake_amount}
                     </span>
                     <span className="text-xs text-muted-foreground">USDT</span>
                 </div>
             </div>
 
-            {/* Take CTA — its own Link with `relative` so it sits above the
-                overlay and captures hover + click. Same destination as the
-                row overlay (listing detail), but having its own pointer
-                events means cursor + hover-glow boost work naturally like
-                any other gradient button. */}
+            {/* Take CTA — wrapped in a `relative` div so it sits above the
+                row's absolute overlay Link and captures its own clicks.
+                `TakeButton` (M22 Phase 3) branches on the viewer's state:
+                gradient "Take" when eligible, gradient "Sign in to take"
+                for guests (opens auth modal), outline "Link {platform} to
+                take" when verified on the wrong provider, or a "Your
+                listing" chip + Manage shortcut when the viewer is the
+                creator. */}
             <div className="relative flex items-center gap-2 md:shrink-0">
-                <Button
-                    variant="gradient"
-                    size="pill"
-                    asChild
-                    className="w-full md:w-auto"
-                >
-                    <Link href={showListing(listing.id).url}>Take</Link>
-                </Button>
+                <TakeButton listing={listing} className="w-full md:w-auto" />
             </div>
         </article>
     );

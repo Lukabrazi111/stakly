@@ -9,6 +9,7 @@ Frontend-first build. UI against real DB infrastructure + seeded fake data; back
 **Active / upcoming:**
 
 - **M13** — Chat anti-abuse + moderation [parked — design needs review]
+- **M22** — Listings page trust + clarity (per-row completion rate + verified-platform chip + visual hierarchy + Take button eligibility states; Phase 1 next)
 - **M14** — Outcome pipeline hardening (reframed from "automated outcome adapters" — observability + reliability + coverage of the auto-fetch pipeline; Slice A shipped, Phase 1 next)
 - **M20** — Notifications (email infrastructure + per-event preferences UI; M20 owns the surface end-to-end)
 - **M21** — Blacklist + safety (block users from listings + chat, with anti-evasion considerations)
@@ -62,6 +63,71 @@ Chat is the highest-abuse-surface feature on the platform. M13 builds the polici
 - [ ] Configurable blocked words list (slurs, harassment terms). Filtered server-side in `SendMessageAction` — message is replaced with a placeholder + flagged for admin.
 - [ ] Admin moderation panel: list flagged + reported users, ban/mute tools, history of actions per user.
 - [ ] Mute = can't send messages for N hours (configurable). Ban = account suspended (manual unban only).
+
+---
+
+## M22 — Listings page trust + clarity
+
+Compared to Bybit's P2P listings, our `/listings` rows are missing the "should I trust this stranger" information that turns a marketplace scroll into a confident Take. Every Bybit row tells the buyer the advertiser's completion rate, order count, and average release time at a glance; ours tells you the player's skill range and game format but says nothing about whether they're reliable, experienced, or playing on the same platform you're verified on. For a money marketplace where Bob is about to lock $50 against a stranger, that's the gap to close.
+
+M22 closes it in three phases: trust signals on the row, visual hierarchy sharpening, and Take button eligibility states. Trust data already exists per user (M18 Slice B.1 trust aggregate); the work is exposing it batch-loaded on the listings index without N+1 + rendering it on rows.
+
+### Phases
+
+**Phase 1 — Trust signals on the row**
+
+The headline change. Three additions next to (or near) the creator name on every listing card / row: 30-day completion rate, settled-match count, and the listing's required verified platform. Backend exposes the trust aggregate batch-loaded per page (one query for all creators on the page, not per-listing); frontend renders two new chips.
+
+- [x] **`App\Services\SellerTrust`** — `forBatch(array $userIds)` returns `[user_id => ['rate_30d' => int|null, 'settled_lifetime' => int]]` via ONE join of `game_matches` + `listings` (aggregation in PHP to handle the creator-OR-taker attribution cleanly). Mirrors `UserController::show` formula (3-free buffer on 30d, none on lifetime). Convenience `attachTo(iterable $listings)` wraps it for controllers — accepts both paginators and collections; explicit iteration avoids the `collect($paginator)` toArray-wrapper trap.
+- [x] `ListingController::index` + `show` + `mine` + `HomeController::index` call `SellerTrust::attachTo()` after pagination. Attaches `seller_trust` as a transient attribute on each `Listing` model.
+- [x] `ListingResource::toArray` exposes `creator.completion_rate_30d` (int | null) + `creator.settled_lifetime` (int) reading from the attached attribute, with defensive defaults when not attached (factory paths).
+- [x] TypeScript `Listing['creator']` gains the two fields.
+- [x] `SellerTrustMeta` (initially `SellerTrustChip` — renamed during iteration) — inline meta text `{rate}% · {n} matches` placed under the creator name (Bybit-style), not as a chip in the badges row. Hides entirely when `settled === 0`. Native `title` tooltip with the full 30d-vs-lifetime breakdown + verified-provider list when cross-platform.
+- [x] `VerifiedPlatformChip` — chess.com brown / Lichess gray, same tokens as profile-page `VerificationChip` but read-only (no link-out). Lives in the badges row.
+- [x] `listing-row.tsx` + `listing-card.tsx` — creator block stacks name on top + meta row (`[Globe] REGION · [BadgeCheck] X% · N matches`) under it. Platform chip leads the badges row.
+- [x] `listing-row-skeleton.tsx` — wider meta-row placeholder under the name + one platform-chip placeholder in the badges row.
+- [x] **Earned cross-platform badge** (added 2026-05-27 within Phase 1 scope) — `creator.verified_providers: ListingPlatform[]` on `ListingResource`, eager-loaded via `user.linkedAccounts`. The green `BadgeCheck` icon in `SellerTrustMeta` is now *earned*: appears only when `verified_providers.length >= 2`. Future-proof for M15 — any 2+ verified providers (chess.com + Lichess today; chess.com + FACEIT or any other combination tomorrow) earns the badge.
+- [x] 7 new tests in `ListingIndexTest`: payload shape, 0-match defaults, settled matches inside the 30d window, 3-free cancellation buffer, N+1 guard, verified-providers list for cross-platform creator, verified-providers list for single-provider creator.
+- [x] Pint + suite green (772 tests / 3280 assertions).
+
+**Phase 2 — Visual hierarchy**
+
+Visual-only fixes that sharpen scan-ability — no backend changes.
+
+- [x] **Stake prominence** — bumped row stake from `text-2xl` → `text-3xl` so it matches the featured card and properly anchors the row (no longer visually competes with the Take button). Gradient preserved.
+- [x] **Time-left urgency colors** — new `getTimeUrgency(isoString): TimeUrgency` helper in `lib/listings-format.ts` returning `'expired' | 'critical' | 'warning' | 'normal'` (15m / 1h thresholds). Applied to row + card via a `urgencyTone` Tailwind class switch (`text-destructive` < 15m, `text-warning` < 1h, `text-muted-foreground` otherwise). `isEndingSoon` boolean kept for the simpler surfaces (`listings/show`, `mine-listing-row`) — additive change, no churn.
+- [x] **Light column header row** on `/listings` index — `hidden md:flex` strip above the listings list with muted-foreground uppercase labels (Player · Match · Ends in · Stake) aligned to the row column widths (`w-48` / `flex-1` / `w-28` / `w-32`). `aria-hidden="true"` since the rows themselves already convey the structure for screen readers.
+- [x] Tests: existing `ListingIndexTest` payload assertions unchanged — Phase 2 is visual-only.
+- [x] Pint + suite green (772 tests / 3280 assertions).
+
+**Phase 3 — Take button eligibility states**
+
+Today every row's Take button is identical. The take flow already gates eligibility server-side (auth, verified-platform, not-owner). The button should telegraph the gate visually at scan time so Bob doesn't waste clicks.
+
+- [x] **`TakeButton` component** at `components/listings/take-button.tsx` — reads `auth.user` via `usePage()` + `openLogin` via `useAuthModal()`. Branches via early-return after the guest case (TypeScript narrows `user` to non-null for the rest):
+  - **Guest viewer** → gradient pill "Sign in to take" with `onClick={openLogin}` opening the modal in place (no page transition).
+  - **Owner** (`user.id === listing.creator.id`) → outline pill "Manage" linking to `/listings/mine`. Same size/shape as Take so the owner row's column matches ordinary-Take rows; no explicit "Your listing" label needed since the owner already knows it's theirs.
+  - **Wrong-platform** (`!user.linked_platforms.includes(listing.platform)`) → outline pill "Link {platform} to take" linking to `/settings/linked-accounts`. Forced `rounded-full` because the outline variant's base is `rounded-md`.
+  - **Eligible** → gradient pill "Take" linking to listing detail (current behavior preserved).
+- [x] Used in `listing-row.tsx` + `listing-card.tsx`. Each surface passes its own layout className (`w-full md:w-auto` for the row, `relative mt-auto w-full` for the card's flex-column bottom-pin).
+- [~] **`listings/show.tsx` deferred** — the detail page already has its own elaborate eligibility tree (owner-inactive, insufficient-balance, Take dialog with confirmation, etc.) that doesn't compress into the same component without losing features. Worth aligning copy/visual style in a follow-up if cross-surface consistency becomes a real complaint; not blocking M22 closeout.
+- [x] Tests: existing backend take-gate tests already cover the eligibility logic the button telegraphs. Component-level rendering tests not added (no JS test framework set up); manual verification covers each branch.
+- [x] Pint + suite green (772 tests / 3280 assertions).
+
+### Decisions
+
+- **No "online now" / live presence dots.** Stakly's `is_active_mode` already signals "available to play"; rendering a real presence indicator would require Echo presence channels for low payoff. Active Mode covers it.
+- **No "Fast settler" badge.** Stakly settles automatically via the auto-fetch pipeline — there's no per-user release speed to measure. The Bybit metric doesn't map.
+- **Stake is the visual anchor, not the Take button.** Bybit's price is the biggest thing in the row; ours should be too. Take is action, not information — secondary in scan hierarchy.
+- **Trust chip hides on 0-match users.** A "—% · 0" chip is noise. Better to absent the signal entirely until the player has a track record.
+- **Don't refactor `UserController::show` to use the new helper yet.** Phase 1 can duplicate the formula across `UserController` + `ListingController`; consolidation can come later if drift becomes a real concern.
+
+### Not in M22
+
+- **Sort-by-trust / filter-by-completion-rate.** Could land later if usage shows users want to slice by trust. Don't speculate.
+- **Repeat-pair callout on listing rows.** Profile page shows "you've played N matches against this player"; surfacing on rows adds noise. Defer until users ask.
+- **Per-game row shapes.** Chess is the only game today. M15 brings per-game renderers.
+- **Mobile rich state.** The row already responsive-collapses; Phase 2's column headers are desktop-only, which is intentional.
 
 ---
 

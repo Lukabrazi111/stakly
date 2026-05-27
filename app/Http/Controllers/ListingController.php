@@ -12,6 +12,7 @@ use App\Http\Requests\Listings\IndexListingsRequest;
 use App\Http\Requests\Listings\StoreListingRequest;
 use App\Http\Resources\ListingResource;
 use App\Models\Listing;
+use App\Services\SellerTrust;
 use App\Services\Wallet;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
@@ -46,7 +47,7 @@ class ListingController extends Controller
         );
 
         $listings = QueryBuilder::for(
-            Listing::query()->onPublicMarketplace()->with('user:id,name,username,is_active_mode'),
+            Listing::query()->onPublicMarketplace()->with(['user:id,name,username,is_active_mode', 'user.linkedAccounts']),
         )
             ->allowedFilters(
                 AllowedFilter::exact('game')->default(Game::Chess->value),
@@ -67,6 +68,11 @@ class ListingController extends Controller
             ->defaultSort($newest)
             ->paginate(self::PER_PAGE)
             ->withQueryString();
+
+        // M22 Phase 1 — batch-load seller trust aggregates for every creator
+        // on the page in ONE query, no N+1. Attaches a transient
+        // `seller_trust` attribute that `ListingResource` reads.
+        SellerTrust::attachTo($listings);
 
         return Inertia::render('listings/index', [
             'listings' => ListingResource::collection($listings),
@@ -94,7 +100,14 @@ class ListingController extends Controller
         // `scopeOnPublicMarketplace`, but this detail page bypasses that scope
         // (direct URL access stays viewable so owners can share + manage), so
         // the resource needs the flag.
-        $listing->load(['user:id,name,username,is_active_mode', 'gameMatch:id,listing_id,taker_user_id']);
+        $listing->load([
+            'user:id,name,username,is_active_mode',
+            'user.linkedAccounts',
+            'gameMatch:id,listing_id,taker_user_id',
+        ]);
+
+        // M22 Phase 1 — seller trust on the listing detail (single-row batch).
+        SellerTrust::attachTo([$listing]);
 
         $user = $request->user();
         $match = $listing->gameMatch;
@@ -169,7 +182,7 @@ class ListingController extends Controller
             : 'listed';
 
         $query = $user->listings()
-            ->with('user:id,name,username,is_active_mode')
+            ->with(['user:id,name,username,is_active_mode', 'user.linkedAccounts'])
             ->orderByDesc('created_at')
             ->orderByDesc('id');
 
@@ -180,6 +193,13 @@ class ListingController extends Controller
         }
 
         $listings = $query->paginate(self::PER_PAGE)->withQueryString();
+
+        // M22 Phase 1 — same N+1-safe batch on the owner's own listings
+        // page so the trust chip renders consistently with the public
+        // marketplace. The owner's seller_trust will be identical across
+        // all rows on this page (single creator), so the batch trivially
+        // collapses to one aggregate.
+        SellerTrust::attachTo($listings);
 
         // Counts both Open and Paused — the cap is about "listings holding
         // your capital that aren't yet concluded." Mirrors the rule in

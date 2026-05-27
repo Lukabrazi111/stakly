@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Http\Resources\ListingResource;
 use App\Models\Listing;
+use App\Services\SellerTrust;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -21,11 +22,14 @@ class HomeController extends Controller
     {
         $featured = Listing::query()
             ->onPublicMarketplace()
-            ->with('user:id,name,username,is_active_mode')
+            ->with(['user:id,name,username,is_active_mode', 'user.linkedAccounts'])
             ->orderBy('expires_at')
             ->orderByDesc('id')
             ->limit(self::FEATURED_COUNT)
             ->get();
+
+        // M22 Phase 1 — seller trust on the featured strip too.
+        SellerTrust::attachTo($featured);
 
         return Inertia::render('welcome', [
             'featured' => ListingResource::collection($featured),

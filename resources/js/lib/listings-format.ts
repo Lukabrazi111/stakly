@@ -55,9 +55,44 @@ export function formatTimeRemaining(isoString: string): string {
 
 /**
  * Sub-hour means we paint the "expires" field with `text-warning`.
+ *
+ * Kept for the simpler binary-warning surfaces (`listings/show`,
+ * `mine-listing-row`) where a single threshold is enough. The marketplace
+ * row + featured card use `getTimeUrgency` instead for finer tiering.
  */
 export function isEndingSoon(isoString: string): boolean {
     return new Date(isoString).getTime() - Date.now() < 60 * 60 * 1000;
+}
+
+/**
+ * Urgency tier for a listing's `expires_at`, used by `ListingRow` and
+ * `ListingCard` (M22 Phase 2) to colour the time-remaining indicator:
+ *   - `expired`  → past expiry (defensive — server-side scope hides these)
+ *   - `critical` → less than 15 minutes left (paint with `text-destructive`)
+ *   - `warning`  → less than 1 hour left (paint with `text-warning`)
+ *   - `normal`   → over an hour (default `text-muted-foreground`)
+ *
+ * Thresholds are blunt on purpose — readers don't need second-precision on
+ * a marketplace row, and the colour shift is the actual signal.
+ */
+export type TimeUrgency = 'expired' | 'critical' | 'warning' | 'normal';
+
+export function getTimeUrgency(isoString: string): TimeUrgency {
+    const diffMs = new Date(isoString).getTime() - Date.now();
+
+    if (diffMs <= 0) {
+        return 'expired';
+    }
+
+    if (diffMs < 15 * 60 * 1000) {
+        return 'critical';
+    }
+
+    if (diffMs < 60 * 60 * 1000) {
+        return 'warning';
+    }
+
+    return 'normal';
 }
 
 export function formatSkillRange(

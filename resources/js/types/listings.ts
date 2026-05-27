@@ -27,6 +27,20 @@ export interface ListingCreator {
     // button + show "currently inactive" banner when false. Server-side gate
     // in `GameMatchController::take` is the authoritative enforcement.
     is_active_mode: boolean;
+    // M22 Phase 1 — seller trust signals on the listing row chip.
+    // `completion_rate_30d` is an integer percentage (0–100), null when the
+    // creator has no engaged matches in the last 30 days (no headline to
+    // show). `settled_lifetime` is the all-time settled count and drives
+    // the chip's "98% · 47" denominator. Chip hides entirely when
+    // `settled_lifetime === 0` (no track record).
+    completion_rate_30d: number | null;
+    settled_lifetime: number;
+    // M22 Phase 1 (badge tier) — list of providers the creator is verified
+    // on (chess.com / Lichess today; FACEIT / Riot / Steam in M15). Drives
+    // the cross-platform earned badge in `SellerTrustMeta`: the green
+    // `BadgeCheck` icon appears in the meta line ONLY when the creator has
+    // verified on 2+ providers ("went the extra mile" credential).
+    verified_providers: ListingPlatform[];
 }
 
 // The external provider the match must be played on (M8 Phase 5 Slice B).
