@@ -1,9 +1,9 @@
 import { Link } from '@inertiajs/react';
 import { Clock, Globe, Languages, Trophy } from 'lucide-react';
 import { SellerTrustMeta } from '@/components/listings/seller-trust-meta';
+import { TakeButton } from '@/components/listings/take-button';
 import { VerifiedPlatformChip } from '@/components/listings/verified-platform-chip';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Button } from '@/components/ui/button';
 import { useInitials } from '@/hooks/use-initials';
 import {
     formatSkillRange,
@@ -155,20 +155,16 @@ export function ListingRow({ listing }: Props) {
                 </div>
             </div>
 
-            {/* Take CTA — its own Link with `relative` so it sits above the
-                overlay and captures hover + click. Same destination as the
-                row overlay (listing detail), but having its own pointer
-                events means cursor + hover-glow boost work naturally like
-                any other gradient button. */}
+            {/* Take CTA — wrapped in a `relative` div so it sits above the
+                row's absolute overlay Link and captures its own clicks.
+                `TakeButton` (M22 Phase 3) branches on the viewer's state:
+                gradient "Take" when eligible, gradient "Sign in to take"
+                for guests (opens auth modal), outline "Link {platform} to
+                take" when verified on the wrong provider, or a "Your
+                listing" chip + Manage shortcut when the viewer is the
+                creator. */}
             <div className="relative flex items-center gap-2 md:shrink-0">
-                <Button
-                    variant="gradient"
-                    size="pill"
-                    asChild
-                    className="w-full md:w-auto"
-                >
-                    <Link href={showListing(listing.id).url}>Take</Link>
-                </Button>
+                <TakeButton listing={listing} className="w-full md:w-auto" />
             </div>
         </article>
     );

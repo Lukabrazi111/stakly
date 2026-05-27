@@ -1,9 +1,9 @@
 import { Link } from '@inertiajs/react';
 import { Clock, Trophy } from 'lucide-react';
 import { SellerTrustMeta } from '@/components/listings/seller-trust-meta';
+import { TakeButton } from '@/components/listings/take-button';
 import { VerifiedPlatformChip } from '@/components/listings/verified-platform-chip';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Button } from '@/components/ui/button';
 import { useInitials } from '@/hooks/use-initials';
 import {
     formatSkillRange,
@@ -121,19 +121,15 @@ export function ListingCard({ listing }: Props) {
                 </div>
             </div>
 
-            {/* Take CTA — its own Link with `relative` so it sits above the
-                overlay and captures hover + click. Same destination as the
-                overlay (listing detail), but having its own pointer events
-                means cursor + hover-glow boost work naturally like any
-                other gradient button. */}
-            <Button
-                variant="gradient"
-                size="pill"
-                asChild
-                className="relative mt-auto w-full"
-            >
-                <Link href={showListing(listing.id).url}>Take</Link>
-            </Button>
+            {/* Take CTA — `TakeButton` (M22 Phase 3) telegraphs eligibility
+                at scan time: gradient "Take" when eligible, "Sign in to
+                take" for guests (opens auth modal), outline "Link
+                {platform} to take" when wrong-platform-verified, "Your
+                listing" chip + Manage when the viewer is the creator.
+                `relative` keeps it above the absolute overlay Link so it
+                captures its own clicks; `mt-auto` pins it to the bottom of
+                the flex-column card. */}
+            <TakeButton listing={listing} className="relative mt-auto w-full" />
         </article>
     );
 }

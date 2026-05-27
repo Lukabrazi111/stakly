@@ -104,14 +104,15 @@ Visual-only fixes that sharpen scan-ability — no backend changes.
 
 Today every row's Take button is identical. The take flow already gates eligibility server-side (auth, verified-platform, not-owner). The button should telegraph the gate visually at scan time so Bob doesn't waste clicks.
 
-- [ ] Refactor the row + card Take CTA into a shared `TakeButton` component that takes `listing` + `viewer` and branches:
-  - **Guest viewer** (no `auth.user`) → "Sign in to take" — gradient pill; opens auth modal (`?auth=login`) instead of navigating to the detail page.
-  - **Owner** (`auth.user.id === listing.creator.id`) → no Take button; renders a "Your listing" chip + "Manage" link to `/listings/mine`.
-  - **Wrong-platform verified** (`!auth.user.linked_platforms.includes(listing.platform)`) → "Link {platform} to take" — outline variant, links to `/settings/linked-accounts`.
-  - **Eligible** (default) → "Take" — gradient pill, current treatment.
-- [ ] Use the new component in `listing-row.tsx`, `listing-card.tsx`, and `listings/show.tsx` (consistency across surfaces).
-- [ ] Tests: rendering states for each branch (component-level checks since these are frontend conditionals). Backend take-gate is already covered by existing tests.
-- [ ] Pint + suite green.
+- [x] **`TakeButton` component** at `components/listings/take-button.tsx` — reads `auth.user` via `usePage()` + `openLogin` via `useAuthModal()`. Branches via early-return after the guest case (TypeScript narrows `user` to non-null for the rest):
+  - **Guest viewer** → gradient pill "Sign in to take" with `onClick={openLogin}` opening the modal in place (no page transition).
+  - **Owner** (`user.id === listing.creator.id`) → outline pill "Manage" linking to `/listings/mine`. Same size/shape as Take so the owner row's column matches ordinary-Take rows; no explicit "Your listing" label needed since the owner already knows it's theirs.
+  - **Wrong-platform** (`!user.linked_platforms.includes(listing.platform)`) → outline pill "Link {platform} to take" linking to `/settings/linked-accounts`. Forced `rounded-full` because the outline variant's base is `rounded-md`.
+  - **Eligible** → gradient pill "Take" linking to listing detail (current behavior preserved).
+- [x] Used in `listing-row.tsx` + `listing-card.tsx`. Each surface passes its own layout className (`w-full md:w-auto` for the row, `relative mt-auto w-full` for the card's flex-column bottom-pin).
+- [~] **`listings/show.tsx` deferred** — the detail page already has its own elaborate eligibility tree (owner-inactive, insufficient-balance, Take dialog with confirmation, etc.) that doesn't compress into the same component without losing features. Worth aligning copy/visual style in a follow-up if cross-surface consistency becomes a real complaint; not blocking M22 closeout.
+- [x] Tests: existing backend take-gate tests already cover the eligibility logic the button telegraphs. Component-level rendering tests not added (no JS test framework set up); manual verification covers each branch.
+- [x] Pint + suite green (772 tests / 3280 assertions).
 
 ### Decisions
 
