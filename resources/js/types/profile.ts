@@ -78,6 +78,16 @@ export interface ProfileTrust {
     disputes_lifetime: number;
 }
 
+// M19 Phase 5 — Open Graph metadata for `/users/{username}` link previews.
+// All absolute URLs (resolved server-side via Laravel's `asset()` + `route()`).
+export interface ProfileOg {
+    title: string;
+    description: string;
+    image: string;
+    url: string;
+    type: string;
+}
+
 // Page-level props for `pages/users/show.tsx` (built in Phase 4).
 // `user` is the resolved/unwrapped resource (no `data` envelope), since the
 // controller calls `(new UserProfileResource($user))->resolve()`.
@@ -88,6 +98,13 @@ export interface ProfileShowProps {
     user: UserProfile;
     stats: ProfileStats;
     trust: ProfileTrust;
+    // M19 Phase 3 — count of *settled* matches between the viewer and the
+    // profile user. 0 for guests and for the profile owner viewing
+    // themselves (the FE only renders the repeat-pair callout when an
+    // authenticated viewer is on someone else's profile with 2+ shared
+    // matches; the controller skips the query in the other cases).
+    repeat_pair_count: number;
     openListings: { data: Listing[] };
     matchHistory: { data: Match[] };
+    og: ProfileOg;
 }

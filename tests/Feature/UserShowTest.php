@@ -605,3 +605,129 @@ test('pending matches do not count toward any trust counter', function () {
             ->where('trust.disputes_lifetime', 0)
         );
 });
+
+// ─── Repeat-pair count (M19 Phase 3) ──────────────────────────────────────
+
+test('repeat_pair_count is 0 for a guest visitor even when settled matches exist', function () {
+    $alice = User::factory()->create(['username' => 'celia']);
+    $bob = User::factory()->create();
+
+    // A settled match between alice and bob exists, but the visitor is a
+    // guest — the controller skips the query entirely.
+    $listing = Listing::factory()->taken()->for($alice)->create();
+    GameMatch::factory()->for($listing)->for($bob, 'taker')->settled($alice)->create();
+
+    $this->get('/users/celia')
+        ->assertInertia(fn ($page) => $page->where('repeat_pair_count', 0));
+});
+
+test('repeat_pair_count is 0 when viewing own profile', function () {
+    $alice = User::factory()->create(['username' => 'dolly']);
+    $bob = User::factory()->create();
+
+    $listing = Listing::factory()->taken()->for($alice)->create();
+    GameMatch::factory()->for($listing)->for($bob, 'taker')->settled($alice)->create();
+
+    $this->actingAs($alice)
+        ->get('/users/dolly')
+        ->assertInertia(fn ($page) => $page->where('repeat_pair_count', 0));
+});
+
+test('repeat_pair_count counts settled matches in both creator/taker directions', function () {
+    $alice = User::factory()->create(['username' => 'edith']);
+    $bob = User::factory()->create();
+
+    // Two matches where alice created the listing, bob took.
+    foreach (range(1, 2) as $i) {
+        $listing = Listing::factory()->taken()->for($alice)->create();
+        GameMatch::factory()->for($listing)->for($bob, 'taker')->settled($alice)->create();
+    }
+
+    // Three matches where bob created the listing, alice took.
+    foreach (range(1, 3) as $i) {
+        $listing = Listing::factory()->taken()->for($bob)->create();
+        GameMatch::factory()->for($listing)->for($alice, 'taker')->settled($bob)->create();
+    }
+
+    // Bob views alice's profile — should see 5 shared settled matches.
+    $this->actingAs($bob)
+        ->get('/users/edith')
+        ->assertInertia(fn ($page) => $page->where('repeat_pair_count', 5));
+});
+
+test('repeat_pair_count excludes pending, cancelled, disputed, and manual_review matches', function () {
+    $alice = User::factory()->create(['username' => 'fern']);
+    $bob = User::factory()->create();
+
+    // 1 settled (counts).
+    $settledListing = Listing::factory()->taken()->for($alice)->create();
+    GameMatch::factory()->for($settledListing)->for($bob, 'taker')->settled($alice)->create();
+
+    // 1 pending (excluded).
+    $pendingListing = Listing::factory()->taken()->for($alice)->create();
+    GameMatch::factory()->for($pendingListing)->for($bob, 'taker')->create();
+
+    // 1 cancelled (excluded — never reached a played state).
+    $cancelledListing = Listing::factory()->taken()->for($alice)->create();
+    GameMatch::factory()->for($cancelledListing)->for($bob, 'taker')->cancelled($alice)->create();
+
+    // 1 disputed (excluded — result not authoritative).
+    $disputedListing = Listing::factory()->taken()->for($alice)->create();
+    GameMatch::factory()->for($disputedListing)->for($bob, 'taker')->disputed()->create();
+
+    // 1 manual_review (excluded — result not authoritative).
+    $mrListing = Listing::factory()->taken()->for($alice)->create();
+    GameMatch::factory()->for($mrListing)->for($bob, 'taker')->manualReview()->create();
+
+    $this->actingAs($bob)
+        ->get('/users/fern')
+        ->assertInertia(fn ($page) => $page->where('repeat_pair_count', 1));
+});
+
+test('repeat_pair_count ignores settled matches with unrelated third parties', function () {
+    $alice = User::factory()->create(['username' => 'gina']);
+    $bob = User::factory()->create();
+    $carol = User::factory()->create();
+
+    // Alice ↔ carol settled match — irrelevant to the alice/bob pair.
+    $aliceCarolListing = Listing::factory()->taken()->for($alice)->create();
+    GameMatch::factory()->for($aliceCarolListing)->for($carol, 'taker')->settled($alice)->create();
+
+    // Bob ↔ carol settled match — also irrelevant.
+    $bobCarolListing = Listing::factory()->taken()->for($bob)->create();
+    GameMatch::factory()->for($bobCarolListing)->for($carol, 'taker')->settled($bob)->create();
+
+    // One actual alice ↔ bob settled match.
+    $aliceBobListing = Listing::factory()->taken()->for($alice)->create();
+    GameMatch::factory()->for($aliceBobListing)->for($bob, 'taker')->settled($alice)->create();
+
+    $this->actingAs($bob)
+        ->get('/users/gina')
+        ->assertInertia(fn ($page) => $page->where('repeat_pair_count', 1));
+});
+
+// ─── Open Graph metadata (M19 Phase 5) ───────────────────────────────────
+
+test('og payload carries the profile-specific title + absolute url', function () {
+    User::factory()->create(['username' => 'alice', 'name' => 'Alice']);
+
+    $response = $this->get('/users/alice');
+
+    $response->assertOk();
+    $response->assertInertia(fn ($page) => $page
+        ->where('og.title', 'Alice on Stakly')
+        ->where('og.type', 'profile')
+        ->where('og.url', route('users.show', 'alice'))
+        ->has('og.description')
+        ->has('og.image')
+    );
+});
+
+test('og image is an absolute url (crawlers reject relative paths)', function () {
+    User::factory()->create(['username' => 'bob']);
+
+    $this->get('/users/bob')->assertInertia(fn ($page) => $page
+        ->where('og.image', fn (string $image) => str_starts_with($image, 'http'))
+        ->where('og.url', fn (string $url) => str_starts_with($url, 'http'))
+    );
+});

@@ -2,7 +2,7 @@
 
 Frontend-first build. UI against real DB infrastructure + seeded fake data; backend logic (escrow, payouts, on-chain integration) lands per page once the UI is validated. Milestones are work-chunk labels, not version commitments — decisions inside any of them are revisitable.
 
-> **Shipped milestones live in `milestones_archived.md`** (M1, M2, M2.5, M3, M3.5, M4, M5, M6, M7, M11, M8 all phases, M10, M12 all phases, M16 all phases, M14 Slice A). This file is for active + upcoming work + the cross-cutting architectural decisions that earlier milestones established.
+> **Shipped milestones live in `milestones_archived.md`** (M1, M2, M2.5, M3, M3.5, M4, M5, M6, M7, M8 all phases, M10, M11, M12 all phases, M14 Slice A, M16 all phases, M17, M18, M19). This file is for active + upcoming work + the cross-cutting architectural decisions that earlier milestones established.
 
 ## Phases (map)
 
@@ -10,12 +10,9 @@ Frontend-first build. UI against real DB infrastructure + seeded fake data; back
 
 - **M13** — Chat anti-abuse + moderation [parked — design needs review]
 - **M14** — Outcome pipeline hardening (reframed from "automated outcome adapters" — observability + reliability + coverage of the auto-fetch pipeline; Slice A shipped, Phase 1 next)
-- **M18** — Profile expansion (Phases 1 + 2 shipped, Phase 3 Slice A + Slice B.1 shipped — completion rate chip on profile; **next: Phase 3 Slice B.2 — "more info" modal, then Slice B.3 — listing-row chip integration**, then M19 absorbs former Slice C + Phase 4)
-- **M19** — Profile page redesign + management hub (Bybit-inspired IA + Stakly identity + game-agnostic from day one; folds former M18 Slice C + Phase 4)
-- **M20** — Notifications (email infrastructure + per-event preferences UI in M19's Notifications tab)
+- **M20** — Notifications (email infrastructure + per-event preferences UI; M20 owns the surface end-to-end)
 - **M21** — Blacklist + safety (block users from listings + chat, with anti-evasion considerations)
 - **M15** — Multi-game expansion (FACEIT, OpenDota, Riot adapters)
-- **M9** — Chain Integration [paused — pending crypto-payment-gateway specialist]
 
 > Active milestone keeps a detailed task list. Future milestones expand when started. Any of this can shift — flag the change, update the doc.
 
@@ -121,173 +118,9 @@ The original M14 intent, slimmed down to chess only.
 
 ---
 
-## M18 — Profile expansion
-
-Profile content expansion (avatar, bio, stats, trust signals). The full **visual + structural redesign** of the profile page is **M19** — M18 finishes the content, M19 makes it sing.
-
-**Shipped:** Phase 1 + Phase 1 polish + Phase 2 (2026-05-25) · Phase 3 Slice A + Slice B.1 (2026-05-26). Detail in `milestones_archived.md`.
-
-### Resume here
-
-**Next: M18 Phase 3 Slice B.2 — "more info" modal.** Slice B.1 (backend + chip on profile) shipped 2026-05-26. The chip currently has a dead click; B.2 wires it to a Bybit-style modal showing the raw breakdown.
-
-After B.2: **Slice B.3** — render the same chip on listing rows (`listing-card.tsx` / `listing-row.tsx`) with a batched seller-aggregation to avoid N+1 in the listings index query.
-
-After B.3: **M19 starts** (profile page redesign + management hub). M18's remaining intent (former Slice C — repeat-pair widget + win-rate gradient bar — and former Phase 4 — privacy + sharing) absorbs into M19's new layout. Building them under the current layout would mean re-positioning when M19 lands.
-
-### Demo seed data ready
-
-`vendor/bin/sail artisan migrate:fresh --seed` populates ready-to-view profiles:
-- `testuser` — 12 settled matches, 73% win rate (8W·1D·3L), $2,000 volume, both chess.com + Lichess linked.
-- 3 marketplace users with 5–8 matches each (~14% to ~75% win rates).
-- ~17 marketplace users stay match-empty so the empty-state UI is also testable.
-
-Wallet ledger invariant holds across seed data — every match settles via the real `SettleMatchAction` / `SettleDrawMatchAction`.
-
-### Active: Phase 3 Slice B (in-flight)
-
-Pivoted from the original dispute/cancellation rate badges design — Bybit P2P model (composite completion rate + 3-free-cancellation buffer + listing-row display + "more info" modal). Pivot context + Slice B.1 implementation detail archived in `milestones_archived.md`. The architectural decision summarising the model lives at the top of this file ("Trust signal = single composite 'completion rate'…").
-
-**Slice B.1 — Backend + chip on profile** ✅ shipped 2026-05-26 — detail in `milestones_archived.md`.
-
-**Slice B.2 — "More info" modal**
-
-- [ ] New `TrustInfoModal` component (`resources/js/components/profile/trust-info-modal.tsx`) — Bybit-style stats grid in a shadcn `Dialog` primitive.
-- [ ] Shows: 30-day completion rate, lifetime completion rate, total matches per window, settled count per window, cancellation count (with "3-free per 30 days" note), dispute count (raw), member since, total volume staked.
-- [ ] Wire `CompletionRateChip.onClick` to open modal.
-- [ ] Tests for modal payload data presence + click-to-open behavior.
-- [ ] Pint + suite green.
-
-**Slice B.3 — Listing-row chip integration**
-
-- [ ] Add `completion_rate_30d` + `settled_lifetime` to the seller block on `ListingResource`.
-- [ ] Batch-load seller trust counts in `ListingController::index` / `show` / `mine` — single subquery or grouped aggregation joined back per `user_id`. Verify no N+1 with `database-query` MCP.
-- [ ] Render `CompletionRateChip` in `listing-card.tsx` + `listing-row.tsx` next to seller name.
-- [ ] Update skeleton variant (`listing-row-skeleton.tsx`) to include a chip-shaped placeholder.
-- [ ] Tests: resource payload includes the trust data; query-count assertion across multiple listings (no N+1).
-- [ ] Pint + suite green.
-
-The thumbs-up / thumbs-down rating slot (Bybit's "👍 98 / 👎 0" in their "more info" modal) is intentionally out of scope here — see "Not in M18" for the player-review deferral. When a structured review system eventually lands, that signal slots into the modal alongside completion rate.
-
-### Former Slice C + Phase 4 → moved to M19
-
-The repeat-pair widget, win-rate gradient bar, privacy toggles, and share button / OG meta tags originally scoped under M18 are absorbed into M19's redesign. They mount cleanly into the new layout (Trust strip + owner-only management section); building them under the current layout would mean re-positioning when M19 lands. See **M19 Phase 3** (repeat-pair + win-rate bar) and **M19 Phase 5** (privacy toggles + share + OG meta).
-
-### Not in M18
-
-- **Player-to-player reviews / ratings after matches.** Deferred pending a coercion-resistant design. The straightforward "rate every match 1–5 stars" pattern invites coercion ("give me 5 stars or I'll dispute") on a P2P money platform. Trigger to revisit: a design that mitigates that pressure (anonymized aggregation, scoped to large-volume users, etc.). When reviews are eventually added, the Bybit-style thumbs-up/down summary (`👍 98 / 👎 0`) slots into the Slice B "more info" modal alongside completion rate.
-- **Achievement badges / gamification.** Tempting but feels off-brand for a money platform. Revisit if usage data shows users want it.
-- **Activity feed / follow graph.** Stakly isn't a social network; defer indefinitely.
-- **Account deletion / data export.** Real concern but belongs in a separate compliance-focused milestone — user-owned area per the no-legal-concerns rule, so wait for direction.
-- **Skill progression chart (rating over time).** Cool but expensive — would need to snapshot ratings into Stakly DB rather than fetch live. Defer to a future "stats deepening" slice.
-
----
-
-## M19 — Profile page redesign + management hub
-
-Today's `/users/{username}` is a vertical stack of cards on a `bg-card/60` translucent surface — functional but unstructured. M18 added avatars, bio, stats hero, link-out, and the completion rate chip; the page is now content-rich but the information architecture hasn't kept up. The pieces feel like a list, not a story.
-
-M19 restructures the profile around three threads — **identity, trust, activity** — using a Bybit-inspired information architecture (header → trust overview → tabbed activity → owner-only management) adapted to Stakly's dark theme and gaming context. Same URL, single page, dual mode: visitors see the read-only public sections; owner sees those *plus* a clearly demarcated owner-only management block. Mode-switching keyed off `auth.user.id === profile.id`.
-
-### Design intent
-
-Bybit's IA is solid; their *visual treatment* is generic transactional. Stakly diverges on:
-
-1. **Hero with personality, not a CRM header.** Large avatar with soft gradient glow ring, display-font name, bio inline if set, member-since pill, completion rate chip in the hero row as the headline trust signal. Verification chips with platform-tinted borders (chess.com brown, Lichess gray, future FACEIT orange, Riot red, Steam blue).
-2. **Trust-first information weight.** Completion rate is the headline signal — visually larger / earlier than secondary stats (total matches, total volume). Not buried as one of five equal-weight cards.
-3. **Match history stays visible by default.** Bybit tabs everything. For chess + future CS2 / Dota 2 / Valorant staking, recent match history is the highest-signal content — the trust story IS the matches. Keep inline as the default tab; alongside it (Open Listings, Reviews placeholder) tab as siblings.
-4. **Owner-only section visually demarcated.** When viewer is the owner, a clearly separated "Your account" block appears below the public content with subtle `bg-secondary` shading. Visitors don't see it exists. No mode-switching mystery.
-5. **Empty-state delight, not blank cards.** A user with 0 matches sees inviting CTAs ("Create your first listing →" / "Browse the marketplace →"), not "0 orders, 0%". Same data, warmer voice.
-6. **Mobile-first.** Stats stack cleanly 2-up or 1-up on mobile. Hero adapts (avatar smaller, inline with name). Tabs scroll horizontally only when overflowing. Bybit's design assumes desktop.
-7. **Card surface contrast — committed.** Profile cards switch from `bg-card/60` translucent to full-opacity `bg-card` with consistent borders so they read as raised surfaces on `bg-background`. System-wide token sweep happens separately (see Phase 1).
-
-### Multi-game from day one
-
-Stakly's path includes CS2 (FACEIT), Dota 2 (Steam / OpenDota), Valorant (Riot), LoL (Riot) — see M15. M19 designs every game-aware component to scale to multiple games per user from day one, even though chess is the only functional game today:
-
-- **Linked Accounts section** scales to N providers per user. Chess player has chess.com + Lichess; an M15 multi-gamer adds FACEIT + Riot too. UI shows each linked account as a tinted chip with provider icon + linked-since.
-- **Match history rows** render per-game shape via a `MatchRow` component dispatching by `match.listing.game`. Chess shows time-control + result; CS2 will show map + score; Dota will show hero + duration; etc. M19 ships only chess shapes (the only thing functional) but builds the component contract so M15 game adapters drop their renderers in without re-layout work.
-- **Stats aggregations** stay game-agnostic at the headline level (completion rate doesn't care which game). Future per-game splits ("Chess: 12 matches 100% · CS2: 5 matches 80%") can be added later as a Slice without backend rework.
-- **`Game` enum + `LinkedAccountProvider` enum** drive display (icons, colors, labels) so adding a game in M15 is a matter of enum case + asset path, not a profile redesign.
-
-### Reference (chat-time)
-
-User-shared Bybit screenshots saved to `images-examples/bybit-profile-redesign/`. Reference these for IA cues — **NOT visual fidelity**. Stakly diverges on style per "Design intent" above. Filenames roughly: `bybit-listing-row.png` (marketplace chip), `bybit-user-center.png` (full Data Overview page), `bybit-trust-modal.png` (more-info modal), `bybit-data-overview.png` (Data Overview detail), `bybit-user-center-full.png` (with sidebar).
-
-### Phases
-
-**Phase 1 — Visual restructure foundation**
-
-- [ ] Profile-page cards switch to full `bg-card` (no transparency) + consistent border treatment so they visibly float above `bg-background`.
-- [ ] Page-level layout grid: hero card → trust strip → tabbed activity card → owner-only management card. Define spacing tokens between sections (`gap-6` or similar consistently).
-- [ ] Audit shadcn primitive overrides used in the new components (`Dialog`, `Tabs`, `Card`) — confirm they read correctly on the new surface.
-- [ ] Use `ui-ux-pro-max` skill for the layout + typography + spacing decisions.
-- [ ] **Out of M19 Phase 1**: system-wide card token sweep (changing every page's cards). That can be its own polish slice once the profile redesign validates the look.
-
-**Phase 2 — Hero redesign**
-
-- [ ] `ProfileHeader` revamp: larger avatar (with `shadow-glow-sm` ring on hover), display-font name, member-since pill, bio rendered prominently when set.
-- [ ] **Completion rate chip moved into the hero row** as the headline trust signal (currently sitting between header and stats — promote it).
-- [ ] Verification chips with platform-tinted borders. Chess.com (brown / tan), Lichess (neutral gray). Design tokens prepared for FACEIT (orange) / Riot (red) / Steam (blue) even though those providers don't exist yet — M15 lands the providers, M19 lands the chip system.
-- [ ] Active / Inactive mode pill (owner-only) — quick-status indicator with flip toggle.
-- [ ] Linked accounts as a horizontally-scrolling chip strip on mobile.
-- [ ] Edit-profile button stays where it is (owner-only top-right of hero).
-
-**Phase 3 — Trust strip + Data Overview**
-
-- [ ] Trust signals as a dedicated row immediately below the hero (not mixed into stats grid).
-- [ ] Stats grid restyled — 2-up for visitor (Total matches + Total volume), 3-up for owner (+ Win rate).
-- [ ] **Repeat-pair widget** (formerly M18 Slice C) — "You've played N matches against this user" shown only when an authenticated viewer is on someone else's profile AND has 2+ shared matches. Hidden on own-profile and zero-shared-history cases. Backend: aggregate the repeat-pair count in `UserController::show` (single query: count `game_matches` where both participants match the pair).
-- [ ] **Win-rate gradient bar** (formerly M18 Slice C) — own-profile only, thin `bg-gradient-primary` width-proportional bar visualising win rate, beneath the win-rate tile.
-- [ ] Game-agnostic note: the headline stats (matches, volume, completion rate, win rate) stay unified across games. Per-game splits are a future Slice.
-
-**Phase 4 — Tabbed activity section**
-
-- [ ] Tabbed section below the trust strip. Three tabs visible to everyone: **Match History** (default) | **Open Listings** | **Reviews** (placeholder).
-- [ ] **Match History tab** — restyle existing `MatchHistorySection` rows for visual hierarchy. Build a `MatchRow` component that dispatches by `match.listing.game` to a per-game renderer. Chess renderer ships in M19 (existing data); CS2 / Dota / Valorant / LoL renderers land with M15 adapters.
-- [ ] **Open Listings tab** — surface existing `ListingsSection` content; visually consistent with the match-history rows.
-- [ ] **Reviews tab** — placeholder card: "Reviews coming soon — Stakly is designing a coercion-resistant review system. Until then, reputation is shown via completion rate + match history."
-- [ ] Tab state syncs to URL query (`?tab=listings`) so deep-link / refresh / browser-back navigate within a profile.
-- [ ] Mobile: tabs scroll horizontally on overflow; sticky tab header optional.
-
-**Phase 5 — Owner-only management section**
-
-Visible only when `auth.user.id === profile.id`. Visually demarcated (subtle `bg-secondary` shading, "Your account" heading) below the public tabbed section. Sub-tabbed.
-
-- [ ] **Privacy & Settings tab** (replaces former M18 Phase 4):
-  - [ ] Toggle: hide completion rate (renders "this user has chosen not to display their completion rate" placeholder in place of the chip on both profile + listing rows).
-  - [ ] Toggle: hide stake amounts on public match history (match outcomes still visible, dollar figures redacted).
-  - [ ] Share profile button — copy URL + QR code via existing `qrcode.react`.
-  - [ ] Open Graph meta tags on `/users/{username}` so links shared into Discord / Telegram / Twitter render a card with avatar + name + "Stakly P2P gaming staking" tagline. Static branded template first; per-user OG image is future polish.
-  - [ ] Schema: add `users.hide_completion_rate` + `users.hide_stake_amounts` boolean columns (pre-real-users, so edit the migration directly).
-  - [ ] Backend: persist toggles via existing `/settings/profile` update flow OR a new dedicated `ProfileVisibilityController` (preference: extend the existing flow to keep the surface tight).
-  - [ ] Both toggles default to `false` (visible).
-- [ ] **Notifications tab** — placeholder card: "Notification preferences coming with **M20**. Today, Stakly sends email only for account verification + password reset."
-- [ ] **Blacklist tab** — placeholder card: "User blocking coming with **M21**. Until then, abusive behavior should be reported via dispute (`Report a problem` on the match page)."
-
-**Phase 6 — Polish: empty-state, mobile, animations, a11y**
-
-- [ ] **Empty-state copy** across the page: replace "No matches yet" with inviting CTAs ("Browse the marketplace →" / "Create your first listing →"). Stats with zero values render dashed-border tiles (existing pattern) with the CTA inline.
-- [ ] **Mobile-first audit** — hero collapses gracefully (avatar smaller, inline with name), stats stack 1-up, tabs work with thumb-scroll, repeat-pair widget hides on small screens if space is tight.
-- [ ] **Interaction polish** — hover states on every interactive surface (chip, tab, button) using the existing `hover:shadow-glow-sm` pattern. Tab switch animation via `motion` (subtle slide / fade — don't fight Radix's defaults).
-- [ ] **Accessibility audit** — keyboard nav across tabs, `aria-label`s on chips, focus rings consistent with the rest of the app, color contrast for the new card surface against text tokens (WCAG AA minimum on `text-foreground` against `bg-card`).
-- [ ] Use `ui-ux-pro-max` skill for the polish + accessibility checklist.
-
-### Not in M19
-
-- **Notifications feature itself** (M19 ships the preferences UI shell with a placeholder; real email infrastructure + per-event triggers land in M20).
-- **Blacklist feature itself** (M19 ships the tab placeholder; real block-list infrastructure lands in M21).
-- **Reviews feature** — deferred pending a coercion-resistant design. M19 ships only the placeholder tab.
-- **Per-game stat splits** ("chess: 12 matches 100% · CS2: 5 matches 80%") — composite rate stays unified for v1; splits can ship as a Slice later if usage data calls for it.
-- **Profile editing forms (avatar / bio / linked accounts / security / password)** — those stay at `/settings/*`. M19's owner-only section is about *visibility / management on the profile surface*, not duplicating the settings pages. A link from Privacy & Settings to `/settings/profile` for full editing is reasonable.
-- **System-wide card surface token sweep** (every page's cards switching to full `bg-card`). Audit + apply as a separate polish slice after M19 validates the look.
-- **Custom OG image per user** (dynamic server-rendered image with avatar + stats) — Phase 5 ships a static branded template; per-user dynamic OG is future polish.
-
----
-
 ## M20 — Notifications (email + preferences)
 
-Stakly currently sends almost no user-facing notifications (Fortify email-verification + password-reset only). M20 adds match-event emails + a per-user preferences surface that lands in M19's Notifications tab (which ships as a placeholder).
+Stakly currently sends almost no user-facing notifications (Fortify email-verification + password-reset only). M20 adds match-event emails + a per-user preferences surface — M20 owns the UI surface end-to-end (M19 dropped its placeholder tab on 2026-05-27).
 
 ### Phases
 
@@ -311,7 +144,7 @@ Stakly currently sends almost no user-facing notifications (Fortify email-verifi
 
 - [ ] `notification_preferences` table (or JSON column on users) — per-event opt-in/out.
 - [ ] Default: all event types ON.
-- [ ] UI mounts in M19 Phase 5's Notifications tab (replaces the placeholder). Toggle per event with sensible groupings.
+- [ ] UI lives on a new `/settings/notifications` page (M19 dropped the placeholder tab on 2026-05-27; M20 owns the surface end-to-end). Toggle per event with sensible groupings.
 - [ ] Always-on events: account-security (verification, password reset, login from new device). User cannot turn these off.
 
 ### Not in M20
@@ -358,7 +191,7 @@ Block specific users from interacting with you. Real safety feature with abuse-v
 
 **Phase 4 — Blacklist UI**
 
-- [ ] List of blocked users mounts in M19 Phase 5's Blacklist tab (replaces the placeholder).
+- [ ] List of blocked users lives on a new `/settings/blacklist` page (M19 dropped the placeholder tab on 2026-05-27; M21 owns the surface end-to-end).
 - [ ] Block-action UI on the OTHER user's public profile (small menu when viewing as visitor): "Block this user". Optional reason field.
 - [ ] Unblock from the list.
 - [ ] Tests: block flow, unblock flow, marketplace filtering.
@@ -417,97 +250,3 @@ Decide per-adapter when the first non-chess one ships. The current `username` co
 - Marketing / homepage copy for the anti-cheat trust pitch — separate from engineering scope; revisit alongside the existing marquee-copy cleanup.
 - Aggregator-as-a-service (PandaScore / Bayes / Abios) — considered and parked. Reconsider only if the per-game maintenance burden gets painful and revenue can absorb the monthly cost.
 
----
-
-## M9 — Chain Integration
-
-**Paused — pending crypto-payment-gateway specialist.**
-
-Real on-chain TRC20 USDT deposits and withdrawals. Provider, custody model, key management, gas strategy, and architecture all TBD — to be designed with a specialist developer joining the project later. Resume when that person is on board, or sooner if the user decides to own this themselves.
-
-The platform layers below are deliberately provider-agnostic and won't change when chain integration lands:
-
-- **Internal ledger** (`wallet_transactions`, M3.5) — append-only, idempotent via `reference_id`, source of truth for `users.usdt_balance`. Whatever provider is picked, it will call `Wallet::deposit` on confirmed deposits and `Wallet::withdraw` from a queued withdrawal worker.
-- **Wallet UI** (M7) — overview, deposit page (shows `MockTronAddress`), withdraw form (validates fully, short-circuits on submit). Real per-user addresses replace the mocks; the withdraw POST handler swaps the short-circuit for a real worker dispatch.
-- **`App\Support\MockTronAddress`** — continues to generate placeholder addresses until integration lands.
-
-### Why per-user deposit addresses, not a shared hot wallet
-
-The first attribution question — "if every user deposits to one shared address, how do we tell who deposited?" — only has good answers on chains with a native memo / destination-tag field (XRP, XLM, BNB Beacon Chain, Cosmos). **TRC20 USDT has no memo field**: the smart contract's `transfer(to, amount)` carries no user metadata, and most wallets don't surface a memo input for TRC20 anyway. Attempting to attribute deposits via amount-and-timing heuristics breaks on the edge cases that matter most (two simultaneous deposits, identical amounts, retries) — not safe for a money platform.
-
-The standard answer is **per-user deposit addresses via an HD (Hierarchical Deterministic) wallet** (BIP32 / BIP44). One master seed, derive a child address per user at path `m/44'/195'/0'/0/<user_index>` (195 = Tron's BIP44 coin type), publish that derived address as the user's deposit address, watch the chain for incoming USDT to it, credit on confirmation via `Wallet::deposit($user, $amount, reference: $tx_hash)`. Address = identity by construction, no memo needed. The master seed is the protected secret; every address recovers deterministically from it.
-
-This drops cleanly into the existing schema. `users.tron_address` is already the per-user column; `App\Support\MockTronAddress` is the placeholder address generator that gets replaced with real HD derivation; `Wallet::deposit(..., reference: $tx_hash)` is already idempotent on the tx hash. Nothing in the ledger or wallet UI has to change — only the address-generation source and the watcher process.
-
-The TRC20-specific catch is that sweeping USDT off a per-user address later requires TRX on that address to pay for the transaction. Standard fixes: pre-fund each address with a small TRX amount on creation, or stake TRX from a master account and delegate "Energy" to deposit addresses via Tron's resource-rental mechanism. This is the gas strategy the specialist owns.
-
-### Provider spectrum (buy vs build)
-
-Three real architectural choices for the chain-facing layer, ordered from most control to least:
-
-- **DIY HD wallet + TronGrid for chain reads.** Stakly owns the master seed, derives addresses in its own code, uses TronGrid (Tron's official node API, free at moderate volume) to watch addresses + fetch transactions, sweeps with its own worker. Maximum control, maximum security responsibility. What centralized exchanges build internally. Moralis fills the same chain-data role as TronGrid if multi-chain ever becomes relevant later.
-- **Managed wallet primitives (Tatum, BitGo, Fireblocks, Coinbase Developer Platform).** They expose HD-wallet primitives via API; Stakly still controls the master through them. Tatum is approachable for a smaller platform; Fireblocks is enterprise pricing. Middle ground on control vs operational load.
-- **Payment gateway (CryptoCloud, NOWPayments, CoinPayments).** They handle wallets, addresses, sweeps, and gas; Stakly calls their API to "create a deposit address for user X" and they notify on incoming funds. Fastest to launch. Trade: they hold real money briefly during the deposit-to-settlement window, per-transaction fees recur, and vendor trust becomes part of the security model.
-
-The choice interacts directly with the key-storage question: DIY means *Stakly* answers "where does the master seed live" (KMS / HSM / vault / encrypted env). Managed providers either hold the seed (vendor-custody) or use key-share schemes (MPC). Payment gateways take that question off the table entirely.
-
-Note: TronGrid, Moralis, and CryptoCloud are not the same kind of thing despite sometimes appearing in the same sentence. TronGrid + Moralis are **chain-data readers** (you'd combine them with your own HD-wallet code). CryptoCloud is a **payment gateway** (it replaces the HD-wallet code with their API). Picking one doesn't preclude the other — they sit at different layers.
-
-### Live questions for the specialist
-
-**Provider tier** (DIY / managed primitives / payment gateway) → **custody model** (BYO-key vs vendor-MPC vs full vendor custody) → **key storage** (KMS / HSM / vault / vendor-held) → **TRC20 gas strategy** (pre-funded TRX per address vs delegated Energy via TRX-staked master vs vendor-handled) → **testnet shakedown plan** → **mainnet flip checklist**.
-
----
-
-## Admin panel enhancements (backlog)
-
-Ideas captured during M12 build + polish that aren't worth doing now but should land later as Stakly's ops surface grows. Not a milestone — pull individual items into a slice whenever they become valuable. Listed in roughly "most likely to need first" order.
-
-**Dispute review workflow**
-
-- **Request-evidence action.** A 4th resolve button that doesn't settle — posts a system message in chat ("Stakly support needs the chess.com game URL — please post within 48h or this will be settled as draw") with a configurable deadline. Lets admin gather more info without choosing a side. Useful when chat evidence is thin but the dispute isn't yet "irrecoverable." Phase 4 of M12 in spirit.
-- **Inline admin notes** on a match. Private notes admins write to each other ("waiting on legal", "this user has 3 prior reports") — not visible to players, separate from the resolution audit log. Just a `match_admin_notes` table + a notes panel in the View page.
-- **Admin-writes-in-chat** (full support panel). Admin posts as "Stakly Support" with a verified badge; players reply in normal chat. Decided in M12 Phase 2 design discussion to defer until real disputes show we need it — most disputes resolve fine on chat evidence already posted. Revisit if "I'd settle this but I need one more piece" becomes a recurring admin frustration.
-- **Partial refund tool.** Currently the "draw" action refunds both stakes fully. Nuanced cases (one player clearly forfeited but other played in bad faith) might warrant 70/30 splits. Wallet primitives already support arbitrary amounts; just needs an action UI + audit shape.
-
-**Admin productivity**
-
-- **Audit log as its own Filament resource.** Move `match_admin_resolutions` from the inline HTML render on the View page to a proper `MatchAdminResolutionResource` at `/admin/resolutions`. Filterable by admin, action, date range. Useful for self-audit ("what did I resolve this week?") and team-audit ("who's settling to creator most often?").
-- **Aging-dispute reminders** (cron-driven). Every N hours, fire a notification for any dispute still open beyond a threshold (e.g. 4h). Separate from the open-event notification — catches the "I missed it the first time" case. Needs a scheduled task + dedup to avoid spamming the same dispute every cron tick.
-
-> Dashboard widgets + real-time admin notifications promoted to **M17** (above).
-
-**Player context in dispute review**
-
-- **User history sidebar** in Creator / Taker cards: "X disputes opened, Y won, Z lost", "wallet balance", "matches played in last 30d", "open reports against this user" (depends on M13). Gives admin "is this a habitual disputer?" context without leaving the page.
-- **Quick links to game APIs.** Buttons in the chat history that take admin straight to chess.com / Lichess game search for the snapshotted usernames. Saves the copy-paste step when admin wants to manually verify a claim.
-- **Provider snapshot view.** Show the snapshotted username from `match_provider_snapshots` (what they were linked as at match creation), not just current linked accounts. Matters when a player unlinked and relinked a different account post-match.
-- **Listing context popover.** Quick view of the original listing (description, time control, language, region) for context — currently the admin has to leave the page to see the listing.
-
-**Filtering + search**
-
-- **Better search.** Currently the matches list is sortable but not searchable. Add search by player username, player email, or stake range. Existing filter only covers status.
-- **Audit log CSV export.** Download `match_admin_resolutions` filtered by date range — useful for any future accounting or operational review.
-
----
-
-## Open questions before real money flows
-
-Engineering can keep moving on everything else; these are the topics worth surfacing before Stakly accepts a real deposit. Legal/jurisdiction is user-owned and out of engineering scope, but flagged here for completeness.
-
-1. **Custody model** — TBD with the chain specialist (M9). Internal ledger is provider-agnostic so this decision doesn't gate ledger work.
-2. **Jurisdiction** — where Stakly is registered + license path. User-owned.
-3. **Chain + provider** — TRC20 (Tron USDT) is the planned starting chain; provider TBD with specialist.
-4. **Key storage** — depends on custody model.
-5. **Incident response plan** — hot-wallet compromise procedure, user notification template, insurance.
-6. **Terms of Service + dispute resolution policy.** User-owned.
-7. **KYC/AML** — required? threshold? provider? User-owned.
-
-> Stakly is **crypto-end-to-end** (USDT in, USDT out, USDT-denominated platform revenue). No fiat-banking touchpoint for users.
-
-### Small follow-ups noticed in passing
-
-Tiny cleanups noticed during earlier work. Worth doing before non-developers touch the platform — not blocking any current slice.
-
-- **Platform user credentials.** Seeder currently creates `platform@stakly.internal` via the default `UserFactory` (`Hash::make('password')` + `email_verified_at = now()`). Tighten: override seeder to use `Hash::make(bin2hex(random_bytes(32)))` and set `email_verified_at = null`. Add `Fortify::authenticateUsing(...)` hook in `FortifyServiceProvider` that rejects `is_platform = true` users — defense in depth.
-- **Marquee copy.** `resources/js/layouts/site-layout.tsx` `defaultMarqueeItems` currently has `STAKLY30 30% off` promo and other aspirational claims. Replace with honest copy before any user-facing surface.

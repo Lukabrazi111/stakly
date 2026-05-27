@@ -15,24 +15,24 @@ use Illuminate\Database\Seeder;
 use Illuminate\Support\Collection;
 
 /**
- * Populates settled-match history for a handful of seeded users so the
- * profile stats hero (M18 Phase 2) and the match-history section render
- * with realistic numbers out of the box. Without this seeder every
- * profile would show "No matches yet" and you'd have to play matches
- * manually to see anything populated.
+ * Populates settled-match history across seeded users so every profile
+ * shows realistic, non-uniform stats out of the box. Without this seeder
+ * marketplace users would only appear as opponents in others' histories
+ * and accumulate tiny biased samples (e.g. 1W-1D-0L → 100%) — visiting
+ * a random profile would feel broken.
  *
- * What gets populated:
- *   - `testuser` — 12 matches, win-heavy (~67% win rate, mix of W/L/D).
- *   - 3 marketplace users — 5–7 matches each, varied win rates.
- *   - Remaining ~17 marketplace users stay empty so the empty-state UI
- *     is also testable.
+ * Two populations:
+ *   - `testuser` — 12 matches, win-heavy showcase profile (~67% win rate).
+ *   - All other marketplace users — 4–6 matches each via a skill-tier
+ *     cycle (index mod 4): strong / balanced / balanced / casual. Means
+ *     every random profile has enough sample size for the win-rate +
+ *     completion-rate signals to be meaningful.
  *
- * Each match goes through the real `SettleMatchAction` / `SettleDrawMatchAction`
- * so the wallet ledger stays in sync — `users.usdt_balance` continues to
- * equal `SUM(wallet_transactions.amount)` per the invariant asserted in
- * `WalletTest`. Slower than direct GameMatch inserts but keeps the demo
- * environment internally consistent (you can also check the wallet page
- * for the seeded users and see real ledger activity).
+ * Each match goes through the real `SettleMatchAction` /
+ * `SettleDrawMatchAction` so the wallet ledger stays in sync —
+ * `users.usdt_balance == SUM(wallet_transactions.amount)` per the
+ * invariant asserted in `WalletTest`. Slower than direct GameMatch
+ * inserts but keeps the demo environment internally consistent.
  */
 class MatchHistorySeeder extends Seeder
 {
@@ -76,39 +76,60 @@ class MatchHistorySeeder extends Seeder
             stakes: ['50', '100', '100', '150', '200', '50', '250', '75', '500', '100', '300', '125'],
         );
 
-        // Three other "active" demo users with varied win rates so visiting
-        // multiple profiles shows different stories.
-        //   - alice: 6 matches, mostly wins (5W-1L → 83%)
-        //   - bob: 7 matches, balanced (3W-3L-1D → 50% with a draw)
-        //   - carol: 5 matches, mostly losses (1W-3L-1D → 25%)
-        $alice = $marketplace->skip(0)->first();
-        $bob = $marketplace->skip(1)->first();
-        $carol = $marketplace->skip(2)->first();
+        // Every marketplace user gets a varied history based on a cycling
+        // skill tier (index mod 4). Guarantees that visiting any random
+        // profile shows realistic data — no accidental 100% from being an
+        // opponent in 2 matches, no empty profiles.
+        foreach ($marketplace->values() as $i => $user) {
+            [$outcomes, $stakes] = $this->profileFor($i);
 
-        $aliceOpponents = $marketplace->skip(3)->take(4);
-        $bobOpponents = $marketplace->skip(7)->take(4);
-        $carolOpponents = $marketplace->skip(11)->take(4);
+            // Opponents drawn from the rest of the marketplace, shuffled
+            // for variety. Cap at `count($outcomes)` so each match has a
+            // distinct opponent slot (the existing seedMatchesFor cycles
+            // opponents anyway if the list is shorter, but distinct
+            // opponents reads better in the seeded match-history list).
+            $opponents = $marketplace
+                ->where('id', '!=', $user->id)
+                ->shuffle()
+                ->take(count($outcomes));
 
-        $this->seedMatchesFor(
-            user: $alice,
-            opponents: $aliceOpponents,
-            outcomes: ['win', 'win', 'win', 'win', 'loss', 'win'],
-            stakes: ['100', '50', '200', '150', '100', '300'],
-        );
+            $this->seedMatchesFor(
+                user: $user,
+                opponents: $opponents,
+                outcomes: $outcomes,
+                stakes: $stakes,
+            );
+        }
+    }
 
-        $this->seedMatchesFor(
-            user: $bob,
-            opponents: $bobOpponents,
-            outcomes: ['win', 'loss', 'draw', 'win', 'loss', 'win', 'loss'],
-            stakes: ['200', '100', '50', '250', '150', '100', '500'],
-        );
-
-        $this->seedMatchesFor(
-            user: $carol,
-            opponents: $carolOpponents,
-            outcomes: ['loss', 'win', 'loss', 'draw', 'loss'],
-            stakes: ['75', '100', '50', '150', '200'],
-        );
+    /**
+     * Skill profile cycled across marketplace users so the seeded match
+     * history spreads across a believable win-rate range. Index mod 4:
+     *   - 0       → strong  (~80%, 6 matches)
+     *   - 1, 2    → balanced (~50%, 5 matches)
+     *   - 3       → casual  (~33%, 4 matches)
+     *
+     * Index-based selection keeps the seeder deterministic across reruns
+     * given a fixed marketplace order — no faker randomness in tier choice.
+     *
+     * @return array{0: list<'win'|'loss'|'draw'>, 1: list<string>}
+     */
+    private function profileFor(int $index): array
+    {
+        return match ($index % 4) {
+            0 => [
+                ['win', 'win', 'win', 'loss', 'draw', 'win'],
+                ['100', '200', '150', '300', '50', '250'],
+            ],
+            1, 2 => [
+                ['win', 'loss', 'win', 'draw', 'loss'],
+                ['100', '150', '50', '75', '200'],
+            ],
+            default => [
+                ['loss', 'win', 'loss', 'draw'],
+                ['75', '100', '50', '150'],
+            ],
+        };
     }
 
     /**
