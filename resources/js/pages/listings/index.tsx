@@ -85,6 +85,27 @@ export default function ListingsIndex({
                     </p>
                 ) : (
                     <div className="flex flex-col gap-3">
+                        {/* M22 Phase 2 — desktop-only column header strip.
+                            Widths mirror the column widths inside
+                            `listing-row.tsx` so the labels align with the
+                            data underneath. Hidden on mobile where rows
+                            stack vertically and labels would only confuse. */}
+                        <div
+                            className="hidden gap-6 px-5 text-[10px] font-medium tracking-wider text-muted-foreground uppercase md:flex md:items-center"
+                            aria-hidden="true"
+                        >
+                            <div className="w-48 shrink-0">Player</div>
+                            <div className="flex flex-1 items-center gap-6">
+                                <div className="flex-1">Match</div>
+                                <div className="w-28 shrink-0 text-right">
+                                    Ends in
+                                </div>
+                                <div className="w-32 shrink-0 text-right">
+                                    Stake
+                                </div>
+                            </div>
+                        </div>
+
                         {listings.data.map((listing) => (
                             <ListingRow key={listing.id} listing={listing} />
                         ))}

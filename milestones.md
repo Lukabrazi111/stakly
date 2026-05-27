@@ -94,11 +94,11 @@ The headline change. Three additions next to (or near) the creator name on every
 
 Visual-only fixes that sharpen scan-ability — no backend changes.
 
-- [ ] **Stake prominence.** Bump the stake size in `listing-row.tsx` so it's the unmistakable visual anchor of the row (currently `text-2xl`, competes with the Take button). Card variant already at `text-3xl`; bring the row in line or slightly larger. Keep the gradient.
-- [ ] **Time-left urgency colors.** Extend `isEndingSoon` in `lib/listings-format.ts` to expose an urgency tier (gray > 1h, amber < 1h, destructive < 15m). Apply the tier to the time-remaining indicator on `listing-row.tsx` + `listing-card.tsx`. Reuses existing `text-muted-foreground` / `text-warning` / `text-destructive` tokens.
-- [ ] **Light column header row** on `/listings` index above the listings list — muted-foreground labels ("Player" · "Trust" · "Format" · "Stake") aligned with the row columns. Visible only on `md+` where rows render horizontally; hidden on mobile.
-- [ ] Tests: existing `ListingIndexTest` covers payload; visual changes verified manually.
-- [ ] Pint + suite green.
+- [x] **Stake prominence** — bumped row stake from `text-2xl` → `text-3xl` so it matches the featured card and properly anchors the row (no longer visually competes with the Take button). Gradient preserved.
+- [x] **Time-left urgency colors** — new `getTimeUrgency(isoString): TimeUrgency` helper in `lib/listings-format.ts` returning `'expired' | 'critical' | 'warning' | 'normal'` (15m / 1h thresholds). Applied to row + card via a `urgencyTone` Tailwind class switch (`text-destructive` < 15m, `text-warning` < 1h, `text-muted-foreground` otherwise). `isEndingSoon` boolean kept for the simpler surfaces (`listings/show`, `mine-listing-row`) — additive change, no churn.
+- [x] **Light column header row** on `/listings` index — `hidden md:flex` strip above the listings list with muted-foreground uppercase labels (Player · Match · Ends in · Stake) aligned to the row column widths (`w-48` / `flex-1` / `w-28` / `w-32`). `aria-hidden="true"` since the rows themselves already convey the structure for screen readers.
+- [x] Tests: existing `ListingIndexTest` payload assertions unchanged — Phase 2 is visual-only.
+- [x] Pint + suite green (772 tests / 3280 assertions).
 
 **Phase 3 — Take button eligibility states**
 

@@ -8,7 +8,7 @@ import { useInitials } from '@/hooks/use-initials';
 import {
     formatSkillRange,
     formatTimeRemaining,
-    isEndingSoon,
+    getTimeUrgency,
     timeControlLabels,
 } from '@/lib/listings-format';
 import { show as showListing } from '@/routes/listings';
@@ -33,7 +33,15 @@ interface Props {
  */
 export function ListingCard({ listing }: Props) {
     const getInitials = useInitials();
-    const endingSoon = isEndingSoon(listing.expires_at);
+    const urgency = getTimeUrgency(listing.expires_at);
+
+    // M22 Phase 2 — tiered urgency on the time-remaining indicator.
+    const urgencyTone =
+        urgency === 'critical'
+            ? 'text-destructive'
+            : urgency === 'warning'
+              ? 'text-warning'
+              : 'text-muted-foreground';
 
     return (
         <article className="group relative flex h-full flex-col gap-4 rounded-2xl border border-border/60 bg-card/60 p-5 transition-all duration-200 ease-out hover:-translate-y-0.5 hover:border-primary/30 hover:bg-card hover:shadow-glow-sm">
@@ -76,11 +84,9 @@ export function ListingCard({ listing }: Props) {
                 </Link>
 
                 <span
-                    className={`pointer-events-none inline-flex shrink-0 items-center gap-1 text-xs font-medium ${
-                        endingSoon ? 'text-warning' : 'text-muted-foreground'
-                    }`}
+                    className={`pointer-events-none inline-flex shrink-0 items-center gap-1 text-xs font-medium ${urgencyTone}`}
                 >
-                    <Clock className="size-3.5" />
+                    <Clock className="size-3.5" aria-hidden="true" />
                     {formatTimeRemaining(listing.expires_at)}
                 </span>
             </header>

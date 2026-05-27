@@ -8,7 +8,7 @@ import { useInitials } from '@/hooks/use-initials';
 import {
     formatSkillRange,
     formatTimeRemaining,
-    isEndingSoon,
+    getTimeUrgency,
     timeControlLabels,
 } from '@/lib/listings-format';
 import { show as showListing } from '@/routes/listings';
@@ -35,7 +35,16 @@ interface Props {
 export function ListingRow({ listing }: Props) {
     const getInitials = useInitials();
     const timeRemaining = formatTimeRemaining(listing.expires_at);
-    const endingSoon = isEndingSoon(listing.expires_at);
+    const urgency = getTimeUrgency(listing.expires_at);
+
+    // M22 Phase 2 — tiered urgency tone on the time-remaining indicator.
+    // Same brand tokens already used elsewhere for warning / destructive.
+    const urgencyTone =
+        urgency === 'critical'
+            ? 'text-destructive'
+            : urgency === 'warning'
+              ? 'text-warning'
+              : 'text-muted-foreground';
 
     return (
         <article className="group relative flex flex-col gap-4 rounded-2xl border border-border/60 bg-card/60 p-4 transition-all duration-200 ease-out hover:-translate-y-0.5 hover:border-primary/30 hover:bg-card hover:shadow-glow-sm md:flex-row md:items-center md:gap-6 md:p-5">
@@ -129,16 +138,17 @@ export function ListingRow({ listing }: Props) {
                 </div>
 
                 <div
-                    className={`inline-flex items-center gap-1.5 text-xs font-medium md:w-28 md:shrink-0 md:justify-end ${
-                        endingSoon ? 'text-warning' : 'text-muted-foreground'
-                    }`}
+                    className={`inline-flex items-center gap-1.5 text-xs font-medium md:w-28 md:shrink-0 md:justify-end ${urgencyTone}`}
                 >
-                    <Clock className="size-3.5" />
+                    <Clock className="size-3.5" aria-hidden="true" />
                     {timeRemaining}
                 </div>
 
+                {/* M22 Phase 2 — stake is the row's visual anchor. Bumped
+                    from text-2xl → text-3xl so it competes properly with
+                    the Take button (matches the featured-card weight). */}
                 <div className="flex items-baseline gap-1 md:w-32 md:shrink-0 md:justify-end">
-                    <span className="text-gradient-primary font-display text-2xl leading-none font-bold">
+                    <span className="text-gradient-primary font-display text-3xl leading-none font-bold">
                         ${listing.stake_amount}
                     </span>
                     <span className="text-xs text-muted-foreground">USDT</span>
