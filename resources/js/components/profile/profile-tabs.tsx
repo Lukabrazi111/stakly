@@ -13,7 +13,9 @@ function readTabFromUrl(): ProfileTab {
     if (typeof window === 'undefined') {
         return DEFAULT_TAB;
     }
+
     const param = new URLSearchParams(window.location.search).get('tab');
+
     return (VALID_TABS as readonly string[]).includes(param ?? '')
         ? (param as ProfileTab)
         : DEFAULT_TAB;
@@ -42,22 +44,27 @@ export function ProfileTabs({ matches, listings, profileUserId }: Props) {
     React.useEffect(() => {
         const handler = () => setTab(readTabFromUrl());
         window.addEventListener('popstate', handler);
+
         return () => window.removeEventListener('popstate', handler);
     }, []);
 
     const handleChange = (next: string) => {
         const newTab = next as ProfileTab;
+
         if (newTab === tab) {
             return;
         }
+
         setTab(newTab);
 
         const url = new URL(window.location.href);
+
         if (newTab === DEFAULT_TAB) {
             url.searchParams.delete('tab');
         } else {
             url.searchParams.set('tab', newTab);
         }
+
         window.history.pushState({}, '', url);
     };
 

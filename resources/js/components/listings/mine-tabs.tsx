@@ -38,9 +38,11 @@ export function MineTabs({ current }: Props) {
 
     const handleChange = (next: string) => {
         const newTab = next as ListingsMineTab;
+
         if (newTab === activeTab) {
             return;
         }
+
         setActiveTab(newTab);
         // `preserveState: true` keeps the page component mounted, so the
         // Tabs primitive retains its DOM continuity and the CSS
