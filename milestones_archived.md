@@ -519,3 +519,106 @@ Two feature tests added: og payload shape + absolute-url enforcement.
 - **System-wide card surface token sweep** — separate polish slice after M19 validates the look.
 - **Custom OG image per user** (dynamic server-rendered card with stats) — Phase 5 ships a static placeholder; per-user dynamic OG is future polish.
 - **Profile editing forms (avatar / bio / linked accounts / security / password)** — those stay at `/settings/*`; M19's owner-only block is share + OG only, not duplicating settings.
+
+---
+
+## M22 — Listings page trust + clarity ✅ shipped 2026-05-27 → 2026-05-28
+
+Compared to Bybit's P2P listings, `/listings` rows had a "should I trust this stranger" gap: skill range + game format but no signal of whether the seller was experienced, reliable, or even verified on the listing's platform. M22 closed that gap in three phases — trust signals + verified-platform chip on the row, visual hierarchy sharpening (stake prominence, time-left urgency colors, column headers), and a Take button that telegraphs eligibility before click.
+
+### Phase 1 — Trust signals on the row
+
+New `App\Services\SellerTrust` service with `forBatch(array $userIds)` doing ONE join of `game_matches` + `listings` to aggregate per-user `[rate_30d, settled_lifetime]` (PHP-side attribution to handle creator-OR-taker cleanly). Mirrors `UserController::show` formula (3-free cancellation buffer on 30d, none on lifetime). Convenience `attachTo(iterable $listings)` wraps it for controllers, attaching `seller_trust` as a transient model attribute. Wired into `ListingController::index` + `show` + `mine` and `HomeController::index`. `ListingResource` exposes `creator.completion_rate_30d` (int|null) + `creator.settled_lifetime` (int).
+
+`SellerTrustMeta` component renders inline meta text under the creator name (Bybit-style "503 Order(s) | 91%" pattern) — `{rate}% · {n} matches`, with native title-attribute tooltip. Hides entirely when `settled === 0`. Lives in the creator block, not the badges row, so it reads as continuation of the creator metadata.
+
+`VerifiedPlatformChip` shows the listing's required platform (chess.com brown / Lichess gray, same tokens as profile-page `VerificationChip`). Lives in the badges row.
+
+**Earned cross-platform badge** (added within Phase 1 scope): `creator.verified_providers: ListingPlatform[]` exposed via eager-loaded `user.linkedAccounts`. The green `BadgeCheck` icon in `SellerTrustMeta` appears ONLY when `verified_providers.length >= 2` — cross-platform credential as an earned signal, not decoration. Future-proof for M15 (chess.com + FACEIT or any combination of 2+ providers earns it).
+
+Tests: 7 new in `ListingIndexTest` covering payload shape, 0-match defaults, 30d-window math, 3-free buffer, N+1 guard (query-log assertion on the join shape), and verified-providers lists for cross + single platform creators.
+
+### Phase 2 — Visual hierarchy
+
+- **Stake prominence**: row stake bumped `text-2xl → text-3xl` to match the featured card and anchor the row visually rather than visually competing with the Take button.
+- **Time-left urgency colors**: new `getTimeUrgency(isoString): TimeUrgency` helper returning `'expired' | 'critical' | 'warning' | 'normal'` at 15m / 1h thresholds. Applied to row + card time-remaining indicator via a `urgencyTone` switch (destructive < 15m, warning < 1h, muted otherwise). `isEndingSoon` kept for simpler surfaces (`listings/show`, `mine-listing-row`).
+- **Column header strip**: desktop-only (`hidden md:flex`) labels above the listings list — Player · Match · Ends in · Stake — aligned to the row column widths.
+
+### Phase 3 — Take button eligibility states
+
+New `TakeButton` component reads `auth.user` via `usePage()` + `openLogin` via `useAuthModal()`. Early-return on guest so TypeScript narrows `user` to non-null for the rest. Four branches:
+
+- **Guest viewer** → gradient pill "Sign in to take" with `onClick={openLogin}` opening the modal in place (no page transition).
+- **Owner** → outline pill "Manage" linking to `/listings/mine`. Same size/shape as Take so the owner row's column matches ordinary-Take rows.
+- **Wrong-platform** (`!user.linked_platforms.includes(listing.platform)`) → outline pill "Link {platform} to take" linking to `/settings/linked-accounts`. Forced `rounded-full` because the outline variant's base is `rounded-md`.
+- **Eligible** → gradient pill "Take" linking to listing detail (current behavior preserved).
+
+Used in `listing-row.tsx` + `listing-card.tsx`. Each surface passes its own layout className (`w-full md:w-auto` for the row, `relative mt-auto w-full` for the card's flex-column bottom-pin). `listings/show.tsx` deferred — the detail page already has its own elaborate eligibility tree (owner-inactive, insufficient-balance, Take dialog with confirmation) that doesn't compress without losing features. M23 picks up the detail page polish.
+
+### Decisions
+
+- **Trust as Bybit-style inline meta, not chip.** The trust info reads as continuation of the creator metadata next to region, not as a separate badge alongside listing badges.
+- **Trust chip hides on 0-match users.** A "—% · 0" chip is noise. Better to absent the signal entirely until the player has a track record.
+- **Earned badge = cross-platform, not gamification.** Single green check, single threshold (`>= 2 providers`). Future-proof for M15 without inviting an achievement system. See [[feedback_no_placeholder_ui]] family — we add badges that mean something, not visual flair.
+- **No "online now" / live presence dots.** Stakly's `is_active_mode` already signals "available to play"; live presence would require Echo channels for low payoff.
+- **No "Fast settler" badge.** Stakly settles automatically via auto-fetch; no per-user release speed to measure.
+- **Stake is the visual anchor, not the Take button.** Bybit's price is the biggest thing in the row; ours should be too.
+- **Don't refactor `UserController::show` to use `SellerTrust` helper yet.** Phase 1 duplicates the formula in `UserController` + `SellerTrust`; consolidation can come later if drift becomes a real concern.
+
+### Not in M22
+
+- **Sort-by-trust / filter-by-completion-rate.** Could land later if usage shows users want to slice by trust. Don't speculate.
+- **Repeat-pair callout on listing rows.** Profile page shows it; adding to rows is visual noise. Defer until users ask.
+- **Per-game row shapes.** Chess is the only game today. M15 brings per-game renderers.
+- **Listings detail page polish.** Detail page deferred to M23.
+
+---
+
+## M23 — Listings detail page polish ✅ shipped 2026-05-28
+
+M22 lifted `/listings` to a Bybit-class marketplace; the detail page was still on shadcn-defaults — sparse creator card, `bg-card/60` translucent surfaces, no time urgency tier, no pot breakdown. M23 brought parity with the listings row aesthetic and added the details a detail page is uniquely positioned to show: bio, member-since, linked-account chips that click out to external profiles, and pre-take pot/fee/payout math so a viewer knows exactly what they're committing to before clicking Take.
+
+### Phase 1 — Creator card uplift + visual parity
+
+`ListingResource` creator block gained `bio`, `member_since`, `linked_accounts` ({provider, username}[]). The new `linked_accounts` carries both the provider AND the username because the detail-page chip strip needs the username to click out to each external profile — distinct shape from `verified_providers` (provider IDs only, used by the M22 SellerTrustMeta badge). `ListingController::show` widened its user column whitelist to `id,name,username,is_active_mode,bio,created_at`; other surfaces (index, mine) keep the narrow whitelist since they don't render bio/member-since.
+
+`listings/show.tsx` creator card refactored to a profile-card analogue: `AvatarImage` fallback added (was always falling back to initials even when avatar uploaded), `SellerTrustMeta` inline under name (Bybit-style), then a chip strip with `VerifiedPlatformChip` (listing's required platform) + per-linked-account `VerificationChip` (clickable, external) + Joined-{month-year} pill, then bio with `whitespace-pre-line`.
+
+Match-details card: surface token `bg-card/60` → `bg-card` (all three detail-page cards), added Language cell to the grid, `getTimeUrgency` from M22 Phase 2 paints Expires field amber < 1h / destructive < 15m (replaces the binary `isEndingSoon` boolean), and a muted "Posted {Medium-Date}" foot line. Region + Language moved OUT of the creator card inline meta into the match-details grid — cleaner "who vs what" separation.
+
+Tests: 3 new in `ListingShowTest` covering full creator payload (cross-platform creator with bio), null-bio fallback, and empty-linked-accounts fallback. Suite 775 / 3309.
+
+### Phase 2 — Stake action card breakdown
+
+`ListingResource` exposes top-level `fee_rate: float` (mirror of `GameMatchResource::fee_rate`) — single config-sourced rate, FE computes pot = stake × 2, fee = pot × fee_rate, winner_payout = pot − fee. Listings page surfaces don't currently render the breakdown but the resource shape stays consistent across index / show / mine for the cost of one float per listing.
+
+`listings/show.tsx` stake card: hero stake number unchanged; new `StakeRow` helper renders Your stake / Opponent stake / Pot total (bold) / Platform fee (muted, with `−$X.XX` minus sign) / Winner payout (gradient accent — same idiom as `MatchInfoCard`'s `Row`). Breakdown gated on `isOpen && !isOwner`: owners already know the numbers, non-Open listings hide pre-take math (match page owns the post-take view), participants get "View match →" instead. Single `my-6 border-t` divider between breakdown and CTA; take-area wrapper switches `mt-6` on/off based on whether the divider supplies the separator.
+
+CTA polish for the wrong-platform branch: replaced the old disabled-gradient + separate hint link with a single clickable outline pill "Link {platform} to take" linking to `/settings/linked-accounts`. Matches the M22 Phase 3 `TakeButton` idiom (`asChild Link`, forced `rounded-full`).
+
+Tests: 1 new asserting `listing.fee_rate` matches config. Suite 776 / 3317.
+
+### Mobile fix (post-Phase-2)
+
+Single root cause for two symptoms — CSS grid items default to `min-width: auto` (content-min-size), so any wide child (chip strip, breakdown row) grew the grid cell past viewport on mobile, making the whole page horizontally scrollable. The chips at the card edge clipped mid-pill; the stake card's row values disappeared off-screen on the right.
+
+Fix: `min-w-0` on both grid cells in `listings/show.tsx` (left column + right aside) lets them shrink to viewport, so inner `overflow-x-auto` / wrap finally works. Same fix applied to `components/profile/profile-header.tsx` where the chip strip exhibited identical clipping (`Joined ...` pill truncated at card edge).
+
+While there: chip strips on BOTH `listings/show.tsx` and `profile-header.tsx` switched from `flex-nowrap overflow-x-auto sm:flex-wrap` (horizontal scroll on mobile) to plain `flex-wrap` everywhere. The horizontal-scroll-on-mobile pattern wasn't worth the visual cost of mid-pill clipping at the card boundary; wrapping shows every chip cleanly at the cost of a slightly taller card.
+
+### Decisions
+
+- **Detail page gets MORE info than the row, not less.** Row is scan; detail is consider. Completion-rate meta + bio + linked-accounts strip + pot breakdown all live on the detail page where Bob has time to read.
+- **Region + Language moved into match-details grid, out of creator card.** User chose this in a Phase 1 design question — cleaner "who vs what" separation (region/language describe the listing, not the identity). The match-details grid is the natural home.
+- **`fee_rate` exposed top-level on `ListingResource`, not computed inline.** Mirrors `GameMatchResource` idiom; trivial wire cost (one float per listing) buys consistent resource shape + single config source for the rate.
+- **Take dialog stays.** The confirmation dialog ("You're about to stake $X USDT. Once it starts, your stake is locked...") is good UX — M23 polishes around it, doesn't replace.
+- **No `TakeButton` component refactor on the detail page.** The detail page's eligibility tree has unique branches (insufficient-balance, owner-inactive, take-dialog confirmation) that don't fit the shared component. M22 Phase 3 deferred this intentionally; M23 kept the deferral. The wrong-platform branch IS now visually aligned with `TakeButton` (single outline pill) without sharing the component.
+- **Chip strips wrap, don't horizontal-scroll, on the listing detail + profile pages.** The clipping-mid-pill failure mode at mobile widths wasn't worth the consistent-card-height payoff. Detail-page can now show 4 chips comfortably (platform + 2 linked accounts + Joined) without clipping; profile-page benefits from the same fix.
+
+### Not in M23
+
+- **Match-history sidebar of the creator on the detail page.** "This player's recent matches" could live in the left column but the data load + visual cost isn't worth it before users ask. Defer until requested.
+- **Live other-listings strip** ("More from this player"). Same reasoning.
+- **Take-time prediction** ("Average time to start: 6m"). Bybit-style metric; we don't track this. Defer indefinitely.
+- **System-wide card token sweep.** Detail-page-only here; other pages stay on their tokens until a dedicated audit slice.
+- **System-wide chip-strip wrap audit.** Only the two surfaces with the visible clipping issue got fixed (listings detail + profile header). Other chip strips can be revisited if the same failure mode appears.

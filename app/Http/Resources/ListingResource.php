@@ -28,6 +28,15 @@ class ListingResource extends JsonResource
             // viewer hasn't verified the right provider.
             'platform' => $this->platform->value,
             'stake_amount' => (float) $this->stake_amount,
+            // M23 Phase 2 — platform fee rate as a float at the JSON
+            // boundary (mirror `GameMatchResource::fee_rate`). Frontend
+            // computes pot = stake × 2, fee = pot × fee_rate, winner
+            // payout = pot − fee. Single source of truth = config; FE
+            // never duplicates the rate. The marketplace surfaces don't
+            // currently render this, but the resource shape stays
+            // consistent across index / show / mine for the cost of one
+            // float per listing.
+            'fee_rate' => (float) config('stakly.platform_fee_rate'),
             'skill_min' => $this->skill_min,
             'skill_max' => $this->skill_max,
             'time_control' => $this->time_control->map(fn ($tc) => $tc->value)->values()->all(),
@@ -69,6 +78,24 @@ class ListingResource extends JsonResource
                     ? $this->user->linkedAccounts
                         ->pluck('provider')
                         ->map(fn ($provider) => $provider->value)
+                        ->values()
+                        ->all()
+                    : [],
+                // M23 Phase 1 — detail-page identity fields (creator card
+                // uplift). Costs negligible payload on the row/card surfaces
+                // (`bio` capped at 500 chars; `linked_accounts` is 2 small
+                // objects today) so we keep one ListingResource shape rather
+                // than splitting a detail-only DTO. `linked_accounts` differs
+                // from `verified_providers` above by carrying the username
+                // — needed for the click-out chip strip on the detail page.
+                'bio' => $this->user->bio,
+                'member_since' => $this->user->created_at?->toIso8601String(),
+                'linked_accounts' => $this->user->relationLoaded('linkedAccounts')
+                    ? $this->user->linkedAccounts
+                        ->map(fn ($account) => [
+                            'provider' => $account->provider->value,
+                            'username' => $account->username,
+                        ])
                         ->values()
                         ->all()
                     : [],
