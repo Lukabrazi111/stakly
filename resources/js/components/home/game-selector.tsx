@@ -21,6 +21,7 @@ export type GameTileId =
     | 'dota2'
     | 'lol'
     | 'cs2'
+    | 'pubg'
     | 'valorant'
     | 'apex'
     | 'rocket-league'
@@ -33,6 +34,7 @@ interface GameTile {
     icon: LucideIcon;
     tint: string;
     comingSoon: boolean;
+    imageSrc?: string;
 }
 
 export const GAME_TILES: readonly GameTile[] = [
@@ -42,20 +44,7 @@ export const GAME_TILES: readonly GameTile[] = [
         icon: Crown,
         tint: 'from-primary/80 to-accent/80',
         comingSoon: false,
-    },
-    {
-        id: 'dota2',
-        name: 'Dota 2',
-        icon: Swords,
-        tint: 'from-red-600/70 to-orange-500/70',
-        comingSoon: true,
-    },
-    {
-        id: 'lol',
-        name: 'League of Legends',
-        icon: Sparkles,
-        tint: 'from-blue-500/70 to-indigo-500/70',
-        comingSoon: true,
+        imageSrc: '/images/games/chess.png',
     },
     {
         id: 'cs2',
@@ -63,6 +52,15 @@ export const GAME_TILES: readonly GameTile[] = [
         icon: Target,
         tint: 'from-amber-500/70 to-yellow-500/70',
         comingSoon: true,
+        imageSrc: '/images/games/cs2.jpg',
+    },
+    {
+        id: 'dota2',
+        name: 'Dota 2',
+        icon: Swords,
+        tint: 'from-red-600/70 to-orange-500/70',
+        comingSoon: true,
+        imageSrc: '/images/games/dota2.jpg',
     },
     {
         id: 'valorant',
@@ -70,6 +68,23 @@ export const GAME_TILES: readonly GameTile[] = [
         icon: Flame,
         tint: 'from-rose-500/70 to-red-500/70',
         comingSoon: true,
+        imageSrc: '/images/games/valorant.jpg',
+    },
+    {
+        id: 'lol',
+        name: 'League of Legends',
+        icon: Sparkles,
+        tint: 'from-blue-500/70 to-indigo-500/70',
+        comingSoon: true,
+        imageSrc: '/images/games/league-of-legends.jpeg',
+    },
+    {
+        id: 'pubg',
+        name: 'PUBG',
+        icon: Target,
+        tint: 'from-amber-500/70 to-orange-600/70',
+        comingSoon: true,
+        imageSrc: '/images/games/pubg.jpg',
     },
     {
         id: 'apex',
@@ -77,6 +92,7 @@ export const GAME_TILES: readonly GameTile[] = [
         icon: Trophy,
         tint: 'from-orange-500/70 to-red-600/70',
         comingSoon: true,
+        imageSrc: '/images/games/apex-legends.webp',
     },
     {
         id: 'rocket-league',
@@ -84,6 +100,7 @@ export const GAME_TILES: readonly GameTile[] = [
         icon: Rocket,
         tint: 'from-sky-500/70 to-blue-600/70',
         comingSoon: true,
+        imageSrc: '/images/games/rocket-league.jpg',
     },
     {
         id: 'overwatch',
@@ -91,13 +108,7 @@ export const GAME_TILES: readonly GameTile[] = [
         icon: Snowflake,
         tint: 'from-cyan-400/70 to-blue-500/70',
         comingSoon: true,
-    },
-    {
-        id: 'fortnite',
-        name: 'Fortnite',
-        icon: Gamepad2,
-        tint: 'from-violet-500/70 to-fuchsia-500/70',
-        comingSoon: true,
+        imageSrc: '/images/games/overwatch.jpg',
     },
 ] as const;
 
@@ -147,8 +158,8 @@ export function GameSelector({ selectedId, onSelect }: Props) {
                                 aria-selected={isSelected}
                                 onClick={() => onSelect(game.id)}
                                 className={cn(
-                                    'group relative shrink-0 cursor-pointer snap-start overflow-hidden rounded-2xl border-2 bg-card transition duration-200 ease-out',
-                                    'h-44 w-36 md:h-52 md:w-40',
+                                    'group relative shrink-0 cursor-pointer snap-start overflow-hidden rounded-2xl border-[3px] bg-card transition duration-200 ease-out',
+                                    'h-52 w-36 md:h-60 md:w-40',
                                     'focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none',
                                     // Hover lift + glow apply universally — selected tiles
                                     // get the same interactive feedback so the user knows
@@ -166,16 +177,27 @@ export function GameSelector({ selectedId, onSelect }: Props) {
                                     // decorative borders where that softness is right.
                                     isSelected
                                         ? 'border-primary shadow-glow'
-                                        : 'border-border/60 hover:border-primary/60',
+                                        : 'border-border/60 hover:border-primary',
                                 )}
                             >
-                                <div
-                                    className={cn(
-                                        'absolute inset-0 bg-gradient-to-br opacity-60 transition-opacity group-hover:opacity-80',
-                                        game.tint,
-                                    )}
-                                />
-                                <div className="absolute inset-0 bg-gradient-to-b from-background/10 via-background/40 to-background" />
+                                {game.imageSrc ? (
+                                    <img
+                                        src={game.imageSrc}
+                                        alt={game.name}
+                                        loading="lazy"
+                                        className="absolute inset-0 h-full w-full object-cover object-center transition-transform duration-300 ease-out group-hover:scale-105 motion-reduce:group-hover:scale-100"
+                                    />
+                                ) : (
+                                    <>
+                                        <div
+                                            className={cn(
+                                                'absolute inset-0 bg-gradient-to-br opacity-60 transition-opacity group-hover:opacity-80',
+                                                game.tint,
+                                            )}
+                                        />
+                                        <div className="absolute inset-0 bg-gradient-to-b from-background/10 via-background/40 to-background" />
+                                    </>
+                                )}
 
                                 {game.comingSoon && (
                                     <span className="absolute top-2 right-2 rounded-full bg-background/80 px-2 py-0.5 text-[10px] tracking-wide text-muted-foreground uppercase backdrop-blur">
@@ -183,15 +205,17 @@ export function GameSelector({ selectedId, onSelect }: Props) {
                                     </span>
                                 )}
 
-                                <div className="relative flex h-full flex-col items-center justify-end gap-2 p-4">
-                                    <Icon
-                                        className="size-10 text-foreground/90"
-                                        strokeWidth={1.5}
-                                    />
-                                    <span className="line-clamp-1 font-display text-sm font-bold tracking-tight text-foreground">
-                                        {game.name}
-                                    </span>
-                                </div>
+                                {!game.imageSrc && (
+                                    <div className="relative flex h-full flex-col items-center justify-end gap-2 p-4">
+                                        <Icon
+                                            className="size-10 text-foreground/90"
+                                            strokeWidth={1.5}
+                                        />
+                                        <span className="line-clamp-1 font-display text-sm font-bold tracking-tight text-foreground">
+                                            {game.name}
+                                        </span>
+                                    </div>
+                                )}
                             </button>
                         );
                     })}

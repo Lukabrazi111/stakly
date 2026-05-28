@@ -183,11 +183,11 @@
 }
 
 @utility shadow-glow {
-    box-shadow: 0 0 21px -7px var(--gradient-glow);
+    box-shadow: 0 0 19px -3.5px var(--gradient-glow);
 }
 
 @utility shadow-glow-sm {
-    box-shadow: 0 0 20px -6px var(--gradient-glow);
+    box-shadow: 0 0 19px -3.5px var(--gradient-glow);
 }
 
 @utility border-glow {
