@@ -26,9 +26,15 @@ export default function WalletHistory({
     types,
 }: WalletHistoryProps) {
     const goToFilter = (type: WalletTransactionType | null) => {
+        // `replace: true` — filter chip clicks are view-state changes, not
+        // real navigation events. Without this, each chip click pushes a
+        // history entry and `BackLink`'s `history.back()` walks back through
+        // every filter the user tried instead of returning to `/wallet`.
+        // Mirrors the listings filter-bar pattern (`listing-filters-bar.tsx`).
         router.get(historyRoute().url, buildWalletHistoryQuery({ type }), {
             preserveState: false,
             preserveScroll: false,
+            replace: true,
         });
     };
 
@@ -39,7 +45,7 @@ export default function WalletHistory({
         <PlayerHubLayout>
             <Head title="Transaction history — Wallet" />
 
-            <div className="mx-auto max-w-4xl px-4 py-10 md:py-14">
+            <div className="mx-auto max-w-5xl px-4 py-10 md:px-6 md:py-14">
                 <BackLink fallback={walletIndex().url} />
 
                 <header className="mt-4 mb-6">

@@ -57,10 +57,18 @@ export function WalletPagination({ currentPage, lastPage, filters }: Props) {
             return;
         }
 
+        // `replace: true` mirrors the filter chip's behavior in
+        // `pages/wallet/history.tsx` — pagination is view state within
+        // the same conceptual page, so Back should return to `/wallet`
+        // rather than walking through every page the user visited.
         router.get(
             walletHistory().url,
             buildWalletHistoryQuery(filters, { page }),
-            { preserveState: true, preserveScroll: false },
+            {
+                preserveState: true,
+                preserveScroll: false,
+                replace: true,
+            },
         );
     };
 

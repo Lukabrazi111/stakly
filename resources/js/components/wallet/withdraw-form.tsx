@@ -71,10 +71,6 @@ export function WithdrawForm({ balance, minWithdrawal }: Props) {
                     aria-invalid={errors.address ? true : undefined}
                     className="font-mono"
                 />
-                <p className="text-xs text-muted-foreground">
-                    Send to a TRC20 (Tron) USDT address only. Other networks
-                    lose funds.
-                </p>
                 <InputError message={errors.address} />
             </div>
 

@@ -1,4 +1,5 @@
 import { Head } from '@inertiajs/react';
+import { AlertTriangle } from 'lucide-react';
 import { BackLink } from '@/components/site/back-link';
 import { BalanceCard } from '@/components/wallet/balance-card';
 import { WithdrawForm } from '@/components/wallet/withdraw-form';
@@ -29,6 +30,25 @@ export default function WalletWithdraw({
 
                 <div className="mb-6">
                     <BalanceCard balance={balance} variant="compact" />
+                </div>
+
+                {/* Mirror of the deposit-page network warning so the safety
+                    messaging reads consistently on both directions of fund
+                    movement. Wrong-network sends are the #1 way users lose
+                    funds on crypto platforms — high visibility, near the
+                    address input, never collapsed. */}
+                <div className="mb-6 flex gap-3 rounded-xl border border-warning/30 bg-warning/10 p-4">
+                    <AlertTriangle className="size-5 shrink-0 text-warning" />
+                    <div className="space-y-1">
+                        <p className="text-sm font-semibold text-warning">
+                            Send to TRC20 (Tron) addresses only
+                        </p>
+                        <p className="text-xs text-warning/90">
+                            Sending to an ERC20, BEP20, Solana, or any other
+                            network address loses your funds permanently.
+                            Double-check the address before submitting.
+                        </p>
+                    </div>
                 </div>
 
                 <WithdrawForm balance={balance} minWithdrawal={minWithdrawal} />
