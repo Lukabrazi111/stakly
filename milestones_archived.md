@@ -622,3 +622,59 @@ While there: chip strips on BOTH `listings/show.tsx` and `profile-header.tsx` sw
 - **Take-time prediction** ("Average time to start: 6m"). Bybit-style metric; we don't track this. Defer indefinitely.
 - **System-wide card token sweep.** Detail-page-only here; other pages stay on their tokens until a dedicated audit slice.
 - **System-wide chip-strip wrap audit.** Only the two surfaces with the visible clipping issue got fixed (listings detail + profile header). Other chip strips can be revisited if the same failure mode appears.
+
+---
+
+## M24 — Game catalog (admin-managed posters) ✅ shipped 2026-05-28
+
+The homepage `GameSelector` row went from a hardcoded React array of icon-tinted placeholders to a DB-backed catalog of vertical poster tiles, admin-managed via Filament. Art, ordering, status, and new-game additions now flow through `/admin/games` without code changes. Visual treatment matches the mmrangels reference (~3:4 vertical posters, hover lift + magenta glow on selected, "Soon" badge for non-Active tiles).
+
+### Backend slice
+
+`games` table (slug unique, display_name, poster_path nullable, position int, status string, timestamps). `App\Enums\GameStatus` (`Active` | `ComingSoon` | `Disabled`) replaces the two-boolean approach — single source of truth, can't contradict itself. `Game` model + factory + observer-free cache invalidation via `booted()`: `creating` hook auto-appends new rows to `MAX(position) + 10` so admin never sees a position field; `saved`/`deleted` busts `homepage:games`. `Game::forHomepage()` scope returns Active + ComingSoon ordered by position (Disabled hidden). `Game::hasBackendIntegration()` is true only when status is Active AND slug matches an `App\Enums\Game` enum case.
+
+`GameSeeder` mirrors the existing row (chess Active + cs2/dota2/valorant/lol/pubg/apex/rocket-league/overwatch ComingSoon), seeding `poster_path` against the pre-existing `public/images/games/*.{jpg,png}` files. Filament uploads land in `storage/app/public/games/` via the standard `disk('public')` symlink; `GameResource` (HTTP) normalizes both source styles — root-relative `/images/...` paths pass through unchanged, disk-relative `games/...` paths get `/storage/` prepended.
+
+`HomeController::index` queries `Game::forHomepage()->get()` wrapped in `Cache::remember('homepage:games', 1h, ...)`. The cached value is the RESOLVED resource array (`GameResource::collection(...)->resolve()`), not the Eloquent Collection — caching the Collection round-trips through the Postgres cache driver's serialize path and crashes on `__PHP_Incomplete_Class` when read back. Stored as a plain array of dicts, it round-trips cleanly.
+
+### Filament admin
+
+`App\Filament\Resources\Games\GameResource` is a `--simple` resource (single ManageGames page). Form fields: display_name, slug (unique + alpha-dash + custom rule), poster `FileUpload` (`disk('public')`, `directory('games')`, `imageEditor()`, resize to 600×900 via `imageResizeMode/Width/Height`, min-dimension guard `480×640`), status select. **No position field on the form** — auto-append covers create, drag-to-reorder covers edit. **Form is fully static** (no `->live()` anywhere) — earlier iterations used `->live(onBlur: true)` on display_name to auto-populate slug, but that fired a Livewire roundtrip on field-blur which dismissed the Status select dropdown on its first open. Dropping auto-slug eliminated the flicker; admin types both fields (kebab-case slug is trivial for < 20 games).
+
+Table uses `reorderable('position')` for drag-to-reorder. Filament's `reorderTable` issues a raw SQL `update` with a CASE expression — it **bypasses Eloquent model events**, so the model's `saved`-hooked cache bust doesn't fire on reorder. Explicit `afterReordering(fn () => Cache::forget(Game::HOMEPAGE_CACHE_KEY))` on the table closes that gap.
+
+Server validation rule: `status = Active` only allowed when `App\Enums\Game::tryFrom($slug) !== null`. Admin can add coming-soon display tiles freely; flipping one Active still requires the enum case in code (M15 per-game adapter work).
+
+### Frontend slice
+
+`GameSelector` rewritten to consume a `games` prop instead of its hardcoded `GAME_TILES` const. Lucide icon imports + `GameTileId` union + `GAME_TILES` export all removed. `selectedSlug` is now `string` (the slug from the DB row). Tiles render `<img src={poster_path}>` full-bleed with `object-cover object-center`, `loading={index < 3 ? 'eager' : 'lazy'}`, hover scale `group-hover:scale-105` (`motion-reduce` opt-out), `border-[3px]` thickness, magenta glow via the new `--shadow-arena-card-glow` token. Tiles without a `poster_path` fall back to a default magenta-gradient + `display_name` overlay so admin adding a game before the art lands doesn't break the page.
+
+`welcome.tsx` reads `games: { data: GameTile[] }` from Inertia, defaults `selectedSlug` to the first tile's slug, filters the featured-listings strip on `tile.status === 'active'` (only chess returns real listings today).
+
+### Glow token surgery
+
+Mid-build the user bumped the global `shadow-glow` utility to a beefier value to make the arena tiles pop. That leaked to every consumer of `shadow-glow` / `shadow-glow-sm` (listings rows, wallet cards, profile avatars, chat link cards, auth inputs — ~15 surfaces) as a heavy purple halo. Reverted both global utilities to the original soft `0 0 18px -7px` haze and added `--shadow-arena-card-glow: 0 0 19px -3.5px var(--gradient-glow)` as a component-specific CSS variable. The arena cards reference it inline via `shadow-[var(--shadow-arena-card-glow)]` per CLAUDE.md's "component-specific shadow values live as CSS variables" convention; everyone else keeps the soft halo untouched.
+
+### Tests
+
+10 new Pest tests across `tests/Feature/HomeIndexTest.php` (+4: prop order, Disabled excluded, whitelisted shape, admin-upload URL resolution) and `tests/Feature/GameModelTest.php` (+6: `forHomepage` + `ordered` scopes, `hasBackendIntegration`, cache bust on save / delete, slug uniqueness). Suite 786 / 3380.
+
+### Decisions
+
+- **Game model = display catalog; `App\Enums\Game` = backend identity.** Two parallel representations on purpose — admin can add tiles without code changes, but a tile only becomes Active (players can actually stake on it) when both layers agree. The slug column is the join key. Future M15 adapter work adds enum cases; admin then flips Active.
+- **Status enum, not two booleans.** `Active` | `ComingSoon` | `Disabled`. Two-boolean schemas can contradict (`is_active=true` and `is_coming_soon=true`); the enum forbids the impossible state.
+- **`position` is a sort key, not a 1-indexed row slot.** Seeder uses 10/20/30/.../90 so inserts have gaps. The admin form **does not expose** position — auto-append (`MAX(position) + 10` in the `creating` hook) handles new rows; drag-to-reorder handles changes. Typing a number into a "position" field confused the user (typed 3, expected slot 3, got slot 1 because 3 < 10).
+- **Static Filament form (no `live()`).** Reactivity on inputs fires Livewire roundtrips on field-blur, which can dismiss freshly-opened Selects. For a < 20-row catalog the auto-slug convenience wasn't worth the dropdown flicker.
+- **Cache the resolved array, not the Collection.** `Cache::remember` of an Eloquent Collection crashes the Postgres cache driver's unserialize path with `__PHP_Incomplete_Class`. The resolved resource array (plain dicts) round-trips cleanly.
+- **Filament reorder bypasses Eloquent events.** `reorderTable` uses raw SQL for atomicity. Cache-bust must hook `afterReordering` on the table, not rely on `saved`.
+- **Arena card glow lives in its own CSS variable.** Bumping the global `shadow-glow` utility leaked to every consumer (listings, wallet, avatars). `--shadow-arena-card-glow` keeps the arena-row treatment isolated.
+- **WebP conversion deferred.** Filament v5 dropped `imageResizeOutputFormat()`; the replacement is a custom `saveUploadedFileUsing` callback with Intervention/Image. For ~9 posters at 600×900, original JPG/PNG is fine. Revisit if homepage perf budget demands it.
+- **Coming-soon click is inert.** No tooltip, no "notify me when live" lead capture. Adds surface area without clear payoff today.
+
+### Not in M24
+
+- **Hooking `listings.platform` / `matches.game` to `games.id`.** That's M15 — when the first non-chess game lands its adapter, the listings + matches schema migrates to a foreign-key relationship on `games`. Phase 1 leaves listings untouched.
+- **"Notify me when live" lead capture per coming-soon tile.** Marketing slice if/when pre-launch interest capture becomes a priority.
+- **Admin RBAC per-resource.** Existing Filament panel auth (admin user gating) is sufficient. Per-resource roles only if multiple admins eventually need scoped access.
+- **Filament "preview row" page** for visual-consistency check before publishing. Overkill for a solo dev managing < 20 tiles; revisit if mismatched posters become an actual problem.
+- **WebP conversion pipeline** (see Decisions). Lives as a future-polish slice, not blocking.

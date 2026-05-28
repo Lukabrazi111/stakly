@@ -1,5 +1,7 @@
 <?php
 
+use App\Enums\GameStatus;
+use App\Models\Game;
 use App\Models\Listing;
 use App\Models\User;
 
@@ -63,4 +65,74 @@ test('featured listings whitelist creator (no email leak)', function () {
         )
     );
     $response->assertDontSee('private@example.com');
+});
+
+// M24 Phase 1 — GameSelector reads its catalog from the `games` table via
+// the `games` Inertia prop. Tiles are ordered by `position`, Disabled rows
+// are hidden, Active + ComingSoon both surface.
+
+test('games prop ships tiles ordered by position', function () {
+    Game::factory()->create(['slug' => 'zeta', 'position' => 30]);
+    Game::factory()->create(['slug' => 'alpha', 'position' => 10]);
+    Game::factory()->create(['slug' => 'beta', 'position' => 20]);
+
+    $response = $this->get('/');
+
+    $response->assertInertia(fn ($page) => $page
+        ->has('games.data', 3)
+        ->where('games.data.0.slug', 'alpha')
+        ->where('games.data.1.slug', 'beta')
+        ->where('games.data.2.slug', 'zeta')
+    );
+});
+
+test('games prop excludes Disabled status tiles', function () {
+    Game::factory()->active()->create(['slug' => 'chess', 'position' => 10]);
+    Game::factory()->comingSoon()->create(['slug' => 'cs2', 'position' => 20]);
+    Game::factory()->disabled()->create(['slug' => 'parked', 'position' => 30]);
+
+    $response = $this->get('/');
+
+    $response->assertInertia(fn ($page) => $page
+        ->has('games.data', 2)
+        ->where('games.data.0.slug', 'chess')
+        ->where('games.data.1.slug', 'cs2')
+    );
+});
+
+test('games prop emits whitelisted fields only', function () {
+    Game::factory()->active()->create([
+        'slug' => 'chess',
+        'display_name' => 'Chess',
+        'poster_path' => '/images/games/chess.png',
+        'position' => 10,
+    ]);
+
+    $response = $this->get('/');
+
+    $response->assertInertia(fn ($page) => $page
+        ->has('games.data.0', fn ($tile) => $tile
+            ->where('slug', 'chess')
+            ->where('display_name', 'Chess')
+            ->where('poster_path', '/images/games/chess.png')
+            ->where('status', GameStatus::Active->value)
+        )
+    );
+});
+
+test('admin-uploaded poster path resolves to /storage URL', function () {
+    // Filament FileUpload stores disk-relative paths (e.g. `games/abc.webp`).
+    // GameResource normalizes these through Storage::url so the frontend
+    // doesn't have to know which storage backend produced the file.
+    Game::factory()->comingSoon()->create([
+        'slug' => 'admin-upload',
+        'poster_path' => 'games/abc123.webp',
+        'position' => 5,
+    ]);
+
+    $response = $this->get('/');
+
+    $response->assertInertia(fn ($page) => $page
+        ->where('games.data.0.poster_path', '/storage/games/abc123.webp')
+    );
 });

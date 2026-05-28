@@ -46,6 +46,7 @@ class DatabaseSeeder extends Seeder
         Wallet::deposit($test, '10000', reference: "seed:dev-deposit:{$test->id}");
 
         $this->call(AdminUserSeeder::class);
+        $this->call(GameSeeder::class);
         $this->call(ListingSeeder::class);
         $this->call(MatchHistorySeeder::class);
     }

@@ -1,123 +1,20 @@
-import type { LucideIcon } from 'lucide-react';
-import {
-    Crown,
-    Flame,
-    Gamepad2,
-    Rocket,
-    Snowflake,
-    Sparkles,
-    Swords,
-    Target,
-    Trophy,
-} from 'lucide-react';
 import { cn } from '@/lib/utils';
-
-// Tile ids — superset of the backend `Game` enum because the selector
-// shows "Coming soon" tiles for games that aren't wired up yet. Only
-// `chess` currently matches an `App\Enums\Game` case; the rest are
-// frontend-only placeholders until the corresponding backend support lands.
-export type GameTileId =
-    | 'chess'
-    | 'dota2'
-    | 'lol'
-    | 'cs2'
-    | 'pubg'
-    | 'valorant'
-    | 'apex'
-    | 'rocket-league'
-    | 'overwatch'
-    | 'fortnite';
-
-interface GameTile {
-    id: GameTileId;
-    name: string;
-    icon: LucideIcon;
-    tint: string;
-    comingSoon: boolean;
-    imageSrc?: string;
-}
-
-export const GAME_TILES: readonly GameTile[] = [
-    {
-        id: 'chess',
-        name: 'Chess',
-        icon: Crown,
-        tint: 'from-primary/80 to-accent/80',
-        comingSoon: false,
-        imageSrc: '/images/games/chess.png',
-    },
-    {
-        id: 'cs2',
-        name: 'CS2',
-        icon: Target,
-        tint: 'from-amber-500/70 to-yellow-500/70',
-        comingSoon: true,
-        imageSrc: '/images/games/cs2.jpg',
-    },
-    {
-        id: 'dota2',
-        name: 'Dota 2',
-        icon: Swords,
-        tint: 'from-red-600/70 to-orange-500/70',
-        comingSoon: true,
-        imageSrc: '/images/games/dota2.jpg',
-    },
-    {
-        id: 'valorant',
-        name: 'Valorant',
-        icon: Flame,
-        tint: 'from-rose-500/70 to-red-500/70',
-        comingSoon: true,
-        imageSrc: '/images/games/valorant.jpg',
-    },
-    {
-        id: 'lol',
-        name: 'League of Legends',
-        icon: Sparkles,
-        tint: 'from-blue-500/70 to-indigo-500/70',
-        comingSoon: true,
-        imageSrc: '/images/games/league-of-legends.jpeg',
-    },
-    {
-        id: 'pubg',
-        name: 'PUBG',
-        icon: Target,
-        tint: 'from-amber-500/70 to-orange-600/70',
-        comingSoon: true,
-        imageSrc: '/images/games/pubg.jpg',
-    },
-    {
-        id: 'apex',
-        name: 'Apex Legends',
-        icon: Trophy,
-        tint: 'from-orange-500/70 to-red-600/70',
-        comingSoon: true,
-        imageSrc: '/images/games/apex-legends.webp',
-    },
-    {
-        id: 'rocket-league',
-        name: 'Rocket League',
-        icon: Rocket,
-        tint: 'from-sky-500/70 to-blue-600/70',
-        comingSoon: true,
-        imageSrc: '/images/games/rocket-league.jpg',
-    },
-    {
-        id: 'overwatch',
-        name: 'Overwatch',
-        icon: Snowflake,
-        tint: 'from-cyan-400/70 to-blue-500/70',
-        comingSoon: true,
-        imageSrc: '/images/games/overwatch.jpg',
-    },
-] as const;
+import type { GameTile } from '@/types';
 
 interface Props {
-    selectedId: GameTileId;
-    onSelect: (id: GameTileId) => void;
+    games: readonly GameTile[];
+    selectedSlug: string;
+    onSelect: (slug: string) => void;
 }
 
-export function GameSelector({ selectedId, onSelect }: Props) {
+/**
+ * Homepage game-tile row. Tiles are admin-managed via Filament (M24);
+ * data comes from the backend via the `games` Inertia prop. Each tile
+ * renders its uploaded poster artwork; tiles without a poster fall back
+ * to a gradient + display_name placeholder so the row never breaks if
+ * admin adds a game before its art lands.
+ */
+export function GameSelector({ games, selectedSlug, onSelect }: Props) {
     return (
         <section className="relative">
             <div className="mx-auto max-w-7xl px-4">
@@ -146,75 +43,54 @@ export function GameSelector({ selectedId, onSelect }: Props) {
                     role="listbox"
                     aria-label="Game selector"
                 >
-                    {GAME_TILES.map((game) => {
-                        const isSelected = game.id === selectedId;
-                        const Icon = game.icon;
+                    {games.map((game, index) => {
+                        const isSelected = game.slug === selectedSlug;
+                        const isComingSoon = game.status === 'coming_soon';
+                        // Lazy-load tiles past the first three — the leading
+                        // tiles are above the fold and eager-loading them
+                        // avoids a visible LCP regression.
+                        const loading = index < 3 ? 'eager' : 'lazy';
 
                         return (
                             <button
-                                key={game.id}
+                                key={game.slug}
                                 type="button"
                                 role="option"
                                 aria-selected={isSelected}
-                                onClick={() => onSelect(game.id)}
+                                onClick={() => onSelect(game.slug)}
                                 className={cn(
                                     'group relative shrink-0 cursor-pointer snap-start overflow-hidden rounded-2xl border-[3px] bg-card transition duration-200 ease-out',
                                     'h-52 w-36 md:h-60 md:w-40',
                                     'focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none',
-                                    // Hover lift + glow apply universally — selected tiles
-                                    // get the same interactive feedback so the user knows
-                                    // the tile is still actionable (e.g. re-selecting to
-                                    // refresh the panel).
-                                    'hover:-translate-y-1 hover:shadow-[var(--shadow-arena-card-glow)] motion-reduce:hover:translate-y-0',
-                                    // Selected = solid `border-primary` (full-saturation
-                                    // pink) + `shadow-glow` halo (the soft standard
-                                    // Stakly halo). We don't use the shared
-                                    // `border-glow` utility here because its
-                                    // semi-transparent fuchsia border reads too softly
-                                    // for an active-selection cue — the other three
-                                    // `border-glow` consumers (auth modal, profile
-                                    // dropdown, link-account banner) are static
-                                    // decorative borders where that softness is right.
+                                    'hover:-translate-y-1.5 hover:shadow-[var(--shadow-arena-card-glow)] motion-reduce:hover:translate-y-0',
                                     isSelected
                                         ? 'border-primary shadow-[var(--shadow-arena-card-glow)]'
                                         : 'border-border/60 hover:border-primary',
                                 )}
                             >
-                                {game.imageSrc ? (
+                                {game.poster_path ? (
                                     <img
-                                        src={game.imageSrc}
-                                        alt={game.name}
-                                        loading="lazy"
+                                        src={game.poster_path}
+                                        alt={game.display_name}
+                                        loading={loading}
                                         className="absolute inset-0 h-full w-full object-cover object-center transition-transform duration-300 ease-out group-hover:scale-105 motion-reduce:group-hover:scale-100"
                                     />
                                 ) : (
                                     <>
-                                        <div
-                                            className={cn(
-                                                'absolute inset-0 bg-gradient-to-br opacity-60 transition-opacity group-hover:opacity-80',
-                                                game.tint,
-                                            )}
-                                        />
+                                        <div className="absolute inset-0 bg-gradient-to-br from-primary/80 to-accent/80 opacity-60 transition-opacity group-hover:opacity-80" />
                                         <div className="absolute inset-0 bg-gradient-to-b from-background/10 via-background/40 to-background" />
+                                        <div className="relative flex h-full flex-col items-center justify-end p-4">
+                                            <span className="line-clamp-2 text-center font-display text-sm font-bold tracking-tight text-foreground">
+                                                {game.display_name}
+                                            </span>
+                                        </div>
                                     </>
                                 )}
 
-                                {game.comingSoon && (
+                                {isComingSoon && (
                                     <span className="absolute top-2 right-2 rounded-full bg-background/80 px-2 py-0.5 text-[10px] tracking-wide text-muted-foreground uppercase backdrop-blur">
                                         Soon
                                     </span>
-                                )}
-
-                                {!game.imageSrc && (
-                                    <div className="relative flex h-full flex-col items-center justify-end gap-2 p-4">
-                                        <Icon
-                                            className="size-10 text-foreground/90"
-                                            strokeWidth={1.5}
-                                        />
-                                        <span className="line-clamp-1 font-display text-sm font-bold tracking-tight text-foreground">
-                                            {game.name}
-                                        </span>
-                                    </div>
                                 )}
                             </button>
                         );

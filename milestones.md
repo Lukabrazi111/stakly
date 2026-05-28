@@ -2,7 +2,7 @@
 
 Frontend-first build. UI against real DB infrastructure + seeded fake data; backend logic (escrow, payouts, on-chain integration) lands per page once the UI is validated. Milestones are work-chunk labels, not version commitments — decisions inside any of them are revisitable.
 
-> **Shipped milestones live in `milestones_archived.md`** (M1, M2, M2.5, M3, M3.5, M4, M5, M6, M7, M8 all phases, M10, M11, M12 all phases, M14 Slice A, M16 all phases, M17, M18, M19, M22, M23). This file is for active + upcoming work + the cross-cutting architectural decisions that earlier milestones established.
+> **Shipped milestones live in `milestones_archived.md`** (M1, M2, M2.5, M3, M3.5, M4, M5, M6, M7, M8 all phases, M10, M11, M12 all phases, M14 Slice A, M16 all phases, M17, M18, M19, M22, M23, M24). This file is for active + upcoming work + the cross-cutting architectural decisions that earlier milestones established.
 
 ## Phases (map)
 
@@ -13,7 +13,6 @@ Frontend-first build. UI against real DB infrastructure + seeded fake data; back
 - **M20** — Notifications (email infrastructure + per-event preferences UI; M20 owns the surface end-to-end)
 - **M21** — Blacklist + safety (block users from listings + chat, with anti-evasion considerations)
 - **M15** — Multi-game expansion (FACEIT, OpenDota, Riot adapters)
-- **M24** — Game catalog (admin-managed game tiles with uploaded posters)
 
 > Active milestone keeps a detailed task list. Future milestones expand when started. Any of this can shift — flag the change, update the doc.
 
@@ -250,47 +249,4 @@ Decide per-adapter when the first non-chess one ships. The current `username` co
 - Filament admin moderation surfaces for the new game types — covered by M12 (shipped). New game types automatically appear in the existing `GameMatchResource` queue.
 - Marketing / homepage copy for the anti-cheat trust pitch — separate from engineering scope; revisit alongside the existing marquee-copy cleanup.
 - Aggregator-as-a-service (PandaScore / Bayes / Abios) — considered and parked. Reconsider only if the per-game maintenance burden gets painful and revenue can absorb the monthly cost.
-
----
-
-## M24 — Game catalog (admin-managed posters)
-
-Today the homepage `GameSelector` reads from a hardcoded React array of 9 game tiles (chess active, 8 coming-soon placeholders with icon + gradient-tint visuals). M24 moves the catalog into the database so games + uploaded poster artwork + ordering + active/coming-soon flags become admin-editable via Filament. No code changes for art swaps, tile reorders, or new game additions. Visual treatment shifts from icon placeholders to vertical poster cards (mmrangels-style, ~3:4 aspect) using uploaded artwork sourced from SteamGridDB, publisher press kits, or custom commissions.
-
-Non-launch-critical polish. M14 Phase 1 (audit trail) remains the next launch-critical work after this.
-
-### Phases
-
-**Phase 1 — DB + Filament admin (backend slice)**
-
-- [ ] `games` migration: `slug` (unique), `display_name`, `poster_path` (nullable), `position` (int, default 0), `is_active` (bool, default false), `is_coming_soon` (bool, default true), timestamps.
-- [ ] `Game` model + factory.
-- [ ] `GameSeeder` — seed chess as `is_active = true, is_coming_soon = false`, plus the existing 8 coming-soon placeholders (Dota 2, CS2, Valorant, Apex, Fortnite, Overwatch, LoL, Rocket League) without poster paths since admin uploads those.
-- [ ] Filament `GameResource`:
-    - Form: name + slug (auto-generated, editable), poster `FileUpload` with `imageEditor()` + min-dimension guard (480×640 minimum), `is_active` + `is_coming_soon` toggles, position number input.
-    - Table: drag-to-reorder via Filament's native `reorderable('position')`, poster thumbnail column, active / coming-soon badges, edit + delete actions.
-    - Image handling: resize-on-upload to one canonical size + WebP conversion via `imageResizeMode` + `imageResizeOutputFormat('webp')`.
-- [ ] Homepage controller passes `games` Inertia prop ordered by `position`.
-- [ ] React `GameSelector` consumes props from backend instead of hardcoded array. `GameTileId` enum becomes derived from DB rows.
-- [ ] Pest: admin creates a game → it appears on the homepage in correct order; `is_coming_soon` flag renders the Soon badge; required-field validation; image dimension guard rejects undersized uploads.
-
-**Phase 2 — Frontend poster cards (visual)**
-
-- [ ] Vertical poster tiles matching mmrangels reference: ~3:4 aspect, hover lift, `border-glow` on selected, "Soon" badge overlay for coming-soon games.
-- [ ] Lazy-load tiles past the first 3 (`loading="lazy"`).
-- [ ] Mobile: horizontal scroll preserved, aspect ratio holds at small widths, partially-clipped next tile still signals "scroll for more".
-- [ ] Fallback: tiles without `poster_path` render the current gradient + icon placeholder (admin can add art later without breaking the page).
-- [ ] Accessibility: `alt={game.display_name}` on poster images; selected state announced via `aria-selected`.
-
-### Open questions
-
-- **Coming-soon click behavior** — today the tile is inert. Tooltip on hover? "Notify me when live" lead capture? Decide before Phase 2.
-- **Game ↔ listings link** — `listings.platform` and the `Game` enum already exist. When the first non-chess game becomes active in M15, the listings filter likely wants a foreign-key relationship to `games.id` (or a slug match). Phase 1 leaves listings untouched but `games.slug` will be the join key.
-- **Visual consistency across uploads** — admin enforces min dimensions but not visual style. If posters end up mismatched in tone / contrast on the homepage, consider a Filament "preview row" page that renders the full lineup before publishing.
-
-### Not in M24
-
-- Hooking `listings.platform` / `matches.game` to the `games` table — that's M15 territory.
-- "Notify me when live" lead capture per coming-soon game — separate marketing slice if/when we decide to capture pre-launch interest.
-- Admin RBAC for game management — assumes existing Filament panel auth (admin user gating) is sufficient. Surface separately if per-resource roles become needed.
 
