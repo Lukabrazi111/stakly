@@ -35,6 +35,17 @@ export type User = {
     // "Link chess.com to take") and by the create form to show/hide the
     // platform picker.
     linked_platforms: Array<'chess_com' | 'lichess'>;
+    // M18 — the raw linked-account rows serialized by `$user->toArray()`
+    // when the `linkedAccounts` relation is eager-loaded (which the Inertia
+    // middleware does on every request — see `HandleInertiaRequests::share`).
+    // Optional because callers that don't need it shouldn't have to think
+    // about it, but it's reliably present at runtime. Used by the settings
+    // profile preview to render chess.com/Lichess `VerificationChip`s.
+    linked_accounts?: Array<{
+        provider: 'chess_com' | 'lichess';
+        username: string;
+        verified_at: string;
+    }>;
     created_at: string;
     updated_at: string;
     [key: string]: unknown;
