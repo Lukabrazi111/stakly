@@ -165,7 +165,7 @@ export function GameSelector({ selectedId, onSelect }: Props) {
                                     // get the same interactive feedback so the user knows
                                     // the tile is still actionable (e.g. re-selecting to
                                     // refresh the panel).
-                                    'hover:-translate-y-1 hover:shadow-glow-sm motion-reduce:hover:translate-y-0',
+                                    'hover:-translate-y-1 hover:shadow-[var(--shadow-arena-card-glow)] motion-reduce:hover:translate-y-0',
                                     // Selected = solid `border-primary` (full-saturation
                                     // pink) + `shadow-glow` halo (the soft standard
                                     // Stakly halo). We don't use the shared
@@ -176,7 +176,7 @@ export function GameSelector({ selectedId, onSelect }: Props) {
                                     // dropdown, link-account banner) are static
                                     // decorative borders where that softness is right.
                                     isSelected
-                                        ? 'border-primary shadow-glow'
+                                        ? 'border-primary shadow-[var(--shadow-arena-card-glow)]'
                                         : 'border-border/60 hover:border-primary',
                                 )}
                             >

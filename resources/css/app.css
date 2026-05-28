@@ -137,6 +137,11 @@
     --shadow-button-glow: 0 0 20px -4px var(--gradient-glow);
     --shadow-button-glow-hover: 0 0 24px -2px var(--gradient-glow);
 
+    /* arena card glow — beefier than the global `shadow-glow` haze so the
+       homepage game tiles feel energized; scoped to game tiles only so it
+       doesn't bleed into listings rows / wallet cards / avatars etc. */
+    --shadow-arena-card-glow: 0 0 19px -3.5px var(--gradient-glow);
+
     /* white text glow — used by ghost button hover; mirrors gradient button glow but on text */
     --text-shadow-glow: 0 0 6px var(--foreground), 0 0 15px var(--foreground);
 
@@ -183,11 +188,11 @@
 }
 
 @utility shadow-glow {
-    box-shadow: 0 0 19px -3.5px var(--gradient-glow);
+    box-shadow: 0 0 17px -9px var(--gradient-glow);
 }
 
 @utility shadow-glow-sm {
-    box-shadow: 0 0 19px -3.5px var(--gradient-glow);
+    box-shadow: 0 0 17px -9px var(--gradient-glow);
 }
 
 @utility border-glow {
