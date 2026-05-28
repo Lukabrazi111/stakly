@@ -278,13 +278,14 @@ The pink→purple gradient is the visual signature. Apply *sparingly* — 2-3 gr
 - `bg-gradient-primary` — gradient background (CTAs, hero accents)
 - `text-gradient-primary` — gradient-filled text (display headlines)
 - `shadow-glow` / `shadow-glow-sm` — magenta glow halos (hover/focus/selected). Currently tuned to a soft `0 0 18px -7px` so they read as a subtle haze, not a block of color.
-- `border-glow` — magenta border with inner glow (active tile in selector rows)
+- `border-glow` — magenta border with inner glow. Used for **static** decorative borders where softness is right (auth modal, profile dropdown, link-account banner). Not for interactive "selected" states — those want a full-saturation `border-primary` instead, since `border-glow`'s semi-transparent fuchsia reads too softly as an active-selection cue.
 
 ### Shadow tokens (CSS variables)
 
 Component-specific shadow values live as CSS variables in `:root, .dark` in `app.css`, then are referenced inline via `shadow-[var(--token-name)]` (box-shadow) or `[text-shadow:var(--token-name)]` (text-shadow). This keeps shadow tuning centralized in one file. Current tokens:
 
 - `--shadow-button-glow` / `--shadow-button-glow-hover` — used by the `gradient` button variant. The gradient button references both inline (`shadow-[var(--shadow-button-glow)] hover:shadow-[var(--shadow-button-glow-hover)]`). Tune button glow by editing the variables, not the component.
+- `--shadow-arena-card-glow` — beefier halo used by the homepage `GameSelector` tiles on hover + selected. Kept separate from the global `shadow-glow` so the arena-card treatment doesn't leak to listings rows / wallet cards / avatars / chat link cards / auth inputs (15+ consumers). Lesson: when bumping a glow for a specific surface, **add a new component-specific variable**, don't edit the global utility.
 - `--text-shadow-glow` — soft white text-shadow used by the `ghost` button variant on hover. Implemented as a layered text-shadow (tight bright inner + wider outer) at full white. Mirrors the gradient button's halo concept but applied to letterforms instead of the button box.
 
 **Ghost button hover convention:** ghost variants in Stakly use **text-shadow** (white text glow) on hover, NOT `bg-accent`/`bg-muted` like default shadcn. This was an intentional deviation — purple-background hover felt heavy on the dark theme. If you need a ghost-like button with the original `bg-accent` hover (e.g. sidebar nav items, dropdown menu items), introduce a new variant rather than reverting the global `ghost`.
@@ -318,7 +319,7 @@ Layout reference for the homepage and broader site flow is **mmrangels.com**. Sc
 
 **M1 hero direction:** typography-only, no character art. Atmospheric background = radial gradients + blurred glow blobs. Could revisit later if a polish pass calls for it; for now, type does the work.
 
-**M1 GameSelector direction:** multiple game tiles are visible for visual fullness, but **chess is the only functional game today**. Non-chess tiles look identical to the active tile (same dimensions, same treatment) and carry a small "Coming soon" badge — don't dim them, don't lock them visually. This avoids broadcasting scarcity while staying honest. Selected tile uses `border-glow`.
+**GameSelector catalog (M24):** the tile list is DB-backed via `App\Models\Game` (admin-managed at `/admin/games`), not a hardcoded React array. `App\Enums\Game` remains the backend identity for games with real integration; admin can add `ComingSoon` display tiles for games not in the enum, but flipping one `Active` still requires adding the enum case in code. Visual rules unchanged: tiles look identical regardless of status (same dimensions, same poster treatment) + small "Soon" badge for non-Active — don't dim them, don't lock them visually. **Chess is the only Active game today.** Selected tile uses solid `border-primary` + `shadow-[var(--shadow-arena-card-glow)]`, NOT the `border-glow` utility (too soft as an active-selection cue).
 
 ### Design assistance — `ui-ux-pro-max` skill
 
