@@ -13,6 +13,15 @@ import LinkedAccountController from '@/actions/App/Http/Controllers/Settings/Lin
 import Heading from '@/components/heading';
 import InputError from '@/components/input-error';
 import { Button } from '@/components/ui/button';
+import {
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogFooter,
+    DialogHeader,
+    DialogTitle,
+    DialogTrigger,
+} from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { unlink } from '@/routes/linked-accounts';
@@ -111,6 +120,8 @@ function ProviderRow({
 }
 
 function VerifiedRow({ provider }: { provider: Provider }) {
+    const [confirmOpen, setConfirmOpen] = useState(false);
+
     return (
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="space-y-1">
@@ -121,23 +132,61 @@ function VerifiedRow({ provider }: { provider: Provider }) {
                     {provider.username}
                 </code>
             </div>
-            <Form
-                action={unlink(provider.value).url}
-                method="delete"
-                options={{ preserveScroll: true }}
-            >
-                {({ processing }) => (
+            <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+                <DialogTrigger asChild>
                     <Button
-                        type="submit"
+                        type="button"
                         variant="ghost"
                         size="sm"
-                        disabled={processing}
                         className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive hover:[text-shadow:none]"
                     >
                         Unlink
                     </Button>
-                )}
-            </Form>
+                </DialogTrigger>
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle>
+                            Unlink {provider.displayName}?
+                        </DialogTitle>
+                        <DialogDescription>
+                            You&apos;ll need to redo the bio-code verification
+                            on{' '}
+                            <span className="font-medium text-foreground">
+                                {provider.displayName}
+                            </span>{' '}
+                            before you can create or take {provider.displayName}{' '}
+                            listings again. Stakly only removes your verified
+                            link — your {provider.displayName} account itself
+                            isn&apos;t touched.
+                        </DialogDescription>
+                    </DialogHeader>
+                    <Form
+                        action={unlink(provider.value).url}
+                        method="delete"
+                        options={{ preserveScroll: true }}
+                        onSuccess={() => setConfirmOpen(false)}
+                    >
+                        {({ processing }) => (
+                            <DialogFooter>
+                                <Button
+                                    type="button"
+                                    variant="ghost"
+                                    onClick={() => setConfirmOpen(false)}
+                                >
+                                    Keep linked
+                                </Button>
+                                <Button
+                                    type="submit"
+                                    variant="destructive"
+                                    disabled={processing}
+                                >
+                                    {processing ? 'Unlinking…' : 'Unlink'}
+                                </Button>
+                            </DialogFooter>
+                        )}
+                    </Form>
+                </DialogContent>
+            </Dialog>
         </div>
     );
 }

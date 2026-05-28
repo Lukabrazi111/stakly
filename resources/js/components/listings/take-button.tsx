@@ -33,7 +33,7 @@ interface Props {
  *     /listings/mine. The action label is enough; no explicit "Your
  *     listing" label needed since the owner already knows.
  *   - **Authed but wrong-platform-verified** — outline pill "Link
- *     {platform} to take" linking to /settings/linked-accounts.
+ *     {platform}" linking to /settings/linked-accounts.
  *   - **Eligible** — gradient pill "Take" linking to the listing detail
  *     page where the full Take dialog + balance check lives.
  *
@@ -79,6 +79,11 @@ export function TakeButton({ listing, className = '' }: Props) {
     }
 
     if (!user.linked_platforms.includes(listing.platform)) {
+        // Just "Link {platform}", not "Link {platform} to take" — the
+        // platform chip already carries the "match plays on X" signal,
+        // and the row + card right-column width reads cleaner when the
+        // label is short. Goal is implicit (clicking this button takes
+        // you to /settings/linked-accounts).
         return (
             <Button
                 variant="outline"
@@ -87,7 +92,7 @@ export function TakeButton({ listing, className = '' }: Props) {
                 className={`rounded-full ${className}`.trim()}
             >
                 <Link href={linkedAccountsEdit().url}>
-                    Link {PLATFORM_LABEL[listing.platform]} to take
+                    Link {PLATFORM_LABEL[listing.platform]}
                 </Link>
             </Button>
         );
