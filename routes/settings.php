@@ -20,8 +20,6 @@ Route::middleware(['auth', 'verified'])->group(function () {
         ->middleware('throttle:6,1')
         ->name('user-password.update');
 
-    Route::inertia('settings/appearance', 'settings/appearance')->name('appearance.edit');
-
     Route::get('settings/linked-accounts', [LinkedAccountController::class, 'edit'])->name('linked-accounts.edit');
     Route::post('settings/linked-accounts', [LinkedAccountController::class, 'store'])->name('linked-accounts.request');
     Route::post('settings/linked-accounts/verify', [LinkedAccountController::class, 'update'])
