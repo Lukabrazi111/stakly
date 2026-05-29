@@ -211,6 +211,18 @@
     body {
         @apply bg-background text-foreground;
     }
+
+    /* Smooth-scroll for in-page anchor links (e.g. footer / header
+       "How it Works" → `#how-it-works` on the homepage). Guarded by
+       `prefers-reduced-motion: no-preference` so users who opted out of
+       animations at the OS level get the instant jump. The HowItWorks
+       section already carries `scroll-mt-28` to account for the sticky
+       header offset, so the scroll lands cleanly below the nav. */
+    @media (prefers-reduced-motion: no-preference) {
+        html {
+            scroll-behavior: smooth;
+        }
+    }
 }
 
 /* CMS markdown content (M26). Applied to the article rendered by

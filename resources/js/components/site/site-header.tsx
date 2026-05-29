@@ -59,12 +59,6 @@ export function SiteHeader() {
                     >
                         How it Works
                     </Link>
-                    <Link
-                        href="/en/support"
-                        className="px-3 py-2 text-sm text-foreground transition-colors hover:text-primary"
-                    >
-                        Support
-                    </Link>
 
                     {user && (
                         <div className="ml-2">
