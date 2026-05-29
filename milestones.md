@@ -13,7 +13,7 @@ Frontend-first build. UI against real DB infrastructure + seeded fake data; back
 - **M20** — Notifications (email infrastructure + per-event preferences UI; M20 owns the surface end-to-end)
 - **M21** — Blacklist + safety (block users from listings + chat, with anti-evasion considerations)
 - **M15** — Multi-game expansion (FACEIT, OpenDota, Riot adapters)
-- **M26** — Filament-managed CMS pages (Privacy, Terms, About — multilingual schema, SEO-indexable via global Inertia SSR; Phase 1 shipped, Phase 2 next: discoverability + Privacy/Terms scaffolding)
+- **M26** — Filament-managed CMS pages (Privacy, Terms, About — multilingual schema, SEO-indexable via global Inertia SSR; Phase 1 + 2 shipped, Phase 3 next: global Inertia SSR enablement)
 - **M27** — In-app notifications + action-required UX + sound (bell in `SiteHeader`, real-time via Reverb, per-event sound priority, sticky action banners; designed to enable M20 email without rework)
 - **M28** — Designed Fees page (transparent commission disclosure, interactive calculator, header nav — hand-coded React, NOT CMS-managed)
 
@@ -288,14 +288,17 @@ Bonus extensions shipped during Phase 1 (not in original scope):
 - Status filter on the table (Draft / Scheduled / Published) — computed in SQL from `published_at` math, so flipping the dropdown narrows the result set.
 - Preview record action both on the table row AND on the EditPage header so the admin can verify rendered markdown without leaving the form.
 
-**Phase 2 — Discoverability + Privacy/Terms scaffolding**
+**Phase 2 — Discoverability + Privacy/Terms scaffolding** ✅ Shipped 2026-05-29
 
-- [ ] Seed Privacy + Terms rows as **drafts** (`published_at = null`) so they appear in Filament admin but 404 publicly until admin fills in the copy + publishes.
-- [ ] Wire `About`, `Privacy`, `Terms` links in `SiteFooter` to their `/en/{slug}` URLs (replace the current placeholder `href="#"`).
-- [ ] Fix `How it Works` in `SiteHeader` + `SiteFooter` to anchor to `/#how-it-works` (currently both are placeholder `href="#"`).
-- [ ] Mirror new footer links inside `MobileMenu` if applicable.
-- [ ] Tests: `SiteFooter` renders the three CMS links pointing at the correct URLs.
-- [ ] Manual content writing pass on Privacy + Terms when ready (not a blocker for Phase 2 close).
+- [x] Seed Privacy + Terms rows as **drafts** (`published_at = null`) so they appear in Filament admin but 404 publicly until admin fills in the copy + publishes. (Bonus: added `Support` as a fourth draft row in the same pass.)
+- [x] Wire `About`, `Privacy`, `Terms` links in `SiteFooter` to their `/en/{slug}` URLs (replace the current placeholder `href="#"`). Final footer surfaces four utility links: About, Support, Terms, Privacy.
+- [x] Fix `How it Works` in `SiteHeader` to anchor to `/#how-it-works`. Decided to **remove** `How it Works` from the footer entirely instead of duplicating it — header owns product nav, footer owns utility/legal. Added a global `html { scroll-behavior: smooth }` in `app.css` (inside `@layer base`, guarded by `prefers-reduced-motion`) so the anchor jump is animated for users who haven't opted out.
+- [x] `MobileMenu` decision: primary nav mirrors the desktop header (Listings + How it Works) only — CMS links live in the footer (visible on every scroll). Inline comment in `mobile-menu.tsx` documents the choice so a future contributor doesn't "fix" it by adding them back.
+
+Deferred out of Phase 2 (not blocking close):
+
+- Footer test asserting the four hardcoded link URLs. Low-value — these are presentational `<Link>` literals with no logic; if we add URL generation behind them later (locale-aware `route()` helpers), add the test alongside that change.
+- Manual content writing for Privacy / Terms / Support bodies. Editorial task, not engineering — the admin can write them at any time via Filament once they're ready; the routes 404 in the meantime, which is the desired pre-launch behaviour.
 
 **Phase 3 — Global Inertia SSR enablement (Path A)**
 

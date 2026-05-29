@@ -3,9 +3,9 @@ import { authInputClass } from '@/components/auth/input-styles';
 import InputError from '@/components/input-error';
 import PasswordInput from '@/components/password-input';
 import { Button } from '@/components/ui/button';
-import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { NeonCheckbox } from '@/components/ui/neon-checkbox';
 import { Spinner } from '@/components/ui/spinner';
 import { store } from '@/routes/login';
 
@@ -81,13 +81,9 @@ export function LoginForm({
 
                         <label
                             htmlFor="remember"
-                            className="flex cursor-pointer items-center gap-2.5 text-sm text-muted-foreground"
+                            className="flex cursor-pointer items-center gap-2 text-sm text-muted-foreground"
                         >
-                            <Checkbox
-                                id="remember"
-                                name="remember"
-                                className="border-border"
-                            />
+                            <NeonCheckbox id="remember" name="remember" />
                             <span>Remember me on this device</span>
                         </label>
                     </div>
