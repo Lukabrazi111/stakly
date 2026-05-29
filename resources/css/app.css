@@ -234,11 +234,11 @@
    lot of overrides to match the Stakly palette anyway. Revisit if/when
    we add tables, code blocks, or other heavier elements. */
 .cms-prose h2 {
-    @apply font-display mt-10 mb-3 text-2xl font-bold text-foreground;
+    @apply mt-10 mb-3 font-display text-2xl font-bold text-foreground;
 }
 
 .cms-prose h3 {
-    @apply font-display mt-8 mb-2 text-xl font-semibold text-foreground;
+    @apply mt-8 mb-2 font-display text-xl font-semibold text-foreground;
 }
 
 .cms-prose p {
