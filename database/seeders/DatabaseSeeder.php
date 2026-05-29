@@ -47,6 +47,7 @@ class DatabaseSeeder extends Seeder
 
         $this->call(AdminUserSeeder::class);
         $this->call(GameSeeder::class);
+        $this->call(PageSeeder::class);
         $this->call(ListingSeeder::class);
         $this->call(MatchHistorySeeder::class);
     }
