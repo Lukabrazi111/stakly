@@ -194,7 +194,7 @@ class LichessStreamCommand extends Command
         curl_setopt_array($ch, [
             CURLOPT_POST => true,
             CURLOPT_POSTFIELDS => implode(',', $usernames),
-            CURLOPT_HTTPHEADER => ['Content-Type: text/plain'],
+            CURLOPT_HTTPHEADER => $this->buildStreamHeaders(),
             CURLOPT_TIMEOUT => 0,
             CURLOPT_CONNECTTIMEOUT => self::CONNECT_TIMEOUT_SECONDS,
             CURLOPT_LOW_SPEED_LIMIT => 1,
@@ -341,6 +341,34 @@ class LichessStreamCommand extends Command
                 ->where('provider', LinkedAccountProvider::Lichess)
                 ->whereRaw('LOWER(username) = ?', [$b]))
             ->first();
+    }
+
+    /**
+     * Curl headers for the streaming connection. Always includes
+     * `Content-Type: text/plain` (Lichess expects the comma-separated
+     * username list as a plain body). When `services.lichess.token` is
+     * set (M25), additionally sends `Authorization: Bearer` so the stream
+     * is associated with the StaklyBot account — more headroom in Lichess's
+     * authenticated stream bucket + a point-of-contact if anything looks
+     * weird from their side.
+     *
+     * Exposed (not private) so the header-build logic is testable in
+     * isolation without spinning up curl — mirrors the convention
+     * `dispatchFromEvent` uses for its pure-logic surface.
+     *
+     * @return list<string>
+     */
+    public function buildStreamHeaders(): array
+    {
+        $headers = ['Content-Type: text/plain'];
+
+        $token = config('services.lichess.token');
+
+        if (is_string($token) && $token !== '') {
+            $headers[] = "Authorization: Bearer {$token}";
+        }
+
+        return $headers;
     }
 
     /**
