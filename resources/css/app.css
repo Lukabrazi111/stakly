@@ -87,6 +87,55 @@
     }
 }
 
+/* Neon checkbox effects — one-shot celebrations triggered on check.
+   Suppressed under `prefers-reduced-motion: reduce` further down so users
+   who opted out see a calm state change instead of particle explosions. */
+@keyframes stakly-neon-particle-explosion {
+    0% {
+        transform: translate(-50%, -50%) scale(1);
+        opacity: 0;
+    }
+    20% {
+        opacity: 1;
+    }
+    100% {
+        transform: translate(
+                calc(-50% + var(--x, 20px)),
+                calc(-50% + var(--y, 20px))
+            )
+            scale(0);
+        opacity: 0;
+    }
+}
+@keyframes stakly-neon-ring-pulse {
+    0% {
+        transform: scale(0);
+        opacity: 1;
+    }
+    100% {
+        transform: scale(2);
+        opacity: 0;
+    }
+}
+@keyframes stakly-neon-spark-flash {
+    0% {
+        transform: rotate(var(--r, 0deg)) translateX(0) scale(1);
+        opacity: 1;
+    }
+    100% {
+        transform: rotate(var(--r, 0deg)) translateX(30px) scale(0);
+        opacity: 0;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    /* Quietly fall back to a static checked state for users who asked for
+       less motion — no particles, no rings, no flowing borders. */
+    [class*='animate-[stakly-neon-'] {
+        animation: none !important;
+    }
+}
+
 :root,
 .dark {
     /* surfaces */

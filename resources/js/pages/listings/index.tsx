@@ -4,6 +4,7 @@ import { ListingFiltersBar } from '@/components/listings/listing-filters-bar';
 import { ListingPagination } from '@/components/listings/listing-pagination';
 import { ListingRow } from '@/components/listings/listing-row';
 import { ListingRowSkeleton } from '@/components/listings/listing-row-skeleton';
+import { BGPattern } from '@/components/ui/bg-pattern';
 import SiteLayout from '@/layouts/site-layout';
 import { index as listingsIndex } from '@/routes/listings';
 import type { ListingsIndexProps } from '@/types';
@@ -53,70 +54,84 @@ export default function ListingsIndex({
         <SiteLayout>
             <Head title="Listings" />
 
-            <div className="mx-auto max-w-5xl px-4 py-10 md:px-6 md:py-14">
-                <header className="mb-8">
-                    <h1 className="font-display text-3xl font-bold tracking-tight md:text-4xl">
-                        Listings
-                    </h1>
-                    <p className="mt-2 text-sm text-muted-foreground">
-                        Find an opponent and stake your skill.{' '}
-                        <span className="text-foreground/70">
-                            {listings.meta.total}{' '}
-                            {listings.meta.total === 1 ? 'open' : 'matching'}
-                        </span>
-                    </p>
-                </header>
+            <div className="relative isolate">
+                <BGPattern
+                    variant="dots"
+                    mask="fade-edges"
+                    size={28}
+                    fill="rgba(168, 85, 247, 0.18)"
+                />
 
-                <div className="mb-6">
-                    <ListingFiltersBar filters={filters} sorts={sorts} />
-                </div>
+                <div className="mx-auto max-w-5xl px-4 py-10 md:px-6 md:py-14">
+                    <header className="mb-8">
+                        <h1 className="font-display text-3xl font-bold tracking-tight md:text-4xl">
+                            Listings
+                        </h1>
+                        <p className="mt-2 text-sm text-muted-foreground">
+                            Find an opponent and stake your skill.{' '}
+                            <span className="text-foreground/70">
+                                {listings.meta.total}{' '}
+                                {listings.meta.total === 1
+                                    ? 'open'
+                                    : 'matching'}
+                            </span>
+                        </p>
+                    </header>
 
-                {isLoading ? (
-                    <div className="flex flex-col gap-3">
-                        {Array.from({ length: SKELETON_ROW_COUNT }).map(
-                            (_, i) => (
-                                <ListingRowSkeleton key={i} />
-                            ),
-                        )}
+                    <div className="mb-6">
+                        <ListingFiltersBar filters={filters} sorts={sorts} />
                     </div>
-                ) : listings.data.length === 0 ? (
-                    <p className="py-16 text-center text-sm text-muted-foreground">
-                        No listings match your filters yet.
-                    </p>
-                ) : (
-                    <div className="flex flex-col gap-3">
-                        {/* M22 Phase 2 — desktop-only column header strip.
-                            Widths mirror the column widths inside
-                            `listing-row.tsx` so the labels align with the
-                            data underneath. Hidden on mobile where rows
-                            stack vertically and labels would only confuse. */}
-                        <div
-                            className="hidden gap-6 px-5 text-[10px] font-medium tracking-wider text-muted-foreground uppercase md:flex md:items-center"
-                            aria-hidden="true"
-                        >
-                            <div className="w-48 shrink-0">Player</div>
-                            <div className="flex flex-1 items-center gap-6">
-                                <div className="flex-1">Match</div>
-                                <div className="w-28 shrink-0 text-right">
-                                    Ends in
-                                </div>
-                                <div className="w-32 shrink-0 text-right">
-                                    Stake
+
+                    {isLoading ? (
+                        <div className="flex flex-col gap-3">
+                            {Array.from({ length: SKELETON_ROW_COUNT }).map(
+                                (_, i) => (
+                                    <ListingRowSkeleton key={i} />
+                                ),
+                            )}
+                        </div>
+                    ) : listings.data.length === 0 ? (
+                        <p className="py-16 text-center text-sm text-muted-foreground">
+                            No listings match your filters yet.
+                        </p>
+                    ) : (
+                        <div className="flex flex-col gap-3">
+                            {/* M22 Phase 2 — desktop-only column header strip.
+                                Widths mirror the column widths inside
+                                `listing-row.tsx` so the labels align with the
+                                data underneath. Hidden on mobile where rows
+                                stack vertically and labels would only confuse. */}
+                            <div
+                                className="hidden gap-6 px-5 text-[10px] font-medium tracking-wider text-muted-foreground uppercase md:flex md:items-center"
+                                aria-hidden="true"
+                            >
+                                <div className="w-48 shrink-0">Player</div>
+                                <div className="flex flex-1 items-center gap-6">
+                                    <div className="flex-1">Match</div>
+                                    <div className="w-28 shrink-0 text-right">
+                                        Ends in
+                                    </div>
+                                    <div className="w-32 shrink-0 text-right">
+                                        Stake
+                                    </div>
                                 </div>
                             </div>
+
+                            {listings.data.map((listing) => (
+                                <ListingRow
+                                    key={listing.id}
+                                    listing={listing}
+                                />
+                            ))}
                         </div>
+                    )}
 
-                        {listings.data.map((listing) => (
-                            <ListingRow key={listing.id} listing={listing} />
-                        ))}
-                    </div>
-                )}
-
-                <ListingPagination
-                    currentPage={listings.meta.current_page}
-                    lastPage={listings.meta.last_page}
-                    filters={filters}
-                />
+                    <ListingPagination
+                        currentPage={listings.meta.current_page}
+                        lastPage={listings.meta.last_page}
+                        filters={filters}
+                    />
+                </div>
             </div>
         </SiteLayout>
     );
