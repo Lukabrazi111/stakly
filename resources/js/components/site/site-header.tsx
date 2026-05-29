@@ -54,13 +54,13 @@ export function SiteHeader() {
                         Listings
                     </Link>
                     <Link
-                        href="#"
+                        href="/#how-it-works"
                         className="px-3 py-2 text-sm text-foreground transition-colors hover:text-primary"
                     >
                         How it Works
                     </Link>
                     <Link
-                        href="#"
+                        href="/en/support"
                         className="px-3 py-2 text-sm text-foreground transition-colors hover:text-primary"
                     >
                         Support

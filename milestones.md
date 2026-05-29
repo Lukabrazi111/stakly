@@ -13,7 +13,7 @@ Frontend-first build. UI against real DB infrastructure + seeded fake data; back
 - **M20** — Notifications (email infrastructure + per-event preferences UI; M20 owns the surface end-to-end)
 - **M21** — Blacklist + safety (block users from listings + chat, with anti-evasion considerations)
 - **M15** — Multi-game expansion (FACEIT, OpenDota, Riot adapters)
-- **M26** — Filament-managed CMS pages (Privacy, Terms, About — multilingual schema, SEO-indexable via global Inertia SSR)
+- **M26** — Filament-managed CMS pages (Privacy, Terms, About — multilingual schema, SEO-indexable via global Inertia SSR; Phase 1 shipped, Phase 2 next: discoverability + Privacy/Terms scaffolding)
 - **M27** — In-app notifications + action-required UX + sound (bell in `SiteHeader`, real-time via Reverb, per-event sound priority, sticky action banners; designed to enable M20 email without rework)
 
 > Active milestone keeps a detailed task list. Future milestones expand when started. Any of this can shift — flag the change, update the doc.
@@ -270,22 +270,31 @@ The schema bakes in `locale` from day one even though English is the only langua
 
 ### Phases
 
-**Phase 1 — Schema + Filament admin + first page (About) end-to-end**
+**Phase 1 — Schema + Filament admin + first page (About) end-to-end** ✅ Shipped 2026-05-29
 
-- [ ] Migration: `pages` table — `id`, `slug` (string 80), `locale` (string 8, default `'en'`), `title` (string 200), `body` (text, markdown), `published_at` (nullable datetime — admin saves drafts), `created_at`, `updated_at`. UNIQUE `(slug, locale)`. Index `(locale, slug)`.
-- [ ] `App\Models\Page` with `scopePublished()` + `forSlugWithFallback($slug, $locale)` — falls back to `'en'` row if requested locale not yet translated. Cache key `page:{locale}:{slug}` with `saved` / `deleted` hooks busting it (mirrors M24 game catalog pattern).
-- [ ] Factory + seeder for tests. Seeder writes an initial `About` row in English so a fresh `migrate:fresh --seed` has a working `/about`.
-- [ ] Filament `PageResource` at `/admin/pages` — table list (slug, locale, title, published_at, updated_at), edit form with `MarkdownEditor` for body + locale `Select` + "Preview" header action that opens `/{locale}/{slug}` in a new tab.
-- [ ] `PageController::show($locale, $slug)` — resolves via model + `Inertia::render('cms/page', [...])`. Returns 404 if neither requested-locale nor `en` fallback exists.
-- [ ] `Route::get('/{locale}/about', ...)` with `/{slug}` route group, plus `/about` → `/en/about` redirect for the default-locale convenience URL.
-- [ ] React `cms/page.tsx` — server-rendered markdown HTML inside `SiteLayout`. Use Laravel's built-in CommonMark (already a transitive dep, no new package) to render markdown to HTML server-side in the controller, ship the HTML string as a prop. Render with `dangerouslySetInnerHTML` (safe because CommonMark output is whitelisted).
-- [ ] Tests: render OK, locale fallback works, draft (`published_at = null`) returns 404 to anonymous users, cache invalidates on save.
+- [x] Migration: `pages` table — `id`, `slug` (string 64), `locale` (string 5, default `'en'`), `title` (string 200), `body` (text, markdown), `published_at` (nullable datetime — admin saves drafts), `created_at`, `updated_at`. UNIQUE `(slug, locale)`.
+- [x] `App\Models\Page` with `forSlugWithFallback($slug, $locale)` + `isPublished()` — falls back to `'en'` row if requested locale not yet translated. Cache key `cms.page.{locale}.{slug}` with `saved` / `deleted` events busting it across every supported locale (mirrors M24 game catalog pattern).
+- [x] Factory + seeder. Seeder writes an initial `About` row in English so a fresh `migrate:fresh --seed` has a working `/about`.
+- [x] Filament `PageResource` at `/admin/pages` — table list (title, slug, locale, status badge, updated_at), edit form with `MarkdownEditor` for body + locale `Select` + "Preview" record action that opens a temporary signed URL in a new tab (30-min expiry; bypasses cache + published-at gate so admin can see drafts).
+- [x] `PageController::show($locale, $slug)` — resolves via model + `Inertia::render('cms/page', [...])`. Public path goes through `Cache::rememberForever` keyed on the cache key; signed URLs bypass both the cache and the publish gate.
+- [x] Public routes: `Route::get('/{locale}/{slug}', …)->whereIn('locale', SUPPORTED_LOCALES)` + `Route::get('/{slug}', …)` → 301 to `/en/{slug}` when the page exists, 404 otherwise.
+- [x] React `cms/page.tsx` — server-rendered markdown HTML inside `SiteLayout`. Laravel's built-in CommonMark (`Str::markdown()`) strips raw HTML, so `dangerouslySetInnerHTML` is XSS-safe. Hand-rolled `.cms-prose` block in `app.css` for body styling — deferred installing `@tailwindcss/typography` until a richer page type needs it.
+- [x] Tests: 43 Pest tests across `PageTest` (model behavior + cache invalidation + XSS guard), `PageControllerTest` (render / 404 / preview / cache / redirect / unsupported locale), `Admin/PageResourceTest` (form, slug uniqueness composite, publish/unpublish, status filter).
 
-**Phase 2 — Roll out Privacy + Terms**
+Bonus extensions shipped during Phase 1 (not in original scope):
 
-- [ ] Seed Privacy and Terms English rows.
-- [ ] Add links in `SiteFooter` (`/privacy`, `/terms`, `/about`).
-- [ ] Manual content pass once schema + first page is proven.
+- Publish / Unpublish row + bulk actions on the Filament resource. Bulk confirms with a modal; per-row Publish is one-click (Unpublish confirms because content disappears). Skips already-in-target-state rows silently — idempotent.
+- Status filter on the table (Draft / Scheduled / Published) — computed in SQL from `published_at` math, so flipping the dropdown narrows the result set.
+- Preview record action both on the table row AND on the EditPage header so the admin can verify rendered markdown without leaving the form.
+
+**Phase 2 — Discoverability + Privacy/Terms scaffolding**
+
+- [ ] Seed Privacy + Terms rows as **drafts** (`published_at = null`) so they appear in Filament admin but 404 publicly until admin fills in the copy + publishes.
+- [ ] Wire `About`, `Privacy`, `Terms` links in `SiteFooter` to their `/en/{slug}` URLs (replace the current placeholder `href="#"`).
+- [ ] Fix `How it Works` in `SiteHeader` + `SiteFooter` to anchor to `/#how-it-works` (currently both are placeholder `href="#"`).
+- [ ] Mirror new footer links inside `MobileMenu` if applicable.
+- [ ] Tests: `SiteFooter` renders the three CMS links pointing at the correct URLs.
+- [ ] Manual content writing pass on Privacy + Terms when ready (not a blocker for Phase 2 close).
 
 **Phase 3 — Global Inertia SSR enablement (Path A)**
 

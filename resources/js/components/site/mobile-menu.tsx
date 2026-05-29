@@ -41,8 +41,9 @@ interface NavLink {
 
 const navLinks: NavLink[] = [
     { label: 'Listings', href: listingsIndex() },
-    { label: 'How it Works', href: '#how-it-works' },
-    { label: 'Support', href: '#' },
+    { label: 'How it Works', href: '/#how-it-works' },
+    { label: 'Support', href: '/en/support' },
+    { label: 'About', href: '/en/about' },
 ];
 
 const mobileMenuItemClass =
