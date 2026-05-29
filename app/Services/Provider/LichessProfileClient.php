@@ -10,9 +10,11 @@ use Illuminate\Support\Facades\Http;
 /**
  * Read-only client for Lichess's public API.
  *
- * Endpoint: `GET https://lichess.org/api/user/{username}` (no auth for
- * public profile data). Lichess rate-limits at 20 req/sec/IP for
- * unauthenticated requests — well above our per-user verification flow.
+ * Endpoint: `GET https://lichess.org/api/user/{username}` (public read,
+ * usable anonymously or authenticated). When `LICHESS_API_TOKEN` is set
+ * (M25), we send `Authorization: Bearer {token}` so the request lands in
+ * the authenticated rate-limit bucket and Lichess associates it with the
+ * StaklyBot account rather than a bare IP.
  *
  * For M8 Phase 1 bio-code verification, the target field is `profile.bio`
  * (400-char user-editable bio). Lichess omits the entire `profile` object
@@ -28,9 +30,7 @@ class LichessProfileClient implements ProfileClient
         $url = "https://lichess.org/api/user/{$username}";
 
         try {
-            $response = Http::withHeaders([
-                'Accept' => 'application/json',
-            ])
+            $response = Http::withHeaders($this->lichessHeaders())
                 ->timeout(10)
                 ->get($url);
         } catch (ConnectionException $e) {
@@ -56,5 +56,27 @@ class LichessProfileClient implements ProfileClient
             username: $data['username'] ?? $username,
             bioFieldValue: $data['profile']['bio'] ?? null,
         );
+    }
+
+    /**
+     * Base headers plus an optional bearer token (M25). Returning the
+     * Authorization key only when the token is set keeps the anonymous
+     * fallback path identical to the pre-M25 wire shape — important so
+     * `Http::fake()` assertions in pre-M25 tests don't have to anticipate
+     * a header that may or may not be there.
+     *
+     * @return array<string, string>
+     */
+    private function lichessHeaders(): array
+    {
+        $headers = ['Accept' => 'application/json'];
+
+        $token = config('services.lichess.token');
+
+        if (is_string($token) && $token !== '') {
+            $headers['Authorization'] = "Bearer {$token}";
+        }
+
+        return $headers;
     }
 }

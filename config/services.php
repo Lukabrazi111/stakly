@@ -35,4 +35,26 @@ return [
         ],
     ],
 
+    /*
+     * Lichess API token for the StaklyBot account (M25). Used by
+     * `LichessGameClient`, `LichessProfileClient`, and `LichessStreamCommand`
+     * to authenticate every request as the registered bot — higher rate-limit
+     * bucket, stable stream connections, point-of-contact for Lichess support.
+     *
+     * To rotate:
+     *   1. Log in to the StaklyBot account at lichess.org.
+     *   2. Preferences → API access tokens → Create a new personal access token.
+     *   3. No scopes needed — public read endpoints accept any valid token.
+     *   4. Copy the token, paste it into `.env` as `LICHESS_API_TOKEN=...`, restart
+     *      the queue worker + the `stakly:lichess-stream` sidecar.
+     *
+     * Anonymous fallback: when this value is null (env var unset), the Lichess
+     * clients omit the `Authorization` header and call the public endpoints
+     * unauthenticated — same behavior as pre-M25. Useful for casual dev or CI
+     * runs that don't need the higher limits.
+     */
+    'lichess' => [
+        'token' => env('LICHESS_API_TOKEN'),
+    ],
+
 ];

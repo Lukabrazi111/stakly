@@ -2,7 +2,7 @@
 
 Frontend-first build. UI against real DB infrastructure + seeded fake data; backend logic (escrow, payouts, on-chain integration) lands per page once the UI is validated. Milestones are work-chunk labels, not version commitments — decisions inside any of them are revisitable.
 
-> **Shipped milestones live in `milestones_archived.md`** (M1, M2, M2.5, M3, M3.5, M4, M5, M6, M7, M8 all phases, M10, M11, M12 all phases, M14 Slice A, M16 all phases, M17, M18, M19, M22, M23, M24). This file is for active + upcoming work + the cross-cutting architectural decisions that earlier milestones established.
+> **Shipped milestones live in `milestones_archived.md`** (M1, M2, M2.5, M3, M3.5, M4, M5, M6, M7, M8 all phases, M10, M11, M12 all phases, M14 Slice A, M16 all phases, M17, M18, M19, M22, M23, M24, M25). This file is for active + upcoming work + the cross-cutting architectural decisions that earlier milestones established.
 
 ## Phases (map)
 
@@ -13,7 +13,6 @@ Frontend-first build. UI against real DB infrastructure + seeded fake data; back
 - **M20** — Notifications (email infrastructure + per-event preferences UI; M20 owns the surface end-to-end)
 - **M21** — Blacklist + safety (block users from listings + chat, with anti-evasion considerations)
 - **M15** — Multi-game expansion (FACEIT, OpenDota, Riot adapters)
-- **M25** — Lichess OAuth integration (authenticated bot account → higher rate limits + stream stability + point-of-contact)
 - **M26** — Filament-managed CMS pages (Privacy, Terms, About — multilingual schema, SEO-indexable via global Inertia SSR)
 - **M27** — In-app notifications + action-required UX + sound (bell in `SiteHeader`, real-time via Reverb, per-event sound priority, sticky action banners; designed to enable M20 email without rework)
 
@@ -252,41 +251,6 @@ Decide per-adapter when the first non-chess one ships. The current `username` co
 - Filament admin moderation surfaces for the new game types — covered by M12 (shipped). New game types automatically appear in the existing `GameMatchResource` queue.
 - Marketing / homepage copy for the anti-cheat trust pitch — separate from engineering scope; revisit alongside the existing marquee-copy cleanup.
 - Aggregator-as-a-service (PandaScore / Bayes / Abios) — considered and parked. Reconsider only if the per-game maintenance burden gets painful and revenue can absorb the monthly cost.
-
----
-
-## M25 — Lichess OAuth integration
-
-Replace anonymous HTTP calls to Lichess with authenticated calls from a registered Stakly bot account. Three concrete wins: higher rate-limit buckets (the anonymous bucket throttles harder under load), stream stability (authenticated streams stay connected longer), and a point-of-contact (if our daemon ever misbehaves, Lichess can DM the bot account instead of blackholing our IP). Also future-proofs us — any Lichess endpoints that gain authentication requirements down the road work without a refactor.
-
-**Why not chess.com too?** Chess.com's Published Data API has no OAuth / token mechanism. Their auth model is "set a recognisable `User-Agent` with a contact email" — we already do that via `config('stakly.chess_com_user_agent')` in `ChessComGameClient`. The two providers reach the same end state via different mechanisms.
-
-### Phases
-
-**Phase 1 — Account + token**
-
-- [ ] Register a Lichess bot account (e.g. `StaklyBot`). Confirm name with the user before claiming.
-- [ ] Generate a personal API token from account settings. Use the minimum scope needed — public read endpoints (`/game/export`, `/api/games/user/{user}`, `/api/stream/games-by-users`, `/api/user/{username}`) require any valid token, no special scopes.
-- [ ] Store in `.env` as `LICHESS_API_TOKEN`, expose via `config('services.lichess.token')`.
-
-**Phase 2 — Wire authenticated header into all Lichess HTTP**
-
-- [ ] `LichessGameClient::fetchGame()` + `searchGamesBetween()` — add `Authorization: Bearer {token}` when token is present.
-- [ ] `LichessProfileClient::fetchProfile()` — same header.
-- [ ] `LichessStreamCommand::openStream()` — add header to the curl handle via `CURLOPT_HTTPHEADER`.
-- [ ] Anonymous fallback: when `LICHESS_API_TOKEN` is unset (dev without secret), the header is omitted and we run as today. Avoids a hard env dependency for casual dev work.
-
-**Phase 3 — Verification + observability**
-
-- [ ] Tests using `Http::fake()` assert the `Authorization` header is sent when the token is configured.
-- [ ] Log `X-RateLimit-Remaining` / `Retry-After` (if Lichess sends them) at WARN level when below threshold — early signal we're approaching limits.
-- [ ] README / setup doc note: where to generate the token, what scopes to pick.
-
-### Not in M25
-
-- Chess.com authentication — there is no equivalent. The `User-Agent` contact pattern we already implement IS the chess.com mechanism.
-- Lichess Bot API (`bot:play` scope, `/api/bot/*` endpoints) — Stakly does not play games on Lichess, it observes them. Not applicable.
-- Replacing the 5-min cron / page-visit / chat-send auto-fetch triggers with stream-only. The stream is an optimisation; the multi-trigger layering survives so a stream outage isn't a frozen-match scenario.
 
 ---
 

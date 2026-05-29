@@ -678,3 +678,29 @@ Mid-build the user bumped the global `shadow-glow` utility to a beefier value to
 - **Admin RBAC per-resource.** Existing Filament panel auth (admin user gating) is sufficient. Per-resource roles only if multiple admins eventually need scoped access.
 - **Filament "preview row" page** for visual-consistency check before publishing. Overkill for a solo dev managing < 20 tiles; revisit if mismatched posters become an actual problem.
 - **WebP conversion pipeline** (see Decisions). Lives as a future-polish slice, not blocking.
+
+---
+
+## M25 — Lichess OAuth (StaklyBot bot account) ✅ shipped 2026-05-29
+
+Authenticated every outbound Lichess request as the registered `StaklyBot` account. Pre-M25 calls were anonymous — landed in Lichess's anonymous rate-limit bucket and were untraceable to a known client. Post-M25 they carry `Authorization: Bearer <token>` from a personal access token stored in `.env` as `LICHESS_API_TOKEN`, exposed via `config('services.lichess.token')` (Laravel convention for third-party tokens — sits alongside Mailgun / Postmark / Stripe rather than in the `stakly.*` business-config namespace).
+
+Three call sites updated in lockstep — `LichessGameClient` (both `fetchGame` and `searchGamesBetween`), `LichessProfileClient::fetchProfile`, and `LichessStreamCommand::openStream` (curl `CURLOPT_HTTPHEADER`). Each grew a small private helper (`lichessHeaders()` / `buildStreamHeaders()`) that returns the base headers and conditionally appends `Authorization` only when the token is a non-empty string. The stream command's helper is `public` rather than `private` so the header-build logic is testable in isolation without spinning up curl — mirrors the same exposed-for-testability convention `dispatchFromEvent` already uses.
+
+Setup steps documented inline in `config/services.php` (where to log in, where to generate the token, what scopes to tick — `none`, all the endpoints we hit are public reads). `.env.example` carries a placeholder + short comment so onboarding picks it up. 11 new Pest tests in `LichessAuthHeaderTest`: per call site, asserts the header is sent when the token is configured AND omitted when the token is null OR an empty string; one cross-call consistency test seeds a single token value and confirms all four surfaces send the same bearer verbatim. Suite 786 → 835.
+
+### Decisions
+
+- **Bot handle: `StaklyBot`.** Names itself as automation to Lichess support, separate from any personal account. Suspension blast radius limited to Stakly; token leak doesn't expose a human's chess account.
+- **Config namespace: `services.lichess.token`, not `stakly.lichess_token`.** Matches the Laravel convention for third-party API tokens (Mailgun / Postmark / Stripe live there). `config/stakly.php` is reserved for Stakly business config (platform_fee_rate, chess_com_user_agent).
+- **Anonymous fallback always allowed.** When the env var is unset (casual dev without the secret), every helper omits the `Authorization` header entirely. Wire shape exactly matches pre-M25 so existing `Http::fake()` assertions in other test files keep passing; no env dependency for dev or CI. Empty string treated the same as null — never send a literal `Bearer ` header that would identify us as a misconfigured client.
+- **Scopes: none.** The four endpoints we hit (`/game/export/{id}`, `/api/games/user/{username}`, `/api/user/{username}`, `/api/stream/games-by-users`) are public reads that work with any valid token regardless of scope. Granting unused scopes (`msg:write`, `bot:play`, `challenge:write`) would only widen blast radius if the token ever leaks.
+- **No chess.com equivalent.** Chess.com's Published Data API has no token / OAuth mechanism — their auth model is `User-Agent` containing a contact email, which `ChessComGameClient` already sends via `config('stakly.chess_com_user_agent')`. The two providers reach the same end state via different mechanisms.
+- **Rate-limit header parsing deferred.** Lichess doesn't reliably emit `X-Ratelimit-*` headers on the read endpoints we use; a 429 response surfaces as `ProviderUnavailableException` → M14 P1 audit row with `outcome=error` → visible in `PipelineHealth`. The pipeline already catches the only signal that matters today. Add active header parsing later if Lichess starts sending consistent data.
+
+### Not in M25
+
+- **Chess.com authentication.** Their API has no token mechanism (see Decisions).
+- **Lichess Bot API (`bot:play` scope / `/api/bot/*`).** Stakly observes games, doesn't play them. Account-upgrade-to-bot is one-way and would lock the account out of human play.
+- **OAuth user delegation.** Each end user proves Lichess ownership via the existing M8 bio-code flow; we never need to act as the user on Lichess, only read public game data. Per-user OAuth tokens would add infrastructure (per-user storage, refresh tokens, revocation handling) for zero new capability.
+- **Stream-only settlement path.** Stream is an optimisation over the 5-min cron + page-visit + chat-send triggers; the multi-trigger layering survives so a stream outage isn't a frozen-match scenario.

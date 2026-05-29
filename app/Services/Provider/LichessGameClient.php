@@ -54,10 +54,7 @@ class LichessGameClient
         $url = self::BASE_URL.'/game/export/'.$gameId;
 
         try {
-            $response = Http::withHeaders([
-                'Accept' => 'application/json',
-                'User-Agent' => self::USER_AGENT,
-            ])
+            $response = Http::withHeaders($this->lichessHeaders('application/json'))
                 ->timeout(self::TIMEOUT_SECONDS)
                 ->get($url, self::minimalPayloadParams());
         } catch (ConnectionException $e) {
@@ -105,13 +102,10 @@ class LichessGameClient
         $url = self::BASE_URL.'/api/games/user/'.$userA;
 
         try {
-            $response = Http::withHeaders([
-                // ndjson is Lichess's documented streaming format for the
-                // bulk-games endpoint. We parse line-by-line so a partial
-                // response still yields valid games.
-                'Accept' => 'application/x-ndjson',
-                'User-Agent' => self::USER_AGENT,
-            ])
+            // ndjson is Lichess's documented streaming format for the
+            // bulk-games endpoint. We parse line-by-line so a partial
+            // response still yields valid games.
+            $response = Http::withHeaders($this->lichessHeaders('application/x-ndjson'))
                 ->timeout(self::TIMEOUT_SECONDS)
                 ->get($url, [
                     'vs' => $userB,
@@ -157,6 +151,30 @@ class LichessGameClient
             'opening' => 'false',
             'literate' => 'false',
         ];
+    }
+
+    /**
+     * Base headers plus an optional `Authorization: Bearer` for the
+     * StaklyBot account (M25). When `services.lichess.token` is unset we
+     * omit the header entirely so the wire shape matches the pre-M25
+     * anonymous path — keeps existing `Http::fake()` assertions valid.
+     *
+     * @return array<string, string>
+     */
+    private function lichessHeaders(string $accept): array
+    {
+        $headers = [
+            'Accept' => $accept,
+            'User-Agent' => self::USER_AGENT,
+        ];
+
+        $token = config('services.lichess.token');
+
+        if (is_string($token) && $token !== '') {
+            $headers['Authorization'] = "Bearer {$token}";
+        }
+
+        return $headers;
     }
 
     /**
