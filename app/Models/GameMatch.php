@@ -118,6 +118,17 @@ class GameMatch extends Model
     }
 
     /**
+     * Auto-fetch attempt audit rows (M14 Phase 1). Append-only; one row
+     * per call into the pipeline (skip rows from `DispatchAutoFetchAction`
+     * + outcome rows from the per-platform `AutoFetch*GameJob`s). Ordered
+     * oldest → newest so the Filament timeline reads chronologically.
+     */
+    public function autoFetchAttempts(): HasMany
+    {
+        return $this->hasMany(MatchAutoFetchAttempt::class, 'match_id')->oldest();
+    }
+
+    /**
      * Lookup helper for the smart-link jobs: "what username did the
      * {side} player verify for {provider} at match creation?" Returns
      * null when no snapshot exists for that slot — caller treats that as

@@ -2,8 +2,10 @@
 
 namespace App\Jobs;
 
+use App\Actions\GameMatch\RecordAutoFetchAttemptAction;
 use App\Actions\GameMatch\SettleFromCardAction;
 use App\Actions\Message\PostSystemMessageAction;
+use App\Enums\AutoFetchOutcome;
 use App\Enums\LinkedAccountProvider;
 use App\Enums\MessageType;
 use App\Models\GameMatch;
@@ -17,7 +19,6 @@ use Illuminate\Contracts\Queue\ShouldQueueAfterCommit;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
-use Illuminate\Support\Facades\Log;
 use Throwable;
 
 /**
@@ -41,6 +42,12 @@ use Throwable;
  *
  *   - Posted card uses `provider: 'chess_com'` so the frontend renderer
  *     + `SettleFromCardAction` resolve the matching snapshot side.
+ *
+ * M14 Phase 1 — every attempt writes a `match_auto_fetch_attempts` row
+ * via `RecordAutoFetchAttemptAction`, including each empty attempt in the
+ * retry chain. `attempt_number` is populated from `$this->attempts()` so
+ * the admin timeline shows the full "we tried 4 times, all empty" story
+ * rather than a single terminal row.
  */
 class AutoFetchChessComGameJob implements ShouldBeUnique, ShouldQueueAfterCommit
 {
@@ -92,8 +99,13 @@ class AutoFetchChessComGameJob implements ShouldBeUnique, ShouldQueueAfterCommit
         ChessComGameClient $client,
         PostSystemMessageAction $postSystem,
         SettleFromCardAction $settleFromCard,
+        RecordAutoFetchAttemptAction $recordAttempt,
     ): void {
         if ($this->alreadyPosted()) {
+            $this->record($recordAttempt, AutoFetchOutcome::Skipped, [
+                'outcome_reason' => 'already_posted',
+            ]);
+
             return;
         }
 
@@ -109,12 +121,25 @@ class AutoFetchChessComGameJob implements ShouldBeUnique, ShouldQueueAfterCommit
         );
 
         if ($creatorUsername === null || $takerUsername === null) {
+            $this->record($recordAttempt, AutoFetchOutcome::Skipped, [
+                'outcome_reason' => 'snapshot_missing',
+            ]);
+
             return;
         }
 
-        $games = $this->searchSafely($client, $creatorUsername, $takerUsername);
+        [$games, $errorMessage, $latencyMs] = $this->searchWithMetrics(
+            $client,
+            $creatorUsername,
+            $takerUsername,
+        );
 
         if ($games === null) {
+            $this->record($recordAttempt, AutoFetchOutcome::Error, [
+                'error_message' => $errorMessage,
+                'latency_ms' => $latencyMs,
+            ]);
+
             return;
         }
 
@@ -124,18 +149,41 @@ class AutoFetchChessComGameJob implements ShouldBeUnique, ShouldQueueAfterCommit
             // Aborted / half-played excluded — not a real result to settle.
             fn (ChessComGameResult $g) => $g->isDecisive() || $g->isDraw(),
         ));
+        $count = count($completed);
 
-        if (count($completed) === 0) {
+        if ($count === 0) {
+            // Record the empty attempt before releasing — the audit timeline
+            // shows each retry independently so admins can see "we tried 4
+            // times during the 5-15s archive lag window."
+            $reason = $this->isFinalAttempt() ? 'retry_exhausted' : null;
+            $this->record($recordAttempt, AutoFetchOutcome::NoMatch, [
+                'candidates_count' => 0,
+                'latency_ms' => $latencyMs,
+                'outcome_reason' => $reason,
+            ]);
+
             $this->retryIfBudgetRemains();
 
             return;
         }
 
-        if (count($completed) !== 1) {
+        if ($count > 1) {
+            $this->record($recordAttempt, AutoFetchOutcome::Ambiguous, [
+                'candidates_count' => $count,
+                'latency_ms' => $latencyMs,
+            ]);
+
             return;
         }
 
-        $card = $this->postCard($postSystem, $completed[0]);
+        $game = $completed[0];
+        $card = $this->postCard($postSystem, $game);
+
+        $this->record($recordAttempt, AutoFetchOutcome::Matched, [
+            'winner_username' => $game->winnerUsername(),
+            'candidates_count' => 1,
+            'latency_ms' => $latencyMs,
+        ]);
 
         // M16 — card IS the settlement trigger. SettleFromCardAction
         // row-locks the match, no-ops if not Pending (idempotent re-runs),
@@ -145,35 +193,48 @@ class AutoFetchChessComGameJob implements ShouldBeUnique, ShouldQueueAfterCommit
     }
 
     /**
-     * @return list<ChessComGameResult>|null null on provider failure (logged
-     *                                       + swallowed) so caller aborts.
+     * Wraps the provider search with latency tracking and structured error
+     * capture. Returns `[games, errorMessage, latencyMs]` — exactly one of
+     * `games` / `errorMessage` is non-null.
+     *
+     * @return array{0: list<ChessComGameResult>|null, 1: string|null, 2: int}
      */
-    private function searchSafely(
+    private function searchWithMetrics(
         ChessComGameClient $client,
         string $creatorUsername,
         string $takerUsername,
-    ): ?array {
+    ): array {
+        $start = microtime(true);
+
         try {
-            return $client->searchGamesBetween(
+            $games = $client->searchGamesBetween(
                 $creatorUsername,
                 $takerUsername,
                 $this->match->created_at,
             );
+
+            return [$games, null, $this->elapsedMs($start)];
         } catch (ProviderUnavailableException $e) {
-            Log::info('chess.com auto-fetch search failed (provider unavailable)', [
-                'match_id' => $this->match->id,
-                'error' => $e->getMessage(),
-            ]);
-
-            return null;
+            return [null, $e->getMessage(), $this->elapsedMs($start)];
         } catch (Throwable $e) {
-            Log::warning('chess.com auto-fetch search failed (unexpected)', [
-                'match_id' => $this->match->id,
-                'error' => $e->getMessage(),
-            ]);
-
-            return null;
+            return [null, $e->getMessage(), $this->elapsedMs($start)];
         }
+    }
+
+    private function elapsedMs(float $start): int
+    {
+        return (int) round((microtime(true) - $start) * 1000);
+    }
+
+    /**
+     * True when the current attempt is the final one in the retry budget.
+     * Used to mark the terminal `NoMatch` row with `retry_exhausted` so
+     * PipelineHealth can distinguish "still hoping the archive catches up"
+     * from "we gave up."
+     */
+    private function isFinalAttempt(): bool
+    {
+        return $this->attempts() >= count(self::RETRY_DELAYS) + 1;
     }
 
     /**
@@ -243,5 +304,27 @@ class AutoFetchChessComGameJob implements ShouldBeUnique, ShouldQueueAfterCommit
             'rated' => $game->rated,
             'played_at' => $game->endedAt->toIso8601String(),
         ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $extras
+     */
+    private function record(
+        RecordAutoFetchAttemptAction $action,
+        AutoFetchOutcome $outcome,
+        array $extras = [],
+    ): void {
+        $action->handle(
+            matchId: $this->match->id,
+            provider: LinkedAccountProvider::ChessCom,
+            outcome: $outcome,
+            // Every chess.com row carries the attempt number from the queue
+            // worker's retry counter. Lichess always stays at 1 (no retry
+            // logic on that job).
+            extras: [
+                'attempt_number' => $this->attempts(),
+                ...$extras,
+            ],
+        );
     }
 }

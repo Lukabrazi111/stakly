@@ -2,9 +2,11 @@
 
 namespace App\Filament\Resources\GameMatches\Schemas;
 
+use App\Enums\AutoFetchOutcome;
 use App\Enums\MatchStatus;
 use App\Filament\Infolists\Components\ChatHistoryEntry;
 use App\Models\GameMatch;
+use App\Models\MatchAutoFetchAttempt;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Schemas\Components\Grid;
 use Filament\Schemas\Components\Section;
@@ -45,6 +47,7 @@ class GameMatchInfolist
                         self::takerSection(),
                     ]),
                 self::chatSection()->columnSpanFull(),
+                self::autoFetchHistorySection()->columnSpanFull(),
                 self::resolutionHistorySection()->columnSpanFull(),
             ]);
     }
@@ -246,6 +249,26 @@ class GameMatchInfolist
             ->visible(fn (GameMatch $record) => $record->adminResolutions()->exists());
     }
 
+    /**
+     * M14 Phase 1 — per-match auto-fetch audit timeline. One row per call
+     * into the pipeline (skip rows + provider-call outcomes) so admins
+     * can answer "why is this match in ManualReview?" by reading the
+     * full attempt history. Hidden when no rows exist (e.g. matches
+     * created before M14 P1 shipped).
+     */
+    private static function autoFetchHistorySection(): Section
+    {
+        return Section::make('Auto-fetch history')
+            ->icon(Heroicon::ArrowPath)
+            ->schema([
+                TextEntry::make('auto_fetch_summary')
+                    ->hiddenLabel()
+                    ->state(fn (GameMatch $record) => self::autoFetchSummary($record))
+                    ->html(),
+            ])
+            ->visible(fn (GameMatch $record) => $record->autoFetchAttempts()->exists());
+    }
+
     private static function isWinner(GameMatch $record, ?int $playerId): bool
     {
         return $record->status === MatchStatus::Settled
@@ -278,5 +301,83 @@ class GameMatchInfolist
         $html .= '</div>';
 
         return $html;
+    }
+
+    /**
+     * Renders the auto-fetch attempts for this match. One row per call,
+     * oldest → newest, with the outcome badge color picked to match the
+     * `OpsOverview` widget's color scale (gray=informational,
+     * success=matched, warning=ambiguous, danger=error).
+     */
+    private static function autoFetchSummary(GameMatch $record): string
+    {
+        $rows = $record->autoFetchAttempts()->get();
+
+        if ($rows->isEmpty()) {
+            return '<em>No auto-fetch attempts yet.</em>';
+        }
+
+        $html = '<div class="space-y-2">';
+        foreach ($rows as $row) {
+            $html .= self::autoFetchRowHtml($row);
+        }
+        $html .= '</div>';
+
+        return $html;
+    }
+
+    private static function autoFetchRowHtml(MatchAutoFetchAttempt $row): string
+    {
+        $when = $row->created_at->format('M j, Y H:i:s');
+        $provider = e($row->provider->value);
+        $badge = self::outcomeBadge($row->outcome);
+        $detail = self::outcomeDetail($row);
+        $attempt = $row->attempt_number > 1 ? " · attempt #{$row->attempt_number}" : '';
+
+        return "<div><strong>{$when}</strong> · {$provider} · {$badge}{$attempt}<br>"
+            ."<span class=\"text-sm opacity-75\">{$detail}</span></div>";
+    }
+
+    /**
+     * Inline-styled span badge instead of a Filament Badge component —
+     * we're rendering raw HTML inside a TextEntry, so we can't compose
+     * Filament's component tree. The color tokens match the Filament
+     * status badge palette so the timeline reads consistently with the
+     * top-of-page status section.
+     */
+    private static function outcomeBadge(AutoFetchOutcome $outcome): string
+    {
+        $palette = match ($outcome) {
+            AutoFetchOutcome::Matched => ['#16a34a', '#dcfce7'],
+            AutoFetchOutcome::NoMatch => ['#6b7280', '#f3f4f6'],
+            AutoFetchOutcome::Ambiguous => ['#d97706', '#fef3c7'],
+            AutoFetchOutcome::Error => ['#dc2626', '#fee2e2'],
+            AutoFetchOutcome::Skipped => ['#6b7280', '#f3f4f6'],
+        };
+        [$fg, $bg] = $palette;
+        $label = e($outcome->value);
+
+        return "<span style=\"display:inline-block;padding:2px 8px;border-radius:9999px;font-size:0.75rem;font-weight:600;color:{$fg};background:{$bg};\">{$label}</span>";
+    }
+
+    private static function outcomeDetail(MatchAutoFetchAttempt $row): string
+    {
+        return match ($row->outcome) {
+            AutoFetchOutcome::Matched => 'Winner: '.e($row->winner_username ?? '—')
+                .' · '.self::latencyLabel($row->latency_ms),
+            AutoFetchOutcome::NoMatch => '0 candidates'
+                .($row->outcome_reason ? ' · '.e($row->outcome_reason) : '')
+                .' · '.self::latencyLabel($row->latency_ms),
+            AutoFetchOutcome::Ambiguous => ($row->candidates_count ?? 0).' candidates · '
+                .self::latencyLabel($row->latency_ms),
+            AutoFetchOutcome::Error => e($row->error_message ?? 'Unknown error')
+                .' · '.self::latencyLabel($row->latency_ms),
+            AutoFetchOutcome::Skipped => 'Reason: '.e($row->outcome_reason ?? 'unspecified'),
+        };
+    }
+
+    private static function latencyLabel(?int $ms): string
+    {
+        return $ms === null ? 'no provider call' : "{$ms}ms";
     }
 }

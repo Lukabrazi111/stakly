@@ -1,5 +1,6 @@
 <?php
 
+use App\Actions\GameMatch\RecordAutoFetchAttemptAction;
 use App\Actions\GameMatch\SettleFromCardAction;
 use App\Actions\Message\PostSystemMessageAction;
 use App\Enums\LinkedAccountProvider;
@@ -61,6 +62,7 @@ function runChessComAutoFetch(GameMatch $match): void
             app(ChessComGameClient::class),
             app(PostSystemMessageAction::class),
             app(SettleFromCardAction::class),
+            app(RecordAutoFetchAttemptAction::class),
         );
 }
 

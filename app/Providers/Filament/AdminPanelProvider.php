@@ -3,6 +3,7 @@
 namespace App\Providers\Filament;
 
 use App\Filament\Widgets\OpsOverview;
+use App\Filament\Widgets\PipelineHealth;
 use Filament\Http\Middleware\Authenticate;
 use Filament\Http\Middleware\AuthenticateSession;
 use Filament\Http\Middleware\DisableBladeIconComponents;
@@ -47,6 +48,12 @@ class AdminPanelProvider extends PanelProvider
                 // since each `StatsOverviewWidget` defaults to
                 // `columnSpan = 'full'`.
                 OpsOverview::class,
+                // M14 Phase 1 — auto-fetch pipeline health. Sits below
+                // `OpsOverview` as its own row (separate widget = its own
+                // column, by the same default cited above). Distinct
+                // concern from the broader ops view, so the row break
+                // reads naturally.
+                PipelineHealth::class,
             ])
             ->middleware([
                 EncryptCookies::class,

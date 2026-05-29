@@ -2,8 +2,10 @@
 
 namespace App\Jobs;
 
+use App\Actions\GameMatch\RecordAutoFetchAttemptAction;
 use App\Actions\GameMatch\SettleFromCardAction;
 use App\Actions\Message\PostSystemMessageAction;
+use App\Enums\AutoFetchOutcome;
 use App\Enums\LinkedAccountProvider;
 use App\Enums\MessageType;
 use App\Models\GameMatch;
@@ -17,7 +19,6 @@ use Illuminate\Contracts\Queue\ShouldQueueAfterCommit;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
-use Illuminate\Support\Facades\Log;
 use Throwable;
 
 /**
@@ -47,6 +48,11 @@ use Throwable;
  *     re-dispatch / queue-retry from double-posting + double-settling.
  *   - Card-then-settle order: the card lands in chat first so players
  *     read the game record above the settlement narration.
+ *
+ * M14 Phase 1 — every return path writes a `match_auto_fetch_attempts`
+ * row via `RecordAutoFetchAttemptAction`. Each row captures the outcome,
+ * candidate count, provider latency, and (on error) the exception
+ * message. Skip rows additionally carry an `outcome_reason` discriminator.
  */
 class AutoFetchLichessGameJob implements ShouldBeUnique, ShouldQueueAfterCommit
 {
@@ -76,8 +82,13 @@ class AutoFetchLichessGameJob implements ShouldBeUnique, ShouldQueueAfterCommit
         LichessGameClient $client,
         PostSystemMessageAction $postSystem,
         SettleFromCardAction $settleFromCard,
+        RecordAutoFetchAttemptAction $recordAttempt,
     ): void {
         if ($this->alreadyPosted()) {
+            $this->record($recordAttempt, AutoFetchOutcome::Skipped, [
+                'outcome_reason' => 'already_posted',
+            ]);
+
             return;
         }
 
@@ -96,24 +107,62 @@ class AutoFetchLichessGameJob implements ShouldBeUnique, ShouldQueueAfterCommit
             // Caller gates on both snapshots being present, but defensive
             // belt-and-suspenders in case the job is re-dispatched out of
             // its normal context.
+            $this->record($recordAttempt, AutoFetchOutcome::Skipped, [
+                'outcome_reason' => 'snapshot_missing',
+            ]);
+
             return;
         }
 
-        $games = $this->searchSafely($client, $creatorUsername, $takerUsername);
+        [$games, $errorMessage, $latencyMs] = $this->searchWithMetrics(
+            $client,
+            $creatorUsername,
+            $takerUsername,
+        );
 
         if ($games === null) {
+            $this->record($recordAttempt, AutoFetchOutcome::Error, [
+                'error_message' => $errorMessage,
+                'latency_ms' => $latencyMs,
+            ]);
+
             return;
         }
 
         $completed = $this->filterCompleted($games);
+        $count = count($completed);
 
-        if (count($completed) !== 1) {
-            // Zero or multiple — silent skip. Wrong-game evidence is worse
-            // than no evidence; manual paste covers the ambiguous case.
+        if ($count === 0) {
+            $this->record($recordAttempt, AutoFetchOutcome::NoMatch, [
+                'candidates_count' => 0,
+                'latency_ms' => $latencyMs,
+            ]);
+
             return;
         }
 
-        $card = $this->postCard($postSystem, $completed[0]);
+        if ($count > 1) {
+            // Wrong-game evidence is worse than no evidence; manual paste
+            // covers the ambiguous case.
+            $this->record($recordAttempt, AutoFetchOutcome::Ambiguous, [
+                'candidates_count' => $count,
+                'latency_ms' => $latencyMs,
+            ]);
+
+            return;
+        }
+
+        $game = $completed[0];
+        $card = $this->postCard($postSystem, $game);
+
+        // Audit row lands before settlement — settlement re-locks the match
+        // and could throw, but the audit row reflects what the pipeline
+        // decided regardless of downstream outcome.
+        $this->record($recordAttempt, AutoFetchOutcome::Matched, [
+            'winner_username' => $game->winnerUsername(),
+            'candidates_count' => 1,
+            'latency_ms' => $latencyMs,
+        ]);
 
         // M16 — card IS the settlement trigger. SettleFromCardAction
         // row-locks the match, no-ops if not Pending (idempotent re-runs),
@@ -123,36 +172,37 @@ class AutoFetchLichessGameJob implements ShouldBeUnique, ShouldQueueAfterCommit
     }
 
     /**
-     * @return list<LichessGameResult>|null null on provider failure (logged
-     *                                      + swallowed) so the caller knows
-     *                                      to abort cleanly.
+     * Wraps the provider search with latency tracking and structured error
+     * capture. Returns `[games, errorMessage, latencyMs]` — exactly one of
+     * `games` / `errorMessage` is non-null.
+     *
+     * @return array{0: list<LichessGameResult>|null, 1: string|null, 2: int}
      */
-    private function searchSafely(
+    private function searchWithMetrics(
         LichessGameClient $client,
         string $creatorUsername,
         string $takerUsername,
-    ): ?array {
+    ): array {
+        $start = microtime(true);
+
         try {
-            return $client->searchGamesBetween(
+            $games = $client->searchGamesBetween(
                 $creatorUsername,
                 $takerUsername,
                 $this->match->created_at,
             );
+
+            return [$games, null, $this->elapsedMs($start)];
         } catch (ProviderUnavailableException $e) {
-            Log::info('Auto-fetch search failed (provider unavailable)', [
-                'match_id' => $this->match->id,
-                'error' => $e->getMessage(),
-            ]);
-
-            return null;
+            return [null, $e->getMessage(), $this->elapsedMs($start)];
         } catch (Throwable $e) {
-            Log::warning('Auto-fetch search failed (unexpected)', [
-                'match_id' => $this->match->id,
-                'error' => $e->getMessage(),
-            ]);
-
-            return null;
+            return [null, $e->getMessage(), $this->elapsedMs($start)];
         }
+    }
+
+    private function elapsedMs(float $start): int
+    {
+        return (int) round((microtime(true) - $start) * 1000);
     }
 
     /**
@@ -233,5 +283,21 @@ class AutoFetchLichessGameJob implements ShouldBeUnique, ShouldQueueAfterCommit
             'rated' => $game->rated,
             'played_at' => $game->lastMoveAt->toIso8601String(),
         ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $extras
+     */
+    private function record(
+        RecordAutoFetchAttemptAction $action,
+        AutoFetchOutcome $outcome,
+        array $extras = [],
+    ): void {
+        $action->handle(
+            matchId: $this->match->id,
+            provider: LinkedAccountProvider::Lichess,
+            outcome: $outcome,
+            extras: $extras,
+        );
     }
 }

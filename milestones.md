@@ -13,6 +13,9 @@ Frontend-first build. UI against real DB infrastructure + seeded fake data; back
 - **M20** — Notifications (email infrastructure + per-event preferences UI; M20 owns the surface end-to-end)
 - **M21** — Blacklist + safety (block users from listings + chat, with anti-evasion considerations)
 - **M15** — Multi-game expansion (FACEIT, OpenDota, Riot adapters)
+- **M25** — Lichess OAuth integration (authenticated bot account → higher rate limits + stream stability + point-of-contact)
+- **M26** — Filament-managed CMS pages (Privacy, Terms, About — multilingual schema, SEO-indexable via global Inertia SSR)
+- **M27** — In-app notifications + action-required UX + sound (bell in `SiteHeader`, real-time via Reverb, per-event sound priority, sticky action banners; designed to enable M20 email without rework)
 
 > Active milestone keeps a detailed task list. Future milestones expand when started. Any of this can shift — flag the change, update the doc.
 
@@ -249,4 +252,177 @@ Decide per-adapter when the first non-chess one ships. The current `username` co
 - Filament admin moderation surfaces for the new game types — covered by M12 (shipped). New game types automatically appear in the existing `GameMatchResource` queue.
 - Marketing / homepage copy for the anti-cheat trust pitch — separate from engineering scope; revisit alongside the existing marquee-copy cleanup.
 - Aggregator-as-a-service (PandaScore / Bayes / Abios) — considered and parked. Reconsider only if the per-game maintenance burden gets painful and revenue can absorb the monthly cost.
+
+---
+
+## M25 — Lichess OAuth integration
+
+Replace anonymous HTTP calls to Lichess with authenticated calls from a registered Stakly bot account. Three concrete wins: higher rate-limit buckets (the anonymous bucket throttles harder under load), stream stability (authenticated streams stay connected longer), and a point-of-contact (if our daemon ever misbehaves, Lichess can DM the bot account instead of blackholing our IP). Also future-proofs us — any Lichess endpoints that gain authentication requirements down the road work without a refactor.
+
+**Why not chess.com too?** Chess.com's Published Data API has no OAuth / token mechanism. Their auth model is "set a recognisable `User-Agent` with a contact email" — we already do that via `config('stakly.chess_com_user_agent')` in `ChessComGameClient`. The two providers reach the same end state via different mechanisms.
+
+### Phases
+
+**Phase 1 — Account + token**
+
+- [ ] Register a Lichess bot account (e.g. `StaklyBot`). Confirm name with the user before claiming.
+- [ ] Generate a personal API token from account settings. Use the minimum scope needed — public read endpoints (`/game/export`, `/api/games/user/{user}`, `/api/stream/games-by-users`, `/api/user/{username}`) require any valid token, no special scopes.
+- [ ] Store in `.env` as `LICHESS_API_TOKEN`, expose via `config('services.lichess.token')`.
+
+**Phase 2 — Wire authenticated header into all Lichess HTTP**
+
+- [ ] `LichessGameClient::fetchGame()` + `searchGamesBetween()` — add `Authorization: Bearer {token}` when token is present.
+- [ ] `LichessProfileClient::fetchProfile()` — same header.
+- [ ] `LichessStreamCommand::openStream()` — add header to the curl handle via `CURLOPT_HTTPHEADER`.
+- [ ] Anonymous fallback: when `LICHESS_API_TOKEN` is unset (dev without secret), the header is omitted and we run as today. Avoids a hard env dependency for casual dev work.
+
+**Phase 3 — Verification + observability**
+
+- [ ] Tests using `Http::fake()` assert the `Authorization` header is sent when the token is configured.
+- [ ] Log `X-RateLimit-Remaining` / `Retry-After` (if Lichess sends them) at WARN level when below threshold — early signal we're approaching limits.
+- [ ] README / setup doc note: where to generate the token, what scopes to pick.
+
+### Not in M25
+
+- Chess.com authentication — there is no equivalent. The `User-Agent` contact pattern we already implement IS the chess.com mechanism.
+- Lichess Bot API (`bot:play` scope, `/api/bot/*` endpoints) — Stakly does not play games on Lichess, it observes them. Not applicable.
+- Replacing the 5-min cron / page-visit / chat-send auto-fetch triggers with stream-only. The stream is an optimisation; the multi-trigger layering survives so a stream outage isn't a frozen-match scenario.
+
+---
+
+## M26 — Filament-managed CMS pages (multilingual + SSR)
+
+Move Privacy Policy, Terms of Service, and About Us from hardcoded React pages to database-backed, admin-editable, multilingual content. SEO-indexable thanks to global Inertia SSR (Path A — turned on for the whole app, not just CMS pages).
+
+The schema bakes in `locale` from day one even though English is the only language at launch, so adding a second language later is a content task, not a migration.
+
+### Design decisions taken into this milestone
+
+- **Markdown body**, edited via Filament's built-in `MarkdownEditor`. Reasons: XSS-safe by construction (we whitelist syntax), preview is straightforward, content diffs cleanly in git if we ever export. These pages don't need rich-text features (no images, no tables, no embeds).
+- **Locale baked in from day one** — `pages` table has a `locale` column, UNIQUE `(slug, locale)`. App default is `en`. Future languages add rows, not migrations.
+- **URL pattern: `/{locale}/{slug}`** with `/{slug}` redirecting to the user's locale (`/privacy` → `/en/privacy` by default). SEO-correct multilingual pattern — Google indexes per-locale URLs as distinct pages.
+- **Global Inertia SSR (Path A)**, not Blade-only for CMS. SEO works on every Inertia page in the app — homepage, listings index, listing detail, profile pages — not just the three CMS pages. The SSR work is the heaviest part of this milestone but the benefit is broad.
+- **Hardcoded routes per page**, not a wildcard `/p/{slug}` catch-all. `/privacy`, `/terms`, `/about` are first-class destinations with brand value — clean URLs matter.
+
+### Phases
+
+**Phase 1 — Schema + Filament admin + first page (About) end-to-end**
+
+- [ ] Migration: `pages` table — `id`, `slug` (string 80), `locale` (string 8, default `'en'`), `title` (string 200), `body` (text, markdown), `published_at` (nullable datetime — admin saves drafts), `created_at`, `updated_at`. UNIQUE `(slug, locale)`. Index `(locale, slug)`.
+- [ ] `App\Models\Page` with `scopePublished()` + `forSlugWithFallback($slug, $locale)` — falls back to `'en'` row if requested locale not yet translated. Cache key `page:{locale}:{slug}` with `saved` / `deleted` hooks busting it (mirrors M24 game catalog pattern).
+- [ ] Factory + seeder for tests. Seeder writes an initial `About` row in English so a fresh `migrate:fresh --seed` has a working `/about`.
+- [ ] Filament `PageResource` at `/admin/pages` — table list (slug, locale, title, published_at, updated_at), edit form with `MarkdownEditor` for body + locale `Select` + "Preview" header action that opens `/{locale}/{slug}` in a new tab.
+- [ ] `PageController::show($locale, $slug)` — resolves via model + `Inertia::render('cms/page', [...])`. Returns 404 if neither requested-locale nor `en` fallback exists.
+- [ ] `Route::get('/{locale}/about', ...)` with `/{slug}` route group, plus `/about` → `/en/about` redirect for the default-locale convenience URL.
+- [ ] React `cms/page.tsx` — server-rendered markdown HTML inside `SiteLayout`. Use Laravel's built-in CommonMark (already a transitive dep, no new package) to render markdown to HTML server-side in the controller, ship the HTML string as a prop. Render with `dangerouslySetInnerHTML` (safe because CommonMark output is whitelisted).
+- [ ] Tests: render OK, locale fallback works, draft (`published_at = null`) returns 404 to anonymous users, cache invalidates on save.
+
+**Phase 2 — Roll out Privacy + Terms**
+
+- [ ] Seed Privacy and Terms English rows.
+- [ ] Add links in `SiteFooter` (`/privacy`, `/terms`, `/about`).
+- [ ] Manual content pass once schema + first page is proven.
+
+**Phase 3 — Global Inertia SSR enablement (Path A)**
+
+The big architectural piece. Benefits every Inertia page, not just CMS.
+
+- [ ] Configure `@inertiajs/vite` SSR mode. Dev SSR is automatic per the plugin.
+- [ ] Production SSR build step in `package.json` (`build:ssr`).
+- [ ] `compose.yaml` adds a Node SSR sidecar service (`stakly.ssr`) — same image base as the existing Node setup, runs the SSR server on a fixed port.
+- [ ] Laravel `config/inertia.php` — point SSR mode at the sidecar URL.
+- [ ] Audit pass for SSR-unsafe code: any `window.` / `document.` / `localStorage` access in initial render needs a `typeof window === 'undefined'` guard. Likely candidates: `AuthModalProvider` (already guarded — confirmed), any other `useEffect`-less browser-API usage in component bodies.
+- [ ] Verification: a curl-with-no-JS of the homepage / about page returns fully-rendered HTML. Optional: Lighthouse SEO score before/after.
+
+**Phase 4 — Locale switcher in `SiteHeader`** [deferred until a second language ships]
+
+- [ ] Dropdown in header — sets `app()->setLocale($locale)` (sticky cookie) + reroutes to `/{newLocale}/{currentSlug}` if on a localised page.
+- [ ] When only `en` exists, this phase doesn't ship — adding the switcher without other languages is dead UI.
+
+### Not in M26
+
+- Page versioning / draft history. Single live row per `(slug, locale)` plus `updated_at` is sufficient signal; if legal needs an audit trail of changes, revisit then.
+- Rich-text editor with image uploads. Markdown is enough for these pages. If a future content type needs images, that's a separate decision.
+- Wildcard `/p/{slug}` routing. Hardcoded routes per page keep the URL space disciplined.
+- Localised admin UI. Filament admin stays in English regardless of the content language.
+
+---
+
+## M27 — In-app notifications + action-required UX + sound
+
+The synchronous in-app channel that complements M20 (email, asynchronous). Today Stakly has no player-facing notification surface — if Bob takes Alice's listing while she's offline, and Alice visits Stakly later without checking email, she has no visible signal anything happened until she navigates to `/matches`. M27 closes that gap with a bell in `SiteHeader` + real-time push via Reverb + a sound for high-priority events. Symmetric on the admin side — `OpsOverview` gets SLA-aware surfaces so old disputes can't be ignored accidentally.
+
+The `notifications` table already exists (it shipped with M12's `NotifyAdminsAction` for the Filament admin bell). M27 reuses that table via Laravel's `database` notification channel; M20 layers `mail` channel on top later.
+
+### Design decisions taken into this milestone
+
+- **Real-time via Reverb + Laravel Echo + private per-user channel.** Already in the stack. No polling fallback. Sub-second push is what makes sound notifications usable — a 30s polling delay would feel broken.
+- **Per-event sound priority on the notification class itself.** Each `App\Notifications\*` declares a `soundPriority(): 'urgent' | 'soft' | 'none'`. The frontend uses this to pick which audio file to play (or skip silently). "Listing taken" is `urgent` (your money is now in a live match); "Settled" is `soft`; informational events are `none`. Avoids the "every notification dings" anti-pattern.
+- **Multi-tab sound coordination via `BroadcastChannel`.** If a user has multiple Stakly tabs open, only the first tab to receive the broadcast plays the sound — the others suppress. Prevents triple-ding when one event lands.
+- **Notification classes designed to support `mail` channel from day one** even though M27 only lights up `database`. M20 wires the Blade templates later without touching dispatch sites or class signatures.
+- **Sound toggle lives on the preferences page (M27 Phase 5)**, alongside per-event in-app and email toggles. Defaults: urgent ON, soft OFF (most users find soft confirmation sounds annoying after the first day — opt-in).
+- **Mandatory events cannot be silenced.** "Settled — you won/lost" and "Cancellation request awaiting response" are operational, not informational — turning them off would let users miss money-affecting events. UI greys those toggles.
+
+### Phases
+
+**Phase 1 — Notification dispatch infrastructure**
+
+- [ ] One `App\Notifications\*` class per event:
+    - `ListingTakenNotification` (creator-side — sound priority `urgent`)
+    - `MatchSettledNotification` (both sides — `soft`)
+    - `MatchManualReviewNotification` (both sides — `urgent`)
+    - `DisputeOpenedNotification` (the opponent of the opener — `urgent`)
+    - `CancellationRequestedNotification` (the opponent of the requester — `urgent`)
+    - `CancellationAcceptedNotification` (the original requester — `soft`)
+    - `CancellationRejectedNotification` (the original requester — `soft`)
+- [ ] Each class implements `via()` returning `['database', 'mail']` (mail no-ops until M20 ships the Blade templates), `toDatabase()` returning shape `{title, body, action_url, event_type, sound_priority, related_id}`, and `soundPriority()`.
+- [ ] Dispatch sites: each Action that triggers the corresponding event calls `$user->notify(new XxxNotification(...))` after the DB transaction commits (never inside — broadcast on rollback would lie).
+- [ ] Tests with `Notification::fake()` confirm each Action dispatches the right class to the right user.
+
+**Phase 2 — Bell UI in `SiteHeader` + real-time + sound**
+
+- [ ] Bell icon + unread count badge in `SiteHeader` (auth-gated — anonymous visitors see no bell).
+- [ ] Dropdown with last ~15 notifications, each linking to its `action_url`. "Mark all read" affordance. "View all" → full notifications page.
+- [ ] Full notifications page at `/notifications` — paginated list, all notifications, mark-individual + mark-all controls.
+- [ ] Laravel Echo subscribed to `private-users.{id}` channel; on broadcast, increment badge + prepend dropdown entry + invoke sound playback hook.
+- [ ] Sound assets in `public/sounds/` — `urgent.mp3` and `soft.mp3` (two sounds, three priorities — `none` plays nothing). Free, royalty-clear, short (<1s) chimes. Pick something tasteful — flag samples for review before committing.
+- [ ] `useNotificationSound` hook reads the sound priority off the broadcast, plays the matching file via `new Audio(...).play()` if user pref allows. Wraps the `BroadcastChannel` coordination so multi-tab plays once.
+- [ ] Browser autoplay policy is handled implicitly — by the time a notification lands, the user has interacted with Stakly at least once (they're logged in). No special permission UI needed.
+
+**Phase 3 — Action-required banners on match pages**
+
+- [ ] Sticky banners on `match/show.tsx` for states requiring the player's response:
+    - Cancellation requested by opponent → "Accept / Reject" banner with both buttons. Persists until actioned.
+    - Match in `ManualReview` → "Post evidence in chat" banner with chat-focus CTA.
+    - Match `Disputed` opened by opponent → "Your opponent reported a problem — admin reviewing" info banner.
+- [ ] These are UI surfaces tied to match status, not new notification types — visible whenever the player views the match page, even if they dismissed the bell entry already.
+- [ ] Tests assert each banner renders for the right status × viewer combination.
+
+**Phase 4 — Admin SLA surfaces**
+
+- [ ] Extend `OpsOverview` with a "Disputes > 6h old" stat — separate from total open disputes, color escalates `warning` at 6h, `danger` at 12h.
+- [ ] `GameMatchResource` table — sort default puts oldest unactioned at the top. Per-row age badge (green / amber / red) matching the SLA color scale.
+- [ ] (Optional, deferred) Slack / Discord webhook to admin channel when a dispute crosses the 12h `danger` threshold without action. Out of scope for Phase 4 itself; opens a follow-up if the email-to-admin pattern isn't enough.
+
+**Phase 5 — Preferences UI (shared surface with M20)**
+
+- [ ] New `/settings/notifications` page — per-event grid: rows are event types, columns are channels (in-app, sound, email).
+- [ ] Mandatory events have their toggles greyed-out with a tooltip explaining why.
+- [ ] Email column is visible but greyed-out with "Available when email notifications launch" until M20 ships, then becomes interactive.
+- [ ] Schema: `notification_preferences` table — `user_id`, `event_type`, `in_app` (bool), `sound` (bool), `email` (bool). UNIQUE `(user_id, event_type)`. Defaults inserted on user creation matching the per-event default policy.
+
+### Cross-milestone notes
+
+- **M20** plugs into M27's notification classes by writing Blade email templates + wiring SMTP config. The dispatch layer is reused as-is. M20's preferences UI piggybacks on M27 Phase 5's page.
+- **M9 (chain integration)** will add `DepositConfirmedNotification` and `WithdrawalProcessingNotification` when it lands. The pattern is established by M27.
+- **M13 (chat anti-abuse)** can add `MessageFlaggedForReviewNotification` (admin-side) when it ships, using the same dispatch pattern.
+- **M14** ManualReview escalation already exists via `ResolveMatchTimeoutAction` → `NotifyAdminsAction`; M27 P4 surfaces it as an SLA-tracked dashboard widget rather than just a single admin bell ping.
+
+### Not in M27
+
+- Mobile push (APNS / FCM). Web push (browser Notification API) is also out of scope — `Notification.requestPermission()` introduces a permission-prompt UX that's worth handling deliberately, not bundling into the in-app milestone.
+- SMS notifications. Different channel, different milestone if ever needed.
+- Email channel. M20 owns that end-to-end; M27 just makes sure the dispatch layer supports it without rework.
+- Notification analytics / read-rate tracking. Premature.
+- Per-tab focus-aware sound suppression (i.e. "don't ding the tab the user is actively looking at"). The `BroadcastChannel` coordination already prevents the triple-ding case; layering "is this tab focused" on top is polish that can wait for user feedback.
 

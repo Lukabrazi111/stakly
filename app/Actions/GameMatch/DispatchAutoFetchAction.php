@@ -2,6 +2,7 @@
 
 namespace App\Actions\GameMatch;
 
+use App\Enums\AutoFetchOutcome;
 use App\Enums\LinkedAccountProvider;
 use App\Enums\MatchStatus;
 use App\Jobs\AutoFetchChessComGameJob;
@@ -28,23 +29,41 @@ use App\Models\GameMatch;
  *   - Match must be Pending. Other statuses don't need a fresh API fetch.
  *   - Both sides must have a snapshot for the listing's platform —
  *     auto-fetch can't anchor a card without both usernames.
+ *
+ * M14 Phase 1 — every skip writes a `match_auto_fetch_attempts` row via
+ * `RecordAutoFetchAttemptAction` so the admin timeline reflects "we
+ * considered fetching and didn't, here's why." High-frequency triggers
+ * (page-visit, chat-send) on non-Pending matches will dominate row counts;
+ * that's expected and is itself a signal about user activity on closed
+ * matches.
  */
 class DispatchAutoFetchAction
 {
+    public function __construct(
+        private readonly RecordAutoFetchAttemptAction $recordAttempt,
+    ) {}
+
     public function handle(GameMatch $match): void
     {
-        if ($match->status !== MatchStatus::Pending) {
-            return;
-        }
-
         $match->loadMissing('listing', 'providerSnapshots');
 
+        // Reading the platform off the listing first means even the
+        // `not_pending` skip carries provider context. Without that,
+        // PipelineHealth couldn't roll up skip volume per provider.
         $platform = $match->listing->platform;
+
+        if ($match->status !== MatchStatus::Pending) {
+            $this->recordSkip($match->id, $platform, 'not_pending');
+
+            return;
+        }
 
         $creatorSnap = $match->snapshotUsername(GameMatch::SIDE_CREATOR, $platform);
         $takerSnap = $match->snapshotUsername(GameMatch::SIDE_TAKER, $platform);
 
         if ($creatorSnap === null || $takerSnap === null) {
+            $this->recordSkip($match->id, $platform, 'snapshot_missing');
+
             return;
         }
 
@@ -52,5 +71,15 @@ class DispatchAutoFetchAction
             LinkedAccountProvider::Lichess => AutoFetchLichessGameJob::dispatch($match),
             LinkedAccountProvider::ChessCom => AutoFetchChessComGameJob::dispatch($match),
         };
+    }
+
+    private function recordSkip(int $matchId, LinkedAccountProvider $provider, string $reason): void
+    {
+        $this->recordAttempt->handle(
+            matchId: $matchId,
+            provider: $provider,
+            outcome: AutoFetchOutcome::Skipped,
+            extras: ['outcome_reason' => $reason],
+        );
     }
 }

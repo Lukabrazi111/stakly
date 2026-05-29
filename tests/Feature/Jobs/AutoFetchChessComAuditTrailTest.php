@@ -1,0 +1,208 @@
+<?php
+
+use App\Actions\GameMatch\RecordAutoFetchAttemptAction;
+use App\Actions\GameMatch\SettleFromCardAction;
+use App\Actions\Message\PostSystemMessageAction;
+use App\Enums\AutoFetchOutcome;
+use App\Enums\LinkedAccountProvider;
+use App\Enums\MessageType;
+use App\Jobs\AutoFetchChessComGameJob;
+use App\Models\GameMatch;
+use App\Models\Listing;
+use App\Models\MatchAutoFetchAttempt;
+use App\Models\MatchProviderSnapshot;
+use App\Models\Message;
+use App\Models\User;
+use App\Services\Provider\ChessComGameClient;
+use App\Services\Wallet;
+use Carbon\CarbonImmutable;
+use Illuminate\Support\Facades\Http;
+
+/**
+ * M14 Phase 1 — chess.com job audit trail. Mirrors the Lichess audit suite
+ * but exercises the chess.com-specific concerns: `attempt_number` populated
+ * from the queue retry counter, and the `retry_exhausted` reason on the
+ * terminal NoMatch row.
+ *
+ * Direct-handle invocation means `$this->attempts()` returns 1 outside a
+ * queue worker (the existing chess.com test suite documents this
+ * limitation — see `'empty archive does not post...'`). The
+ * `retry_exhausted` reason path is asserted via a tiny subclass that
+ * overrides `attempts()` rather than dispatching through a real worker.
+ */
+function chessComAuditMatch(?array $snapshots = null): GameMatch
+{
+    platformUser();
+
+    $creator = User::factory()->active()->withChessCom('alice-chesscom')->create();
+    $taker = User::factory()->withChessCom('bob-chesscom')->create();
+    Wallet::deposit($creator, '500', reference: "test:deposit:c:{$creator->id}");
+    Wallet::deposit($taker, '500', reference: "test:deposit:t:{$taker->id}");
+
+    $listing = Listing::factory()->taken()->forChessCom()->for($creator)
+        ->state(['stake_amount' => '100'])->create();
+    Wallet::hold(user: $creator, amount: '100', listing: $listing, reference: "listing-create:{$listing->id}");
+    Wallet::hold(user: $taker, amount: '100', listing: $listing, reference: "match-take:{$listing->id}");
+
+    $match = GameMatch::factory()->create([
+        'listing_id' => $listing->id,
+        'taker_user_id' => $taker->id,
+    ]);
+
+    // Backdate created_at so fixture end_times of `now() - 5min` fall
+    // inside the searchGamesBetween window. See the sibling test helper
+    // `chessComAutoFetchMatch()` for the original rationale.
+    $match->forceFill(['created_at' => CarbonImmutable::now()->subHour()])->save();
+
+    $snapshots ??= [
+        ['side' => GameMatch::SIDE_CREATOR, 'provider' => LinkedAccountProvider::ChessCom, 'username' => 'alice-chesscom'],
+        ['side' => GameMatch::SIDE_TAKER, 'provider' => LinkedAccountProvider::ChessCom, 'username' => 'bob-chesscom'],
+    ];
+
+    foreach ($snapshots as $row) {
+        MatchProviderSnapshot::create(['match_id' => $match->id, ...$row]);
+    }
+
+    return $match->fresh(['listing.user', 'taker', 'providerSnapshots']);
+}
+
+function runChessComAudit(GameMatch $match): void
+{
+    (new AutoFetchChessComGameJob($match))
+        ->handle(
+            app(ChessComGameClient::class),
+            app(PostSystemMessageAction::class),
+            app(SettleFromCardAction::class),
+            app(RecordAutoFetchAttemptAction::class),
+        );
+}
+
+test('matched: writes a row with provider=chess_com and attempt_number=1', function () {
+    $match = chessComAuditMatch();
+    Http::fake([
+        'api.chess.com/pub/player/*/games/*' => Http::response(
+            chessComArchiveFixture([
+                chessComGameFixture([
+                    'url' => 'https://www.chess.com/game/live/55555555555',
+                    'end_time' => CarbonImmutable::now()->subMinutes(5)->timestamp,
+                ]),
+            ]),
+            200,
+        ),
+    ]);
+
+    runChessComAudit($match);
+
+    $attempt = MatchAutoFetchAttempt::query()->where('match_id', $match->id)->latest('id')->first();
+    expect($attempt->outcome)->toBe(AutoFetchOutcome::Matched)
+        ->and($attempt->provider)->toBe(LinkedAccountProvider::ChessCom)
+        ->and($attempt->winner_username)->toBe('alice-chesscom')
+        ->and($attempt->candidates_count)->toBe(1)
+        ->and($attempt->attempt_number)->toBe(1);
+});
+
+test('no_match (non-final attempt): writes outcome_reason null', function () {
+    $match = chessComAuditMatch();
+    Http::fake([
+        'api.chess.com/pub/player/*/games/*' => Http::response(chessComArchiveFixture([]), 200),
+    ]);
+
+    runChessComAudit($match);
+
+    $attempt = MatchAutoFetchAttempt::query()->where('match_id', $match->id)->first();
+    expect($attempt->outcome)->toBe(AutoFetchOutcome::NoMatch)
+        ->and($attempt->candidates_count)->toBe(0)
+        ->and($attempt->outcome_reason)->toBeNull()
+        ->and($attempt->attempt_number)->toBe(1);
+});
+
+test('no_match on final attempt: writes outcome_reason = retry_exhausted', function () {
+    $match = chessComAuditMatch();
+    Http::fake([
+        'api.chess.com/pub/player/*/games/*' => Http::response(chessComArchiveFixture([]), 200),
+    ]);
+
+    // Stand-in for a queue worker that has already burned through the
+    // retry budget — overrides `attempts()` to return the terminal value.
+    $job = new class($match) extends AutoFetchChessComGameJob
+    {
+        public function attempts(): int
+        {
+            return 4;
+        }
+    };
+
+    $job->handle(
+        app(ChessComGameClient::class),
+        app(PostSystemMessageAction::class),
+        app(SettleFromCardAction::class),
+        app(RecordAutoFetchAttemptAction::class),
+    );
+
+    $attempt = MatchAutoFetchAttempt::query()->where('match_id', $match->id)->first();
+    expect($attempt->outcome)->toBe(AutoFetchOutcome::NoMatch)
+        ->and($attempt->outcome_reason)->toBe('retry_exhausted')
+        ->and($attempt->attempt_number)->toBe(4);
+});
+
+test('error: writes a row with error_message and provider=chess_com', function () {
+    $match = chessComAuditMatch();
+    Http::fake([
+        'api.chess.com/pub/player/*/games/*' => Http::response('boom', 503),
+    ]);
+
+    runChessComAudit($match);
+
+    $attempt = MatchAutoFetchAttempt::query()->where('match_id', $match->id)->first();
+    expect($attempt->outcome)->toBe(AutoFetchOutcome::Error)
+        ->and($attempt->provider)->toBe(LinkedAccountProvider::ChessCom)
+        ->and($attempt->error_message)->toContain('503');
+});
+
+test('ambiguous: writes a row with candidates_count = N', function () {
+    $match = chessComAuditMatch();
+    Http::fake([
+        'api.chess.com/pub/player/*/games/*' => Http::response(
+            chessComArchiveFixture([
+                chessComGameFixture(['url' => 'https://www.chess.com/game/live/1', 'end_time' => CarbonImmutable::now()->timestamp]),
+                chessComGameFixture(['url' => 'https://www.chess.com/game/live/2', 'end_time' => CarbonImmutable::now()->timestamp]),
+            ]),
+            200,
+        ),
+    ]);
+
+    runChessComAudit($match);
+
+    $attempt = MatchAutoFetchAttempt::query()->where('match_id', $match->id)->first();
+    expect($attempt->outcome)->toBe(AutoFetchOutcome::Ambiguous)
+        ->and($attempt->candidates_count)->toBe(2);
+});
+
+test('already_posted: writes skipped/already_posted row, no provider call', function () {
+    $match = chessComAuditMatch();
+    Message::factory()->create([
+        'match_id' => $match->id,
+        'type' => MessageType::System,
+        'attachments_json' => [['source' => 'auto_fetch', 'provider' => 'chess_com']],
+    ]);
+    Http::preventStrayRequests();
+
+    runChessComAudit($match);
+
+    $attempt = MatchAutoFetchAttempt::query()->where('match_id', $match->id)->first();
+    expect($attempt->outcome)->toBe(AutoFetchOutcome::Skipped)
+        ->and($attempt->outcome_reason)->toBe('already_posted');
+});
+
+test('snapshot_missing (defensive): writes skipped/snapshot_missing row', function () {
+    $match = chessComAuditMatch(snapshots: [
+        ['side' => GameMatch::SIDE_CREATOR, 'provider' => LinkedAccountProvider::ChessCom, 'username' => 'alice-chesscom'],
+    ]);
+    Http::preventStrayRequests();
+
+    runChessComAudit($match);
+
+    $attempt = MatchAutoFetchAttempt::query()->where('match_id', $match->id)->first();
+    expect($attempt->outcome)->toBe(AutoFetchOutcome::Skipped)
+        ->and($attempt->outcome_reason)->toBe('snapshot_missing');
+});
