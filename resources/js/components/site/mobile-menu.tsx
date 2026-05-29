@@ -39,10 +39,13 @@ interface NavLink {
     href: ReturnType<typeof listingsIndex> | string;
 }
 
+// Mirrors the desktop `SiteHeader` nav row — primary task surfaces only.
+// About / Support / Terms / Privacy live in `SiteFooter` (visible on every
+// page by scrolling) so the mobile menu stays focused on the things people
+// open it to do, not utility links.
 const navLinks: NavLink[] = [
     { label: 'Listings', href: listingsIndex() },
-    { label: 'How it Works', href: '#how-it-works' },
-    { label: 'Support', href: '#' },
+    { label: 'How it Works', href: '/#how-it-works' },
 ];
 
 const mobileMenuItemClass =

@@ -211,4 +211,72 @@
     body {
         @apply bg-background text-foreground;
     }
+
+    /* Smooth-scroll for in-page anchor links (e.g. footer / header
+       "How it Works" → `#how-it-works` on the homepage). Guarded by
+       `prefers-reduced-motion: no-preference` so users who opted out of
+       animations at the OS level get the instant jump. The HowItWorks
+       section already carries `scroll-mt-28` to account for the sticky
+       header offset, so the scroll lands cleanly below the nav. */
+    @media (prefers-reduced-motion: no-preference) {
+        html {
+            scroll-behavior: smooth;
+        }
+    }
+}
+
+/* CMS markdown content (M26). Applied to the article rendered by
+   `resources/js/pages/cms/page.tsx`. Headings use the display font for
+   parity with the site's section headlines; body uses `foreground/85` so
+   long-form text reads as quietly important against the deep background.
+   Kept hand-rolled rather than pulling `@tailwindcss/typography` — current
+   markdown surface area is small and the prose plugin's defaults need a
+   lot of overrides to match the Stakly palette anyway. Revisit if/when
+   we add tables, code blocks, or other heavier elements. */
+.cms-prose h2 {
+    @apply mt-10 mb-3 font-display text-2xl font-bold text-foreground;
+}
+
+.cms-prose h3 {
+    @apply mt-8 mb-2 font-display text-xl font-semibold text-foreground;
+}
+
+.cms-prose p {
+    @apply mb-5 leading-relaxed text-foreground/85;
+}
+
+.cms-prose ol {
+    @apply mb-5 list-decimal pl-6;
+}
+
+.cms-prose ul {
+    @apply mb-5 list-disc pl-6;
+}
+
+.cms-prose li {
+    @apply mb-2 leading-relaxed text-foreground/85;
+}
+
+.cms-prose a {
+    @apply text-primary underline underline-offset-2 transition-colors;
+}
+
+.cms-prose a:hover {
+    @apply text-primary/80;
+}
+
+.cms-prose strong {
+    @apply font-semibold text-foreground;
+}
+
+.cms-prose code {
+    @apply rounded bg-secondary px-1.5 py-0.5 text-sm text-foreground;
+}
+
+.cms-prose blockquote {
+    @apply mb-5 border-l-4 border-primary/40 pl-4 text-foreground/75 italic;
+}
+
+.cms-prose hr {
+    @apply my-8 border-border;
 }

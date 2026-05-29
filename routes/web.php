@@ -6,8 +6,10 @@ use App\Http\Controllers\HomeController;
 use App\Http\Controllers\LinkImageController;
 use App\Http\Controllers\ListingController;
 use App\Http\Controllers\MessageController;
+use App\Http\Controllers\PageController;
 use App\Http\Controllers\UserController;
 use App\Http\Controllers\WalletController;
+use App\Models\Page;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', [HomeController::class, 'index'])->name('home');
@@ -100,3 +102,17 @@ Route::middleware(['auth', 'verified'])->prefix('wallet')->name('wallet.')->grou
 });
 
 require __DIR__.'/settings.php';
+
+// M26 — admin-managed CMS pages (About, Privacy, Terms). Registered LAST so
+// the single-segment `/{slug}` redirect doesn't swallow any explicit route
+// above it; the two-segment `/{locale}/{slug}` is constrained to known
+// locales so it can't capture `/matches/{match}` etc. either. Slug pattern
+// is permissive enough to match anything the Filament `alphaDash` slug field
+// can produce — invalid slugs just 404 in the controller.
+Route::get('/{locale}/{slug}', [PageController::class, 'show'])
+    ->whereIn('locale', Page::SUPPORTED_LOCALES)
+    ->name('pages.show');
+
+Route::get('/{slug}', [PageController::class, 'redirectToDefault'])
+    ->where('slug', '[a-z0-9-]+')
+    ->name('pages.redirect');

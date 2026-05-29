@@ -1,5 +1,22 @@
 import { Link } from '@inertiajs/react';
 
+interface FooterLink {
+    label: string;
+    href: string;
+}
+
+// Footer holds the utility / info / legal nav only — About, Support,
+// Terms, Privacy. Product surfaces (Listings, How it Works) live in the
+// header where the action is. All four hit the CMS reader at `/en/{slug}`;
+// Privacy, Terms, and Support are seeded as drafts and 404 publicly until
+// admin writes the copy and publishes from `/admin/pages`.
+const footerLinks: FooterLink[] = [
+    { label: 'About', href: '/en/about' },
+    { label: 'Support', href: '/en/support' },
+    { label: 'Terms', href: '/en/terms' },
+    { label: 'Privacy', href: '/en/privacy' },
+];
+
 export function SiteFooter() {
     return (
         <footer className="border-t border-border/50 bg-card/30">
@@ -18,30 +35,15 @@ export function SiteFooter() {
                 </div>
 
                 <nav className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm text-muted-foreground">
-                    <Link
-                        href="#"
-                        className="transition-colors hover:text-foreground"
-                    >
-                        How it Works
-                    </Link>
-                    <Link
-                        href="#"
-                        className="transition-colors hover:text-foreground"
-                    >
-                        Support
-                    </Link>
-                    <Link
-                        href="#"
-                        className="transition-colors hover:text-foreground"
-                    >
-                        Terms
-                    </Link>
-                    <Link
-                        href="#"
-                        className="transition-colors hover:text-foreground"
-                    >
-                        Privacy
-                    </Link>
+                    {footerLinks.map((link) => (
+                        <Link
+                            key={link.label}
+                            href={link.href}
+                            className="transition-colors hover:text-foreground"
+                        >
+                            {link.label}
+                        </Link>
+                    ))}
                 </nav>
 
                 <div className="text-xs text-muted-foreground">
