@@ -6,9 +6,7 @@ use App\Filament\Resources\GameMatches\GameMatchResource;
 use Filament\Resources\Pages\ListRecords;
 
 /**
- * Admin can't create matches — they're created by `TakeListingAction` when
- * a taker accepts a listing. No header actions on the list page; the
- * default filter (Disputed + ManualReview) puts the queue front-and-center.
+ * Admin can't create matches — they're created by `TakeListingAction`.
  */
 class ListGameMatches extends ListRecords
 {

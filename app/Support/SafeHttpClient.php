@@ -11,24 +11,17 @@ use Psr\Http\Message\ResponseInterface;
 use RuntimeException;
 
 /**
- * PSR-18 client wrapper that applies `SsrfGuard::isUrlSafe()` on every
- * request, including each HTTP redirect hop.
+ * PSR-18 wrapper that applies `SsrfGuard::isUrlSafe()` on every request,
+ * including each HTTP redirect hop.
  *
- * Why this exists: oscarotero/embed's default `CurlClient` lets curl
- * follow up to 10 redirects automatically (`CURLOPT_FOLLOWLOCATION`).
- * That means even if we SSRF-check the URL a user pasted, an
- * `https://shortener.com/x` → `http://169.254.169.254/...` chain would
- * land in internal address space without our knowledge.
+ * Why this exists: oscarotero/embed's default `CurlClient` follows up to 10
+ * redirects via `CURLOPT_FOLLOWLOCATION`, so a SSRF-checked
+ * `https://shortener.com/x` → `http://169.254.169.254/...` chain lands in
+ * internal address space without our knowledge. We disable curl-level
+ * redirects and walk the chain here, SSRF-checking each `Location`.
  *
- * We disable curl-level redirects on the inner client (`follow_location:
- * false`) and walk the chain here instead — SSRF-checking each `Location`
- * before issuing the next request. Cap at 3 hops; legit publishers
- * rarely need more than one (http→https) and an unbounded chain is a
- * crawler tarpit.
- *
- * 30x → GET conversion follows the de-facto web rule (RFC 7231 §6.4
- * permits client method downgrade). Embed is read-only metadata fetching,
- * so dropping the method to GET is always safe.
+ * 30x → GET conversion follows RFC 7231 §6.4 (client method downgrade
+ * permitted). Embed is read-only metadata fetching so dropping to GET is safe.
  */
 class SafeHttpClient implements ClientInterface
 {
@@ -59,9 +52,7 @@ class SafeHttpClient implements ClientInterface
             $response = $this->inner->sendRequest($request);
         } catch (ClientExceptionInterface $e) {
             // Surface as our wrapper so callers can distinguish a refusal
-            // from a transport error if needed. Same exception hierarchy
-            // (`ClientExceptionInterface` is a marker interface implemented
-            // by `SafeHttpException` too).
+            // from a transport error; both implement `ClientExceptionInterface`.
             throw new SafeHttpException('Underlying client failed: '.$e->getMessage(), previous: $e);
         }
 

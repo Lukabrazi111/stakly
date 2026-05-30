@@ -3,15 +3,8 @@
 namespace App\Enums;
 
 /**
- * External game-account providers Stakly users can link.
- *
- * v1: chess.com + Lichess (chess only). Future games (Dota 2, CS2, etc.)
- * each get their own provider case when the integration lands; M8 reserves
- * provider routing in `RequestLinkVerificationAction` / `VerifyLinkedAccountAction`
- * via `match` expressions so a new case slots in cleanly.
- *
- * Stored as snake_case strings on `users.pending_verification_provider` and
- * on `listings.platform` (M8 Phase 5).
+ * External game-account providers Stakly users can link. Stored as snake_case
+ * on `users.pending_verification_provider` and `listings.platform`.
  */
 enum LinkedAccountProvider: string
 {
@@ -28,10 +21,9 @@ enum LinkedAccountProvider: string
 
     /**
      * Regex pattern (with delimiters) for valid usernames on the provider.
-     * chess.com allows 3–25 chars, Lichess 2–20 chars; both accept
-     * alphanumeric + hyphen + underscore. Used by FormRequest validation
-     * AND defensively by `RequestLinkVerificationAction` so the action
-     * stays correct if called from contexts other than the HTTP layer.
+     * Used by FormRequest validation AND defensively by
+     * `RequestLinkVerificationAction` so it stays correct if called from
+     * contexts other than the HTTP layer.
      */
     public function usernamePattern(): string
     {

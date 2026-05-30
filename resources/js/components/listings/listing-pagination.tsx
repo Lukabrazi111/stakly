@@ -12,14 +12,8 @@ interface Props {
 
 const ELLIPSIS = '…';
 
-/**
- * Renders visible page numbers with ellipsis for long ranges.
- * Always shows page 1, last page, current, and one on each side of current.
- *
- *   total ≤ 7  →  [1, 2, 3, 4, 5, 6, 7]
- *   current=5, last=20  →  [1, …, 4, 5, 6, …, 20]
- *   current=1, last=20  →  [1, 2, 3, …, 20]
- */
+/** Pages with ellipsis: always shows page 1, last, current, and ±1 of current.
+ *  e.g. current=5, last=20 → [1, …, 4, 5, 6, …, 20]. */
 function visiblePages(
     current: number,
     last: number,

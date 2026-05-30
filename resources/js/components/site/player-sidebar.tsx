@@ -24,12 +24,8 @@ interface NavItem {
     href: string;
     label: string;
     icon: LucideIcon;
-    /**
-     * URL prefix that activates this item. Wallet's `matchPrefix = /wallet`
-     * intentionally activates the item across the entire wallet subsection
-     * (deposit, withdraw, history) — those pages are routed under /wallet/*
-     * and share the same management context.
-     */
+    /** URL prefix that activates this item. Wallet uses `/wallet` to
+     *  activate across the whole subsection (deposit/withdraw/history). */
     matchPrefix: string;
 }
 
@@ -44,34 +40,15 @@ function readCollapsed(): boolean {
 }
 
 /**
- * Side navigation for the player management hub. Appears on /listings/mine,
- * /matches, and /wallet (and sub-pages) via PlayerHubLayout. Hidden on
- * mobile (`md:flex`) per the locked decision: mobile users navigate via the
- * hamburger menu in SiteHeader.
- *
- * Layout:
- *   - Sticky at `top-28` (just below sticky SiteHeader + MarqueeStrip).
- *   - Fills the viewport height (`h-[calc(100vh-7rem)]`) so the sidebar
- *     never feels stunted on short content pages.
- *   - Collapsible (rail mode) — toggles between `w-60` (expanded) and
- *     `w-16` (icon-only). Preference persists in localStorage so the user
- *     keeps their layout across reloads.
- *
- * Active state:
- *   - Pink left accent bar (centered vertically, w-1, rounded right edge,
- *     soft glow) — Bybit-style indicator.
- *   - Background wash (`bg-primary/15`) and brighter icon.
- *
- * When collapsed, labels become tooltips on hover so users can still
- * identify each item.
+ * Side navigation for the player hub. Sticky at `top-28` (just below
+ * SiteHeader + MarqueeStrip). Collapsible rail mode persists in
+ * localStorage; labels become tooltips when collapsed.
  */
 export function PlayerSidebar() {
     const { url, props } = usePage();
     const username = props.auth.user?.username;
-    // Default to false during SSR + first client paint, then sync from
-    // localStorage after mount. Initializing via `useState(readCollapsed)`
-    // would render different widths on server vs client and cause a
-    // hydration mismatch + visible snap.
+    // Default false during SSR + first paint, sync from localStorage after
+    // mount — initial-render mismatch would snap the sidebar width.
     const [collapsed, setCollapsed] = useState(false);
 
     useEffect(() => {
@@ -87,9 +64,7 @@ export function PlayerSidebar() {
         });
     };
 
-    // Profile is owner-specific (matchPrefix uses the auth username). Other
-    // items are user-agnostic, so they live in a static array; the profile
-    // item is prepended only when we have a username to build the URL with.
+    // Profile is owner-specific so it's prepended only when authed.
     const items: NavItem[] = [
         ...(username
             ? [
@@ -128,8 +103,6 @@ export function PlayerSidebar() {
                 collapsed ? 'md:w-16' : 'md:w-60'
             }`}
         >
-            {/* Collapse toggle. Left-aligned when expanded (Bybit-style),
-                centered when collapsed (the only thing visible in the rail). */}
             <div
                 className={`flex shrink-0 items-center p-3 ${collapsed ? 'justify-center' : 'justify-start'}`}
             >
@@ -150,8 +123,6 @@ export function PlayerSidebar() {
                 </button>
             </div>
 
-            {/* Nav. TooltipProvider scopes the tooltip context to this
-                sidebar — small delay so quick mouse passes don't flash. */}
             <TooltipProvider delayDuration={300}>
                 <nav className="flex flex-col gap-1 px-3">
                     {items.map((item) => {
@@ -171,11 +142,6 @@ export function PlayerSidebar() {
                                         : 'text-muted-foreground hover:bg-primary/10 hover:text-foreground'
                                 }`}
                             >
-                                {/* Left accent bar on active item — pink,
-                                    rounded right edge so it visually
-                                    "tucks into" the sidebar's left wall.
-                                    Soft glow ties it to Stakly's gradient
-                                    aesthetic without overwhelming the row. */}
                                 {isActive && (
                                     <span
                                         aria-hidden

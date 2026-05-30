@@ -22,10 +22,6 @@ export function ProfileHeader({ user }: Props) {
 
     return (
         <section className="rounded-2xl border border-border/60 bg-card p-6 md:p-8">
-            {/* Identity row — avatar + name (left), Edit profile (right,
-                owner-only). Completion rate moved out of the hero (its
-                breakdown lives in the Data overview below); Active Mode
-                lives on /listings/mine via ActiveModeToggle. */}
             <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between sm:gap-6">
                 <div className="flex items-center gap-4 md:gap-5">
                     <Avatar className="size-20 shrink-0 overflow-hidden rounded-full ring-2 ring-border/60 transition-shadow duration-200 ease-out hover:shadow-glow-sm hover:ring-primary/50 md:size-24">
@@ -55,11 +51,6 @@ export function ProfileHeader({ user }: Props) {
                 )}
             </div>
 
-            {/* Chip strip — verification + member-since. Wraps on every
-                viewport. The earlier horizontal-scroll-on-mobile pattern
-                clipped chips mid-pill against the card edge (visible in
-                Safari + Chrome at iPhone widths); wrapping shows every
-                chip at the cost of a slightly taller card. */}
             <div className="mt-5 flex flex-wrap items-center gap-2">
                 {user.chess_com_username && (
                     <VerificationChip

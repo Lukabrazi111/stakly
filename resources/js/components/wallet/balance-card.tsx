@@ -6,17 +6,8 @@ interface Props {
     label?: string;
 }
 
-/**
- * Stakly's wallet balance display. Two variants:
- *   - `hero` (default) — full card with massive gradient number. Used on /wallet
- *     as the page hero.
- *   - `compact` — slim card used on sub-pages (/wallet/withdraw) where the
- *     balance is a reference, not the focal point.
- *
- * Gradient text is one of Stakly's "use sparingly" elements (~2-3 per page).
- * Balance is the natural place for it on a wallet surface — money is the
- * message.
- */
+/** Wallet balance display: `hero` (full card with gradient number) or
+ *  `compact` (slim sub-page card). */
 export function BalanceCard({
     balance,
     variant = 'hero',
@@ -38,7 +29,6 @@ export function BalanceCard({
 
     return (
         <div className="relative overflow-hidden rounded-2xl border border-border/60 bg-card/60 p-8 text-center">
-            {/* Subtle background glow — radial blur centered behind the number. */}
             <div className="pointer-events-none absolute top-1/2 left-1/2 size-40 -translate-x-1/2 -translate-y-1/2 rounded-full bg-gradient-primary opacity-10 blur-3xl" />
             <div className="relative">
                 <div className="text-xs font-medium tracking-wide text-muted-foreground uppercase">

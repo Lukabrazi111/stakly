@@ -10,14 +10,6 @@ interface FaqItem {
     answer: string;
 }
 
-/**
- * Stakly-specific match FAQ — covers the six questions players ask most
- * during a live match (where to play, what happens on disagreement, timeout
- * behaviour, fee math, no-cancel rule, payout timing). Content is hard-coded
- * because it doesn't vary by match state and re-deriving from server props
- * per render would be pointless. If we ever need editorial updates without
- * a deploy, we can lift to config or DB-backed copy.
- */
 const FAQ_ITEMS: FaqItem[] = [
     {
         question: 'Where do I actually play the game?',

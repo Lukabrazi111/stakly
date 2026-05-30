@@ -10,17 +10,9 @@ interface MatchInfoCardProps {
     stakeEach: number;
     pot: number;
     timeControl: TimeControl[];
-    // Match's bound chess provider — drives the capability-indicator row at
-    // the bottom of the card. Tells players where the outcome auto-verifies
-    // if a dispute is opened.
     platform: ListingPlatform;
-    // Pre-computed `pot * (1 - fee_rate)`. Omitted (undefined) when the
-    // match is Settled — the SettlementSummary card already breaks down
-    // pot / fee / payout for resolved matches, so repeating the payout
-    // here would be a third surface for the same number. For Pending /
-    // Disputed / ManualReview the row gives players a concrete "what
-    // you'd take home if you win" figure rather than forcing pot × 0.9
-    // mental math.
+    /** Pre-computed `pot * (1 - fee_rate)`. Undefined when Settled — the
+     *  SettlementSummary card owns the breakdown for resolved matches. */
     winnerPayout?: number;
 }
 
@@ -29,12 +21,7 @@ const PLATFORM_LABEL: Record<ListingPlatform, string> = {
     chess_com: 'chess.com',
 };
 
-/**
- * Compact match-parameters card. Bybit-style key:value rows: opponent
- * (clickable to profile), stake-per-player, pot, optional winner payout
- * (during gameplay), time control. Replaces the old separate "Your
- * opponent" + "Match details" cards.
- */
+/** Compact match-parameters card with key:value rows. */
 export function MatchInfoCard({
     opponent,
     stakeEach,
@@ -86,11 +73,6 @@ export function MatchInfoCard({
                 )}
                 <Row label="Time control" value={timeControl.join(', ')} />
 
-                {/* Capability indicator — tells players where the match
-                    auto-verifies if a dispute is opened. Mirrors the
-                    `listings.platform` binding from M8 Phase 5 Slice B,
-                    so the copy is always accurate (we only auto-verify
-                    on the platform the listing was created for). */}
                 <div className="flex items-center justify-between gap-3 px-6 py-4">
                     <dt className="text-sm text-muted-foreground">
                         Verification
@@ -116,9 +98,6 @@ function Row({
 }: {
     label: string;
     value: string;
-    // `accent` reserved for the winner-payout row — pink gradient brings
-    // attention to the "you'd take home this much" figure without
-    // shouting (it's still informational, not a CTA).
     accent?: boolean;
 }) {
     return (

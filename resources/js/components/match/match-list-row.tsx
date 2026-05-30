@@ -16,20 +16,8 @@ interface Props {
     match: Match;
 }
 
-/**
- * One row inside the `/matches` table container (`pages/match/index.tsx`).
- *
- * Designed to live inside a single wrapping card with siblings — uses
- * `border-t border-border/40 first:border-t-0` for separation instead of
- * its own rounded border. Hover is a flat `bg-primary/5` row-tint rather
- * than the lift+glow you'd expect on a floating card.
- *
- * Whole row is clickable to the match detail page via an absolute-overlay
- * Link (same pattern as `ListingRow` / `MineListingRow`). The opponent zone
- * is a *sibling* Link with `relative` positioning so it paints above the
- * overlay and intercepts its own clicks → user profile. Body content uses
- * `pointer-events-none` so clicks fall through to the overlay.
- */
+/** One row inside `/matches`. Whole row → match detail via absolute-overlay
+ *  Link; opponent zone is a sibling Link with `relative` to capture its own clicks. */
 export function MatchListRow({ match }: Props) {
     const getInitials = useInitials();
     const { auth } = usePage().props;
@@ -38,8 +26,6 @@ export function MatchListRow({ match }: Props) {
     const isCreator = match.creator.id === userId;
     const opponent = isCreator ? match.taker : match.creator;
 
-    // Result chip only on settled matches. Three mutually-exclusive states:
-    // youWon / youLost / isDraw (settled with no winner).
     const youWon = match.winner !== null && userId === match.winner.id;
     const youLost =
         match.status === 'settled' && match.winner !== null && !youWon;
@@ -47,14 +33,12 @@ export function MatchListRow({ match }: Props) {
 
     return (
         <article className="group relative flex flex-col gap-4 border-t border-border/40 px-4 py-4 transition-colors duration-200 ease-out first:border-t-0 hover:bg-primary/5 md:flex-row md:items-center md:gap-6 md:px-5">
-            {/* Overlay: entire row → match detail */}
             <Link
                 href={matchShow(match.id).url}
                 aria-label={`View match vs ${opponent.name}`}
                 className="absolute inset-0 rounded-lg focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none"
             />
 
-            {/* Opponent zone — relative sibling, sits above overlay → user profile */}
             <Link
                 href={userShow(opponent.username).url}
                 className="relative flex min-w-0 items-center gap-3 rounded-lg focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none md:w-52 md:shrink-0"
@@ -79,7 +63,6 @@ export function MatchListRow({ match }: Props) {
                 </div>
             </Link>
 
-            {/* Match body — no Link wrapper; clicks bubble to overlay */}
             <div className="pointer-events-none relative flex flex-1 flex-wrap items-center gap-3 md:flex-nowrap md:gap-6">
                 <div className="flex flex-wrap items-center gap-2 md:flex-1">
                     <span

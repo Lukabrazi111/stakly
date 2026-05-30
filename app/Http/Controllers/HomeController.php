@@ -15,12 +15,6 @@ class HomeController extends Controller
 {
     private const FEATURED_COUNT = 4;
 
-    /**
-     * Public landing page. Renders Hero + featured listings strip
-     * (top N ending-soon open listings) + GameSelector + HowItWorks.
-     *
-     * Server-fetched so the strip always reflects real database state.
-     */
     public function index(): Response
     {
         $featured = Listing::query()
@@ -31,18 +25,14 @@ class HomeController extends Controller
             ->limit(self::FEATURED_COUNT)
             ->get();
 
-        // M22 Phase 1 — seller trust on the featured strip too.
         SellerTrust::attachTo($featured);
 
-        // M24 Phase 1 — game tile catalog. Cached because games change
-        // rarely (admin-edited via Filament); `Game::booted` forgets this
-        // key on save/delete so admin edits show immediately.
-        //
-        // We cache the RESOLVED resource array (not the Eloquent collection)
-        // — caching `Eloquent\Collection` round-trips through the cache
+        // Cache the RESOLVED resource array (not the Eloquent collection) —
+        // caching `Eloquent\Collection` round-trips through the cache
         // driver's serialize/unserialize, which trips on `__PHP_Incomplete_Class`
-        // when the cached blob is read back (especially on the Postgres
-        // cache driver). Storing a flat array of dicts dodges that entirely.
+        // when the blob is read back (especially on the Postgres cache driver).
+        // `Game::booted` forgets this key on save/delete so admin edits show
+        // immediately.
         $games = Cache::remember(
             Game::HOMEPAGE_CACHE_KEY,
             now()->addHour(),

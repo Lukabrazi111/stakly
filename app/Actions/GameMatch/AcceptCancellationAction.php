@@ -11,39 +11,14 @@ use App\Services\Wallet;
 use Illuminate\Support\Facades\DB;
 
 /**
- * Step 2 of the M10 mutual cancellation flow: the *other* participant
- * accepts the pending request. Match flips Pending → Cancelled, both
- * stakes refunded via `Wallet::release`, listing flips Taken → Cancelled.
- * Symmetric with `SettleDrawMatchAction`'s refund-both pattern — no
- * platform fee, no winner, no record impact.
+ * Step 2 of the mutual cancellation flow: the opponent accepts the pending request.
+ * Match flips Pending → Cancelled, both stakes refunded, listing flips Taken → Cancelled.
  *
- * Returns:
- *   - `'cancelled'`              — match cancelled, refunds posted.
- *   - `'already_cancelled'`      — idempotent re-call after a prior accept
- *                                  already flipped the match (covers double-
- *                                  click / retry). No-op, no second refund
- *                                  (Wallet idempotency keys would short-
- *                                  circuit anyway).
- *   - `'race_lost'`              — match was no longer Pending by the time
- *                                  our lock acquired (settled / disputed /
- *                                  another resolution path ran first).
- *   - `'request_missing'`        — no open request to accept. Controller
- *                                  toast: "There's no open request."
- *   - `'self_accept_forbidden'`  — defensive: the requester themselves
- *                                  tried to accept their own request.
- *                                  Policy gates this upstream; the Action
- *                                  guards it again so a bypass-policy
- *                                  caller (artisan, future webhook) can't
- *                                  self-resolve.
+ * Conservation per cancelled match: `-A_stake + -B_stake + +A_release + +B_release = 0`.
  *
- * Conservation per cancelled match:
- *   `-A_stake + -B_stake + +A_release + +B_release = 0`
- *
- * Audit invariant: `confirmed_outcome` columns are NOT cleared. If Alice
- * had clicked Won before the cancel, the historical record of her claim
- * survives — useful for forensics if a dispute about the cancellation
- * itself arises later. The terminal `Cancelled` status prevents these
- * columns from being acted on (status guard in `confirm` policy).
+ * Returns: `'cancelled'`, `'already_cancelled'` (idempotent re-call), `'race_lost'`
+ * (no longer Pending), `'request_missing'` (no open request), or `'self_accept_forbidden'`
+ * (requester tried to self-accept — policy gates upstream; this guards bypass-policy callers).
  */
 class AcceptCancellationAction
 {
@@ -90,11 +65,8 @@ class AcceptCancellationAction
     }
 
     /**
-     * Same refund shape as `SettleDrawMatchAction::refundBothStakes`. The
-     * cancellation-specific reference strings keep this idempotent
-     * independently of any other refund path that might touch the same
-     * match (defense in depth — there shouldn't be one, but the Wallet
-     * idempotency contract is the safety net).
+     * Cancellation-specific reference strings keep refunds idempotent independently of any
+     * other refund path that might touch the same match (Wallet idempotency is the safety net).
      */
     private function refundBothStakes(GameMatch $match): void
     {
@@ -126,11 +98,9 @@ class AcceptCancellationAction
     }
 
     /**
-     * Listing flips Taken → Cancelled. Creator can create a fresh listing
-     * if they want to keep playing — re-opening this listing isn't on the
-     * table (UNIQUE constraint on `game_matches.listing_id` means one
-     * listing → at most one match ever; reopening would let a second
-     * match land on the historical record).
+     * Flip Taken → Cancelled (not back to Open) — UNIQUE on `game_matches.listing_id`
+     * means one listing → at most one match ever; reopening would let a second match
+     * land on the historical record.
      */
     private function markListingCancelled(GameMatch $match): void
     {

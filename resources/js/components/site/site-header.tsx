@@ -104,18 +104,12 @@ interface CreateListingCTAProps {
     isUnverified: boolean;
 }
 
-/**
- * Two states (logged-out users don't see this — Sign up covers that funnel):
- *   - Unverified → disabled with a tooltip pointing at the verification chip.
- *   - Verified   → links to `/listings/create`.
- */
 function CreateListingCTA({ isUnverified }: CreateListingCTAProps): ReactNode {
     if (isUnverified) {
         return (
             <Tooltip>
                 <TooltipTrigger asChild>
-                    {/* Span wrapper because disabled buttons don't fire pointer
-                        events — the tooltip needs the parent to listen. */}
+                    {/* Span wrapper — disabled buttons don't fire pointer events. */}
                     <span tabIndex={0}>
                         <Button
                             variant="gradient"

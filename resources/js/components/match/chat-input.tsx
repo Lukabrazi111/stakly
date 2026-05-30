@@ -12,21 +12,20 @@ import { Textarea } from '@/components/ui/textarea';
 
 interface ChatInputProps {
     onSend: (content: string, file: File | null) => void;
-    // Disabled while a send is in-flight so double-Enter doesn't double-post.
-    // (Server-side rate limit catches it too, but UI feedback is nicer.)
+    /** Disabled while a send is in-flight so double-Enter doesn't double-post. */
     disabled: boolean;
-    // Pending image attachment + clearer. Owned by ChatPanel so the
-    // drag-drop overlay above can push a file in here without prop-drilling.
+    /** File state owned by ChatPanel so the drag-drop overlay can push a
+     *  file in without prop-drilling. */
     file: File | null;
     onFileChange: (file: File | null) => void;
-    // 0..100 while a file upload is in flight, null otherwise.
+    /** 0..100 while a file upload is in flight, null otherwise. */
     uploadProgress: number | null;
 }
 
-// Locked at 2000 in milestones.md M8 Phase 2. Matches `StoreMessageRequest::MAX_CONTENT_LENGTH`.
+// Mirrors `StoreMessageRequest::MAX_CONTENT_LENGTH`.
 const MAX_CONTENT_LENGTH = 2000;
 
-// 5 MB cap matches `StoreMessageRequest::MAX_FILE_SIZE_KB` and the Phase 3 lock.
+// Mirrors `StoreMessageRequest::MAX_FILE_SIZE_KB`.
 const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024;
 
 const ACCEPTED_MIMES = ['image/jpeg', 'image/png', 'image/webp'];
@@ -43,12 +42,9 @@ export function ChatInput({
     const [previewUrl, setPreviewUrl] = useState<string | null>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
-    // Local object-URL preview so the user sees the thumb before send.
-    // Revoke on unmount / file-change to prevent the browser from holding
-    // a blob in memory after the upload completes. setState-inside-effect
-    // is the right shape here — useMemo + cleanup-only effect breaks under
-    // React strict mode (the URL gets revoked during the strict double-mount
-    // and the image src then points at a dead blob).
+    // setState-inside-effect: useMemo + cleanup-only effect breaks under
+    // strict mode — the URL gets revoked during double-mount, leaving a
+    // dead blob src.
     useEffect(() => {
         if (!file) {
             setPreviewUrl(null);
@@ -84,7 +80,7 @@ export function ChatInput({
         }
     };
 
-    // Enter sends, Shift+Enter inserts newline. See milestones.md M8 Phase 2.
+    // Enter sends, Shift+Enter inserts newline.
     const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
         if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();
@@ -92,10 +88,8 @@ export function ChatInput({
         }
     };
 
-    // Paste-to-upload — copy a screenshot, Cmd/Ctrl+V into the textarea, the
-    // image lands in the file slot instead of pasting as text. If a file is
-    // already queued, ignore the paste rather than silently replacing it
-    // (user has to clear the existing one first — feels less surprising).
+    // Paste-to-upload: pasted image lands in the file slot. If a file is
+    // already queued, ignore rather than silently replacing it.
     const handlePaste = (e: ClipboardEvent<HTMLTextAreaElement>) => {
         if (disabled || hasFile) {
             return;
@@ -125,8 +119,7 @@ export function ChatInput({
         const next = e.target.files?.[0] ?? null;
 
         if (next && !validateFile(next)) {
-            // Clear the input so re-selecting the same bad file still fires
-            // onChange and re-runs validation.
+            // Clear so re-selecting the same bad file still fires onChange.
             e.target.value = '';
 
             return;
@@ -148,9 +141,6 @@ export function ChatInput({
             onSubmit={submit}
             className="border-t border-border/60 bg-card/40"
         >
-            {/* File preview strip — only when a file is queued. Shows the
-                local object-URL thumb + a clear button + (when in flight)
-                an upload progress bar. */}
             {hasFile && (
                 <div className="flex items-center gap-3 border-b border-border/40 px-3 py-2">
                     {previewUrl && (
@@ -248,11 +238,7 @@ export function ChatInput({
     );
 }
 
-/**
- * Client-side preflight on file picker. Server validates again (defense in
- * depth + the source of truth for accepted types / sizes), but rejecting
- * here saves the user a round-trip when they obviously picked the wrong file.
- */
+/** Client-side preflight; server validates again as source of truth. */
 function validateFile(file: File): boolean {
     if (!ACCEPTED_MIMES.includes(file.type)) {
         toast.error('Only JPEG, PNG, or WebP images can be sent in chat.');

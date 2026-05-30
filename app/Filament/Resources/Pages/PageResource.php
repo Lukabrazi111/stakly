@@ -16,13 +16,8 @@ use Filament\Tables\Table;
 use UnitEnum;
 
 /**
- * Admin CRUD for CMS pages (M26 Phase 1). Owns About / Privacy / Terms and
- * any other static surface whose copy should be editable without a deploy.
- *
- * Public reads of these rows go through a cache layer (`Cache::rememberForever`
- * keyed by `Page::cacheKey()`), invalidated automatically by the model's
- * save/delete events. Admin edits therefore appear on the public site as
- * soon as the form is saved — no manual cache-bust needed.
+ * Admin CRUD for CMS pages. Public reads cache via `Page::cacheKey()`;
+ * model save/delete events auto-bust, so admin edits show up immediately.
  */
 class PageResource extends Resource
 {

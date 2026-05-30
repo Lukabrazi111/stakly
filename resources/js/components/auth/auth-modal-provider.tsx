@@ -31,9 +31,9 @@ function readUrlState(): State {
     return { open: false, view: 'login' };
 }
 
-// AuthModalProvider lives outside the Inertia tree (mounted in `withApp`), so
-// `usePage()` is unavailable. Read auth from the initial page JSON serialized
-// onto `<div id="app" data-page="...">`.
+// Provider lives outside the Inertia tree (mounted in `withApp`), so
+// `usePage()` is unavailable. Read auth from the initial page JSON on
+// `<div id="app" data-page="...">`.
 function readAuthFromDom(): boolean {
     if (typeof window === 'undefined') {
         return false;
@@ -104,19 +104,16 @@ export function useAuthModal() {
 }
 
 export function AuthModalProvider({ children }: { children: ReactNode }) {
-    // Default to closed during SSR + first client paint, then sync from
-    // URL + DOM after mount. Initializing via `computeState(readAuthFromDom())`
-    // would render a popped modal on server vs closed on client (or vice
-    // versa) when the URL carries `?auth=login`, causing a hydration
-    // mismatch and a visible flash.
+    // Default closed during SSR + first paint, then sync after mount —
+    // initializing from URL would cause a hydration mismatch when `?auth=*`
+    // is present.
     const [state, setState] = useState<State>({ open: false, view: 'login' });
 
     useEffect(() => {
         setState(computeState(readAuthFromDom()));
 
-        // If a logged-in user landed here with `?auth=*` (shared link / leftover
-        // history), strip the param so the modal never opens for them and the
-        // URL doesn't bait a refresh into reopening it.
+        // Strip `?auth=*` for logged-in users (shared link / leftover history)
+        // so a refresh doesn't reopen the modal.
         if (
             readAuthFromDom() &&
             new URLSearchParams(window.location.search).has('auth')

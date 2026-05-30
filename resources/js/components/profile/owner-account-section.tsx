@@ -5,20 +5,7 @@ interface Props {
     username: string;
 }
 
-/**
- * Owner-only "Your account" block below the public profile tabs. Visible
- * only when the viewer === the profile owner; the parent gates this on
- * `auth.user.id === user.id`.
- *
- * Visually demarcated with `bg-secondary` shading so it reads as a distinct
- * surface from the public-section cards (which use `bg-card`). Single-item
- * shell today (share button only) — future profile-surface management
- * controls slot in here without re-shaping the public sections.
- *
- * Notifications + Blacklist tabs originally planned for this section were
- * dropped 2026-05-27 (see milestones.md M19 "Not in M19"); those features
- * will own their own UI under `/settings/*` when M20 + M21 ship.
- */
+/** Owner-only "Your account" block. Parent gates on auth.user.id === user.id. */
 export function OwnerAccountSection({ profileUrl, username }: Props) {
     return (
         <section

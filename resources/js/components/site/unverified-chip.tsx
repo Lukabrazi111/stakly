@@ -28,17 +28,14 @@ function readCooldownRemaining(): number {
 
 export function UnverifiedChip({ className }: Props) {
     const [sending, setSending] = useState(false);
-    // Default to 0 during SSR + first client paint, then sync from
-    // localStorage after mount. Initializing via `readCooldownRemaining()`
-    // would render different labels ("Verify email" vs "Resend in Xs") on
-    // server vs client and cause a hydration mismatch.
+    // Default 0 during SSR + first paint, sync after mount — reading
+    // localStorage synchronously would cause a hydration mismatch on the label.
     const [cooldown, setCooldown] = useState(0);
 
     useEffect(() => {
         setCooldown(readCooldownRemaining());
     }, []);
 
-    // Tick down while cooldown is active.
     useEffect(() => {
         if (cooldown <= 0) {
             return;
@@ -51,8 +48,8 @@ export function UnverifiedChip({ className }: Props) {
         return () => window.clearInterval(id);
     }, [cooldown]);
 
-    // Re-read cooldown when useFlashToast writes a fresh value to localStorage
-    // (e.g. server flashed `verify_cooldown_seconds` after register/resend).
+    // Re-read when useFlashToast writes a fresh value (server flashed
+    // `verify_cooldown_seconds` after register/resend).
     useEffect(() => {
         const sync = () => setCooldown(readCooldownRemaining());
 

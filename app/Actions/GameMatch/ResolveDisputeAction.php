@@ -14,22 +14,11 @@ use InvalidArgumentException;
 
 /**
  * Resolves a `Disputed` match via the configured `GameApi` driver.
+ * Confidence → action: `Confirmed` settles to winner (API overrides player reports),
+ * `Drawn` refunds both, `Unknown` flips to `ManualReview` and leaves money locked.
  *
- * - `Confirmed` confidence → delegate to `SettleMatchAction` (the API
- *   winner is authoritative; overrides player self-reports).
- * - `Drawn` confidence → delegate to `SettleDrawMatchAction` (both refunded,
- *   no fee).
- * - `Unknown` confidence → flip to `ManualReview` and leave money locked
- *   (admin tooling owns this state).
- *
- * Idempotent: terminal states (`Settled`, `ManualReview`) short-circuit.
- * The row lock + status guard serialise concurrent dispute-resolution
- * attempts (e.g. both players hit "Open dispute" simultaneously, or the
- * timeout job fires while a manual dispute is already in flight).
- *
- * Audit: the driver's raw response is persisted to
- * `game_matches.api_response` along with `api_resolved_at`, written
- * before settlement so we have a record even if settlement throws.
+ * Idempotent: terminal states (`Settled`, `ManualReview`) short-circuit under row lock.
+ * The driver's raw response is persisted before settlement so we keep the record even if settlement throws.
  */
 class ResolveDisputeAction
 {
@@ -67,10 +56,8 @@ class ResolveDisputeAction
     }
 
     /**
-     * Sanity guard: callers must transition to `Disputed` before invoking.
-     * Keeping the contract explicit prevents a future caller from
-     * short-circuiting the player-confirm window by jumping straight to
-     * API resolution from `Pending`.
+     * Callers must transition to `Disputed` first — prevents a future caller from
+     * short-circuiting the player-confirm window by jumping straight from `Pending`.
      */
     private function assertDisputed(GameMatch $match): void
     {
@@ -82,9 +69,7 @@ class ResolveDisputeAction
     }
 
     /**
-     * Persist audit trail before branching so it's saved even if a
-     * downstream settle throws (rolls back inside the transaction, but
-     * the failure shape is observable in logs / re-attempts).
+     * Persist before branching so the failure shape is observable even if a downstream settle throws.
      */
     private function persistApiAudit(GameMatch $match, GameApiResult $result): void
     {
@@ -103,28 +88,20 @@ class ResolveDisputeAction
         }
 
         if ($result->confidence === GameApiConfidence::Drawn) {
-            // Nested DB::transaction composes via savepoint — atomic with the
-            // outer audit-trail update. `SettleDrawMatchAction` posts its own
-            // "Match ended as a draw" system message.
+            // Nested DB::transaction composes via savepoint — atomic with the outer audit-trail update.
             $this->settleDraw->handle($match);
 
             return;
         }
 
-        // Confirmed → winner-based settlement. `SettleMatchAction` posts its
-        // own "Match settled. {name} wins." system message.
         $winner = $this->resolveWinner($match, $result);
 
         $this->settle->handle($match, $winner);
     }
 
     /**
-     * Unknown-confidence resolution: lock the match in `ManualReview` and
-     * post two system messages — first narrating why we're here, then a
-     * `dispute_prompt`-marked call-to-action telling players what evidence
-     * to submit for the admin review (M12). The marker attachment lets
-     * the React `SystemBubble` render a visually distinct warning variant
-     * for the prompt without changing copy detection.
+     * Two system messages: narration + `dispute_prompt`-marked evidence call-to-action.
+     * The marker attachment lets `SystemBubble` render a warning variant without copy-matching.
      */
     private function flipToManualReview(GameMatch $match): void
     {
@@ -143,8 +120,7 @@ class ResolveDisputeAction
     }
 
     /**
-     * Defense in depth: the driver shouldn't return a non-participant,
-     * but if it does we'd rather throw than pay a stranger.
+     * Defense in depth — driver shouldn't return a non-participant, but if it does, throw rather than pay a stranger.
      */
     private function resolveWinner(GameMatch $match, GameApiResult $result): User
     {

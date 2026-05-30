@@ -11,21 +11,11 @@ use DateTimeInterface;
 use Illuminate\Support\Facades\DB;
 
 /**
- * Resolves a single timed-out `Pending` match by flipping it to
- * `ManualReview`. Designed to be called from the iteration loop in
- * `App\Console\Commands\MatchesResolveTimeouts`.
+ * Resolves a single timed-out `Pending` match by flipping it to `ManualReview`.
+ * If no game was auto-fetched + settled during the 4h confirmation window, no
+ * game is going to be found — money sits frozen until admin resolves.
  *
- * M16 simplification — there's no "honor claim" path anymore (player
- * Won/Lost/Drawn confirms were removed). The Phase 2 auto-fetch triggers
- * (page-visit, chat-send, every-5-min cron) have been hammering the
- * provider API for the full 4h window. If no game has been auto-fetched
- * + settled by the time the timeout fires, no game is going to be found
- * — money sits frozen until admin (M12) or M16-cooling-off resolves.
- *
- * Returns one of:
- *   - `'manual-review'` → flipped to ManualReview, system messages posted.
- *   - `'skipped'`       → no longer eligible (race: match settled / cancelled
- *                          between the SELECT and the row lock).
+ * Returns `'manual-review'` or `'skipped'` (race: settled/cancelled between SELECT and lock).
  */
 class ResolveMatchTimeoutAction
 {
@@ -50,9 +40,6 @@ class ResolveMatchTimeoutAction
             return 'manual-review';
         });
 
-        // After-commit notification — admin queue gets a bell ping for the
-        // newly-flagged match. Skipped path doesn't fire (race-loss to
-        // another resolver — there's nothing for admin to act on).
         if ($outcome === 'manual-review') {
             $this->notifyAdminsOfTimeout(GameMatch::query()->find($matchId));
         }
@@ -61,8 +48,7 @@ class ResolveMatchTimeoutAction
     }
 
     /**
-     * Re-check inside the lock: auto-fetch (or any other resolver) may
-     * have settled / cancelled this match between our SELECT and the lock.
+     * Re-check inside the lock — another resolver may have settled / cancelled between SELECT and lock.
      */
     private function isStillEligible(?GameMatch $match, DateTimeInterface $deadline): bool
     {
@@ -72,13 +58,9 @@ class ResolveMatchTimeoutAction
     }
 
     /**
-     * Two system messages bracket the status flip:
-     *
-     *   1. Narration — why the match was flagged (timeout, no API game found).
-     *   2. `dispute_prompt`-marked evidence call-to-action — same shape as
-     *      `ResolveDisputeAction::flipToManualReview` so the React
-     *      `SystemBubble` renders the warning-toned variant uniformly
-     *      across both manual-dispute and timeout entry points.
+     * Two system messages bracket the status flip: narration + `dispute_prompt`-marked
+     * evidence CTA so `SystemBubble` renders the warning variant uniformly across
+     * manual-dispute and timeout entry points.
      */
     private function flipToManualReview(GameMatch $match): void
     {

@@ -10,21 +10,10 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 /**
- * M14 Phase 1 — append-only audit row for one auto-fetch attempt against
- * the game-API pipeline. Written by `RecordAutoFetchAttemptAction`, which
- * is the only authorised entry point (mirrors the Wallet/ledger pattern).
- *
- * Rows are written from:
- *   - `DispatchAutoFetchAction` — pre-flight skip outcomes (`not_pending`,
- *     `snapshot_missing`). The dispatcher knows the platform from the
- *     listing, so `provider` is always populated.
- *   - `AutoFetchLichessGameJob` / `AutoFetchChessComGameJob` — per-attempt
- *     outcomes after the provider call (matched / no_match / ambiguous /
- *     error) plus defensive skip rows (`already_posted`, `snapshot_missing`).
- *
- * No `updated_at` — append-only by convention + by the migration's column
- * shape. Setting `UPDATED_AT = null` keeps Eloquent from generating
- * `update`-statement timestamps if a row is ever touched in code.
+ * Append-only audit row for one auto-fetch attempt. Written by
+ * `RecordAutoFetchAttemptAction` — the only authorised entry point (mirrors
+ * the Wallet/ledger pattern). `UPDATED_AT = null` keeps Eloquent from
+ * generating timestamps if a row is ever touched in code.
  */
 class MatchAutoFetchAttempt extends Model
 {

@@ -14,16 +14,7 @@ interface Props {
     username: string;
 }
 
-/**
- * Owner-only share-profile control. Renders a button that opens a popover
- * with the profile's absolute URL (copy-to-clipboard) + a QR code for
- * cross-device handoff (phone scans the QR on a desktop, lands on the
- * profile without retyping).
- *
- * Mirrors the wallet/deposit QR treatment (white card, level M) and
- * AddressDisplay's copy pattern (Sonner toast + 2-second optimistic
- * checkmark).
- */
+/** Owner-only share button — popover with copyable URL + QR. */
 export function ShareProfileButton({ profileUrl, username }: Props) {
     const [copied, setCopied] = useState(false);
 
@@ -56,8 +47,7 @@ export function ShareProfileButton({ profileUrl, username }: Props) {
                     </p>
                 </div>
 
-                {/* QR on a forced-light card — phone cameras read the dark
-                    squares better on white. Mirrors wallet/deposit QR. */}
+                {/* Forced-light QR — phone cameras read dark squares better on white. */}
                 <div className="flex justify-center">
                     <div className="rounded-xl bg-white p-3 shadow-md">
                         <QRCodeSVG

@@ -32,19 +32,14 @@ class UserProfileResource extends JsonResource
             'name' => $this->name,
             'bio' => $this->bio,
             'member_since' => $this->created_at->toIso8601String(),
-            // M18 Phase 1 — uploaded avatar served from the `public` disk
-            // via the `profile-avatar` Spatie collection on `User`. Both
-            // URLs are null until the user uploads; the frontend then
-            // falls back to a gradient-initials avatar via `useInitials()`.
+            // Spatie `profile-avatar` collection on User. Null until upload
+            // — FE falls back to gradient-initials via `useInitials()`.
             //   - `avatar_url`       512×512 (profile header, settings)
             //   - `avatar_thumb_url` 128×128 (chat bubbles, listing rows)
             'avatar_url' => $this->avatar_url,
             'avatar_thumb_url' => $this->avatar_thumb_url,
-            // Verified linked external accounts (M8 Phase 1). Null when not
-            // linked — the username column is only populated after successful
-            // bio-code verification (pending state lives in
-            // `pending_verification_*` and is NEVER exposed publicly). Frontend
-            // renders these on the profile's "Linked accounts" section.
+            // Null when not linked. Pending verification state lives in
+            // `pending_verification_*` and is NEVER exposed publicly.
             'chess_com_username' => $this->chess_com_username,
             'lichess_username' => $this->lichess_username,
         ];

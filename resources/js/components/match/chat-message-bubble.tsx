@@ -26,14 +26,10 @@ import type {
 
 interface ChatMessageBubbleProps {
     message: ChatMessage;
-    // The current viewer — used to align own vs opponent bubbles.
     viewerId: number;
-    // Sender lookup: the two known participants. Resolves `user_id` to a
-    // display name without embedding the user object on every message.
     creator: MatchPlayer;
     taker: MatchPlayer;
-    // Optimistic-UI handlers — invoked from the failed-bubble footer.
-    // No-op for server-sourced messages (they never reach a failed state).
+    /** Invoked from the failed-bubble footer; no-op for server-sourced messages. */
     onRetry: (correlationId: string) => void;
     onDismiss: (correlationId: string) => void;
 }
@@ -102,9 +98,8 @@ export function ChatMessageBubble({
                     isPending && 'opacity-70',
                 )}
             >
-                {/* Optimistic local-file preview takes the place of real
-                    attachments while the upload is in flight or after a
-                    send failure. Replaced when the broadcast lands. */}
+                {/* Local-file preview while upload is in flight or after a
+                    failure; replaced when the broadcast lands. */}
                 {hasOptimisticFile && message.optimistic_file && (
                     <OptimisticImage
                         previewUrl={message.optimistic_file.preview_url}
@@ -174,16 +169,8 @@ interface ImageAttachmentProps {
     isOwn: boolean;
 }
 
-/**
- * Inline thumbnail bubble rendered above any caption. Click opens the
- * full-resolution original inside a centered dialog. Both src URLs point at
- * the authenticated streaming route, so the browser asks the Stakly app for
- * each fetch — no public-disk leak path.
- *
- * When the backend supplies `width` + `height`, set them on the img so the
- * browser reserves the right box before bytes arrive — no scroll-shift when
- * chat history scrolls past a run of unloaded images.
- */
+/** Inline thumbnail; click opens the full-resolution original in a dialog.
+ *  width/height reserve the box so chat scroll doesn't shift on load. */
 function ImageAttachment({ image, isOwn }: ImageAttachmentProps) {
     const [open, setOpen] = useState(false);
 
@@ -227,18 +214,8 @@ interface LinkCardProps {
     isOwn: boolean;
 }
 
-/**
- * OG/Twitter/oEmbed unfurl card rendered below the chat bubble's text
- * content. Whole card is one anchor so the browser handles middle-click,
- * Cmd-click, drag-to-bookmark, etc. naturally — no nested interactive
- * elements that compete for click semantics.
- *
- * The image (when present) comes from `link-images.show`, the
- * authenticated proxy route. We set `width`/`height` to the rendered
- * size (not the natural image size) because OG images are highly
- * variable and we want a fixed-aspect-ratio tile, not flex-based image
- * sizing that shifts layout on bytes-arrived.
- */
+/** OG/oEmbed unfurl card. Whole card is one anchor so middle-click /
+ *  Cmd-click work naturally — no nested interactive elements. */
 function LinkCard({ link, isOwn }: LinkCardProps) {
     const hostname =
         link.site_name ?? safeHostname(link.canonical_url ?? link.url);
@@ -294,13 +271,8 @@ interface OptimisticImageProps {
     isFailed: boolean;
 }
 
-/**
- * Local-blob preview rendered while an upload is in flight (and kept
- * visible if the send failed so the user can retry without re-picking the
- * file). Not clickable into a lightbox — the original doesn't exist on the
- * server yet. Replaced by the real `ImageAttachment` render once the
- * broadcast confirms the message.
- */
+/** Local-blob preview rendered while upload is in flight or after a
+ *  failure. Not clickable — the original doesn't exist on the server yet. */
 function OptimisticImage({
     previewUrl,
     name,
@@ -397,9 +369,8 @@ function SenderAvatar({
 interface SystemBubbleProps {
     content: string;
     gameCards: ChatGameCardAttachment[];
-    // `dispute_prompt` swaps the muted lifecycle styling for a warning
-    // variant — the message is a call-to-action ("submit evidence") that
-    // should stand out from neutral lifecycle narration.
+    /** `dispute_prompt` swaps muted lifecycle styling for warning so the
+     *  call-to-action stands out from neutral narration. */
     variant?: 'default' | 'dispute_prompt';
 }
 
@@ -431,9 +402,6 @@ function SystemBubble({
                 <GameCardAttachment
                     key={`${card.game_id}-${card.source}`}
                     card={card}
-                    // System cards aren't tied to a sender so isOwn doesn't
-                    // apply — false renders the symmetric (not own-aligned)
-                    // corner radius.
                     isOwn={false}
                 />
             ))}
@@ -446,15 +414,8 @@ interface GameCardAttachmentProps {
     isOwn: boolean;
 }
 
-/**
- * Phase 4 verified-game evidence card. Same chat-card visual family as
- * `LinkCard` — pill border, Stakly-skinned hover glow — with a chess
- * provenance tile on the left and structured game metadata on the right.
- *
- * The verified badge is colour + icon (not colour alone) per the
- * accessibility rule — colour-blind users still see the BadgeCheck
- * affordance.
- */
+/** Verified-game evidence card. Verified badge uses color + icon so
+ *  color-blind users still see the BadgeCheck affordance. */
 function GameCardAttachment({ card, isOwn }: GameCardAttachmentProps) {
     const winnerLabel = describeWinner(card);
     const speedLabel = card.speed ? capitalize(card.speed) : null;
@@ -561,15 +522,9 @@ function PlayerBadge({ username, color, isWinner }: PlayerBadgeProps) {
 }
 
 /**
- * Map raw status + winner to human chat copy. Handles BOTH Lichess and
- * chess.com vocabularies — they use different status strings for the
- * same outcomes:
- *   Lichess:   mate / resign / outoftime / timeout / cheat / draw / stalemate / aborted
- *   chess.com: checkmated / resigned / timeout / abandoned / agreed / repetition / stalemate / etc.
- *
- * For chess.com, `status` is set to the LOSER's per-side `result` string
- * by `ChessComGameClient::parseGame`. So a checkmate-win game has
- * status='checkmated', a resignation has status='resigned', etc.
+ * Map raw status + winner to chat copy. Handles both Lichess
+ * (mate/resign/outoftime/...) and chess.com (checkmated/resigned/... — the
+ * loser's `result` string from `ChessComGameClient::parseGame`).
  */
 function describeWinner(card: ChatGameCardAttachment): string | null {
     const status = card.status;
@@ -577,13 +532,11 @@ function describeWinner(card: ChatGameCardAttachment): string | null {
 
     if (winner && status) {
         const reason: Record<string, string> = {
-            // Lichess vocabulary
             mate: 'by checkmate',
             resign: 'by resignation',
             outoftime: 'on time',
             timeout: 'on time',
             cheat: 'by cheat report',
-            // chess.com vocabulary (loser's result string)
             checkmated: 'by checkmate',
             resigned: 'by resignation',
             abandoned: 'by abandonment',
@@ -599,7 +552,6 @@ function describeWinner(card: ChatGameCardAttachment): string | null {
         return `${winner} won.`;
     }
 
-    // Draw vocabulary — covers both providers.
     const drawStatuses: Record<string, string> = {
         draw: 'Drawn.',
         stalemate: 'Drawn by stalemate.',
@@ -629,11 +581,6 @@ function capitalize(value: string): string {
     return value.charAt(0).toUpperCase() + value.slice(1);
 }
 
-/**
- * Pull the hostname off a URL string for the link-card footer. Falls
- * back to null on malformed input rather than throwing — a broken URL
- * shouldn't break the bubble render.
- */
 function safeHostname(url: string | null): string | null {
     if (!url) {
         return null;
@@ -646,9 +593,6 @@ function safeHostname(url: string | null): string | null {
     }
 }
 
-/**
- * Compact same-day formatter: "14:32".
- */
 function formatBubbleTime(iso: string | null): string {
     if (!iso) {
         return '';

@@ -41,18 +41,11 @@ class AdminPanelProvider extends PanelProvider
             ])
             ->discoverWidgets(in: app_path('Filament/Widgets'), for: 'App\Filament\Widgets')
             ->widgets([
-                // M17 Phase 1 — ops dashboard. Single `OpsOverview` widget
-                // bundles all four stats so Filament renders them as a
-                // responsive horizontal grid; splitting into separate
-                // widgets forces each into a full-width vertical column
-                // since each `StatsOverviewWidget` defaults to
-                // `columnSpan = 'full'`.
+                // Bundle stats into one widget so Filament renders them as a
+                // responsive horizontal grid — `StatsOverviewWidget` defaults
+                // to `columnSpan = 'full'`, so separate widgets stack
+                // full-width vertically.
                 OpsOverview::class,
-                // M14 Phase 1 — auto-fetch pipeline health. Sits below
-                // `OpsOverview` as its own row (separate widget = its own
-                // column, by the same default cited above). Distinct
-                // concern from the broader ops view, so the row break
-                // reads naturally.
                 PipelineHealth::class,
             ])
             ->middleware([

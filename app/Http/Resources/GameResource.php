@@ -28,15 +28,11 @@ class GameResource extends JsonResource
     }
 
     /**
-     * Two poster sources coexist:
-     *  - Seeded paths like `/images/games/chess.png` (under `public/`),
-     *    stored as absolute web paths starting with `/`.
-     *  - Filament FileUpload paths like `games/<hash>.webp` (under
-     *    `storage/app/public/`), stored as disk-relative paths.
-     *
-     * Both get normalized to a root-relative URL the frontend hands
-     * directly to `<img src>`. Root-relative (not absolute) so the React
-     * app stays portable across host / scheme changes.
+     * Two poster sources coexist — seeded `/images/games/chess.png`
+     * (absolute web path under `public/`) and Filament FileUpload
+     * `games/<hash>.webp` (disk-relative under `storage/app/public/`).
+     * Both normalized to root-relative URLs so the React app stays
+     * portable across host / scheme changes.
      */
     private function resolvePosterUrl(): ?string
     {

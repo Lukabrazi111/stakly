@@ -54,9 +54,8 @@ class Listing extends Model
     }
 
     /**
-     * 1:1 with the match created when this listing is taken. Null while
-     * the listing is still Open / Cancelled / Expired. UNIQUE FK at the DB
-     * level enforces the 1:1 relationship.
+     * 1:1 with the match created when this listing is taken; null while still
+     * Open / Cancelled / Expired. UNIQUE FK at the DB level enforces 1:1.
      */
     public function gameMatch(): HasOne
     {
@@ -64,10 +63,8 @@ class Listing extends Model
     }
 
     /**
-     * Listings that are open AND not yet past their expiry. Used by the
-     * owner's view of their own listings (profile, /listings/mine) and as
-     * the foundation for `scopeOnPublicMarketplace`. Doesn't filter by the
-     * owner's `is_active_mode` — owners always see their own listings.
+     * Open AND not yet past expiry. Doesn't filter by the owner's
+     * `is_active_mode` — owners always see their own listings.
      */
     public function scopeOpen(Builder $query): Builder
     {
@@ -77,16 +74,9 @@ class Listing extends Model
     }
 
     /**
-     * Listings that are publicly takeable RIGHT NOW. Extends `scopeOpen`
-     * with a check that the owner's global Active Mode is on. When the
-     * owner toggles Inactive on `/listings/mine`, none of their listings
-     * appear here — they're hidden from both the public marketplace and
-     * visitor views of their profile.
-     *
-     * Used by `ListingController::index`, `HomeController::index`, and
-     * `UserController::show` (visitor branch). `/listings/mine` and the
-     * profile owner-view bypass this scope since the owner should always
-     * see their own listings regardless of their active mode.
+     * Publicly takeable RIGHT NOW. Extends `scopeOpen` with the owner's
+     * Active Mode check — when the owner toggles Inactive, none of their
+     * listings appear in the public marketplace or visitor profile views.
      */
     public function scopeOnPublicMarketplace(Builder $query): Builder
     {

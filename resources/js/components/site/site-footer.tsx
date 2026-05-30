@@ -5,11 +5,8 @@ interface FooterLink {
     href: string;
 }
 
-// Footer holds the utility / info / legal nav only — About, Support,
-// Terms, Privacy. Product surfaces (Listings, How it Works) live in the
-// header where the action is. All four hit the CMS reader at `/en/{slug}`;
-// Privacy, Terms, and Support are seeded as drafts and 404 publicly until
-// admin writes the copy and publishes from `/admin/pages`.
+// Privacy/Terms/Support are seeded as drafts and 404 publicly until admin
+// publishes from `/admin/pages`.
 const footerLinks: FooterLink[] = [
     { label: 'About', href: '/en/about' },
     { label: 'Support', href: '/en/support' },

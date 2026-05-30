@@ -29,15 +29,8 @@ interface Props {
 }
 
 /**
- * Profile activity tabs (M19 Phase 4). Three tabs: Match History (default)
- * | Open Listings | Reviews (placeholder). State syncs to `?tab=` so
- * deep-link / refresh / browser-back navigate within a profile.
- *
- * URL sync uses pure client-side `history.pushState` rather than Inertia
- * `router.get()` — the underlying data (matches + listings) is already
- * loaded by `UserController::show`, so re-fetching on every tab click
- * would be wasted work. Mirrors the auth-modal-provider's URL handling
- * pattern (per CLAUDE.md).
+ * Profile activity tabs. State syncs to `?tab=` via `history.pushState` —
+ * the data is already loaded, no need to re-fetch on tab click.
  */
 export function ProfileTabs({
     matches,
@@ -45,10 +38,8 @@ export function ProfileTabs({
     profileUserId,
     isOwnProfile,
 }: Props) {
-    // Default to the matches tab during SSR + first client paint, then sync
-    // from `?tab=` after mount. Initializing via `readTabFromUrl` would
-    // render a different tab on server vs client when the URL carries
-    // `?tab=listings` or `?tab=reviews`.
+    // Default during SSR + first paint, sync after mount — reading the URL
+    // synchronously would cause a hydration mismatch when `?tab=*` is set.
     const [tab, setTab] = React.useState<ProfileTab>(DEFAULT_TAB);
 
     React.useEffect(() => {

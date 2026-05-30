@@ -16,18 +16,7 @@ interface Props {
     platform: ListingPlatform;
 }
 
-/**
- * Read-only platform chip on the listing row + card (M22 Phase 1). Shows
- * which platform the match MUST be played on so a viewer can spot at
- * scan-time whether they're verified on the right provider before clicking
- * through to take.
- *
- * Uses the same brand-tinted tokens as the profile-page `VerificationChip`
- * (chess.com brown, Lichess gray) for visual consistency across the app
- * wherever a platform-association is shown. Future M15 game adapters
- * (FACEIT orange, Riot red, Steam blue) extend `PLATFORM_META` + the
- * `ListingPlatform` type.
- */
+/** Read-only platform chip on the listing row + card. */
 export function VerifiedPlatformChip({ platform }: Props) {
     const meta = PLATFORM_META[platform];
 

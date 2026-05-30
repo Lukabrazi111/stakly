@@ -10,32 +10,9 @@ use App\Jobs\AutoFetchLichessGameJob;
 use App\Models\GameMatch;
 
 /**
- * M16 Phase 2 — dispatches the per-platform auto-fetch job for a Pending
- * match. Layered trigger sites all funnel through here:
- *
- *   - `GameMatchController::show` on every Pending page-visit.
- *   - `SendMessageAction` on every chat message during Pending / Disputed.
- *   - `App\Console\Commands\AutoFetchPendingMatches` cron at 5-min cadence.
- *   - (Phase 4) Lichess stream consumer on stream `game-end` events.
- *
- * Idempotency lives at the job layer:
- *   - `AutoFetch*GameJob` implements `ShouldBeUnique` — concurrent dispatches
- *     for the same match are dropped while a job is in-flight, so F5-spam
- *     or a cron-page-visit race doesn't thunder-herd the provider API.
- *   - The job's `alreadyPosted()` check short-circuits if a card already
- *     landed (e.g. settled in a prior run; re-dispatch is a cheap DB query).
- *
- * Pre-flight gates (silent skip — these are normal "nothing to do" states):
- *   - Match must be Pending. Other statuses don't need a fresh API fetch.
- *   - Both sides must have a snapshot for the listing's platform —
- *     auto-fetch can't anchor a card without both usernames.
- *
- * M14 Phase 1 — every skip writes a `match_auto_fetch_attempts` row via
- * `RecordAutoFetchAttemptAction` so the admin timeline reflects "we
- * considered fetching and didn't, here's why." High-frequency triggers
- * (page-visit, chat-send) on non-Pending matches will dominate row counts;
- * that's expected and is itself a signal about user activity on closed
- * matches.
+ * Funnel for per-platform auto-fetch job dispatch (page-visit, chat-send, cron, Lichess stream).
+ * Idempotency lives at the job layer (`ShouldBeUnique` + `alreadyPosted()` short-circuit).
+ * Every skip writes a `match_auto_fetch_attempts` row so the admin timeline reflects the decision.
  */
 class DispatchAutoFetchAction
 {
@@ -47,9 +24,8 @@ class DispatchAutoFetchAction
     {
         $match->loadMissing('listing', 'providerSnapshots');
 
-        // Reading the platform off the listing first means even the
-        // `not_pending` skip carries provider context. Without that,
-        // PipelineHealth couldn't roll up skip volume per provider.
+        // Read platform first so even the `not_pending` skip carries provider
+        // context for PipelineHealth's per-provider skip rollup.
         $platform = $match->listing->platform;
 
         if ($match->status !== MatchStatus::Pending) {

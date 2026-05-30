@@ -12,12 +12,6 @@ interface Props {
 
 const ELLIPSIS = '…';
 
-/**
- * Mirrors `ListingPagination` (same smart-ellipsis behaviour) against the
- * `wallet.history` route. Kept as its own component rather than abstracted
- * to a generic `Pagination` so the route helper + query builder stay
- * statically typed end-to-end.
- */
 function visiblePages(
     current: number,
     last: number,
@@ -57,10 +51,8 @@ export function WalletPagination({ currentPage, lastPage, filters }: Props) {
             return;
         }
 
-        // `replace: true` mirrors the filter chip's behavior in
-        // `pages/wallet/history.tsx` — pagination is view state within
-        // the same conceptual page, so Back should return to `/wallet`
-        // rather than walking through every page the user visited.
+        // `replace: true` so Back returns to `/wallet` rather than walking
+        // through every page the user visited.
         router.get(
             walletHistory().url,
             buildWalletHistoryQuery(filters, { page }),

@@ -12,23 +12,8 @@ interface Props {
 }
 
 /**
- * Top N ending-soon open listings for the currently-selected game in
- * `GameSelector`. Lives BELOW the selector so the visual cause/effect
- * is obvious — click a tile, the listings below swap.
- *
- * Filtering is client-side. Only `chess` has backend data today, so
- * non-chess selections always land in the empty state (per-game backend
- * filtering becomes relevant when other games' adapters land in M15).
- *
- * Animation: cards spring into place with a slight scale + 20px slide,
- * 70ms wave stagger left-to-right. Spring stiffness 220 / damping 22
- * gives a controlled bounce that settles in ~500ms without overshooting.
- * Empty state uses a gentler scale-up for visual parity. The container
- * crossfade keys on grid-vs-empty so swapping between filled games stays
- * smooth without unmounting the cards in-place.
- *
- * `useReducedMotion` collapses to a plain opacity fade with zero delay
- * when the user opts out of motion via OS settings.
+ * Top N ending-soon open listings for the game selected in `GameSelector`.
+ * Only `chess` has backend data today; other games land in the empty state.
  */
 export function FeaturedListings({
     listings,
@@ -94,18 +79,10 @@ export function FeaturedListings({
                                         reduceMotion
                                             ? { duration: 0.2 }
                                             : {
-                                                  // Spring tuned for "premium settle":
-                                                  // arrives with a small overshoot then
-                                                  // damps in ~500ms. Higher stiffness =
-                                                  // snappier; lower damping = more bounce.
                                                   type: 'spring',
                                                   stiffness: 220,
                                                   damping: 22,
                                                   mass: 0.9,
-                                                  // 70ms wave — at 4 cards that's a
-                                                  // 280ms total reveal arc, slow enough
-                                                  // to register each card distinctly,
-                                                  // fast enough to feel responsive.
                                                   delay: i * 0.07,
                                               }
                                     }

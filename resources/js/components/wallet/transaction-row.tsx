@@ -13,25 +13,14 @@ interface Props {
     transaction: WalletTransaction;
 }
 
-// Transactions where the match itself is the most relevant context for the
-// row — clicking through should land on /matches/{id}, not /listings/{id}.
-// Hold / Release stay on the listing because that's where the money was
-// locked (and the listing might have been cancelled/expired, with no match
-// ever created).
+// Payout/Fee link to the match; Hold/Release stay on the listing (the
+// listing may have been cancelled with no match ever created).
 const MATCH_LINKED_TYPES: ReadonlySet<WalletTransaction['type']> = new Set([
     'payout',
     'fee',
 ]);
 
-/**
- * One transaction line — works in both the /wallet recent activity slot and
- * the /wallet/history feed. Stacks vertically on mobile (chip + amount on
- * row 1, description + balance below) and lays out horizontally on md+.
- *
- * If the row references a match (Payout / Fee), the description anchor links
- * to the match detail page. Otherwise it links to the listing, when present.
- * The row itself is not a Link — navigation is opt-in via the reference.
- */
+/** One transaction line, used in both `/wallet` and `/wallet/history`. */
 export function TransactionRow({ transaction }: Props) {
     const isCredit = transaction.amount > 0;
     const description =
@@ -103,7 +92,6 @@ export function TransactionRow({ transaction }: Props) {
                 </div>
             </div>
 
-            {/* Mobile-only balance-after line, since the desktop column is hidden. */}
             <div className="-mt-1 font-mono text-xs text-muted-foreground md:hidden">
                 Balance: {formatUsdt(transaction.balance_after)}
             </div>
@@ -111,11 +99,6 @@ export function TransactionRow({ transaction }: Props) {
     );
 }
 
-/**
- * When the backend didn't attach a description (e.g. seeded data or future
- * paths that forget to pass one), fall back to a humanized label. Keeps the
- * UI from rendering an awkward dash.
- */
 function defaultDescription(type: WalletTransaction['type']): string {
     const labels: Record<WalletTransaction['type'], string> = {
         deposit: 'USDT deposit',

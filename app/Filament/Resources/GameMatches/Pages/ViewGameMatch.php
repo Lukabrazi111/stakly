@@ -15,18 +15,9 @@ use Filament\Resources\Pages\ViewRecord;
 use Throwable;
 
 /**
- * M12 Phase 2 — admin match resolution page. Three header actions wired to
- * `AdminSettleToWinnerAction` / `AdminSettleDrawAction`. Each:
- *   - Requires a `reason` textarea (audit trail completeness).
- *   - Confirms before executing (`requiresConfirmation()`).
- *   - Hidden on terminal statuses (Settled / Cancelled) to avoid the wrong
- *     button on a match that's already resolved. The underlying Settle
- *     actions are also status-guarded + idempotent — UI visibility is the
- *     first defense, the action's own check is the second.
- *
- * Errors from the action (race condition where a second admin already
- * settled, or unexpected status) surface as a Filament danger notification
- * rather than crashing the page.
+ * Admin match resolution. Settle buttons are hidden on terminal statuses,
+ * but the underlying actions are status-guarded + idempotent too — UI is
+ * the first defense, the action's own check is the second.
  */
 class ViewGameMatch extends ViewRecord
 {
@@ -42,14 +33,6 @@ class ViewGameMatch extends ViewRecord
         ];
     }
 
-    /**
-     * Opens the player-side match page in a new tab. Useful for verifying
-     * what the players actually see (status banner copy, evidence prompts,
-     * etc.) without losing your place in the admin review.
-     *
-     * Works on all statuses (including Settled / Cancelled) — admins can
-     * audit a resolved match's final visible state.
-     */
     private function openAsParticipantAction(): Action
     {
         return Action::make('open_as_participant')
@@ -167,11 +150,8 @@ class ViewGameMatch extends ViewRecord
     }
 
     /**
-     * Shared resolve-and-notify wrapper. Catches the InvalidArgumentException
-     * thrown by the underlying Settle actions on race-loss (e.g. another
-     * admin settled this match a moment ago) and shows it as a danger toast
-     * instead of crashing the page. After success, refreshes the record so
-     * the page reflects the new status without a full reload.
+     * Catches race-loss exceptions (another admin settled this match a moment
+     * ago) and surfaces them as a danger toast instead of crashing the page.
      */
     private function resolve(callable $callback, string $successTitle): void
     {

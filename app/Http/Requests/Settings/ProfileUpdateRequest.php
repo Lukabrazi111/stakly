@@ -11,12 +11,10 @@ class ProfileUpdateRequest extends FormRequest
     use ProfileValidationRules;
 
     /**
-     * Get the validation rules that apply to the request.
-     *
      * Bio + avatar are profile-update-only (not part of registration), so
-     * they live here rather than in the shared `ProfileValidationRules`
-     * trait. Avatar accepts JPG / PNG / WebP only — same MIME whitelist as
-     * the Spatie media collection on `User`, both layers enforce the set.
+     * they're here rather than in the shared `ProfileValidationRules`
+     * trait. Avatar MIME whitelist is also enforced by the Spatie media
+     * collection on `User`.
      *
      * @return array<string, ValidationRule|array<mixed>|string>
      */
@@ -30,9 +28,9 @@ class ProfileUpdateRequest extends FormRequest
     }
 
     /**
-     * Custom messages for the rules above. Shared with `CreateNewUser` via
-     * the `ProfileValidationRules` trait so registration and profile update
-     * present the same UX for the same constraint.
+     * Shared with `CreateNewUser` via the `ProfileValidationRules` trait so
+     * registration and profile update present the same UX for the same
+     * constraints.
      *
      * @return array<string, string>
      */

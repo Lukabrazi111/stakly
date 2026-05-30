@@ -9,13 +9,10 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 /**
- * M12 Phase 2 — append-only admin resolution audit row. Written from
- * `AdminSettleToWinnerAction` and `AdminSettleDrawAction` inside the same
- * DB transaction as the underlying Wallet payout / refund, so the audit
- * trail can never get out of sync with the money movement.
- *
- * No `updated_at` (column doesn't exist either); rows are immutable by
- * convention + the lack of an update path in code.
+ * Append-only admin resolution audit row. Written from
+ * `AdminSettleToWinnerAction` and `AdminSettleDrawAction` inside the same DB
+ * transaction as the underlying Wallet payout / refund so the audit trail
+ * can never desync from the money movement.
  */
 class MatchAdminResolution extends Model
 {

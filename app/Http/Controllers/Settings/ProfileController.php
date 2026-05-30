@@ -12,9 +12,6 @@ use Inertia\Response;
 
 class ProfileController extends Controller
 {
-    /**
-     * Show the user's profile settings page.
-     */
     public function edit(Request $request): Response
     {
         return Inertia::render('settings/profile', [
@@ -24,13 +21,8 @@ class ProfileController extends Controller
     }
 
     /**
-     * Update the user's profile information.
-     *
-     * Avatar arrives as a multipart file and is extracted from the
-     * validated array before `fill()` so the file instance never reaches
-     * mass-assignment. After the scalar fields save, the Spatie
-     * `profile-avatar` single-file collection on `User` swaps in the new
-     * upload (the previous file is deleted automatically).
+     * Avatar is extracted from the validated array before `fill()` so the
+     * file instance never reaches mass-assignment.
      */
     public function update(ProfileUpdateRequest $request): RedirectResponse
     {
@@ -57,11 +49,8 @@ class ProfileController extends Controller
     }
 
     /**
-     * Remove the user's avatar, reverting them to the gradient-initials
-     * fallback. Idempotent — clearing an empty collection is a no-op and
-     * still returns a clean toast so the UI feels consistent (the FE only
-     * surfaces the button when an avatar exists, but a duplicate click /
-     * stale view should never 500).
+     * Idempotent — clearing an empty collection is a no-op so a duplicate
+     * click / stale view never 500s.
      */
     public function destroyAvatar(Request $request): RedirectResponse
     {

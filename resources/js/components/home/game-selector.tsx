@@ -7,13 +7,8 @@ interface Props {
     onSelect: (slug: string) => void;
 }
 
-/**
- * Homepage game-tile row. Tiles are admin-managed via Filament (M24);
- * data comes from the backend via the `games` Inertia prop. Each tile
- * renders its uploaded poster artwork; tiles without a poster fall back
- * to a gradient + display_name placeholder so the row never breaks if
- * admin adds a game before its art lands.
- */
+/** Homepage game-tile row. Tiles fall back to a gradient placeholder when
+ *  `poster_path` is missing so the row never breaks. */
 export function GameSelector({ games, selectedSlug, onSelect }: Props) {
     return (
         <section className="relative">
@@ -33,12 +28,8 @@ export function GameSelector({ games, selectedSlug, onSelect }: Props) {
                 </div>
 
                 <div
-                    // Mobile: -mx-4 + px-6 lets the row bleed to the screen
-                    // edges so the partially-clipped next tile signals
-                    // "scroll right for more". Desktop: mx-0 + px-0 keeps
-                    // the row within the parent's px-4 column so the first
-                    // tile aligns horizontally with the section heading
-                    // and the FeaturedListings cards below.
+                    // Mobile: bleed to edges so the clipped next tile signals
+                    // "scroll right"; desktop: align with the parent column.
                     className="-mx-4 flex snap-x snap-mandatory [scrollbar-width:none] gap-4 overflow-x-auto px-6 py-5 pb-6 md:mx-0 md:px-0 [&::-webkit-scrollbar]:hidden"
                     role="listbox"
                     aria-label="Game selector"
@@ -46,9 +37,7 @@ export function GameSelector({ games, selectedSlug, onSelect }: Props) {
                     {games.map((game, index) => {
                         const isSelected = game.slug === selectedSlug;
                         const isComingSoon = game.status === 'coming_soon';
-                        // Lazy-load tiles past the first three — the leading
-                        // tiles are above the fold and eager-loading them
-                        // avoids a visible LCP regression.
+                        // First 3 are above the fold — eager-load to avoid LCP hit.
                         const loading = index < 3 ? 'eager' : 'lazy';
 
                         return (

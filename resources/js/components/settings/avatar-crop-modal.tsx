@@ -19,13 +19,11 @@ interface Props {
     onConfirm: (blob: Blob) => void;
 }
 
-// Minimum dimensions of the on-screen crop selection. Below this the cropped
-// 512×512 output starts looking pixelated when we upscale the source region.
+// Below this the cropped 512×512 output looks pixelated.
 const MIN_CROP_PX = 100;
 
-// Output canvas dimensions. Matches the server-side `main` Spatie conversion
-// (User::registerMediaConversions), so the server never has to upscale — only
-// re-encode + normalise.
+// Matches the server-side `main` Spatie conversion (User::registerMediaConversions)
+// so the server never has to upscale.
 const OUTPUT_SIZE = 512;
 
 export function AvatarCropModal({ file, open, onClose, onConfirm }: Props) {
@@ -37,8 +35,6 @@ export function AvatarCropModal({ file, open, onClose, onConfirm }: Props) {
     const [isProcessing, setIsProcessing] = useState(false);
     const imgRef = useRef<HTMLImageElement | null>(null);
 
-    // Read the picked file into a data URL so `<img>` can render it. Reset
-    // state when the file changes (re-pick) or clears (modal close).
     useEffect(() => {
         if (!file) {
             setImageSrc(null);
@@ -155,12 +151,6 @@ export function AvatarCropModal({ file, open, onClose, onConfirm }: Props) {
     );
 }
 
-/**
- * Render the cropped region of `image` onto a square `outputSize × outputSize`
- * canvas and return a JPEG blob at quality 0.92. The result lives inside the
- * server's 2 MB validation cap by a wide margin (~50–100 KB) which keeps the
- * upload network-light too.
- */
 async function cropToBlob(
     image: HTMLImageElement,
     crop: PixelCrop,

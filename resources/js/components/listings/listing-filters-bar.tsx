@@ -138,7 +138,6 @@ export function ListingFiltersBar({ filters, sorts }: Props) {
 
     return (
         <div className="space-y-3">
-            {/* Row 1: Sort + (desktop quick filters inline) + Filters button. */}
             <div className="flex items-center gap-3">
                 <Select
                     value={filters.sort}
@@ -156,7 +155,6 @@ export function ListingFiltersBar({ filters, sorts }: Props) {
                     </SelectContent>
                 </Select>
 
-                {/* Desktop only — stake + chips live in the bar. */}
                 {!isMobile && (
                     <>
                         <StakeAmountInput filters={filters} />
@@ -195,7 +193,6 @@ export function ListingFiltersBar({ filters, sorts }: Props) {
                 </div>
             </div>
 
-            {/* Row 2: full-width stake input on mobile only. */}
             {isMobile && <StakeAmountInput filters={filters} fullWidth />}
 
             {count > 0 && (
@@ -261,15 +258,8 @@ interface StakeAmountInputProps {
     fullWidth?: boolean;
 }
 
-/**
- * Bar quick-action: "Up to $X | USDT ▾" — Bybit-style compound input.
- * Single bordered container holding the amount input + a vertical divider
- * + a currency dropdown. v1 = USDT-only enabled; others show "Soon" badges.
- *
- * Sets `stake_max` via debounced router.get so we don't fire on every
- * keystroke. Local state echoes input while typing; commits after the
- * user pauses.
- */
+/** "Up to $X | USDT" compound input. Debounces `stake_max` updates so we
+ *  don't fire a router.get on every keystroke. */
 function StakeAmountInput({ filters, fullWidth }: StakeAmountInputProps) {
     const [value, setValue] = useState<string>(
         filters.stake_max !== null ? String(filters.stake_max) : '',

@@ -9,24 +9,10 @@ interface MatchTimerProps {
 const MS_30_MIN = 30 * 60 * 1000;
 const MS_1_HOUR = 60 * 60 * 1000;
 
-/**
- * Compact countdown chip for the 4-hour API-resolution deadline. Sits next
- * to the status badge in the match page header — small enough to live
- * inline, but ticks every second and shifts color as the deadline
- * approaches so it reads as live, not decorative.
- *
- * Tiers (matched to the page header badge style):
- *   > 1h     — pink (primary, brand neutral) — distinct from the amber
- *              "Pending" badge sitting next to it
- *   30m–1h   — amber (warning)
- *   < 30m    — red (destructive) + pulse
- *   expired  — muted gray, "Expired" label (`ResolveMatchTimeoutAction`
- *              flips the match to ManualReview in the next cron sweep)
- */
+/** Countdown chip for the 4-hour API-resolution deadline. Tiers shift
+ *  color (>1h pink, 30m–1h amber, <30m red+pulse, expired gray). */
 export function MatchTimer({ deadline }: MatchTimerProps) {
-    // null until the client mounts — SSR can't know the wall clock, and
-    // initializing to `Date.now()` would render a different value on the
-    // server vs the first client paint, causing a hydration mismatch.
+    // null until mount — initializing to Date.now() would cause a hydration mismatch.
     const [now, setNow] = useState<number | null>(null);
 
     useEffect(() => {

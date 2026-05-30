@@ -7,12 +7,8 @@ import type { ListingPlatform, MatchSnapshots } from '@/types';
 interface WaitingForGameCardProps {
     platform: ListingPlatform;
     snapshots: MatchSnapshots;
-    /**
-     * Truthy when an auto-fetched game card has landed in chat. The action
-     * card swaps to a "found — settling now" state; the parent's poll
-     * tick catches the status flip to Settled within a few seconds and
-     * unmounts this card in favor of `SettlementSummary`.
-     */
+    /** Truthy when an auto-fetched game card has landed in chat; swaps card
+     *  to "found — settling now" until status flips to Settled. */
     hasAutoFetchedCard: boolean;
 }
 
@@ -26,28 +22,8 @@ const PLATFORM_PROFILE_URL: Record<ListingPlatform, (u: string) => string> = {
     chess_com: (u) => `https://www.chess.com/member/${encodeURIComponent(u)}`,
 };
 
-/**
- * Pending-state action card (M16). Replaced the M6 confirm buttons —
- * matches now settle from the game-API card, no player vote required.
- *
- * Two visual states:
- *   - **Looking** — pulsing spinner, the player-pair we're polling for,
- *     a soft "last checked Ns ago" stamp. Default while a card hasn't
- *     landed.
- *   - **Found** — success-toned, "Game found — settling now…". Brief
- *     hand-off state between card-landed and status-flips-to-Settled
- *     (typically <2s before the next poll catches the flip and unmounts
- *     the whole card in favor of `SettlementSummary`).
- *
- * If a snapshot username is missing on either side, the player-pair row
- * is omitted (no broken "Looking for X vs (missing)" copy). Take + create
- * gates enforce both-sides-linked upstream, so this is a defensive UX
- * rather than a normal path.
- *
- * Animation respects `prefers-reduced-motion` — the pulse spinner
- * collapses to a static icon, the success state cross-fade collapses to
- * an instant swap.
- */
+/** Pending-state action card. Two states: Looking (default), Found (brief
+ *  hand-off before status flips to Settled). */
 export function WaitingForGameCard({
     platform,
     snapshots,
@@ -197,21 +173,10 @@ function FoundState({ platform }: { platform: ListingPlatform }) {
     );
 }
 
-/**
- * Returns the seconds elapsed since the most recent successful Inertia
- * visit (or since mount if no visit has completed yet). Re-renders once
- * per second while mounted; resets to 0 every time Inertia's router
- * fires `success` — that fires on every successful partial reload from
- * the match page's 8s polling loop.
- *
- * Subscribing to `router.on('success', ...)` directly removes the need
- * for the parent to maintain a poll-tick counter and pass it down. The
- * timer owns its own reset signal, decoupled from prop-change detection.
- */
+/** Seconds since the most recent successful Inertia visit. Resets on every
+ *  `router.on('success', ...)` so it owns its own reset signal. */
 function useSecondsSinceLastVisit(): number {
-    // null until the client mounts. Initializing to `Date.now()` would
-    // render different values on the server vs first client paint, causing
-    // a hydration mismatch on the "seconds ago" copy this hook feeds.
+    // null until mount — initializing to Date.now() would cause a hydration mismatch.
     const [resetAt, setResetAt] = useState<number | null>(null);
     const [now, setNow] = useState<number | null>(null);
 

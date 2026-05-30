@@ -4,14 +4,8 @@ import type { ListingPlatform } from '@/types';
 interface Props {
     rate: number | null;
     settled: number;
-    /**
-     * M22 Phase 1 (badge tier) — providers the creator is verified on.
-     * The green `BadgeCheck` icon appears in the meta line ONLY when this
-     * list has 2+ entries (cross-platform earned credential). For chess
-     * today that means chess.com + Lichess; future M15 providers (FACEIT,
-     * Riot, Steam) extend the rule naturally — any 2+ verified providers
-     * earns the badge.
-     */
+    /** Providers the creator is verified on. The green BadgeCheck icon
+     *  appears ONLY when this list has 2+ entries (cross-platform credential). */
     verifiedProviders: ListingPlatform[];
 }
 
@@ -20,18 +14,7 @@ const PROVIDER_LABEL: Record<ListingPlatform, string> = {
     lichess: 'Lichess',
 };
 
-/**
- * Seller trust signal as inline meta under the creator name (M22 Phase 1).
- * Mirrors Bybit's "503 Order(s) | 91% | 6m" pattern — small gray text below
- * the seller name showing 30-day completion rate + lifetime settled count.
- *
- * The leading green `BadgeCheck` icon is an *earned* signal: it appears
- * only when the creator has verified accounts on 2+ providers (cross-
- * platform credential). Single-platform sellers see the meta line without
- * the icon — the trust info is still there, just no extra badge.
- *
- * Hides entirely when `settled === 0` (no track record).
- */
+/** Inline seller trust meta under the creator name. Hides when settled === 0. */
 export function SellerTrustMeta({ rate, settled, verifiedProviders }: Props) {
     if (settled === 0) {
         return null;

@@ -10,11 +10,8 @@ use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 
 /**
- * M12 Phase 2 — dispute queue table. Default filter pre-selects Disputed +
- * ManualReview (the actual queue); admin can switch the SelectFilter to
- * see other statuses for context lookups (e.g. "what did this Settled
- * match look like?"). Sorted by `created_at` desc so the freshest disputes
- * float to the top.
+ * Dispute queue table. Default filter pre-selects Disputed + ManualReview
+ * (the actual queue); admin can widen the filter for context lookups.
  */
 class GameMatchesTable
 {

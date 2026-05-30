@@ -3,11 +3,9 @@
 namespace App\Enums;
 
 /**
- * The three resolution actions an admin can take on a Disputed or
- * ManualReview match from the Filament admin panel (M12 Phase 2).
- *
- * Persisted as the `action` string column on `match_admin_resolutions`.
- * Read-only audit trail — no migration ever updates these rows in place.
+ * Resolution actions an admin can take on a Disputed or ManualReview match.
+ * Persisted on `match_admin_resolutions.action`. Read-only audit trail —
+ * rows are never updated in place.
  */
 enum MatchAdminResolutionAction: string
 {

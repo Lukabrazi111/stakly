@@ -9,24 +9,15 @@ use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 
 /**
- * Single endpoint for the global Active Mode toggle on `/listings/mine`.
- * See milestones.md M6 Phase 6.5 — the user's mental model is "I'm
- * online/offline as a player." Inactive hides every Open listing of theirs
- * from the marketplace + public profile views (via
- * `Listing::scopeOnPublicMarketplace`). Active reverses it.
- *
- * As of Phase 6.5, this toggle is the *only* visibility control — per-listing
- * pause/resume was removed in favor of one global switch. Listings stay in
- * `Open` status the whole time; the user's `is_active_mode` flag is what
- * gates their appearance on public surfaces.
+ * Global Active Mode toggle — the *only* visibility control for a user's
+ * Open listings. Inactive hides every Open listing of theirs from the
+ * marketplace + public profile views (via `Listing::scopeOnPublicMarketplace`).
+ * Listings stay in `Open` status; `is_active_mode` is what gates appearance.
  */
 class ActiveModeController extends Controller
 {
     /**
-     * Update the auth user's `is_active_mode`. Body: `{ active: bool }`.
-     *
-     * Idempotent — submitting the current state is a silent no-op (no
-     * flash, no DB write).
+     * Idempotent — submitting the current state is a silent no-op.
      */
     public function update(Request $request): RedirectResponse
     {

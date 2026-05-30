@@ -72,14 +72,8 @@ function filtersToDraft(filters: ListingFiltersType): DraftFilters {
     };
 }
 
-/**
- * Filter trigger + responsive content panel. Popover on desktop (Bybit-style,
- * anchored near the trigger), Sheet on mobile (slides up from the side —
- * popovers don't have room on small screens).
- *
- * The same `FilterForm` body is reused in both wrappers. Form remounts on
- * open to re-seed the draft state from the latest server-applied filters.
- */
+/** Filter trigger + responsive content panel: Popover on desktop, Sheet on
+ *  mobile. Form remounts on open to re-seed draft state from server filters. */
 export function ListingFilters({ filters, activeCount }: Props) {
     const isMobile = useIsMobile();
     const [open, setOpen] = useState(false);
@@ -88,11 +82,8 @@ export function ListingFilters({ filters, activeCount }: Props) {
         <Button
             variant="ghost"
             size="pill"
-            // Bordered-ghost pattern: pink wash + border highlight on hover.
-            // Overrides the ghost variant's white text-shadow glow which
-            // looks busy layered on top of a background + border.
-            // `data-[state=open]` keeps the highlight on while the popover
-            // is open so users see which trigger owns it.
+            // Bordered-ghost: ghost variant's white text-shadow glow looks busy
+            // over a background + border, so override it here.
             className="border border-border/60 hover:border-primary/40 hover:bg-primary/10 hover:[text-shadow:none] data-[state=open]:border-primary/40 data-[state=open]:bg-primary/10"
         >
             <SlidersHorizontal className="size-4" />

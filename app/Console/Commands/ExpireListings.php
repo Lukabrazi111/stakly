@@ -9,12 +9,8 @@ use Illuminate\Console\Command;
 use Throwable;
 
 /**
- * Refunds escrow + flips status on listings whose `expires_at` has passed
- * but whose `status` is still Open. Runs every minute via the scheduler.
- *
- * The per-listing refund logic lives in `ExpireListingAction`. This
- * command owns the iteration loop, summary statistics, and per-listing
- * failure isolation.
+ * Refunds escrow + flips status on listings past `expires_at` that are still Open.
+ * Per-listing refund logic lives in `ExpireListingAction`.
  */
 class ExpireListings extends Command
 {

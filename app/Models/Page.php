@@ -9,18 +9,13 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Str;
 
 /**
- * Admin-managed CMS page (M26 Phase 1). Owns the body of static surfaces
- * like About, Privacy, Terms — content that changes on its own cadence
- * and shouldn't require a code push to update.
+ * Admin-managed CMS page. Body is markdown; rendered via League/CommonMark
+ * which escapes raw HTML by default, so admin-pasted `<script>` can't XSS
+ * the public page.
  *
- * Body is markdown; consumers render via `renderedHtml()`, which delegates
- * to `Str::markdown()` (League/CommonMark). CommonMark escapes raw HTML by
- * default, so admin-pasted `<script>` tags can't XSS the public page.
- *
- * Caching: public reads go through `Page::cacheKey()` + `Cache::remember()`
- * in the controller. The model events below bust every supported locale's
- * cache slot for the affected slug on save/delete — so a Spanish miss
- * cached via the English fallback also clears when the English row updates.
+ * Save/delete bust every supported locale's cache slot for the affected slug,
+ * so a non-default-locale miss cached via the default fallback also clears
+ * when the default row updates.
  */
 class Page extends Model
 {
@@ -30,9 +25,9 @@ class Page extends Model
     public const DEFAULT_LOCALE = 'en';
 
     /**
-     * Locales we render publicly today. New entries here automatically extend
-     * the cache-bust loop in `booted()` — keep this list and the route's
-     * `whereIn('locale', ...)` constraint in sync.
+     * Locales we render publicly. New entries extend the cache-bust loop in
+     * `booted()` — keep this list and the route's `whereIn('locale', ...)`
+     * constraint in sync.
      *
      * @var list<string>
      */
@@ -71,9 +66,8 @@ class Page extends Model
     }
 
     /**
-     * Resolve a page by (slug, locale), falling back to the default locale
-     * when the requested one doesn't have a row yet. Returns `null` if even
-     * the fallback is missing — the controller turns that into a 404.
+     * Falls back to the default locale when the requested one is missing.
+     * Returns null if even the fallback is missing — controller renders 404.
      */
     public static function forSlugWithFallback(string $slug, string $locale): ?self
     {
@@ -97,9 +91,8 @@ class Page extends Model
     }
 
     /**
-     * Published = `published_at` is set and not in the future. Draft (null)
-     * and scheduled (future timestamp) both 404 publicly; admins reach them
-     * via the signed preview URL.
+     * Draft (null) and scheduled (future) both 404 publicly; admins reach
+     * them via the signed preview URL.
      */
     public function isPublished(): bool
     {

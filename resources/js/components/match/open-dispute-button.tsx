@@ -16,16 +16,7 @@ interface OpenDisputeButtonProps {
     matchId: number;
 }
 
-/**
- * Report-a-problem escape hatch — flags the match for admin review.
- * Rendered subordinate (small inline link, not a primary action) since
- * the cooperative path is the intended default.
- *
- * Visible throughout `Pending`. M12 Phase 3 — the button used to escalate
- * to game-API auto-resolution; it now flips the match to `Disputed` and
- * surfaces it in the M12 admin queue. Money stays escrowed until admin
- * decides, so spurious reports cost only review time, not funds.
- */
+/** Report-a-problem escape hatch — flips the match to Disputed for admin review. */
 export function OpenDisputeButton({ matchId }: OpenDisputeButtonProps) {
     const [open, setOpen] = useState(false);
     const [processing, setProcessing] = useState(false);

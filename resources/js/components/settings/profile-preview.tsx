@@ -8,33 +8,18 @@ interface Props {
     name: string;
     username: string;
     bio: string;
-    /**
-     * The avatar URL to display. Pass the staged-blob preview URL when the
-     * user has picked a new avatar but hasn't saved yet, otherwise the
-     * persisted `user.avatar_url`. Undefined falls back to gradient initials.
-     */
+    /** Staged-blob preview URL when picking a new avatar, otherwise the
+     *  persisted URL. Undefined falls back to gradient initials. */
     avatarSrc: string | undefined;
-    /** ISO datetime — formatted to "Joined {Mon YYYY}" in the chip strip. */
     joinedAt: string;
     linkedAccounts: ReadonlyArray<{
         provider: 'chess_com' | 'lichess';
         username: string;
     }>;
-    /** Absolute or relative URL of the user's own public profile page. */
     profileUrl: string;
 }
 
-/**
- * Live preview of the user's public profile, shown above the settings/profile
- * form so the user can see how name + avatar + bio changes will land on their
- * actual `/users/{username}` page as they type. Mirrors the layout of
- * `ProfileHeader` (the real profile hero) but lighter — no Edit button,
- * no trust-data hookup, just identity.
- *
- * Updates live: `name`, `bio`, and `avatarSrc` come from the form's draft
- * state on every keystroke / file pick. `username`, `joinedAt`, and
- * `linkedAccounts` are read-only context (none of them are editable here).
- */
+/** Live preview of the public profile shown above the settings form. */
 export function ProfilePreview({
     name,
     username,

@@ -12,12 +12,6 @@ interface Props {
 
 const ELLIPSIS = '…';
 
-/**
- * Pagination strategy mirrors the listings index (smart ellipsis showing
- * page 1, current ± 1, and last). Could be lifted into a shared component
- * once a third caller (likely wallet history) needs the same shape — until
- * then duplicating the ~80 lines keeps each domain self-contained.
- */
 function visiblePages(
     current: number,
     last: number,

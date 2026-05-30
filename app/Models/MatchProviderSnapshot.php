@@ -10,11 +10,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 /**
  * One row per (match, side, provider) — see the migration for the full
- * rationale. Read via `$match->providerSnapshots` (eager-loadable
- * `HasMany`) or `$match->snapshotUsername($side, $provider)`.
- *
- * Append-only — no public mutation path. Inserted in `TakeListingAction`
- * inside the match-creation transaction.
+ * rationale. Append-only; inserted in `TakeListingAction` inside the
+ * match-creation transaction.
  */
 class MatchProviderSnapshot extends Model
 {

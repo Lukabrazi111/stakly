@@ -5,16 +5,8 @@ interface CancellationSummaryProps {
     match: Match;
 }
 
-/**
- * Terminal banner shown on the match page when `status === 'cancelled'`.
- * Sibling to `SettlementSummary` but visually muted — no winner, no
- * payout math to display, no gradient accent. Reads more like an
- * informational closeout than a celebration.
- *
- * Per the M10 Decisions block: cancellation does NOT count toward
- * player record (distinct from a played draw). The sub-line below the
- * subtitle makes that explicit so players understand the distinction.
- */
+/** Terminal banner when `status === 'cancelled'`. Sibling to
+ *  `SettlementSummary` but muted — no winner, no payout math. */
 export function CancellationSummary({ match }: CancellationSummaryProps) {
     const { cancellation, creator, taker, listing } = match;
 

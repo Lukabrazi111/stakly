@@ -11,28 +11,11 @@ use App\Models\User;
 use Illuminate\Support\Facades\DB;
 
 /**
- * Player-triggered escalation during the Pending window. Either participant
- * can open a dispute; the match flips to `Disputed` and lands in the
- * admin review queue (M12 Phase 2).
+ * Player-triggered escalation during the Pending window. Match flips to `Disputed`
+ * and lands in the admin review queue. Resolution is admin-driven (auto-arbitration
+ * via `ResolveDisputeAction` is kept for tests + future use).
  *
- * M12 Phase 3 — dispute resolution is now admin-driven by default. The
- * pre-Phase-3 behavior auto-resolved via `ResolveDisputeAction` (which
- * called the configured `GameApi` driver — `MockGameApi` in tests, no
- * production driver yet); after Phase 3, OpenDisputeAction stops invoking
- * that path. `ResolveDisputeAction` + `MockGameApi` remain in the codebase
- * for the test suite and for any future automated arbitration (M14).
- *
- * Returns `true` if the dispute was opened, `false` if the match was
- * already past Pending by the time our row lock acquired (race with
- * cancellation, settlement, or another dispute).
- *
- * Race-safety:
- *   - Two players opening dispute simultaneously → second caller's row
- *     lock waits, sees status=Disputed, returns false.
- *   - Race with the timeout job → same `lockForUpdate` + status guard;
- *     whichever runs second is a no-op.
- *   - Race with mutual cancellation acceptance → status becomes Cancelled
- *     before our lock; we return false.
+ * Returns true if opened, false on race (lock acquired after status moved off Pending).
  */
 class OpenDisputeAction
 {
@@ -63,10 +46,8 @@ class OpenDisputeAction
             return true;
         });
 
-        // Notification dispatched AFTER commit. Inside the transaction it
-        // would fire even if a downstream caller rolls back, and the bell
-        // would point to a match that "didn't happen." After-commit is
-        // also where broadcast events should fire for cache/timing reasons.
+        // After-commit: inside the transaction the notification would fire even on rollback,
+        // pointing the bell at a match that "didn't happen."
         if ($opened) {
             $this->notifyAdminsOfDispute($match->fresh());
         }

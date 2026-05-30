@@ -12,10 +12,8 @@ use Filament\Schemas\Schema;
 use Illuminate\Validation\Rules\Unique;
 
 /**
- * Create/edit form for admin-managed CMS pages (M26). Body is markdown
- * (CommonMark, raw HTML stripped); slug + locale together are the public
- * URL key, so the unique check is composite — same slug allowed across
- * locales for future translations.
+ * Slug + locale together are the public URL key, so the unique check is
+ * composite — same slug allowed across locales for future translations.
  */
 class PageForm
 {

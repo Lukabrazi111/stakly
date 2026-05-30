@@ -70,9 +70,6 @@ function TwoFactorSetupStep({
                 <AlertError errors={errors} />
             ) : (
                 <>
-                    {/* Authenticator app hint — helps users who haven't done
-                        2FA before. Lives above the QR so it sets expectations
-                        before the user reaches for their phone. */}
                     <p className="inline-flex items-start gap-2 self-stretch text-xs text-muted-foreground">
                         <Smartphone
                             className="mt-0.5 size-3.5 shrink-0"
@@ -84,10 +81,8 @@ function TwoFactorSetupStep({
                         </span>
                     </p>
 
-                    {/* QR on a forced-light background — dark squares on
-                        white is the standard convention; many authenticator
-                        apps fail on inverted (white-on-dark) QRs. Mirrors
-                        the wallet/deposit QR treatment. */}
+                    {/* Forced-light QR background — many authenticator apps
+                        fail on inverted (white-on-dark) QRs. */}
                     <div className="mx-auto flex max-w-md overflow-hidden">
                         <div className="mx-auto aspect-square w-64 rounded-lg border border-border bg-white p-3">
                             <div className="z-10 flex h-full w-full items-center justify-center">

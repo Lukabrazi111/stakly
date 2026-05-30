@@ -25,13 +25,9 @@ use Filament\Tables\Table;
 use Illuminate\Support\Facades\Cache;
 
 /**
- * Admin catalog for the homepage `GameSelector` tiles (M24). Manages display
- * name, slug, poster artwork, tile order, and status (Active / ComingSoon /
- * Disabled).
- *
- * Server rule: `status = Active` only allowed when slug matches an
- * `App\Enums\Game` enum case — guards admin from advertising a "live" game
- * before the backend integration (M15 per-game adapter work) actually exists.
+ * Admin catalog for the homepage GameSelector tiles. Server rule: Active is
+ * only allowed when slug matches an `App\Enums\Game` enum case — guards
+ * admin from advertising a "live" game before backend integration exists.
  */
 class GameResource extends Resource
 {
@@ -102,10 +98,8 @@ class GameResource extends Resource
         return $table
             ->defaultSort('position')
             ->reorderable('position')
-            // Filament's `reorderTable` issues a single raw SQL `update` with
-            // a CASE expression (vendor/filament/tables/src/Concerns/CanReorderRecords.php)
-            // — it bypasses Eloquent model events, so `Game::saved` doesn't
-            // fire, so the homepage cache doesn't bust. Hook in explicitly.
+            // Filament's reorderTable bypasses Eloquent events (raw SQL
+            // CASE update), so `Game::saved` doesn't fire — bust manually.
             ->afterReordering(fn () => Cache::forget(Game::HOMEPAGE_CACHE_KEY))
             ->columns([
                 ImageColumn::make('poster_path')

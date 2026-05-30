@@ -15,9 +15,8 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * A 1v1 match between the listing's creator and a taker. Match metadata only —
  * money flows through `App\Services\Wallet` against the related listing.
  *
- * Class is named `GameMatch` (not `Match`) because `match` is a PHP reserved
- * keyword post-8.0. All references to the model — controllers, policies,
- * relations — follow the `GameMatch*` / `gameMatch()` naming convention.
+ * Named `GameMatch` because `match` is a PHP reserved keyword post-8.0; all
+ * references follow the `GameMatch*` / `gameMatch()` convention.
  */
 class GameMatch extends Model
 {
@@ -25,11 +24,9 @@ class GameMatch extends Model
     use HasFactory;
 
     /**
-     * Two valid `side` values on `match_provider_snapshots`. Kept as string
-     * constants (not a PHP enum) because there's no business logic on the
-     * value beyond "creator vs taker" and we don't want to import an enum
-     * just to read a single snapshot row. Promote to an enum if a future
-     * team-match shape introduces additional roles.
+     * `side` values on `match_provider_snapshots`. String constants (not an
+     * enum) because no business logic hangs off the value. Promote to enum if
+     * a future team-match shape introduces additional roles.
      */
     public const SIDE_CREATOR = 'creator';
 
@@ -86,21 +83,15 @@ class GameMatch extends Model
         return $this->belongsTo(User::class, 'dispute_opened_by');
     }
 
-    /**
-     * Chat history (M8 Phase 2). Append-only — ordered by id (= insert order
-     * thanks to bigserial). Composite `(match_id, id)` index on `messages`
-     * keeps the per-match lookup cheap.
-     */
     public function messages(): HasMany
     {
         return $this->hasMany(Message::class, 'match_id');
     }
 
     /**
-     * Snapshot of each player's verified external accounts at match
-     * creation time (M8 Phase 4). Populated by `TakeListingAction`. Read by
-     * the smart-link enrichment jobs + auto-fetch jobs + `SettleFromCardAction`
-     * (M16) for winner-to-user mapping. See `App\Models\MatchProviderSnapshot`.
+     * Snapshot of each player's verified external accounts at match creation.
+     * Populated by `TakeListingAction`; read by the smart-link enrichment jobs,
+     * auto-fetch jobs, and `SettleFromCardAction` for winner-to-user mapping.
      */
     public function providerSnapshots(): HasMany
     {
@@ -108,9 +99,8 @@ class GameMatch extends Model
     }
 
     /**
-     * Admin resolution audit rows (M12 Phase 2). Append-only; one row per
-     * admin click on Settle to Creator / Settle to Taker / Settle as Draw.
-     * Ordered oldest → newest so the chronology renders top-down.
+     * Append-only admin resolution audit. Ordered oldest → newest so the
+     * chronology renders top-down.
      */
     public function adminResolutions(): HasMany
     {
@@ -118,10 +108,8 @@ class GameMatch extends Model
     }
 
     /**
-     * Auto-fetch attempt audit rows (M14 Phase 1). Append-only; one row
-     * per call into the pipeline (skip rows from `DispatchAutoFetchAction`
-     * + outcome rows from the per-platform `AutoFetch*GameJob`s). Ordered
-     * oldest → newest so the Filament timeline reads chronologically.
+     * Append-only auto-fetch attempt audit. Ordered oldest → newest so the
+     * Filament timeline reads chronologically.
      */
     public function autoFetchAttempts(): HasMany
     {
@@ -129,15 +117,10 @@ class GameMatch extends Model
     }
 
     /**
-     * Lookup helper for the smart-link jobs: "what username did the
-     * {side} player verify for {provider} at match creation?" Returns
-     * null when no snapshot exists for that slot — caller treats that as
-     * "this side isn't linked for this provider."
-     *
-     * Reads from the loaded `providerSnapshots` collection if it's
-     * already eager-loaded; otherwise triggers a lazy load (one query).
-     * Job handlers call `loadMissing('providerSnapshots')` at entry to
-     * keep call-site code clean.
+     * "What username did the {side} player verify for {provider} at match
+     * creation?" Returns null when no snapshot exists (this side isn't linked
+     * for this provider). Job handlers `loadMissing('providerSnapshots')` at
+     * entry; falls back to lazy load otherwise.
      */
     public function snapshotUsername(string $side, LinkedAccountProvider $provider): ?string
     {
@@ -150,9 +133,7 @@ class GameMatch extends Model
     }
 
     /**
-     * Matches where $userId is either the creator (via listing.user_id) or
-     * the taker. Used by the /matches index page so a player sees both sides
-     * of their participation in one list.
+     * Matches where $userId is creator (via listing.user_id) OR taker.
      */
     public function scopeForParticipant(Builder $query, int $userId): Builder
     {

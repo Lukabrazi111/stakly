@@ -15,11 +15,8 @@ interface TypeMeta {
     classes: string;
 }
 
-// Semantic colors per transaction type. Confirmed in M7 design pass:
-//   - Credits that complete (Deposit / Payout / EscrowRelease) → success green
-//   - Escrow Hold → warning amber (paused, not gone — important for at-a-glance)
-//   - Withdrawal → destructive red (money leaving)
-//   - Fee → muted (informational, not actionable)
+// Semantic colors: completed credits → success, escrow hold → warning,
+// withdrawal → destructive, fee → muted.
 const TYPE_META: Record<WalletTransactionType, TypeMeta> = {
     deposit: {
         label: 'Deposit',

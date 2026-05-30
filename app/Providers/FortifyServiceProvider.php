@@ -26,9 +26,6 @@ use Laravel\Fortify\Fortify;
 
 class FortifyServiceProvider extends ServiceProvider
 {
-    /**
-     * Register any application services.
-     */
     public function register(): void
     {
         $this->app->singleton(RegisterResponseContract::class, RegisterResponse::class);
@@ -38,9 +35,6 @@ class FortifyServiceProvider extends ServiceProvider
         $this->app->singleton(PasswordResetResponseContract::class, PasswordResetResponse::class);
     }
 
-    /**
-     * Bootstrap any application services.
-     */
     public function boot(): void
     {
         $this->configureActions();
@@ -48,9 +42,6 @@ class FortifyServiceProvider extends ServiceProvider
         $this->configureRateLimiting();
     }
 
-    /**
-     * Configure Fortify actions.
-     */
     private function configureActions(): void
     {
         Fortify::resetUserPasswordsUsing(ResetUserPassword::class);
@@ -58,14 +49,12 @@ class FortifyServiceProvider extends ServiceProvider
     }
 
     /**
-     * Configure Fortify views.
-     *
-     * Entry-point views (login, register, forgot-password) redirect to the home page
-     * with an ?auth= query so the AuthModal opens there. Email verification doesn't
-     * use a page either — unverified users see the chip in the header, and the
-     * resend action POSTs to Fortify's verification.send route directly. Destinations
-     * users land on from email links or post-auth redirects (reset, 2fa, confirm)
-     * stay as pages.
+     * Entry-point views (login, register, forgot-password) redirect to `/`
+     * with `?auth=` so the AuthModal opens there. Email verification has no
+     * page either — unverified users see the chip in the header, and resend
+     * POSTs to Fortify's verification.send directly. Destinations users land
+     * on from email links / post-auth redirects (reset, 2fa, confirm) stay
+     * as pages.
      */
     private function configureViews(): void
     {
@@ -103,9 +92,6 @@ class FortifyServiceProvider extends ServiceProvider
         Fortify::confirmPasswordView(fn () => Inertia::render('auth/confirm-password'));
     }
 
-    /**
-     * Configure rate limiting.
-     */
     private function configureRateLimiting(): void
     {
         RateLimiter::for('two-factor', function (Request $request) {

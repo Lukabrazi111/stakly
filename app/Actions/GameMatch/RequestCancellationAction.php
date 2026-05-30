@@ -9,27 +9,10 @@ use App\Models\User;
 use Illuminate\Support\Facades\DB;
 
 /**
- * Step 1 of the M10 mutual cancellation flow: one participant proposes to
- * call the match off. Writes the pending columns (`cancellation_requested_by`,
- * `cancellation_requested_at`, `cancellation_reason`) and posts a system
- * message inviting the opponent to accept or reject. No money moves at this
- * stage — funds keep waiting in escrow until the opponent acts.
+ * Step 1 of the mutual cancellation flow: one participant proposes to call the match off.
+ * No money moves here — funds wait in escrow until the opponent accepts or rejects.
  *
- * Returns:
- *   - `'requested'`  — request recorded, system message posted.
- *   - `'race_lost'`  — match was no longer Pending (or an open request appeared)
- *                      by the time our row lock acquired. Controller maps this
- *                      to an info toast.
- *
- * Race-safety:
- *   - Two participants requesting simultaneously → second caller's lock waits,
- *     sees `cancellation_requested_at` set, returns `'race_lost'`.
- *   - Race with opponent's confirm landing first → status flips off Pending
- *     before our lock, returns `'race_lost'`.
- *   - Re-request after our own previous request was rejected → policy
- *     enforces the 30-min cooldown upstream; this Action additionally clears
- *     the stale `cancellation_rejected_at` marker since a fresh open request
- *     supersedes the cooldown record.
+ * Returns `'requested'` or `'race_lost'` (match no longer Pending or open request exists).
  */
 class RequestCancellationAction
 {
@@ -64,16 +47,10 @@ class RequestCancellationAction
     }
 
     /**
-     * Note on the reason field: it's persisted on the match but
-     * deliberately NOT included in the system message body. The reason
-     * surfaces in the structured inline banner on the match page where
-     * the opponent reads it — never as free text inside chat. This
-     * sidesteps the abuse vector where a malicious user could sneak
-     * URLs / payment handles / harassment through cancellation reasons
-     * (system messages bypass the M13 chat anti-abuse layer). The banner
-     * renders the reason inside a controlled UI block and we keep the
-     * sanitization options open (truncate, escape, regex-flag) without
-     * having to retroactively scrub chat history.
+     * The reason is persisted on the match but deliberately NOT included in the system message —
+     * it surfaces in the structured inline banner on the match page. Keeping it out of chat
+     * sidesteps the abuse vector where a user could sneak URLs / payment handles / harassment
+     * through cancellation reasons (system messages bypass the chat anti-abuse layer).
      */
     private function recordRequest(GameMatch $match, User $requester, ?string $reason): void
     {
@@ -81,9 +58,7 @@ class RequestCancellationAction
             'cancellation_requested_by' => $requester->id,
             'cancellation_requested_at' => now(),
             'cancellation_reason' => $reason,
-            // Clear the stale rejection marker — a fresh open request
-            // supersedes any prior cooldown record (policy already verified
-            // the requester is past their per-user cooldown window).
+            // Clear any stale rejection marker — fresh open request supersedes the cooldown record.
             'cancellation_rejected_at' => null,
         ]);
     }

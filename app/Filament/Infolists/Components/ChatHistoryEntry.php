@@ -9,17 +9,9 @@ use Filament\Infolists\Components\Entry;
 use Illuminate\Support\Collection;
 
 /**
- * M12 Phase 2 — read-only chat-history renderer for the admin dispute
- * panel. Loads every message on the match (text, system, image
- * attachments, link cards, auto-fetched provider cards) and hands the
- * collection to the Blade view, which is responsible for the actual
- * markup. The Blade view is intentionally simple (Tailwind utility
- * classes, no React) — admin doesn't need the live websocket UX, just
- * the immutable record of what happened.
- *
- * Eager loads:
- *   - `user` so we can show "Alice said:" without an extra query per row
- *   - `media` so attachment URLs resolve cheaply
+ * Read-only chat-history renderer for the admin dispute panel. The Blade
+ * view is deliberately plain (no React) — admin doesn't need the live
+ * websocket UX, just the immutable record of what happened.
  */
 class ChatHistoryEntry extends Entry
 {
@@ -53,14 +45,6 @@ class ChatHistoryEntry extends Entry
         return $record instanceof GameMatch ? $record->taker_user_id : null;
     }
 
-    /**
-     * Classifies a message by role for visual treatment in the Blade view:
-     *   - 'system' → system messages (lifecycle narration, dispute prompts)
-     *   - 'creator' → message authored by the listing creator
-     *   - 'taker' → message authored by the taker
-     *   - 'other' → fallback (shouldn't happen — match policy enforces
-     *               only participants can post)
-     */
     public function roleOf(Message $message): string
     {
         if ($message->type === MessageType::System) {

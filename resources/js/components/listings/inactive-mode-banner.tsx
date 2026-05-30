@@ -1,14 +1,7 @@
 import { usePage } from '@inertiajs/react';
 import { AlertCircle } from 'lucide-react';
 
-/**
- * Reminder banner shown inside the /listings/mine page when the user's
- * global Active Mode is off. Reinforces the toggle's state at a glance so
- * a user who comes to manage listings notices they're hidden.
- *
- * Returns null when the user is active — the banner only exists to fix the
- * inactive state, not to celebrate the active one.
- */
+/** Banner shown inside /listings/mine when the user's Active Mode is off. */
 export function InactiveModeBanner() {
     const { auth } = usePage().props;
 

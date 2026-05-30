@@ -14,12 +14,9 @@ use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
 
 /**
- * M12 Phase 2 — admin dispute queue. Read-only resource: admins view
- * matches (with full chat history inline) and resolve via three header
- * actions on the View page (Settle to Creator / Settle to Taker / Draw —
- * refund both). No create or edit — matches are created from the player
- * app via `TakeListingAction` and lifecycle-managed by the existing match
- * actions.
+ * Admin dispute queue. Read-only — admins view matches and resolve via
+ * header actions on the View page (Settle to Creator / Settle to Taker /
+ * Draw). Matches are created from the player app via `TakeListingAction`.
  */
 class GameMatchResource extends Resource
 {
@@ -35,10 +32,6 @@ class GameMatchResource extends Resource
 
     protected static string|\UnitEnum|null $navigationGroup = 'Operations';
 
-    // Pretty URL — `/admin/disputes` instead of Filament's auto-generated
-    // `/admin/game-matches`. Sidebar nav already labels this "Disputes"
-    // (see `$navigationLabel`); keeping the URL slug consistent makes
-    // links + bookmarks read naturally.
     protected static ?string $slug = 'disputes';
 
     public static function infolist(Schema $schema): Schema

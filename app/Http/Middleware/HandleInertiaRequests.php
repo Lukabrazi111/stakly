@@ -37,38 +37,27 @@ class HandleInertiaRequests extends Middleware
     {
         $user = $request->user();
 
-        // Eager-load `linkedAccounts` once so the backwards-compat
-        // accessors on User (`chess_com_username`, etc.) plus the
-        // `has_chess_link` / `linked_platforms` computed flags below all
-        // read from the same loaded collection — no N+1 across the hot
-        // Inertia shared-data path.
+        // Eager-load once so the backwards-compat accessors
+        // (`chess_com_username`, etc.) + the `has_chess_link` /
+        // `linked_platforms` flags all read from the same collection —
+        // no N+1 across the hot Inertia shared-data path.
         $user?->load('linkedAccounts');
 
         return [
             ...parent::share($request),
             'name' => config('app.name'),
             'auth' => [
-                // Override `usdt_balance` to a float at the JSON boundary —
-                // Eloquent's `decimal:6` cast serializes to a string by default.
-                // Same float-at-the-boundary convention as `ListingResource`,
-                // so the frontend never deals with BCMath strings.
-                //
-                // `is_active_mode` is also explicitly shared so the Active
-                // Mode toggle on `/listings/mine` and the marketplace banner
-                // always read the current state without an extra fetch.
+                // Float at the JSON boundary (decimal:6 serializes as
+                // string by default).
                 'user' => $user ? [
                     ...$user->toArray(),
                     'usdt_balance' => (float) $user->usdt_balance,
                     'is_active_mode' => (bool) $user->is_active_mode,
-                    // M8 Phase 5 Slice A take-gate + create-gate (permissive
-                    // "any chess provider" check). Slice B uses
-                    // `linked_platforms` below for per-listing-platform UI.
+                    // Take-gate + create-gate (permissive "any chess provider" check).
                     'has_chess_link' => $user->hasVerifiedChessLink(),
-                    // M8 Phase 5 Slice B — the verified chess providers the
-                    // user has linked, ordered to match
-                    // `App\Enums\LinkedAccountProvider`. Frontend reads this
-                    // to render platform-specific Take button copy + the
-                    // create-form platform picker.
+                    // Per-listing-platform UI reads this to render
+                    // platform-specific Take button copy + create-form
+                    // picker. Order matches `App\Enums\LinkedAccountProvider`.
                     'linked_platforms' => $user->linkedAccounts
                         ->sortBy(fn ($la) => $la->provider->value)
                         ->pluck('provider')

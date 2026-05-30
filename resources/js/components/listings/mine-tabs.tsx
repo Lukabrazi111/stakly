@@ -10,24 +10,9 @@ interface Props {
 }
 
 /**
- * Underline-style tabs for /listings/mine, matching Bybit's My Ads pattern.
- * Click switches the `?tab=` URL param and re-fetches the page.
- *
- * M19 Phase 4 — migrated to the shadcn `Tabs` primitive (Radix) so this
- * page + ProfileTabs share one implementation. Behavior preserved:
- * router.get re-fetch on tab change because the underlying listing
- * collection differs per tab and we can't trust client-side filtering
- * for the visibility-gated dataset.
- *
- * Optimistic local state: the Tabs primitive reads from `activeTab`
- * rather than the server `current` prop directly, so the underline
- * transitions immediately on click instead of waiting for the Inertia
- * round-trip (which would otherwise add a 200–500ms perceptible delay
- * before the animation starts — looks snappy not smooth). When the
- * fetch returns, the effect syncs `activeTab` to the new `current` prop.
- *
- * No `TabsContent` here — the page renders the listings collection
- * itself outside the Tabs root since the data swap happens server-side.
+ * Underline tabs for /listings/mine. Uses optimistic local state so the
+ * underline transitions immediately on click instead of waiting for the
+ * Inertia round-trip (which would otherwise produce a 200–500ms lag).
  */
 export function MineTabs({ current }: Props) {
     const [activeTab, setActiveTab] = useState<ListingsMineTab>(current);
@@ -44,12 +29,8 @@ export function MineTabs({ current }: Props) {
         }
 
         setActiveTab(newTab);
-        // `preserveState: true` keeps the page component mounted, so the
-        // Tabs primitive retains its DOM continuity and the CSS
-        // transition on the active underline can complete. With
-        // `preserveState: false` (the previous setting), Inertia remounts
-        // the page on every fetch, tearing down the in-progress
-        // transition and producing a snap-to-new-position effect.
+        // `preserveState: true` keeps the Tabs primitive mounted so the
+        // underline CSS transition can complete; remount would snap it.
         router.get(mineRoute().url, buildMineQuery({ tab: newTab }), {
             preserveState: true,
             preserveScroll: true,

@@ -14,22 +14,9 @@ use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 
 /**
- * M12 Phase 2 — admin match detail view used on `ViewGameMatch`.
- *
- * Layout (top → bottom). Every top-level Section calls `columnSpanFull()`
- * — Filament's default panel schema runs a 3-column grid, and without the
- * full-span override, sections collide on the same row and inner fields
- * wrap awkwardly. Match metadata is split across three smaller sections
- * (Status / Money / Timeline) instead of one wide card so each section
- * fits its fields in 4 columns without label-wrap.
- *
- *   1. Status & game — Match #, status badge, game, platform, winner
- *   2. Money breakdown — stake, pot, fee, winner payout
- *   3. Timeline — created/disputed/opened-by/settled timestamps
- *   4. Creator + Taker — side-by-side Grid(2). Winner gets a gold trophy
- *      on their section header when Settled.
- *   5. Chat history — full-width, primary content
- *   6. Admin resolution history — full-width, only when rows exist
+ * Admin match detail view. Sections need `columnSpanFull()` because
+ * Filament's default panel grid is 3-column — without it, sections collide
+ * on the same row and inner fields wrap awkwardly.
  */
 class GameMatchInfolist
 {
@@ -136,7 +123,7 @@ class GameMatchInfolist
                     ->since()
                     ->badge()
                     ->color(function ($state, GameMatch $record): string {
-                        // Don't urgency-color terminal matches — already resolved.
+                        // Skip urgency color on terminal matches.
                         if (in_array($record->status, [MatchStatus::Settled, MatchStatus::Cancelled], true)) {
                             return 'gray';
                         }
@@ -191,13 +178,6 @@ class GameMatchInfolist
     }
 
     /**
-     * Shared schema for the Creator + Taker cards. `relationPath` is either
-     * `listing.user` or `taker` so the same set of TextEntries works on
-     * both sides.
-     *
-     * Linked-account rows hide themselves when empty so the cards stay
-     * tight when a player isn't linked on a given platform.
-     *
      * @return array<int, TextEntry>
      */
     private static function playerEntries(string $relationPath): array
@@ -250,11 +230,8 @@ class GameMatchInfolist
     }
 
     /**
-     * M14 Phase 1 — per-match auto-fetch audit timeline. One row per call
-     * into the pipeline (skip rows + provider-call outcomes) so admins
-     * can answer "why is this match in ManualReview?" by reading the
-     * full attempt history. Hidden when no rows exist (e.g. matches
-     * created before M14 P1 shipped).
+     * Per-match auto-fetch audit. Lets admins answer "why is this match in
+     * ManualReview?" by reading the full attempt history.
      */
     private static function autoFetchHistorySection(): Section
     {
@@ -276,11 +253,6 @@ class GameMatchInfolist
             && $record->winner_user_id === $playerId;
     }
 
-    /**
-     * Renders the audit rows for this match as a small HTML list. Inline
-     * here rather than a separate custom entry because the markup is
-     * trivial — one row per resolution with admin, action, and reason.
-     */
     private static function resolutionSummary(GameMatch $record): string
     {
         $rows = $record->adminResolutions()->with('admin', 'winner')->get();
@@ -303,12 +275,6 @@ class GameMatchInfolist
         return $html;
     }
 
-    /**
-     * Renders the auto-fetch attempts for this match. One row per call,
-     * oldest → newest, with the outcome badge color picked to match the
-     * `OpsOverview` widget's color scale (gray=informational,
-     * success=matched, warning=ambiguous, danger=error).
-     */
     private static function autoFetchSummary(GameMatch $record): string
     {
         $rows = $record->autoFetchAttempts()->get();
@@ -339,11 +305,9 @@ class GameMatchInfolist
     }
 
     /**
-     * Inline-styled span badge instead of a Filament Badge component —
-     * we're rendering raw HTML inside a TextEntry, so we can't compose
-     * Filament's component tree. The color tokens match the Filament
-     * status badge palette so the timeline reads consistently with the
-     * top-of-page status section.
+     * Inline-styled span — we're rendering raw HTML inside a TextEntry so we
+     * can't compose Filament's Badge component. Colors match Filament's badge
+     * palette so the timeline reads consistently with the status section.
      */
     private static function outcomeBadge(AutoFetchOutcome $outcome): string
     {

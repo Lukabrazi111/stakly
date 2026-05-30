@@ -24,16 +24,8 @@ interface MobileChatTriggerProps {
     uploadProgress: number | null;
 }
 
-/**
- * Mobile-only chat affordance: a floating button bottom-right of the
- * viewport with an unread badge, opening a bottom-sheet drawer containing
- * the chat panel.
- *
- * Unread tracking — when the sheet is closed, count new messages arriving
- * via Echo as "unread." Opening the sheet resets the counter. We use the
- * total `messages.length` as the marker (no per-message read state):
- * cheaper than tracking ids and good enough for "you have new chat."
- */
+/** Mobile FAB + bottom sheet for match chat. Unread = `messages.length`
+ *  delta since last open — no per-message read state. */
 export function MobileChatTrigger({
     messages,
     viewerId,
@@ -48,12 +40,6 @@ export function MobileChatTrigger({
 }: MobileChatTriggerProps) {
     const [open, setOpen] = useState(false);
 
-    // `seenCount` marks the message count at the moment the sheet was last
-    // open. Updated both on open (mark new messages as seen) and on close
-    // (set the baseline for future "unread" counting). While open, unread is
-    // forced to 0 because the user is actively reading. Avoiding effects
-    // here keeps React 19's set-state-in-effect rule happy and removes a
-    // class of update-loops.
     const [seenCount, setSeenCount] = useState(messages.length);
 
     const handleOpenChange = (next: boolean) => {

@@ -6,19 +6,10 @@ use App\Models\Message;
 
 /**
  * Single source of truth for the `attachments` array shape that
- * `MessageResource` ships on initial Inertia load AND `MessageSent::broadcastWith`
- * ships on live broadcast. Keeping the two paths in lockstep matters because
- * the frontend uses one `ChatMessage` type to render both — a divergence
- * would surface as silent rendering bugs only on the broadcast path.
- *
- * Phase 3 Slice 1 emits `type=image` entries from the message's Spatie
- * Media Library collection. Slice 2 will append `type=link` entries from
- * `attachments_json` (queued OG metadata fetch). The unified array means
- * the frontend renders attachments in insertion order without caring
- * about source.
- *
- * URL generation lives here, not on the model, so `App\Models\Message`
- * stays free of routing concerns.
+ * `MessageResource` ships on initial Inertia load AND
+ * `MessageSent::broadcastWith` ships on live broadcast. The frontend uses one
+ * `ChatMessage` type to render both, so divergence here surfaces as silent
+ * broadcast-path-only rendering bugs.
  */
 class MessageAttachmentsPayload
 {
@@ -49,16 +40,11 @@ class MessageAttachmentsPayload
                 'media' => $media->id,
             ];
 
-            // Relative URLs (absolute: false) — the resource path is generated
-            // in two contexts: (a) the initial Inertia load inside a web
-            // request, where `route()` uses the request host; (b) the queue
-            // worker that runs `MessageSent::broadcastWith`, where `route()`
-            // uses `config('app.url')`. If APP_URL drifts from the browser's
-            // origin (mismatched `APP_PORT`, prod behind a proxy, etc.), the
-            // worker-built absolute URL points somewhere the browser can't
-            // reach and images break post-broadcast. Relative URLs are
-            // resolved by the browser against its current origin in both
-            // cases — no APP_URL coupling, no broken-image-after-send race.
+            // Relative URLs sidestep APP_URL ↔ request-host drift: the web
+            // request uses the request host, but the queue worker that runs
+            // `MessageSent::broadcastWith` uses `config('app.url')`. If they
+            // disagree, absolute URLs built in the worker point somewhere the
+            // browser can't reach.
             $url = route('matches.messages.attachment', $base, absolute: false);
 
             $entries[] = [
@@ -78,16 +64,10 @@ class MessageAttachmentsPayload
     }
 
     /**
-     * Slice 2 link cards. The raw `attachments_json` stores `image_path`
-     * (relative path on the private `local` disk); the frontend wants
-     * `image_url` (the authenticated route the browser can fetch). The
-     * translation happens here so the frontend has a uniform shape and
-     * the storage side stays disk-relative.
-     *
-     * Same `absolute: false` reasoning as `imageEntries` — the queue
-     * worker that runs `MessageSent::broadcastWith` and the web request
-     * that runs `MessageResource::toArray` both produce these payloads;
-     * relative URLs sidestep any `APP_URL` ↔ request-host drift.
+     * Link cards. Storage holds `image_path` (private disk); the frontend
+     * gets `image_url` (the authenticated streaming route). Translation
+     * lives here so storage stays disk-relative. Same `absolute: false`
+     * reasoning as `imageEntries`.
      *
      * @return list<array<string, mixed>>
      */
@@ -136,11 +116,8 @@ class MessageAttachmentsPayload
     }
 
     /**
-     * Phase 4 verified-game cards. The raw `attachments_json` entry written
-     * by `FetchLichessGameMetadataJob` (paste path) or `AutoFetchLichessGameJob`
-     * (auto-fetch path) is already in API shape — no URL rewriting needed —
-     * so this filter is a near-passthrough. Any new fields surface to the
-     * frontend by adding them here; missing fields default to `null` so an
+     * Verified-game cards. Near-passthrough — raw entries from the metadata
+     * jobs are already in API shape. Missing fields default to `null` so an
      * older persisted entry without a newer field doesn't 500 the page.
      *
      * @return list<array<string, mixed>>
@@ -187,11 +164,10 @@ class MessageAttachmentsPayload
     }
 
     /**
-     * M8 Phase 5 Slice C dispute-prompt markers. Written by
-     * `ResolveDisputeAction::flipToManualReview` alongside a "submit
-     * evidence" system message. The marker carries no fields beyond the
-     * type discriminator — its purpose is purely to signal the React
-     * `SystemBubble` to render the warning variant.
+     * Dispute-prompt markers. Written by `ResolveDisputeAction::flipToManualReview`
+     * alongside a "submit evidence" system message. Carries no fields beyond
+     * the type discriminator — signals React `SystemBubble` to render the
+     * warning variant.
      *
      * @return list<array<string, mixed>>
      */

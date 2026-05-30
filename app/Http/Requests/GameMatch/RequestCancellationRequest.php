@@ -6,19 +6,12 @@ use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 
 /**
- * Validates an M10 cancellation request body: `{ reason?: string }`.
- *
- * Reason is optional — most cancellations are AFK / misclick / "lost
- * interest" and don't need explaining. When supplied it's capped at 200
- * chars so the system message renders cleanly inside the chat narration
- * (longer free-text belongs in the chat itself, not the lifecycle
- * message).
+ * Cancellation request body: `{ reason?: string }`. Reason capped at 200
+ * chars so the system message renders cleanly in chat narration.
  *
  * Authorization (participant + Pending + no-open-request + past-cooldown)
- * lives in `GameMatchPolicy::requestCancellation`; this request just
- * shapes the payload.
- *
- * Auth + email verification are enforced at the route middleware layer.
+ * lives in `GameMatchPolicy::requestCancellation`. Auth + email verification
+ * are enforced at the route middleware layer.
  */
 class RequestCancellationRequest extends FormRequest
 {
@@ -29,9 +22,7 @@ class RequestCancellationRequest extends FormRequest
 
     /**
      * Normalize whitespace-only input to null so the model stores either
-     * a meaningful reason or `null` — never `"   "`. Saves the frontend
-     * from having to render empty-string reasons as "no reason" with a
-     * defensive trim.
+     * a meaningful reason or `null` — never `"   "`.
      */
     protected function prepareForValidation(): void
     {

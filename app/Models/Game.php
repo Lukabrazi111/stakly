@@ -11,10 +11,9 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Cache;
 
 /**
- * Homepage game-tile catalog (M24). Admin-editable display rows shown in
- * the GameSelector. The sibling `App\Enums\Game` enum is the backend identity
- * for games with active integration — only games whose slug matches an enum
- * case can be set to `GameStatus::Active`.
+ * Homepage game-tile catalog. Admin-editable display rows shown in the
+ * GameSelector. The sibling `App\Enums\Game` enum is the backend identity for
+ * integrated games — only rows whose slug matches an enum case can be Active.
  */
 class Game extends Model
 {
@@ -41,10 +40,7 @@ class Game extends Model
 
     protected static function booted(): void
     {
-        // Auto-append new games to the end of the row when position isn't
-        // explicitly set. The admin form doesn't expose a position field —
-        // admin reorders via Filament's drag-to-reorder in the table view.
-        // Step by 10 so manual reorders later have gaps without renumbering.
+        // Step by 10 so later drag-reorders have gaps without renumbering.
         static::creating(function (Game $game): void {
             if ($game->position === null) {
                 $game->position = (static::max('position') ?? 0) + 10;
@@ -63,8 +59,8 @@ class Game extends Model
     }
 
     /**
-     * Tiles shown on the public homepage — Active + ComingSoon, ordered.
-     * Disabled rows are excluded so admin can park entries without deleting.
+     * Active + ComingSoon, ordered. Disabled rows excluded so admin can park
+     * entries without deleting.
      */
     public function scopeForHomepage(Builder $query): Builder
     {
@@ -73,11 +69,6 @@ class Game extends Model
             ->ordered();
     }
 
-    /**
-     * True when this row points at a backend-integrated game (slug matches
-     * an `App\Enums\Game` case) and is marked Active. False for display-only
-     * tiles (ComingSoon for games not yet wired up).
-     */
     public function hasBackendIntegration(): bool
     {
         return $this->status === GameStatus::Active

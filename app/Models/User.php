@@ -43,22 +43,18 @@ class User extends Authenticatable implements FilamentUser, HasMedia, MustVerify
     use HasFactory, HasRoles, InteractsWithMedia, Notifiable, TwoFactorAuthenticatable;
 
     /**
-     * Computed avatar URLs exposed via Eloquent's `toArray()` — flow into
-     * Inertia's shared `auth.user` and `UserProfileResource` without any
-     * controller plumbing. Null when the user hasn't uploaded an avatar yet;
-     * the frontend falls back to a gradient-initials placeholder.
+     * Computed avatar URLs flow into Inertia's shared `auth.user` and
+     * `UserProfileResource` without controller plumbing. Null when no avatar
+     * uploaded; the frontend falls back to a gradient-initials placeholder.
      *
      * @var list<string>
      */
     protected $appends = ['avatar_url', 'avatar_thumb_url'];
 
     /**
-     * M12 — Filament panel access gate. Required by the `FilamentUser`
-     * interface. Only users with the Spatie `admin` role can reach
-     * `/admin/*` URLs; anyone else is redirected to the login page (or
-     * 403 if already authenticated as a non-admin). The platform user
-     * (`is_platform = true`) is also blocked — same posture as the
-     * `is_platform → 403` gate on the wallet routes, defense in depth.
+     * Filament panel access gate. Only `admin`-roled users reach `/admin/*`.
+     * The platform user (`is_platform = true`) is also blocked — same posture
+     * as the wallet routes' `is_platform → 403` gate, defense in depth.
      */
     public function canAccessPanel(Panel $panel): bool
     {
@@ -70,9 +66,8 @@ class User extends Authenticatable implements FilamentUser, HasMedia, MustVerify
     }
 
     /**
-     * Route model binding uses `username` instead of `id`, so `/users/{user}`
-     * resolves via the public handle. Username is derived at registration and
-     * immutable in v1.
+     * Route model binding on `username` so `/users/{user}` resolves via the
+     * public handle. Username is derived at registration and immutable.
      */
     public function getRouteKeyName(): string
     {
@@ -80,8 +75,6 @@ class User extends Authenticatable implements FilamentUser, HasMedia, MustVerify
     }
 
     /**
-     * Get the attributes that should be cast.
-     *
      * @return array<string, string>
      */
     protected function casts(): array
@@ -97,8 +90,7 @@ class User extends Authenticatable implements FilamentUser, HasMedia, MustVerify
     }
 
     /**
-     * Append-only ledger entries belonging to this user. Invariant:
-     * `SUM(wallet_transactions.amount) == users.usdt_balance` always.
+     * Invariant: `SUM(wallet_transactions.amount) == users.usdt_balance` always.
      */
     public function walletTransactions(): HasMany
     {
@@ -111,9 +103,8 @@ class User extends Authenticatable implements FilamentUser, HasMedia, MustVerify
     }
 
     /**
-     * Matches where this user is the taker. The creator side is reached via
-     * `$user->listings->map->gameMatch` — combined "all my matches" queries
-     * use a scope on `GameMatch` (Phase 6) rather than a model relation.
+     * Taker side only. Creator side is reached via `$user->listings`; combined
+     * "all my matches" queries use `GameMatch::scopeForParticipant` instead.
      */
     public function gameMatchesAsTaker(): HasMany
     {
@@ -121,41 +112,26 @@ class User extends Authenticatable implements FilamentUser, HasMedia, MustVerify
     }
 
     /**
-     * Verified external game-account links (M18 Phase 3 prep — replaces the
-     * inline `chess_com_*` / `lichess_*` columns). One row per (user_id,
-     * provider) pair. Callers that read `chess_com_username` /
-     * `lichess_username` / `chess_com_verified_at` / `lichess_verified_at`
-     * via the legacy accessors below should eager-load this relation to
-     * avoid N+1 (e.g. `$user->load('linkedAccounts')`).
+     * Verified external game-account links. One row per (user_id, provider).
+     * Callers reading the legacy `chess_com_*` / `lichess_*` accessors should
+     * `->load('linkedAccounts')` first to avoid N+1.
      */
     public function linkedAccounts(): HasMany
     {
         return $this->hasMany(LinkedAccount::class);
     }
 
-    /**
-     * In-flight bio-code verification state (transient). At most one row
-     * per user — the verification flow upserts on (user_id). Replaces the
-     * inline `pending_verification_*` columns.
-     */
     public function pendingVerification(): HasOne
     {
         return $this->hasOne(PendingVerification::class);
     }
 
     /**
-     * Has the user verified at least one chess provider account? Gates both
-     * sides of marketplace participation (M8 Phase 5 take-gate +
-     * create-gate). Permissive — one link unlocks both create and take —
-     * because today every listing is chess and any verified chess link is
-     * sufficient to support evidence resolution. Phase 5's
-     * `listings.platform` column tightens this to "verified on the
-     * listing's specific platform."
-     *
-     * Reads from the loaded `linkedAccounts` collection when present
-     * (avoids an extra query on Inertia shared-data hot path); falls back
-     * to a relation query when not loaded. Callers that hit this in tight
-     * loops should `->load('linkedAccounts')` first.
+     * Gates both sides of marketplace participation (take-gate + create-gate).
+     * Permissive — one link unlocks both — because today every listing is
+     * chess. Read from the loaded `linkedAccounts` collection when present
+     * (Inertia shared-data hot path); callers in tight loops should
+     * `->load('linkedAccounts')` first.
      */
     public function hasVerifiedChessLink(): bool
     {
@@ -167,10 +143,8 @@ class User extends Authenticatable implements FilamentUser, HasMedia, MustVerify
     }
 
     /**
-     * Backwards-compat accessor — reads the chess.com username off the
-     * `linkedAccounts` relation. External callers still write
-     * `$user->chess_com_username` after the M18 normalisation refactor.
-     * Eager-load `linkedAccounts` first to keep this query-free.
+     * Backwards-compat accessor — reads off `linkedAccounts`. Eager-load
+     * `linkedAccounts` first to keep this query-free.
      */
     protected function chessComUsername(): Attribute
     {
@@ -200,10 +174,6 @@ class User extends Authenticatable implements FilamentUser, HasMedia, MustVerify
         );
     }
 
-    /**
-     * Internal helper for the backwards-compat accessors. Reads from the
-     * loaded collection when available, falls back to a one-shot query.
-     */
     private function linkedAccountFor(LinkedAccountProvider $provider): ?LinkedAccount
     {
         if ($this->relationLoaded('linkedAccounts')) {
@@ -216,11 +186,8 @@ class User extends Authenticatable implements FilamentUser, HasMedia, MustVerify
     }
 
     /**
-     * Single-file avatar collection (M18 Phase 1). Uploading a new avatar
-     * replaces the previous file on disk — `singleFile()` handles the
-     * delete + insert atomically. Accepted MIME types match the validation
-     * rule on `ProfileUpdateRequest`; both layers enforce the same set so
-     * a request can't sneak past one and trip the other.
+     * `singleFile()` deletes + inserts atomically so a new avatar replaces
+     * the old. MIME types mirror `ProfileUpdateRequest` (defense in depth).
      */
     public function registerMediaCollections(): void
     {
@@ -230,16 +197,9 @@ class User extends Authenticatable implements FilamentUser, HasMedia, MustVerify
     }
 
     /**
-     * Two derived sizes:
-     *   - `main` (512×512) — public profile + settings preview
-     *   - `thumb` (128×128) — chat bubbles, listing rows, comment avatars
-     *
-     * `nonQueued()` runs conversions inline because (a) the source is
-     * already cropped to a square ~512px by `react-image-crop` on the
-     * client, so the resize cost is trivial, and (b) returning a 200 with
-     * a still-pending conversion URL would 404 momentarily on the next
-     * page render. Once we need a CDN + larger originals, move to a
-     * queued worker.
+     * `nonQueued()` runs conversions inline — the source is pre-cropped to
+     * ~512px by `react-image-crop` so the resize cost is trivial, and a
+     * still-pending conversion URL would 404 momentarily on the next render.
      */
     public function registerMediaConversions(?Media $media = null): void
     {
@@ -254,11 +214,6 @@ class User extends Authenticatable implements FilamentUser, HasMedia, MustVerify
             ->performOnCollections('profile-avatar');
     }
 
-    /**
-     * Public URL of the 512×512 avatar conversion. Null when the user has
-     * not uploaded an avatar. Exposed via `$appends` so Inertia's shared
-     * `auth.user` carries it without any controller plumbing.
-     */
     protected function avatarUrl(): Attribute
     {
         return Attribute::get(function (): ?string {
@@ -268,11 +223,6 @@ class User extends Authenticatable implements FilamentUser, HasMedia, MustVerify
         });
     }
 
-    /**
-     * Public URL of the 128×128 avatar thumbnail. Used by dense lists
-     * (chat bubbles, listing rows) where the larger conversion is
-     * overkill. Null when no avatar uploaded.
-     */
     protected function avatarThumbUrl(): Attribute
     {
         return Attribute::get(function (): ?string {

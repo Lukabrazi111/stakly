@@ -14,28 +14,18 @@ use Illuminate\Queue\SerializesModels;
 /**
  * Broadcast when a new message lands in a match's chat.
  *
- * `ShouldDispatchAfterCommit` + `ShouldBroadcast` — if a future caller wraps
- * `SendMessageAction` in an outer transaction, dispatching is held until
- * the transaction commits so a rolled-back message can't leak to listeners.
- * Today the Action dispatches outside its own transaction so the timing is
- * moot, but cheap defense in depth.
- *
- * Channel name is `match.{id}` (private). Auth callback in `routes/channels.php`
- * only allows the two match participants (creator via listing, taker).
- *
- * `broadcastWith()` mirrors the resource shape the frontend's chat list
- * already consumes — keeping the WebSocket payload identical to an
- * Inertia-refresh payload avoids a divergent serializer.
+ * `ShouldDispatchAfterCommit` defends against a future caller wrapping
+ * `SendMessageAction` in an outer transaction — broadcasts are held until
+ * commit so a rolled-back message can't leak to listeners.
  */
 class MessageSent implements ShouldBroadcast, ShouldDispatchAfterCommit
 {
     use Dispatchable, InteractsWithSockets, SerializesModels;
 
     /**
-     * @param  ?string  $correlationId  Client-generated UUID echoed back in the
-     *                                  broadcast payload so the sender's frontend can match an optimistic
-     *                                  pending bubble with the broadcast-confirmed message and replace it.
-     *                                  Null for system messages and for any send that didn't supply one.
+     * @param  ?string  $correlationId  Client-generated UUID echoed back so
+     *                                  the sender can match an optimistic pending bubble with the
+     *                                  broadcast-confirmed message and replace it. Null for system messages.
      */
     public function __construct(
         public Message $message,
@@ -53,11 +43,8 @@ class MessageSent implements ShouldBroadcast, ShouldDispatchAfterCommit
     }
 
     /**
-     * Use a stable event name for Echo listeners — without this the event
-     * broadcasts as its fully-qualified PHP class name
-     * (`App\\Events\\MessageSent`), coupling the frontend listener to the
-     * backend namespace. With it, the frontend listens to `.message.sent`
-     * (leading dot tells Echo to use the raw name, no auto-prefixing).
+     * Stable event name decouples the Echo listener from the PHP class FQN.
+     * Frontend listens to `.message.sent` (leading dot = raw name, no prefix).
      */
     public function broadcastAs(): string
     {
@@ -69,10 +56,8 @@ class MessageSent implements ShouldBroadcast, ShouldDispatchAfterCommit
      */
     public function broadcastWith(): array
     {
-        // The queue worker that runs broadcastWith re-hydrates `$this->message`
-        // from the DB without eager-loaded media. `loadMissing` covers that
-        // path without re-querying when the in-memory model already has it
-        // (synchronous broadcasts inside the same request, tests).
+        // Queue worker rehydrates `$this->message` without eager-loaded media;
+        // `loadMissing` covers it without re-querying for sync broadcasts.
         $this->message->loadMissing('media');
 
         return [

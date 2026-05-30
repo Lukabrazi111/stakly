@@ -8,13 +8,8 @@ use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
 /**
- * Validates the wallet history index URL. Same Spatie query-builder convention
- * as `IndexListingsRequest`:
- *
- *   /wallet/history?filter[type]=deposit&page=2
- *
- * Bad input redirects to a clean `/wallet/history` so a stale share-link or
- * a malformed manual edit never lands the user on a 422 wall.
+ * Spatie query-builder URL: `/wallet/history?filter[type]=deposit&page=2`.
+ * Bad input redirects to a clean `/wallet/history` instead of 422.
  */
 class IndexHistoryRequest extends FormRequest
 {
@@ -40,8 +35,6 @@ class IndexHistoryRequest extends FormRequest
     }
 
     /**
-     * Flat filter shape echoed to the frontend so the UI can hydrate from URL.
-     *
      * @return array{type: ?string}
      */
     public function filters(): array

@@ -22,59 +22,28 @@ use Illuminate\Queue\SerializesModels;
 use Throwable;
 
 /**
- * Posts an auto-fetched chess.com game card for a Pending match, then
- * immediately settles via `SettleFromCardAction` (M16 — API is the only
- * outcome source, no player Won/Lost/Drawn confirms).
+ * Posts an auto-fetched chess.com game card for a Pending match, then settles via
+ * `SettleFromCardAction`. Retries on empty candidates because chess.com's monthly
+ * archive lags 5-15s after game-end (5s / 15s / 45s = ~65s total).
  *
- * Mirror of `AutoFetchLichessGameJob` adapted to chess.com's
- * archive-based API + eventual-consistency lag.
- *
- * Key delta from the Lichess version:
- *
- *   - **Retry on empty.** chess.com's monthly archive lags 5-15s after
- *     game-end. If the first attempt finds zero candidates, release back
- *     to the queue with backoff (5s / 15s / 45s — 65s total wait across
- *     three attempts). After that, treat as "no game" and skip silently.
- *
- *   - Provider-specific snapshot lookup: reads
- *     `match.{side}_chess_com_username` (via `snapshotUsername()`) instead
- *     of the Lichess columns.
- *
- *   - Posted card uses `provider: 'chess_com'` so the frontend renderer
- *     + `SettleFromCardAction` resolve the matching snapshot side.
- *
- * M14 Phase 1 — every attempt writes a `match_auto_fetch_attempts` row
- * via `RecordAutoFetchAttemptAction`, including each empty attempt in the
- * retry chain. `attempt_number` is populated from `$this->attempts()` so
- * the admin timeline shows the full "we tried 4 times, all empty" story
- * rather than a single terminal row.
+ * Every attempt (including empty ones) writes a `match_auto_fetch_attempts` row so
+ * the admin timeline shows the full retry chain rather than a single terminal row.
  */
 class AutoFetchChessComGameJob implements ShouldBeUnique, ShouldQueueAfterCommit
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
-    /**
-     * 4 attempts = original + 3 retries. Backoff cadence below — total
-     * upper bound is ~65s, which comfortably outlasts typical chess.com
-     * archive lag (5-15s).
-     */
     public int $tries = 4;
 
     public int $timeout = 30;
 
     /**
-     * Cap how long the unique lock can persist regardless of job state.
-     * The release-on-empty retry chain can keep the job "in flight" for
-     * up to 65s; this gives a comfortable buffer past that without
-     * stranding the lock if the queue worker dies mid-retry.
+     * Caps unique-lock lifetime past the ~65s retry chain so the lock doesn't strand
+     * if the queue worker dies mid-retry.
      */
     public int $uniqueFor = 120;
 
     /**
-     * Delay (seconds) before the next attempt when the search returns no
-     * candidates yet. Index `$this->attempts() - 1` so the first retry
-     * waits 5s, second 15s, third 45s.
-     *
      * @var list<int>
      */
     private const RETRY_DELAYS = [5, 15, 45];
@@ -84,11 +53,8 @@ class AutoFetchChessComGameJob implements ShouldBeUnique, ShouldQueueAfterCommit
     ) {}
 
     /**
-     * One in-flight job per match — M16 Phase 2 trigger sites (page-visit,
-     * chat-send, cron, stream) all funnel through `DispatchAutoFetchAction`
-     * and any of them might fire while a previous job is still running.
-     * The unique lock dedupes those races so we don't spam the provider API.
-     * Lock releases on job success / failure / final-retry-exhausted.
+     * One in-flight job per match — dedupe races between page-visit, chat-send, cron, stream
+     * trigger sites so we don't spam the provider API.
      */
     public function uniqueId(): string
     {
@@ -145,16 +111,13 @@ class AutoFetchChessComGameJob implements ShouldBeUnique, ShouldQueueAfterCommit
 
         $completed = array_values(array_filter(
             $games,
-            // Decisive winner OR a draw (agreed / repetition / 50move / etc.).
-            // Aborted / half-played excluded — not a real result to settle.
+            // Decisive or draw — aborted / half-played excluded (not a real result to settle).
             fn (ChessComGameResult $g) => $g->isDecisive() || $g->isDraw(),
         ));
         $count = count($completed);
 
         if ($count === 0) {
-            // Record the empty attempt before releasing — the audit timeline
-            // shows each retry independently so admins can see "we tried 4
-            // times during the 5-15s archive lag window."
+            // Record before releasing so each retry shows independently in the audit timeline.
             $reason = $this->isFinalAttempt() ? 'retry_exhausted' : null;
             $this->record($recordAttempt, AutoFetchOutcome::NoMatch, [
                 'candidates_count' => 0,
@@ -185,17 +148,13 @@ class AutoFetchChessComGameJob implements ShouldBeUnique, ShouldQueueAfterCommit
             'latency_ms' => $latencyMs,
         ]);
 
-        // M16 — card IS the settlement trigger. SettleFromCardAction
-        // row-locks the match, no-ops if not Pending (idempotent re-runs),
-        // branches on winner_color to SettleMatchAction (winner) or
-        // SettleDrawMatchAction (draw).
+        // The card IS the settlement trigger. SettleFromCardAction row-locks the match,
+        // no-ops if not Pending (idempotent), branches winner vs draw.
         $settleFromCard->handle($this->match, $card);
     }
 
     /**
-     * Wraps the provider search with latency tracking and structured error
-     * capture. Returns `[games, errorMessage, latencyMs]` — exactly one of
-     * `games` / `errorMessage` is non-null.
+     * Returns `[games, errorMessage, latencyMs]` — exactly one of `games` / `errorMessage` is non-null.
      *
      * @return array{0: list<ChessComGameResult>|null, 1: string|null, 2: int}
      */
@@ -227,21 +186,14 @@ class AutoFetchChessComGameJob implements ShouldBeUnique, ShouldQueueAfterCommit
     }
 
     /**
-     * True when the current attempt is the final one in the retry budget.
-     * Used to mark the terminal `NoMatch` row with `retry_exhausted` so
-     * PipelineHealth can distinguish "still hoping the archive catches up"
-     * from "we gave up."
+     * Marks the terminal `NoMatch` row with `retry_exhausted` so PipelineHealth can distinguish
+     * "still hoping the archive catches up" from "we gave up."
      */
     private function isFinalAttempt(): bool
     {
         return $this->attempts() >= count(self::RETRY_DELAYS) + 1;
     }
 
-    /**
-     * If the search returned no candidates but the archive may still be
-     * catching up, release the job for another attempt. After exhausting
-     * retries, fall through to silent skip.
-     */
     private function retryIfBudgetRemains(): void
     {
         $attempt = $this->attempts();
@@ -250,15 +202,13 @@ class AutoFetchChessComGameJob implements ShouldBeUnique, ShouldQueueAfterCommit
             return;
         }
 
-        // `attempts()` is 1-indexed; RETRY_DELAYS is 0-indexed. After
-        // attempt 1 we want delay 5s (index 0), after attempt 2 → 15s, etc.
+        // `attempts()` is 1-indexed; RETRY_DELAYS is 0-indexed.
         $this->release(self::RETRY_DELAYS[$attempt - 1]);
     }
 
     /**
-     * @return array<string, mixed> the card payload posted to chat — passed
-     *                              to SettleFromCardAction so the settle
-     *                              decision uses the same data the players see.
+     * @return array<string, mixed> card payload — passed to SettleFromCardAction so the
+     *                              settle decision uses the same data the players see.
      */
     private function postCard(PostSystemMessageAction $postSystem, ChessComGameResult $game): array
     {
@@ -318,9 +268,6 @@ class AutoFetchChessComGameJob implements ShouldBeUnique, ShouldQueueAfterCommit
             matchId: $this->match->id,
             provider: LinkedAccountProvider::ChessCom,
             outcome: $outcome,
-            // Every chess.com row carries the attempt number from the queue
-            // worker's retry counter. Lichess always stays at 1 (no retry
-            // logic on that job).
             extras: [
                 'attempt_number' => $this->attempts(),
                 ...$extras,

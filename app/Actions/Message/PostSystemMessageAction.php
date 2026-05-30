@@ -8,33 +8,16 @@ use App\Models\GameMatch;
 use App\Models\Message;
 
 /**
- * Posts a system message into a match's chat thread. Used by lifecycle
- * Actions (TakeListing, SettleMatch, OpenDispute, ResolveMatchTimeout,
- * SettleFromCard, etc.) to narrate state changes inline with the player
- * conversation: match started, settled, dispute opened, API resolved,
- * timeout flagged, etc.
- *
- * Why a separate Action from `SendMessageAction`:
- *   - `type = system` is hard-coded here — there is no HTTP path that can
- *     reach this Action, so system messages can never be impersonated by
- *     a malicious user POSTing crafted JSON.
- *   - No rate limit (system events fire as fast as the lifecycle moves).
- *   - No chat-status guard (the UX-driven "chat read-only after settle"
- *     rule applies to user messages, not platform notifications — admin
- *     resolutions in the Filament panel (M12) also post here on locked
- *     matches).
- *
- * Broadcasts via the same `MessageSent` event used by user messages, so
- * subscribed Echo clients render system bubbles in real time alongside
- * normal chat.
+ * Posts a system message into a match's chat thread. Separate from `SendMessageAction`
+ * so `type = system` is hard-coded (no HTTP path can reach this — system messages can
+ * never be impersonated) and so there's no rate limit / chat-status guard (admin actions
+ * in Filament post here on locked matches).
  */
 class PostSystemMessageAction
 {
     /**
-     * @param  list<array<string, mixed>>|null  $attachments  Optional structured
-     *                                                        payload appended to `attachments_json`. Phase 4 auto-fetch posts
-     *                                                        game-card system messages this way (text describes the event,
-     *                                                        attachment is the verified card the frontend renders).
+     * @param  list<array<string, mixed>>|null  $attachments  Optional structured payload
+     *                                                        appended to `attachments_json` (e.g. auto-fetched game cards).
      */
     public function handle(GameMatch $match, string $content, ?array $attachments = null): Message
     {

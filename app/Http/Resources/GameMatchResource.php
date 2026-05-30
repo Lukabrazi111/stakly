@@ -25,19 +25,17 @@ class GameMatchResource extends JsonResource
         return [
             'id' => $this->id,
             'status' => $this->status->value,
-            // Platform fee rate as a float at the JSON boundary (BCMath
-            // string internally). Frontend computes pot / fee / payout
-            // from stake_amount + fee_rate so we don't duplicate the
-            // settlement math in two places.
+            // Float at the JSON boundary (BCMath string internally).
+            // Frontend computes pot / fee / payout from stake_amount +
+            // fee_rate — single source of truth for settlement math.
             'fee_rate' => (float) config('stakly.platform_fee_rate'),
             'listing' => [
                 'id' => $this->listing->id,
                 'game' => $this->listing->game->value,
                 'stake_amount' => (float) $this->listing->stake_amount,
-                // Platform binds outcome verification: a Lichess listing
+                // Platform binds outcome verification — a Lichess listing
                 // is auto-verified via Lichess, a chess.com listing via
-                // chess.com. Frontend shows this in the capability
-                // indicator inside `MatchInfoCard`.
+                // chess.com.
                 'platform' => $this->listing->platform->value,
                 'time_control' => $this->listing->time_control
                     ->map(fn ($tc) => $tc->value)
@@ -48,8 +46,7 @@ class GameMatchResource extends JsonResource
                 'id' => $this->listing->user->id,
                 'name' => $this->listing->user->name,
                 'username' => $this->listing->user->username,
-                // M18 Phase 1 propagation — 128×128 thumb for chat bubbles +
-                // match info card. Null until upload.
+                // 128×128 thumb; null until upload.
                 'avatar_thumb_url' => $this->listing->user->avatar_thumb_url,
             ],
             'taker' => [
@@ -59,11 +56,9 @@ class GameMatchResource extends JsonResource
                 'avatar_thumb_url' => $this->taker->avatar_thumb_url,
             ],
             // Snapshotted external-account handles scoped to the listing's
-            // platform (M16 Phase 3 — Pending action card displays the
-            // username pair so players know which game we're polling for).
-            // Either side may be null if the player never linked that
-            // provider; in practice the take + create gates prevent
-            // unlinked matches but the FE handles null defensively.
+            // platform. Either side may be null — take + create gates
+            // prevent unlinked matches in practice, but FE handles null
+            // defensively.
             'snapshots' => [
                 'creator_username' => $this->snapshotUsername(
                     GameMatch::SIDE_CREATOR,
@@ -82,14 +77,10 @@ class GameMatchResource extends JsonResource
             ] : null,
             'settled_at' => $this->settled_at?->toIso8601String(),
             'created_at' => $this->created_at?->toIso8601String(),
-            // M10 — mutual cancellation state. All fields nullable; the
-            // frontend infers open-request / cooldown / terminal banner
-            // from the combination. `requested_by_id` is enough for the
-            // FE to look up the name client-side from creator / taker
-            // (already loaded) — saves an eager-load for the requester
-            // relation. `cancellation_rejected_at` is what the requester
-            // reads to compute their cooldown countdown for the disabled
-            // "Request cancellation" button tooltip.
+            // Mutual cancellation state. FE infers open-request / cooldown
+            // / terminal banner from the combination. `requested_by_id`
+            // is enough — FE looks up the name from creator / taker
+            // (already loaded), avoiding a requester eager-load.
             'cancellation' => [
                 'requested_by_id' => $this->cancellation_requested_by,
                 'requested_at' => $this->cancellation_requested_at?->toIso8601String(),

@@ -14,22 +14,10 @@ interface CancellationRequestBannerProps {
 }
 
 /**
- * Inline banner shown at the top of the Pending action area while a
- * cancellation request is open. Two variants based on viewer perspective:
- *
- *   - Viewer IS the requester  → informational "waiting" state with the
- *                                reason echoed back. No actions; they
- *                                already chose, can't take it back
- *                                (matches Bybit's pattern — KISS until
- *                                someone asks for a withdraw-request flow).
- *   - Viewer is the OTHER side → "Alice wants to cancel" headline + the
- *                                reason in a quoted block + Accept /
- *                                Decline buttons.
- *
- * Reason is rendered inside this structured banner, NOT inside the chat
- * system message — the system message stays neutral ("Alice requested to
- * cancel the match.") so the M13 chat anti-abuse layer can't be bypassed
- * via the cancellation surface.
+ * Inline banner while a cancellation request is open. Two variants: viewer
+ * is the requester (informational waiting state) or the other side
+ * (Accept/Decline). Reason renders here, not in the chat system message —
+ * the system message stays neutral so chat anti-abuse can't be bypassed.
  */
 export function CancellationRequestBanner({
     match,

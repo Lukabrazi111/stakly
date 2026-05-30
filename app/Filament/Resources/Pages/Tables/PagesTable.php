@@ -58,10 +58,8 @@ class PagesTable
                     ->sortable(),
             ])
             ->filters([
-                // Status is a computed value (Draft / Scheduled / Published)
-                // derived from `published_at`, so the filter does the same
-                // math in SQL. Lets admin pull up "everything live" or
-                // "everything still draft" without scrolling.
+                // Status is a computed value derived from `published_at`;
+                // the filter does the equivalent math in SQL.
                 SelectFilter::make('status')
                     ->label('Status')
                     ->options([
@@ -80,9 +78,8 @@ class PagesTable
                     }),
             ])
             ->recordActions([
-                // Opens the public route via a 30-min temporary signed URL so
-                // drafts + scheduled rows still render. The controller checks
-                // `hasValidSignature()` to gate the bypass.
+                // Temporary signed URL so drafts + scheduled rows render.
+                // Controller checks `hasValidSignature()` to gate the bypass.
                 Action::make('preview')
                     ->label('Preview')
                     ->icon(Heroicon::OutlinedEye)
@@ -98,12 +95,7 @@ class PagesTable
             ])
             ->toolbarActions([
                 BulkActionGroup::make([
-                    // Bulk publish — flips every selected Draft / Scheduled
-                    // row to Published. Already-Published rows in the
-                    // selection are skipped silently so the action is
-                    // idempotent. Confirmation gate because the side effect
-                    // is "content goes live"; the per-row variant (now on
-                    // EditPage only) is the no-confirm one-click path.
+                    // Already-published rows are skipped silently (idempotent).
                     BulkAction::make('publish')
                         ->label('Publish selected')
                         ->icon(Heroicon::OutlinedCheckCircle)
@@ -123,10 +115,8 @@ class PagesTable
                         })
                         ->deselectRecordsAfterCompletion(),
 
-                    // Bulk unpublish — clears `published_at` on every selected
-                    // row that has a timestamp set (covers both Published AND
-                    // Scheduled — Scheduled rows treat this as cancelling the
-                    // future publish). Draft rows in the selection are skipped.
+                    // Covers Published + Scheduled (Scheduled = cancel the
+                    // future publish). Draft rows in selection are skipped.
                     BulkAction::make('unpublish')
                         ->label('Unpublish selected')
                         ->icon(Heroicon::OutlinedEyeSlash)
@@ -151,11 +141,6 @@ class PagesTable
             ]);
     }
 
-    /**
-     * Build the success-toast title for a bulk publish / unpublish run.
-     * Centralised so the two paths can't drift in tone (eg. one saying "Done"
-     * and the other "Published 3 rows").
-     */
     private static function summaryTitle(int $count, string $verb): string
     {
         return match ($count) {

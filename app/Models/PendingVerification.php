@@ -7,14 +7,10 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 /**
- * Transient pending bio-code state for the linked-account verification
- * flow. Replaces the inline `pending_verification_*` columns that used to
- * live on `users`.
- *
- * At most one row per user — `RequestLinkVerificationAction` upserts on
- * (user_id) so starting a fresh verification overwrites any in-flight one.
- * `code` is plaintext (we need to display it back to the user); 15-min
- * default TTL via `stakly.link_verification_ttl_minutes`.
+ * Transient pending bio-code state for linked-account verification. At most
+ * one row per user — `RequestLinkVerificationAction` upserts on (user_id) so
+ * starting a fresh verification overwrites any in-flight one. `code` is
+ * plaintext (we display it back to the user).
  */
 class PendingVerification extends Model
 {

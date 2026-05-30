@@ -20,25 +20,17 @@ interface Props {
 }
 
 /**
- * Marketplace row on `/listings`. Whole row clickable via the absolute-overlay
- * Link pattern (matches `MineListingRow` + the wallet's `ActionCard`):
- *   - Outer `<article relative>` carries hover lift/glow.
- *   - Absolute `inset-0` Link covers the entire row → listing detail.
- *   - Creator zone is a *sibling* Link with `relative` positioning so it
- *     paints above the overlay and intercepts its own clicks → user profile.
- *   - Body content (badges, time, stake) is `pointer-events-none` so clicks
- *     fall through to the overlay.
- *   - Take pill is a visual CTA only, also `pointer-events-none` — the
- *     entire row already navigates to the detail page where the real Take
- *     dialog + balance check live.
+ * Marketplace row on `/listings`. Uses the absolute-overlay Link pattern:
+ * outer `<article>` is relative, an `absolute inset-0` Link covers it →
+ * detail page, creator zone is a sibling Link with `relative` to intercept
+ * its own clicks → profile, body content uses `pointer-events-none` so
+ * clicks fall through.
  */
 export function ListingRow({ listing }: Props) {
     const getInitials = useInitials();
     const timeRemaining = formatTimeRemaining(listing.expires_at);
     const urgency = getTimeUrgency(listing.expires_at);
 
-    // M22 Phase 2 — tiered urgency tone on the time-remaining indicator.
-    // Same brand tokens already used elsewhere for warning / destructive.
     const urgencyTone =
         urgency === 'critical'
             ? 'text-destructive'
@@ -74,11 +66,6 @@ export function ListingRow({ listing }: Props) {
                     <span className="truncate text-sm font-semibold text-foreground transition-colors hover:text-primary">
                         {listing.creator.name}
                     </span>
-                    {/* M22 Phase 1 — meta row under the name. Mirrors
-                        Bybit's "503 Order(s) | 91% | 6m" pattern: small gray
-                        text combining region + seller-trust inline so Bob's
-                        eye lands on "should I trust this seller" right next
-                        to the seller's name, not in the badge field. */}
                     <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-muted-foreground">
                         {listing.region && (
                             <span className="inline-flex items-center gap-1">
@@ -103,13 +90,8 @@ export function ListingRow({ listing }: Props) {
                 </div>
             </Link>
 
-            {/* Listing body — no Link wrapper; clicks bubble to overlay */}
             <div className="pointer-events-none relative flex flex-1 flex-wrap items-center gap-3 md:flex-nowrap md:gap-6">
                 <div className="flex flex-wrap items-center gap-2 md:flex-1">
-                    {/* M22 Phase 1 — platform chip leads the badges row.
-                        Seller-trust meta moved up into the creator block
-                        under the name (Bybit-style "503 Order(s) | 91%"
-                        inline pattern). */}
                     <VerifiedPlatformChip platform={listing.platform} />
 
                     <span className="inline-flex items-center gap-1.5 rounded-full border border-border/60 bg-background/60 px-3 py-1 text-xs font-medium text-muted-foreground">
@@ -144,9 +126,6 @@ export function ListingRow({ listing }: Props) {
                     {timeRemaining}
                 </div>
 
-                {/* M22 Phase 2 — stake is the row's visual anchor. Bumped
-                    from text-2xl → text-3xl so it competes properly with
-                    the Take button (matches the featured-card weight). */}
                 <div className="flex items-baseline gap-1 md:w-32 md:shrink-0 md:justify-end">
                     <span className="text-gradient-primary font-display text-3xl leading-none font-bold">
                         ${listing.stake_amount}
@@ -155,14 +134,8 @@ export function ListingRow({ listing }: Props) {
                 </div>
             </div>
 
-            {/* Take CTA — wrapped in a `relative` div so it sits above the
-                row's absolute overlay Link and captures its own clicks.
-                `TakeButton` (M22 Phase 3) branches on the viewer's state:
-                gradient "Take" when eligible, gradient "Sign in to take"
-                for guests (opens auth modal), outline "Link {platform} to
-                take" when verified on the wrong provider, or a "Your
-                listing" chip + Manage shortcut when the viewer is the
-                creator. */}
+            {/* `relative` keeps the Take CTA above the absolute overlay so
+                it captures its own clicks. */}
             <div className="relative flex items-center gap-2 md:shrink-0">
                 <TakeButton listing={listing} className="w-full md:w-auto" />
             </div>

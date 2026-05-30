@@ -23,19 +23,16 @@ interface Props {
  * Compact vertical card for marketing surfaces (homepage featured strip).
  * Sibling to `ListingRow` (dense/horizontal for the index page).
  *
- * Clickability uses the absolute-overlay-Link pattern (same as the wallet's
- * `ActionCard` and `MineListingRow`): the article is `relative`, an
- * `absolute inset-0` Link covers the entire card to navigate to the listing
- * detail page, and the creator zone is a *sibling* Link with `relative`
- * positioning so it paints above the overlay and intercepts its own clicks
- * (→ user profile). The Take pill is visual-only with `pointer-events-none`
- * so its click bubbles to the overlay — entire card is clickable.
+ * Clickability uses an absolute-overlay-Link pattern: the article covers
+ * itself with an `absolute inset-0` Link to the detail page; the creator
+ * zone is a sibling Link with `relative` so it intercepts its own clicks
+ * (→ user profile). Inner content uses `pointer-events-none` so clicks
+ * bubble to the overlay.
  */
 export function ListingCard({ listing }: Props) {
     const getInitials = useInitials();
     const urgency = getTimeUrgency(listing.expires_at);
 
-    // M22 Phase 2 — tiered urgency on the time-remaining indicator.
     const urgencyTone =
         urgency === 'critical'
             ? 'text-destructive'
@@ -71,8 +68,6 @@ export function ListingCard({ listing }: Props) {
                         <span className="truncate text-sm font-semibold text-foreground transition-colors hover:text-primary">
                             {listing.creator.name}
                         </span>
-                        {/* M22 Phase 1 — Bybit-style inline trust meta
-                            under the name. */}
                         <SellerTrustMeta
                             rate={listing.creator.completion_rate_30d}
                             settled={listing.creator.settled_lifetime}
@@ -101,8 +96,6 @@ export function ListingCard({ listing }: Props) {
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2">
-                    {/* M22 Phase 1 — platform chip leads the badges row;
-                        seller-trust meta lives in the creator block above. */}
                     <VerifiedPlatformChip platform={listing.platform} />
 
                     <span className="inline-flex items-center gap-1 rounded-full border border-border/60 bg-background/60 px-2.5 py-0.5 text-[11px] font-medium text-muted-foreground">
@@ -121,14 +114,6 @@ export function ListingCard({ listing }: Props) {
                 </div>
             </div>
 
-            {/* Take CTA — `TakeButton` (M22 Phase 3) telegraphs eligibility
-                at scan time: gradient "Take" when eligible, "Sign in to
-                take" for guests (opens auth modal), outline "Link
-                {platform} to take" when wrong-platform-verified, "Your
-                listing" chip + Manage when the viewer is the creator.
-                `relative` keeps it above the absolute overlay Link so it
-                captures its own clicks; `mt-auto` pins it to the bottom of
-                the flex-column card. */}
             <TakeButton listing={listing} className="relative mt-auto w-full" />
         </article>
     );

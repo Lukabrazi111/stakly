@@ -24,13 +24,8 @@ interface Props {
     onSuccess?: () => void;
 }
 
-/**
- * Shared confirmation dialog for cancelling a listing. Used by the listing
- * detail page Cancel button and the /listings/mine row Cancel action.
- *
- * Owns its own `processing` state and the DELETE call. Consumers manage
- * `open` only (controlled), matching the `ResumeListingDialog` pattern.
- */
+/** Shared confirmation dialog for cancelling a listing. Owns the DELETE
+ *  call; consumers control `open` only. */
 export function CancelListingDialog({
     listing,
     open,

@@ -10,20 +10,16 @@ use Inertia\Inertia;
 use Inertia\Response;
 
 /**
- * Public reader for admin-managed CMS pages (M26 Phase 1). Two paths through
- * the same action:
+ * Public reader for admin-managed CMS pages. Two paths through `show`:
  *
- *   - **Public** — must be published; goes through `Cache::rememberForever`
- *     keyed by `Page::cacheKey()`. Cache busts automatically from the model's
- *     save/delete events.
- *   - **Admin preview** — request carries a valid temporary signature minted
- *     by `PagesTable` / `EditPage`. Bypasses the cache and the published-at
- *     gate so drafts and scheduled rows render. Signature expires after 30
- *     minutes (`URL::temporarySignedRoute`).
+ *   - **Public** — must be published; cached via `Cache::rememberForever`
+ *     keyed by `Page::cacheKey()`. Busts on model save/delete.
+ *   - **Admin preview** — request carries a valid temporary signature
+ *     (`URL::temporarySignedRoute`, 30 min). Bypasses cache + published-at
+ *     gate so drafts and scheduled rows render.
  *
- * Locale fallback to `Page::DEFAULT_LOCALE` lives in the model resolver, so
- * a missing translation transparently renders the English copy until the
- * translated row lands.
+ * Missing translations fall back to `Page::DEFAULT_LOCALE` via the model
+ * resolver.
  */
 class PageController extends Controller
 {
@@ -39,10 +35,9 @@ class PageController extends Controller
     }
 
     /**
-     * Bare-slug entry point — `/about` → 301 to `/en/about`. Validates the
-     * slug exists + is published first (re-uses the public cache key) so
-     * unknown slugs 404 instead of redirecting to a route that will also
-     * 404 — saves a hop and keeps logs cleaner.
+     * Bare-slug entry — `/about` → 301 to `/en/about`. Validates the slug
+     * exists + is published first so unknown slugs 404 here instead of
+     * redirecting to a route that will also 404.
      */
     public function redirectToDefault(string $slug): RedirectResponse
     {
@@ -95,12 +90,9 @@ class PageController extends Controller
         return [
             'title' => $page->title,
             'html' => $html,
-            // Plain-text excerpt used as og:description / meta description by
-            // the frontend's PageMeta. Strip tags + collapse whitespace
-            // before truncating so the snippet reads as one continuous
-            // sentence rather than visible markdown leftovers. Cached
-            // alongside the rest of the payload — invalidated whenever the
-            // page is saved/deleted (see Page model events).
+            // og:description excerpt — strip tags + collapse whitespace
+            // before truncating so the snippet reads as one sentence
+            // rather than visible markdown leftovers.
             'description' => (string) str(strip_tags($html))
                 ->replaceMatches('/\s+/u', ' ')
                 ->trim()

@@ -10,13 +10,8 @@ interface Props {
     className?: string;
 }
 
-/**
- * Displays a wallet address with a one-click copy button.
- *
- * Always copies the full address regardless of how it's rendered. The 2-second
- * `copied` state gives optimistic confirmation; the Sonner toast is the
- * authoritative success cue.
- */
+/** Wallet address + one-click copy. Always copies the full address even
+ *  when rendered truncated. */
 export function AddressDisplay({
     address,
     truncate = false,

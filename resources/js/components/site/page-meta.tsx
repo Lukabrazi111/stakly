@@ -1,53 +1,21 @@
 import { Head } from '@inertiajs/react';
 
 interface PageMetaProps {
-    /**
-     * The page's <title>. Inertia's title callback (in app.tsx + ssr.tsx)
-     * prepends the app name automatically — pass the page-specific portion
-     * here (e.g. `"Match #42"`, not `"Match #42 - Stakly"`). Also wired to
-     * `og:title` and `twitter:title`.
-     */
     title: string;
-    /**
-     * 1-2 sentence summary, capped around 160 chars for SEO + social card
-     * truncation. Wired to `meta[name=description]`, `og:description`, and
-     * `twitter:description`. Keep it punchy — search snippets and link
-     * previews show this verbatim.
-     */
     description: string;
-    /**
-     * Absolute URL of the page's social-share image (1200×630 recommended).
-     * When omitted, the blade-rendered default at `asset('og-image.png')`
-     * stays as the og:image — fine for most pages. Override when a page
-     * has a more specific visual (game poster on listing detail, avatar
-     * on profile, etc.).
-     */
+    /** Absolute URL of the page's social-share image (1200×630 recommended).
+     *  When omitted, the blade-rendered default at `asset('og-image.png')`
+     *  stays as the og:image. */
     image?: string;
-    /**
-     * Mark the page as `robots: noindex,nofollow`. Use for private
-     * surfaces (matches, wallet, settings, auth flow pages) that shouldn't
-     * appear in search results.
-     */
+    /** Marks the page as `robots: noindex,nofollow`. Use for private
+     *  surfaces (matches, wallet, settings, auth) that shouldn't appear
+     *  in search results. */
     noindex?: boolean;
-    /**
-     * Overrides the default `og:type` (`website`). Set `"profile"` on
-     * user profile pages and `"article"` on CMS pages for richer crawler
-     * categorization.
-     */
     type?: 'website' | 'article' | 'profile';
 }
 
-/**
- * Per-page head tags + Open Graph + Twitter Card meta. Wraps Inertia's
- * `<Head>` with a typed API + `head-key` dedupe so a page declaring
- * `<PageMeta>` replaces blade-rendered defaults instead of duplicating
- * them.
- *
- * Blade defaults (in `resources/views/app.blade.php`) handle the
- * structural tags every page shares (og:site_name, og:image fallback,
- * twitter:card, canonical URL, og:url). PageMeta handles the dynamic,
- * page-specific bits.
- */
+/** Per-page head tags + Open Graph + Twitter Card. `head-key` dedupes
+ *  against the blade-rendered defaults. */
 export function PageMeta({
     title,
     description,

@@ -47,16 +47,9 @@ export function ProfileMenu({ user }: Props) {
                 <Button
                     variant="ghost"
                     size="icon"
-                    // Trigger acts as `group` so the inner Avatar can react to
-                    // hover/open states from the parent. The Button itself
-                    // carries a soft pink halo (`shadow-glow`); the Avatar gets
-                    // a 2px pink ring inside the button bounds — no layout shift
-                    // since size-9 inside size-10 leaves 2px of breathing room.
-                    // No `focus-visible:` on the Avatar ring on purpose: after
-                    // closing the dropdown Radix returns focus to the trigger,
-                    // and focus-visible would keep the ring stuck around. The
-                    // Button source already carries a focus-visible ring at the
-                    // wrapper level for keyboard a11y.
+                    // No `focus-visible:` on the Avatar ring — Radix returns
+                    // focus to the trigger after close, which would keep
+                    // the ring stuck on.
                     className="group size-10 rounded-full p-0 transition-shadow duration-200 ease-out hover:shadow-glow data-[state=open]:shadow-glow"
                     aria-label="Open account menu"
                 >
@@ -72,22 +65,13 @@ export function ProfileMenu({ user }: Props) {
                 </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent
-                // DropdownMenuContent acts as a transparent positioning wrapper
-                // here (Radix handles its placement). The ACTUAL styled menu
-                // box is the inner div below; the ambient layer sits as a
-                // sibling BEFORE the styled box so painting order matches the
-                // auth modal: ambient paints first, then the bg-card menu box
-                // covers it where they overlap. Only the outer halo (beyond
-                // the menu's bounds) is visible — true "behind" glow.
+                // Transparent positioning wrapper — actual styled box is the
+                // inner div below. Ambient halo paints first as a sibling so
+                // only the outer glow shows past the menu's bg-card cover.
                 className="relative !w-auto !overflow-visible !rounded-none !border-0 !bg-transparent !p-0 !shadow-none !backdrop-blur-none"
                 align="end"
                 sideOffset={8}
             >
-                {/* Ambient pink atmosphere — same radial-gradient + blur
-                    pattern as the auth modal, scaled down for a dropdown.
-                    Centered on the menu, 460px wide (same as the modal),
-                    100px blur. Painted before the menu box → only the halo
-                    OUTSIDE the menu's edges is visible. */}
                 <div
                     aria-hidden
                     className="pointer-events-none absolute top-1/2 left-1/2 size-[460px] -translate-x-1/2 -translate-y-1/2 rounded-full blur-[100px]"
@@ -97,10 +81,6 @@ export function ProfileMenu({ user }: Props) {
                     }}
                 />
 
-                {/* Actual styled menu box — sits on top of the ambient layer,
-                    its bg-card covers the inner part of the glow, leaving only
-                    the outer halo visible. Border-glow gives the pink border +
-                    tight inner ring, same as the auth modal. */}
                 <div className="relative w-60 rounded-xl border border-glow bg-card p-1.5 backdrop-blur-md">
                     <DropdownMenuLabel className="p-0 font-normal">
                         <div className="flex flex-col gap-0.5 px-2.5 py-2">

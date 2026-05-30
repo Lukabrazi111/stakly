@@ -18,19 +18,8 @@ const REASON_MAX = 200;
 
 const OTHER = 'Other';
 
-/**
- * Predefined cancellation reasons. The submitted `reason` field is the
- * literal label string — sending the visible text (not a code) keeps the
- * backend dumb (no enum to maintain on the server) and the persisted
- * value self-describing for admin / chat review. Trade: copy changes
- * here don't retroactively update historical records, which is fine —
- * the persisted reason is a snapshot of what the user picked at request
- * time.
- *
- * "Other" reveals a free-text textarea. If the user leaves it blank, the
- * persisted reason is the literal "Other" — still meaningful to the
- * opponent ("they didn't want to specify").
- */
+// Submitted `reason` is the literal label string — no server enum, persisted
+// value is self-describing. Copy changes don't retroactively update history.
 const PRESET_REASONS = [
     'Something came up, I have to go',
     'Technical / connection issues',
@@ -42,39 +31,11 @@ const PRESET_REASONS = [
 
 interface RequestCancellationButtonProps {
     matchId: number;
-    /**
-     * Set to a positive number when the viewer is mid-cooldown after a
-     * previous rejected request. The button stays visible (so the user
-     * sees the affordance) but disables with a tooltip showing the
-     * remaining minutes. `0` or `undefined` ⇒ enabled.
-     */
+    /** Positive number while mid-cooldown after a rejected request;
+     *  0/undefined → enabled. */
     cooldownMinutesRemaining?: number;
 }
 
-/**
- * Sibling escape hatch to `OpenDisputeButton` — same subordinate inline
- * style (small text link with icon, not a primary button), since the
- * cooperative confirm path is the intended default. The pair sits side
- * by side at the bottom of the Pending action card.
- *
- * Per-user 30-min cooldown after a rejected request is reflected here
- * via the `cooldownMinutesRemaining` prop — parent computes it from
- * `match.cancellation.rejected_at` so the value is fresh on every
- * render without a separate clock subscription.
- *
- * The reason flow is hybrid: a short radio list of preset reasons +
- * "Other" with an optional free-text fallback. Hybrid trades off:
- *
- *   - Discoverability (users don't have to think of a reason from scratch)
- *   - Speed (one click vs typing for 95% of cases)
- *   - Mild abuse mitigation (preset paths can't carry URLs / handles)
- *   - Flexibility (Other catches the long tail without forcing rigidity)
- *
- * Whitespace-only "Other" text normalizes to `null` server-side
- * (`RequestCancellationRequest::prepareForValidation`); when Other is
- * picked with no text, the submitted value is the literal string
- * "Other" so the opponent sees an intent indicator instead of a blank.
- */
 export function RequestCancellationButton({
     matchId,
     cooldownMinutesRemaining,
@@ -189,14 +150,6 @@ export function RequestCancellationButton({
                                     placeholder="Optional — add a short note for your opponent."
                                     maxLength={REASON_MAX}
                                     rows={3}
-                                    // Borderless override — the radio rows
-                                    // above carry the visual hierarchy;
-                                    // textarea sits as a soft inset under
-                                    // the "Other" row without competing
-                                    // for attention with its own chrome.
-                                    // Cursor is the focus indicator
-                                    // (browsers render it regardless of
-                                    // styling).
                                     className="border-0"
                                 />
                                 <p className="text-right text-xs text-muted-foreground tabular-nums">
@@ -234,25 +187,8 @@ interface ReasonOptionProps {
     onSelect: () => void;
 }
 
-/**
- * Stakly-skinned radio row using a native `<input type="radio">` for
- * full keyboard + screen-reader semantics. Avoids pulling in a new
- * shadcn primitive for a single feature; we can swap to a shared
- * `RadioGroup` later if more places need radios.
- *
- * Selected state: **border color only** — no glow, no inner tint
- * beyond the shared `bg-card/40` surface. The inner radio dot fills
- * in to provide a second non-color affordance.
- *
- * Focus ring uses `has-[:focus-visible]:ring-*` (Tailwind v4 `:has()`
- * variant + `:focus-visible`) so the keyboard-focus ring **only**
- * appears when the user arrived via Tab — mouse clicks don't trigger
- * the glow. Drops the previous `focus-within:ring` which fired
- * unconditionally on click. Per the UI/UX skill's accessibility rule
- * we can't remove focus indication entirely; scoping to
- * focus-visible keeps a11y intact without showing the glow to mouse
- * users.
- */
+/** Native radio + Stakly skin. `has-[:focus-visible]` so the focus ring
+ *  only shows for keyboard users, not on mouse clicks. */
 function ReasonOption({ label, checked, onSelect }: ReasonOptionProps) {
     return (
         <label

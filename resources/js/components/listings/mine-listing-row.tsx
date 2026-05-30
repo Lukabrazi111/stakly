@@ -29,17 +29,8 @@ interface Props {
     listing: Listing;
 }
 
-/**
- * One row inside the `/listings/mine` table. Mirrors the visual model from
- * `MatchListRow` — sits inside a single wrapping card, `border-t` separator
- * between rows, calm `bg-primary/5` hover.
- *
- * Whole row is clickable to the listing detail page via an absolute-overlay
- * Link. The Cancel icon in a `relative` cell paints above the Link in the
- * stacking order and stops propagation. Per-listing pause/resume is
- * intentionally absent — the global Active Mode toggle in the page header
- * replaces per-listing visibility control (Phase 6.5 simplification).
- */
+/** One row inside `/listings/mine`. Whole row → listing detail via an
+ *  absolute-overlay Link; Cancel sits in a `relative` cell above it. */
 export function MineListingRow({ listing }: Props) {
     const [cancelOpen, setCancelOpen] = useState(false);
 
@@ -62,22 +53,15 @@ export function MineListingRow({ listing }: Props) {
                 aria-label={`View listing #${listing.id}`}
             />
 
-            {/* Mobile layout uses two grouped rows; on desktop the wrappers
-                disappear via `md:contents` so children flow directly into the
-                article's flex-row and pick up its `md:gap-4`. Result: 2-row
-                mobile (status + stake / time + expires + cancel) and the
-                original single-row desktop layout. */}
-
-            {/* Mobile row 1: status pill + stake (+ cancel pushed right) */}
+            {/* Mobile: two grouped rows. Desktop: wrappers collapse via
+                `md:contents` so children flow into the article's flex-row. */}
             <div className="flex items-center gap-3 md:contents">
-                {/* Status pill */}
                 <span
                     className={`pointer-events-none relative inline-flex shrink-0 items-center justify-center rounded-full border px-3 py-1 text-xs font-medium md:w-24 ${STATUS_TONE[listing.status]}`}
                 >
                     {STATUS_LABEL[listing.status]}
                 </span>
 
-                {/* Stake */}
                 <div className="pointer-events-none relative flex shrink-0 items-baseline gap-1 md:w-28">
                     <span className="text-gradient-primary font-display text-xl leading-none font-bold">
                         ${listing.stake_amount}
@@ -86,9 +70,7 @@ export function MineListingRow({ listing }: Props) {
                 </div>
             </div>
 
-            {/* Mobile row 2: time controls (flex-1) + expires + cancel */}
             <div className="flex items-center gap-3 md:contents">
-                {/* Time controls */}
                 <div className="pointer-events-none relative flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
                     {listing.time_control.map((tc) => (
                         <span
@@ -101,7 +83,6 @@ export function MineListingRow({ listing }: Props) {
                     ))}
                 </div>
 
-                {/* Expires */}
                 <div
                     className={`pointer-events-none relative inline-flex shrink-0 items-center gap-1.5 text-xs font-medium md:w-24 md:justify-end ${endingSoon ? 'text-warning' : 'text-muted-foreground'}`}
                 >
@@ -109,10 +90,8 @@ export function MineListingRow({ listing }: Props) {
                     {formatTimeRemaining(listing.expires_at)}
                 </div>
 
-                {/* Cancel — only for Open listings. Cell is
-                    pointer-events-none so empty space falls through to the
-                    overlay; the IconButton overrides with pointer-events-auto
-                    so the cancel click still works. */}
+                {/* Cell is pointer-events-none so empty space falls through
+                    to the overlay; the button overrides to pointer-events-auto. */}
                 {canCancel && (
                     <div className="pointer-events-none relative flex shrink-0 items-center gap-1 md:w-24 md:justify-end">
                         <IconButton

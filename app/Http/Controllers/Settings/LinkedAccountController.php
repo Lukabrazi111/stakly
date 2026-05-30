@@ -14,19 +14,9 @@ use Inertia\Inertia;
 use Inertia\Response;
 
 /**
- * Settings page for chess.com / Lichess account linking (M8 Phase 1).
- *
- * Bio-code flow:
- *   - GET edit   — render the settings page with per-provider state and
- *                  any pending verification.
- *   - POST store — start a verification (generate + store code).
- *   - POST update — verify the pending code against the provider's API.
- *   - DELETE destroy — unlink a verified account.
- *
- * The code itself is persisted on the user (pending columns) so a page
- * refresh after starting verification still shows the code — no flash
- * dependence. The controller is a thin adapter; business logic lives in
- * `RequestLinkVerificationAction` / `VerifyLinkedAccountAction`.
+ * Settings page for chess.com / Lichess bio-code account linking.
+ * The pending code is persisted on the user (not flash) so a refresh
+ * after starting verification still shows the code.
  */
 class LinkedAccountController extends Controller
 {
@@ -117,10 +107,8 @@ class LinkedAccountController extends Controller
     }
 
     /**
-     * Cancel an in-flight verification — deletes the pending row so the
-     * user can start again with a different username. Used when the user
-     * mistyped their handle and wants to correct it without waiting for the
-     * 15-minute TTL.
+     * Cancel an in-flight verification — lets the user fix a mistyped
+     * handle without waiting for the 15-minute TTL.
      */
     public function cancelPending(Request $request): RedirectResponse
     {

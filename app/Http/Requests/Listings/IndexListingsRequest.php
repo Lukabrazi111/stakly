@@ -9,14 +9,12 @@ use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
 /**
- * Validates filter + sort + page query params for the public listings index.
- *
- * URL shape follows Spatie's query-builder convention:
+ * Spatie query-builder URL contract:
  *   /listings?filter[stake_max]=100&filter[time_control]=blitz,rapid&sort=highest_stake&page=2
  *
- * Every field is attacker-controlled. Keep rules tight — drop or coerce
- * anything weird rather than throwing a 422 (the page should still render
- * for users who land via a slightly-malformed shared link).
+ * Every field is attacker-controlled. Malformed input redirects to a clean
+ * `/listings` instead of 422 so a stale share-link lands on the unfiltered
+ * marketplace.
  */
 class IndexListingsRequest extends FormRequest
 {
@@ -33,12 +31,6 @@ class IndexListingsRequest extends FormRequest
         'language',
     ];
 
-    /**
-     * On validation failure, redirect to a clean `/listings` instead of
-     * bouncing the user back where they came from. A stale share-link with
-     * malformed query params should land on the unfiltered marketplace, not
-     * a 422 error wall.
-     */
     protected $redirect = '/listings';
 
     public function authorize(): bool
@@ -47,8 +39,7 @@ class IndexListingsRequest extends FormRequest
     }
 
     /**
-     * Spatie splits comma-separated filter values automatically, but we
-     * normalize `filter.time_control` to an array up-front so our validation
+     * Normalize `filter.time_control` to an array up-front so validation
      * rules can check each entry against the TimeControl enum.
      */
     protected function prepareForValidation(): void
@@ -87,10 +78,6 @@ class IndexListingsRequest extends FormRequest
     }
 
     /**
-     * Filters echoed back to the frontend so the UI can hydrate its state
-     * from the URL. Reads from `filter[*]` (Spatie convention) but returns
-     * the flat shape the React side already consumes.
-     *
      * @return array{game: string, stake_min: ?float, stake_max: ?float, skill_min: ?int, skill_max: ?int, time_control: array<int, string>, region: ?string, language: ?string, sort: string}
      */
     public function filters(): array

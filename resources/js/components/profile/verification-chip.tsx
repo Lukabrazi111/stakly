@@ -2,15 +2,7 @@ import { ExternalLink } from 'lucide-react';
 
 type Provider = 'chess_com' | 'lichess';
 
-// Provider-tinted chip tokens (M19 Phase 2). The chip's presence itself
-// means "verified" — only completed links are passed to this component
-// from the profile hero, so we don't need an additional check icon. Tint
-// colors lifted from each platform's brand identity, opacity-adjusted to
-// read on Stakly's dark surface.
-//
-// Future providers (M15 multi-game): FACEIT (orange), Riot (red), Steam
-// (blue). Tokens prepared below as commented examples so the chip system
-// extends to the next game by adding an enum case + meta entry.
+// Tint colors from each platform's brand identity, adjusted for the dark surface.
 const PROVIDER_META: Record<
     Provider,
     {
@@ -29,10 +21,6 @@ const PROVIDER_META: Record<
         href: (u) => `https://lichess.org/@/${u}`,
         tone: 'border-neutral-500/50 bg-neutral-500/15 text-neutral-200 hover:border-neutral-400/70 hover:bg-neutral-500/25',
     },
-    // Future (M15):
-    //   faceit: tone 'border-[#ff5500]/60 bg-[#ff5500]/15 text-[#ff9b66]'
-    //   riot:   tone 'border-[#d13639]/60 bg-[#d13639]/15 text-[#ff7a7c]'
-    //   steam:  tone 'border-[#1b6f9c]/60 bg-[#1b6f9c]/15 text-[#7fb8db]'
 };
 
 interface Props {

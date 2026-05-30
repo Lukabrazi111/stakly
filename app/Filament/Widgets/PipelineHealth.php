@@ -9,37 +9,15 @@ use Filament\Widgets\StatsOverviewWidget;
 use Filament\Widgets\StatsOverviewWidget\Stat;
 
 /**
- * M14 Phase 1 — health snapshot of the auto-fetch settlement pipeline.
- * Sits alongside `OpsOverview` on the admin dashboard so operators see at
- * a glance whether the engine that settles matches is healthy before they
- * dig into individual disputes.
- *
- * Four stats in a 2×2 grid:
- *
- *   Top row — "right now":
- *     • Settlements (24h)  — count of `matched` rows in the last day.
- *                            Trend = last 7 days.
- *     • Errors (24h)       — count of `error` rows in the last day.
- *                            Color escalates by absolute count
- *                            (>0 warning, >=10 danger).
- *
- *   Bottom row — "rolling health":
- *     • Avg latency (7d)   — mean `latency_ms` over rolling 7 days
- *                            across provider-call outcomes.
- *     • Volume (24h)       — total attempts in last day with the per-
- *                            outcome breakdown in the description.
- *
- * Each stat extracted to a private method so `getStats()` reads as a
- * recipe — same convention as `OpsOverview`.
+ * Health snapshot of the auto-fetch settlement pipeline.
  */
 class PipelineHealth extends StatsOverviewWidget
 {
     protected ?string $pollingInterval = '30s';
 
     /**
-     * Daily error rollup over which the stat color flips to `danger`. Below
-     * this and above zero is `warning`; zero is `success`. Tunable as we
-     * learn what a "normal" error volume looks like at launch.
+     * Daily error count at which the stat flips to `danger`. Tunable as we
+     * learn what "normal" volume looks like at launch.
      */
     private const DANGER_ERROR_THRESHOLD = 10;
 
@@ -163,8 +141,7 @@ class PipelineHealth extends StatsOverviewWidget
             return 'gray';
         }
 
-        // Lower latency = healthier. Inverted compared to count-based trend
-        // colors (where rising counts of "good things" = success).
+        // Lower latency = healthier — inverted vs count-based trend colors.
         return $thisWeek < $priorWeek ? 'success' : 'warning';
     }
 
@@ -200,8 +177,7 @@ class PipelineHealth extends StatsOverviewWidget
             return 'No attempts today';
         }
 
-        // Curated key order — matched first because it's the success signal,
-        // errors near the front because they need attention.
+        // matched first (success signal), errors next (attention).
         $order = [
             AutoFetchOutcome::Matched->value,
             AutoFetchOutcome::Error->value,
@@ -250,10 +226,8 @@ class PipelineHealth extends StatsOverviewWidget
     }
 
     /**
-     * Mean `latency_ms` across provider-call outcomes in the window.
-     * `skipped` rows are excluded — they never called the provider, so
-     * including their NULL latency would just be noise in the avg.
-     * Returns null when the window has no provider-call rows.
+     * `skipped` rows excluded — they never called the provider, so their
+     * NULL latency would just be noise in the avg.
      */
     private function avgLatencyBetween(CarbonImmutable $start, CarbonImmutable $end): ?int
     {

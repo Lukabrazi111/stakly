@@ -12,14 +12,8 @@ interface Props {
     minWithdrawal: number;
 }
 
-/**
- * Withdraw form. The v1 backend short-circuits the POST with a flash notice
- * ("Withdrawals enabled at launch") so this form is fully exercisable today
- * — all validation paths fire, just the ledger write doesn't.
- *
- * Address is a TRC20 Tron address (34 chars, base58 starting with 'T').
- * Amount caps: server-side `min:MIN_WITHDRAWAL`, `max:100000`, ≤ balance.
- */
+/** Withdraw form. Backend short-circuits the POST with a flash notice
+ *  pending M9; all validation paths still fire. */
 export function WithdrawForm({ balance, minWithdrawal }: Props) {
     const { data, setData, post, processing, errors, transform } = useForm<{
         address: string;
@@ -29,8 +23,7 @@ export function WithdrawForm({ balance, minWithdrawal }: Props) {
         amount: '',
     });
 
-    // Strip whitespace from the address before submit. Common UX paper-cut:
-    // users paste "T... " with a trailing space and the regex rejects it.
+    // Trim — pasted addresses often carry a trailing space that the regex rejects.
     transform((d) => ({ ...d, address: d.address.trim() }));
 
     const amountNumber = data.amount === '' ? 0 : Number(data.amount);
@@ -46,7 +39,7 @@ export function WithdrawForm({ balance, minWithdrawal }: Props) {
         !belowMin;
 
     const handleMax = () => {
-        // toFixed(2) ensures the input matches the server's `decimal:0,2` rule.
+        // Match the server's `decimal:0,2` rule.
         setData('amount', balance.toFixed(2));
     };
 

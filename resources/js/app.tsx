@@ -9,14 +9,9 @@ import SiteLayout from '@/layouts/site-layout';
 
 const appName = import.meta.env.VITE_APP_NAME || 'Laravel';
 
-// Configure Echo for Reverb broadcasts. Called once at app boot so any
-// component using `useEcho()` from `@laravel/echo-react` gets a ready-to-go
-// singleton.
-//
-// Explicit options — relying on the package's implicit env-var defaults
-// silently fails when Vite hasn't re-read the env (e.g. dev server started
-// before .env was edited). Restart `sail npm run dev` after any
-// VITE_REVERB_* change for these to be picked up.
+// Explicit options — package's implicit env-var defaults silently fail when
+// Vite hasn't re-read the env. Restart `sail npm run dev` after any
+// VITE_REVERB_* change.
 const reverbPort = Number(import.meta.env.VITE_REVERB_PORT ?? 8080);
 const reverbScheme =
     (import.meta.env.VITE_REVERB_SCHEME as string | undefined) ?? 'http';

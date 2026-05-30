@@ -12,31 +12,17 @@ import {
 import { update as activeModeUpdate } from '@/routes/active-mode';
 
 interface Props {
-    /**
-     * Number of currently-Open listings the user has. Drives the contextual
-     * hint shown when Active Mode is on but there's nothing on the board —
-     * surfaces that the toggle is honored but inert until the user posts
-     * something.
-     */
+    /** Number of currently-Open listings the user has. Drives the contextual
+     *  hint shown when Active Mode is on but there's nothing on the board. */
     listingsCount: number;
 }
 
 /**
- * Bybit-style global "online/offline" toggle for the user's listings. Lives
- * only on the /listings/mine page header. Visual: status label + sliding
- * switch (custom-styled HTML button — shadcn doesn't ship a Switch primitive
- * yet and a single use site doesn't earn pulling one in).
+ * Global "online/offline" toggle for the user's listings.
  *
- * Asymmetric-risk handling:
- *   - Active → Inactive: direct POST (safe direction — just hides everything).
- *   - Inactive → Active: confirmation dialog (reactivating can trigger
- *     an immediate match within seconds, so the user gets one explicit
- *     "ready to play?" gate).
- *
- * Active Mode is *intent*, not a derived state from inventory — we never
- * auto-flip when the user hits 0 listings. Instead, the description swaps
- * to a contextual hint so the user knows their toggle is honored but inert
- * until they post.
+ * Asymmetric-risk handling: Active → Inactive posts directly; Inactive →
+ * Active requires a confirmation dialog because reactivating can trigger
+ * an immediate match within seconds.
  */
 export function ActiveModeToggle({ listingsCount }: Props) {
     const { auth } = usePage().props;
@@ -48,7 +34,6 @@ export function ActiveModeToggle({ listingsCount }: Props) {
 
     const handleToggleClick = () => {
         if (active) {
-            // Going inactive — safe direction, no dialog.
             if (processing) {
                 return;
             }
@@ -66,7 +51,6 @@ export function ActiveModeToggle({ listingsCount }: Props) {
             return;
         }
 
-        // Going active — confirm first.
         setDialogOpen(true);
     };
 
@@ -88,11 +72,6 @@ export function ActiveModeToggle({ listingsCount }: Props) {
     return (
         <>
             <div className="flex items-center justify-between gap-3">
-                {/* Mobile: labels left-aligned (text reads left-to-right
-                    naturally), switch on the far right via `justify-between`.
-                    Desktop: parent forces intrinsic width so `justify-between`
-                    is a no-op; labels right-align (items-end) to sit flush
-                    against the switch for a tight, compact group. */}
                 <div className="flex flex-col items-start sm:items-end">
                     <span className="text-sm font-medium text-foreground">
                         {active ? 'Active Mode' : 'Inactive Mode'}

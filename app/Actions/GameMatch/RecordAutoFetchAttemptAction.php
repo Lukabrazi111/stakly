@@ -9,34 +9,14 @@ use Illuminate\Support\Facades\Log;
 use Throwable;
 
 /**
- * M14 Phase 1 — single write-point for `match_auto_fetch_attempts` rows.
- * Mirrors the Wallet/ledger pattern: every audit insert flows through here
- * so the row + the log line are always paired.
- *
- * Why a dedicated Action rather than direct `MatchAutoFetchAttempt::create`:
- *
- *   1. Row + log entry must never drift. Some operators tail logs; some
- *      query the table; both surfaces should agree.
- *   2. Defensive error swallowing — observability code MUST NOT take down
- *      the pipeline. If the DB insert fails (constraint violation, dropped
- *      connection mid-job), we log the failure and continue. A broken
- *      audit-trail write should never cancel a match settlement.
- *   3. Bounded error_message — provider exceptions can carry long stack
- *      detail (e.g. nested DNS error chains). The column is `text` so it
- *      fits anything, but we still trim at the boundary to keep the
- *      Filament admin view readable.
- *
- * Called from:
- *   - `DispatchAutoFetchAction` for pre-flight skip cases.
- *   - `AutoFetchLichessGameJob` / `AutoFetchChessComGameJob` for every
- *     attempt that reaches the provider.
+ * Single write-point for `match_auto_fetch_attempts` rows. Pairs the DB row with a log line
+ * so operators tailing either surface see the same record. Audit-trail writes that fail must
+ * never cascade into pipeline failure — DB errors are logged + swallowed.
  */
 class RecordAutoFetchAttemptAction
 {
     /**
-     * Generous cap — long enough to carry a meaningful exception chain,
-     * short enough that the Filament timeline doesn't render a wall of
-     * stack text. Full message stays in the log entry.
+     * Trim at the boundary so the Filament timeline stays readable. Full message stays in logs.
      */
     private const ERROR_MESSAGE_MAX_LENGTH = 2000;
 
@@ -96,8 +76,6 @@ class RecordAutoFetchAttemptAction
             return MatchAutoFetchAttempt::create($row);
         } catch (Throwable $e) {
             // Audit-trail failures must never cascade into pipeline failure.
-            // Log the failed write itself so we can investigate, but return
-            // null and let the caller carry on settling the match.
             Log::warning('Audit insert failed (match_auto_fetch_attempts)', [
                 'match_id' => $row['match_id'] ?? null,
                 'outcome' => $row['outcome'] ?? null,
@@ -134,9 +112,8 @@ class RecordAutoFetchAttemptAction
     }
 
     /**
-     * Outcome → log level mapping. `error` is the only WARNING outcome;
-     * everything else is informational. Operators tailing for "what went
-     * wrong" filter on level=warning and see provider failures cleanly.
+     * `error` is the only WARNING outcome so operators can filter level=warning
+     * for "what went wrong" and see provider failures cleanly.
      */
     private function levelFor(AutoFetchOutcome $outcome): string
     {

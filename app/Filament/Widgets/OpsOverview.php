@@ -15,24 +15,14 @@ use Filament\Widgets\StatsOverviewWidget\Stat;
 use Illuminate\Support\Facades\DB;
 
 /**
- * M17 Phase 1 — single Stats Overview widget bundling the four ops metrics
- * Stakly's dashboard needs at a glance. Combined into one widget (rather
- * than 4 separate ones) so Filament's built-in responsive grid lays them
- * out horizontally: 4-in-a-row on desktop, 2x2 on tablet, stacked on
- * mobile. Splitting into separate widgets gives each one `columnSpan =
- * 'full'` and forces a vertical column.
- *
- * Each stat extracted to a private method so `getStats()` reads as a
- * recipe and the per-metric query lives in one focused chunk.
+ * Bundled Stats Overview widget. Combined into one widget (not 4 separate)
+ * so Filament's responsive grid lays them out horizontally — separate
+ * widgets force `columnSpan = 'full'` and stack vertically.
  */
 class OpsOverview extends StatsOverviewWidget
 {
     protected ?string $pollingInterval = '30s';
 
-    // 2x2 grid layout — for 4 stats this reads better than the default
-    // single-row stretch. Top row = "right now" (urgency + volume), bottom
-    // row = "trends" (revenue + engagement). Filament's responsive default
-    // collapses this to single-column on mobile.
     protected function getColumns(): int
     {
         return 2;
@@ -41,15 +31,9 @@ class OpsOverview extends StatsOverviewWidget
     protected function getStats(): array
     {
         return [
-            // Top-left: highest urgency. Admin's primary job is to clear
-            // this queue, so it lands where eyes naturally start.
             $this->openDisputesStat(),
-            // Top-right: today's volume — paired with disputes as the
-            // "right now" snapshot of platform activity.
             $this->matchesTodayStat(),
-            // Bottom-left: monthly revenue trend.
             $this->platformEarningsStat(),
-            // Bottom-right: weekly engagement trend.
             $this->activeUsersStat(),
         ];
     }

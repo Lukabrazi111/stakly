@@ -3,24 +3,13 @@ import type { ProfileTrust } from '@/types';
 
 interface Props {
     trust: ProfileTrust;
-    /**
-     * Count of settled matches between the viewer and the profile user.
-     * Drives the repeat-pair callout (shown only when count >= 2). 0 for
-     * guests and own-profile views — the controller skips the query in
-     * those cases.
-     */
+    /** Settled matches between viewer and profile user. 0 for guests and
+     *  own-profile views — the controller skips the query in those cases. */
     repeatPairCount: number;
 }
 
-/**
- * Data Overview row below the profile hero (M19 Phase 3). Three trust
- * tiles — completion rate 30d, completion rate lifetime, disputes — plus
- * a conditional repeat-pair callout above for repeat opponents.
- *
- * Hidden entirely when the user has no settled-match history (and no
- * repeat-pair). On a fresh profile, the page jumps directly from hero to
- * activity rather than displaying an empty Data Overview.
- */
+/** Trust tiles + conditional repeat-pair callout. Hidden when the user
+ *  has no settled-match history AND no repeat-pair. */
 export function TrustStrip({ trust, repeatPairCount }: Props) {
     const hasSettledHistory = trust.settled_lifetime > 0;
     const hasRepeatPair = repeatPairCount >= 2;

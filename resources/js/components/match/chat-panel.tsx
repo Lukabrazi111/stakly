@@ -18,8 +18,7 @@ interface ChatPanelProps {
     onRetry: (correlationId: string) => void;
     onDismiss: (correlationId: string) => void;
     uploadProgress: number | null;
-    // When true, render without the outer card chrome — used inside the
-    // mobile bottom sheet where Sheet provides its own surface.
+    /** Render without outer card chrome — used inside the mobile sheet. */
     bare?: boolean;
 }
 
@@ -27,17 +26,10 @@ const ACCEPTED_MIMES = ['image/jpeg', 'image/png', 'image/webp'];
 const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024;
 
 /**
- * Pure presentation component for a match's chat thread. Owns:
- *  - auto-scroll to bottom on new messages
- *  - empty-state copy
- *  - read-only banner when match status locks chat (Settled / ManualReview)
- *  - drag-and-drop image upload (Phase 3 Slice 1) on the message list area
- *  - pending-file state shared with `ChatInput` (so drag-drop and the
- *    paperclip picker both feed into the same queued attachment)
- *
- * Receives messages + the send callback from `useMatchChat` (called once at
- * the page level so a single Echo subscription serves both the desktop
- * right-rail render and the mobile sheet render of this same component).
+ * Match chat thread. Owns auto-scroll, empty state, read-only banner,
+ * drag-drop image upload, and pending-file state shared with ChatInput.
+ * Messages + send callback come from `useMatchChat` (called once at the
+ * page level so a single Echo subscription serves both renders).
  */
 export function ChatPanel({
     messages,
@@ -56,10 +48,7 @@ export function ChatPanel({
     const [pendingFile, setPendingFile] = useState<File | null>(null);
     const [isDragOver, setIsDragOver] = useState(false);
 
-    // Auto-scroll on new message. Phase 2 keeps this naive: always pin to
-    // the bottom. If a user is reading history when a new message arrives,
-    // they get yanked down — refine with an "at-bottom" check + a "↓ N new"
-    // pill if the behaviour shows up as a complaint.
+    // Naive auto-scroll — always pin to bottom on new message.
     useEffect(() => {
         const el = scrollRef.current;
 
@@ -75,9 +64,7 @@ export function ChatPanel({
             return;
         }
 
-        // Only react when a file is being dragged — text selections in the
-        // chat trigger dragenter too, and we don't want to flicker the
-        // overlay on every accidental drag.
+        // Filter to file drags only — text selections in chat also fire dragenter.
         if (!e.dataTransfer.types.includes('Files')) {
             return;
         }
@@ -96,8 +83,7 @@ export function ChatPanel({
     };
 
     const handleDragLeave = (e: DragEvent<HTMLDivElement>) => {
-        // dragleave fires on every child boundary — only clear the overlay
-        // when the cursor actually leaves the panel.
+        // dragleave fires on every child boundary; only clear when truly leaving.
         if (e.currentTarget.contains(e.relatedTarget as Node | null)) {
             return;
         }
@@ -190,9 +176,7 @@ export function ChatPanel({
                 />
             )}
 
-            {/* Drag overlay — only when the user drags a file onto the panel.
-                Pointer-events-none so the drop target underneath still fires
-                onDrop; the overlay is purely visual. */}
+            {/* pointer-events-none so the drop target underneath still fires onDrop. */}
             {isDragOver && !isReadOnly && (
                 <div className="pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-primary/60 bg-primary/10 backdrop-blur-sm">
                     <ImagePlus className="size-8 text-primary" />
