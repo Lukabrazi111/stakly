@@ -45,9 +45,15 @@ export function ProfileTabs({
     profileUserId,
     isOwnProfile,
 }: Props) {
-    const [tab, setTab] = React.useState<ProfileTab>(readTabFromUrl);
+    // Default to the matches tab during SSR + first client paint, then sync
+    // from `?tab=` after mount. Initializing via `readTabFromUrl` would
+    // render a different tab on server vs client when the URL carries
+    // `?tab=listings` or `?tab=reviews`.
+    const [tab, setTab] = React.useState<ProfileTab>(DEFAULT_TAB);
 
     React.useEffect(() => {
+        setTab(readTabFromUrl());
+
         const handler = () => setTab(readTabFromUrl());
         window.addEventListener('popstate', handler);
 

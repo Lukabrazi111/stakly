@@ -24,13 +24,31 @@ const MS_1_HOUR = 60 * 60 * 1000;
  *              flips the match to ManualReview in the next cron sweep)
  */
 export function MatchTimer({ deadline }: MatchTimerProps) {
-    const [now, setNow] = useState(() => Date.now());
+    // null until the client mounts — SSR can't know the wall clock, and
+    // initializing to `Date.now()` would render a different value on the
+    // server vs the first client paint, causing a hydration mismatch.
+    const [now, setNow] = useState<number | null>(null);
 
     useEffect(() => {
+        setNow(Date.now());
         const id = window.setInterval(() => setNow(Date.now()), 1000);
 
         return () => window.clearInterval(id);
     }, []);
+
+    if (now === null) {
+        return (
+            <time
+                dateTime={deadline.toISOString()}
+                role="timer"
+                aria-label="Loading time remaining"
+                className="inline-flex w-fit shrink-0 items-center gap-1.5 rounded-full border border-primary/40 bg-primary/10 px-3 py-1.5 text-xs font-medium text-primary"
+            >
+                <Clock className="size-3.5 shrink-0" aria-hidden="true" />
+                <span className="tabular-nums">— : — : —</span>
+            </time>
+        );
+    }
 
     const msRemaining = deadline.getTime() - now;
     const isExpired = msRemaining <= 0;

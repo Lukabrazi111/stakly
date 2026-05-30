@@ -28,7 +28,15 @@ function readCooldownRemaining(): number {
 
 export function UnverifiedChip({ className }: Props) {
     const [sending, setSending] = useState(false);
-    const [cooldown, setCooldown] = useState(() => readCooldownRemaining());
+    // Default to 0 during SSR + first client paint, then sync from
+    // localStorage after mount. Initializing via `readCooldownRemaining()`
+    // would render different labels ("Verify email" vs "Resend in Xs") on
+    // server vs client and cause a hydration mismatch.
+    const [cooldown, setCooldown] = useState(0);
+
+    useEffect(() => {
+        setCooldown(readCooldownRemaining());
+    }, []);
 
     // Tick down while cooldown is active.
     useEffect(() => {

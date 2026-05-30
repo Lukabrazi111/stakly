@@ -302,14 +302,27 @@ Deferred out of Phase 2 (not blocking close):
 
 **Phase 3 — Global Inertia SSR enablement (Path A)**
 
-The big architectural piece. Benefits every Inertia page, not just CMS.
+The big architectural piece. Benefits every Inertia page, not just CMS — homepage, listings index, listing detail, and profile pages all become first-byte-rendered HTML. Also fixes social link previews (Discord / Twitter / Slack unfurls).
 
-- [ ] Configure `@inertiajs/vite` SSR mode. Dev SSR is automatic per the plugin.
-- [ ] Production SSR build step in `package.json` (`build:ssr`).
-- [ ] `compose.yaml` adds a Node SSR sidecar service (`stakly.ssr`) — same image base as the existing Node setup, runs the SSR server on a fixed port.
-- [ ] Laravel `config/inertia.php` — point SSR mode at the sidecar URL.
-- [ ] Audit pass for SSR-unsafe code: any `window.` / `document.` / `localStorage` access in initial render needs a `typeof window === 'undefined'` guard. Likely candidates: `AuthModalProvider` (already guarded — confirmed), any other `useEffect`-less browser-API usage in component bodies.
-- [ ] Verification: a curl-with-no-JS of the homepage / about page returns fully-rendered HTML. Optional: Lighthouse SEO score before/after.
+Audit pass surfaced that prior work already scaffolded the config (`'ssr' => ['enabled' => true, 'url' => '127.0.0.1:13714']` in `config/inertia.php`) and the build script (`build:ssr` in `package.json`). What remains is the SSR entry, the hydration cleanup that the audit found, the Docker sidecar, and verification.
+
+- [ ] **SSR entry.** Create `resources/js/ssr.tsx` mirroring `app.tsx` (TooltipProvider + AuthModalProvider + Toaster wrap, same layout switch). Uses `createServer` from `@inertiajs/react/server` + `ReactDOMServer.renderToString`. Critically does **NOT** call `configureEcho` — Echo's WebSocket client is client-only and would crash Node. Echo stays in `app.tsx`.
+- [ ] **Hydration fixes** for six surfaces that render different content on server vs client first paint (will throw console warnings + cause brief visual flicker if left). Pattern is the same for all six: initialize state to a stable neutral value during render, sync to the real value (`localStorage` / URL / `Date.now()`) inside a `useEffect` on mount.
+    - [ ] `components/match/match-timer.tsx` — `useState(() => Date.now())`
+    - [ ] `components/match/waiting-for-game-card.tsx` — two `useState(() => Date.now())` calls
+    - [ ] `components/site/player-sidebar.tsx` — `useState(readCollapsed)` reads localStorage during render
+    - [ ] `components/site/unverified-chip.tsx` — `useState(() => readCooldownRemaining())` reads localStorage + Date.now()
+    - [ ] `components/profile/profile-tabs.tsx` — `useState(readTabFromUrl)` reads URL during render
+    - [ ] `components/auth/auth-modal-provider.tsx` — `useState(() => computeState(readAuthFromDom()))` reads URL + DOM during render
+- [ ] **SSR URL env-driven.** Switch `config/inertia.php` to `env('INERTIA_SSR_URL', 'http://127.0.0.1:13714')`. Add `INERTIA_SSR_URL=http://ssr:13714` to `.env.example` so the Docker sidecar service name resolves inside the `laravel.test` container.
+- [ ] **`compose.yaml` SSR sidecar.** New `ssr` service on the existing `sail-8.5/app` image running `php artisan inertia:start-ssr`. Mirrors the pattern of the existing `reverb` / `queue` / `lichess-stream` sidecars.
+- [ ] **Verification.** `sail npm run build:ssr` produces `bootstrap/ssr/ssr.js`. `curl -s` of homepage, listings, profile, and a CMS page returns fully-rendered HTML (not the empty `<div id="app">` Inertia ships without SSR). Optional Lighthouse SEO score before/after.
+
+Audit notes (so we don't re-walk this):
+
+- **Already correctly guarded** with `typeof window === 'undefined'`: the six surfaces above use guards but read the value during render anyway — guards prevent crash, not hydration mismatch. Plus `use-mobile.tsx` (uses `useSyncExternalStore` with explicit `getServerSnapshot`), `use-current-url.ts`, and `wayfinder/index.ts` are fully SSR-safe.
+- **Safe by location** (inside `useEffect` / event handlers / callbacks, never during render): every other browser-API usage in the codebase, including `match-chat.ts`'s `crypto.randomUUID()` / `Date.now()` in the `send` callback, `avatar-crop-modal.tsx`'s `document.createElement('canvas')` in a save handler, `back-link.tsx`'s `window.history.back()` in click handler, all `navigator.clipboard.writeText` usages.
+- **Tolerable edge case** (not in scope to fix): `site-footer.tsx`'s `new Date().getFullYear()` only mismatches at midnight UTC on Dec 31. Negligible.
 
 **Phase 4 — Locale switcher in `SiteHeader`** [deferred until a second language ships]
 
