@@ -1,4 +1,4 @@
-import { Head, Link, router, usePage } from '@inertiajs/react';
+import { Link, router, usePage } from '@inertiajs/react';
 import { Clock, Globe, Languages, Trophy } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useState } from 'react';
@@ -6,6 +6,7 @@ import { SellerTrustMeta } from '@/components/listings/seller-trust-meta';
 import { VerifiedPlatformChip } from '@/components/listings/verified-platform-chip';
 import { VerificationChip } from '@/components/profile/verification-chip';
 import { BackLink } from '@/components/site/back-link';
+import { PageMeta } from '@/components/site/page-meta';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import {
@@ -142,10 +143,25 @@ export default function ListingShow({ listing, match }: ListingShowProps) {
         );
     };
 
+    const timeControlLabel = formatTimeControls(listing.time_control);
+    const platformLabel = PLATFORM_LABEL[listing.platform];
+    const metaTitle = `${listing.creator.name} · $${listing.stake_amount} ${timeControlLabel} chess`;
+    const skillFragment =
+        listing.skill_min !== null && listing.skill_max !== null
+            ? ` Skill ${listing.skill_min}–${listing.skill_max}.`
+            : '';
+    const completionFragment =
+        listing.creator.completion_rate_30d !== null &&
+        listing.creator.settled_lifetime > 0
+            ? ` ${listing.creator.completion_rate_30d}% completion over ${listing.creator.settled_lifetime} matches.`
+            : '';
+    const metaDescription = `Take @${listing.creator.username}'s $${listing.stake_amount} USDT ${timeControlLabel.toLowerCase()} chess match on ${platformLabel}.${skillFragment}${completionFragment} Both stakes escrowed.`;
+
     return (
         <SiteLayout>
-            <Head
-                title={`${listing.creator.name} · $${listing.stake_amount} ${formatTimeControls(listing.time_control)}`}
+            <PageMeta
+                title={metaTitle}
+                description={metaDescription}
             />
 
             <div className="mx-auto max-w-6xl px-4 py-10 md:px-6 md:py-14">

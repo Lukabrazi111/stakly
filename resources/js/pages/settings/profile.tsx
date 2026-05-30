@@ -1,4 +1,4 @@
-import { Head, Link, router, useForm, usePage } from '@inertiajs/react';
+import { Link, router, useForm, usePage } from '@inertiajs/react';
 import { CameraIcon, CheckCircle2, MailWarning } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import type { ChangeEvent, FormEvent } from 'react';
@@ -6,6 +6,7 @@ import ProfileController from '@/actions/App/Http/Controllers/Settings/ProfileCo
 import InputError from '@/components/input-error';
 import { AvatarCropModal } from '@/components/settings/avatar-crop-modal';
 import { ProfilePreview } from '@/components/settings/profile-preview';
+import { PageMeta } from '@/components/site/page-meta';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -146,7 +147,11 @@ export default function Profile({
 
     return (
         <>
-            <Head title="Profile settings" />
+            <PageMeta
+                title="Profile settings"
+                description="Edit your profile details."
+                noindex
+            />
 
             <h1 className="sr-only">Profile settings</h1>
 

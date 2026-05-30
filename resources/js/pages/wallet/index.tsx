@@ -1,4 +1,4 @@
-import { Head, Link } from '@inertiajs/react';
+import { Link } from '@inertiajs/react';
 import {
     ArrowDownToLine,
     ArrowUpFromLine,
@@ -6,6 +6,7 @@ import {
     Wallet as WalletIcon,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
+import { PageMeta } from '@/components/site/page-meta';
 import { BalanceCard } from '@/components/wallet/balance-card';
 import { TransactionRow } from '@/components/wallet/transaction-row';
 import PlayerHubLayout from '@/layouts/player-hub-layout';
@@ -24,7 +25,11 @@ export default function WalletIndex({
 
     return (
         <PlayerHubLayout>
-            <Head title="Wallet" />
+            <PageMeta
+                title="Wallet"
+                description="Your wallet balance and recent transactions."
+                noindex
+            />
 
             <div className="mx-auto max-w-5xl px-4 py-10 md:px-6 md:py-14">
                 <header className="mb-8">

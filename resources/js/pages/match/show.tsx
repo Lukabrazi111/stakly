@@ -1,4 +1,4 @@
-import { Head, router, usePage } from '@inertiajs/react';
+import { router, usePage } from '@inertiajs/react';
 import { useEffect, useMemo, useState } from 'react';
 import { CancellationRequestBanner } from '@/components/match/cancellation-request-banner';
 import { CancellationSummary } from '@/components/match/cancellation-summary';
@@ -13,6 +13,7 @@ import { RequestCancellationButton } from '@/components/match/request-cancellati
 import { SettlementSummary } from '@/components/match/settlement-summary';
 import { WaitingForGameCard } from '@/components/match/waiting-for-game-card';
 import { BackLink } from '@/components/site/back-link';
+import { PageMeta } from '@/components/site/page-meta';
 import { useMatchChat } from '@/hooks/use-match-chat';
 import SiteLayout from '@/layouts/site-layout';
 import { show as listingShow } from '@/routes/listings';
@@ -153,7 +154,11 @@ export default function MatchShow({ match, messages }: MatchShowProps) {
 
     return (
         <SiteLayout>
-            <Head title={`Match #${match.id}`} />
+            <PageMeta
+                title={`Match #${match.id}`}
+                description="Match details and chat. Private to participants."
+                noindex
+            />
 
             <div className="mx-auto max-w-7xl px-4 py-10 md:px-6 md:py-14">
                 {/* ─── Status notifications — full-width, above

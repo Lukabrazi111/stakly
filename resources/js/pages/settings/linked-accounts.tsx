@@ -1,4 +1,4 @@
-import { Form, Head } from '@inertiajs/react';
+import { Form } from '@inertiajs/react';
 import {
     Check,
     Copy,
@@ -12,6 +12,7 @@ import { toast } from 'sonner';
 import LinkedAccountController from '@/actions/App/Http/Controllers/Settings/LinkedAccountController';
 import Heading from '@/components/heading';
 import InputError from '@/components/input-error';
+import { PageMeta } from '@/components/site/page-meta';
 import { Button } from '@/components/ui/button';
 import {
     Dialog,
@@ -58,7 +59,11 @@ interface Props {
 export default function LinkedAccountsPage({ providers, pending }: Props) {
     return (
         <>
-            <Head title="Linked accounts" />
+            <PageMeta
+                title="Linked accounts"
+                description="Manage linked chess.com and Lichess accounts."
+                noindex
+            />
 
             <h1 className="sr-only">Linked accounts</h1>
 

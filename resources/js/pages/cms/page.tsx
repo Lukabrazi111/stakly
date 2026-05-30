@@ -1,14 +1,15 @@
-import { Head } from '@inertiajs/react';
 import { CalendarDays } from 'lucide-react';
+import { PageMeta } from '@/components/site/page-meta';
 import SiteLayout from '@/layouts/site-layout';
 
 interface Props {
     title: string;
     html: string;
+    description: string;
     updated_at: string;
 }
 
-export default function CmsPage({ title, html, updated_at }: Props) {
+export default function CmsPage({ title, html, description, updated_at }: Props) {
     // CommonMark on the server side strips raw HTML by default, so the
     // string handed to `dangerouslySetInnerHTML` only contains the tags
     // produced by the markdown grammar — no XSS surface from admin input.
@@ -16,7 +17,11 @@ export default function CmsPage({ title, html, updated_at }: Props) {
 
     return (
         <SiteLayout>
-            <Head title={`${title} — Stakly`} />
+            <PageMeta
+                title={title}
+                description={description}
+                type="article"
+            />
 
             <article className="relative mx-auto max-w-3xl px-4 py-14 sm:px-6 sm:py-20">
                 {/* Soft pink wash behind the header. Keeps the prose

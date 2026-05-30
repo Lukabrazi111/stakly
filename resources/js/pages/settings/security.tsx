@@ -1,9 +1,10 @@
-import { Form, Head } from '@inertiajs/react';
+import { Form } from '@inertiajs/react';
 import { CheckCircle2, ShieldCheck, ShieldOff } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import SecurityController from '@/actions/App/Http/Controllers/Settings/SecurityController';
 import InputError from '@/components/input-error';
 import PasswordInput from '@/components/password-input';
+import { PageMeta } from '@/components/site/page-meta';
 import TwoFactorRecoveryCodes from '@/components/two-factor-recovery-codes';
 import TwoFactorSetupModal from '@/components/two-factor-setup-modal';
 import { Button } from '@/components/ui/button';
@@ -59,7 +60,11 @@ export default function Security({
 
     return (
         <>
-            <Head title="Security settings" />
+            <PageMeta
+                title="Security settings"
+                description="Manage password and two-factor authentication."
+                noindex
+            />
 
             <h1 className="sr-only">Security settings</h1>
 

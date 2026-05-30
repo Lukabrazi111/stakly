@@ -1,7 +1,8 @@
-import { Form, Head } from '@inertiajs/react';
+import { Form } from '@inertiajs/react';
 import { authInputClass } from '@/components/auth/input-styles';
 import InputError from '@/components/input-error';
 import PasswordInput from '@/components/password-input';
+import { PageMeta } from '@/components/site/page-meta';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -16,7 +17,11 @@ type Props = {
 export default function ResetPassword({ token, email }: Props) {
     return (
         <>
-            <Head title="Reset password" />
+            <PageMeta
+                title="Reset password"
+                description="Reset your Stakly password."
+                noindex
+            />
 
             <Form
                 {...update.form()}

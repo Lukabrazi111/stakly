@@ -1,6 +1,6 @@
-import { Head } from '@inertiajs/react';
 import { AlertTriangle } from 'lucide-react';
 import { BackLink } from '@/components/site/back-link';
+import { PageMeta } from '@/components/site/page-meta';
 import { BalanceCard } from '@/components/wallet/balance-card';
 import { WithdrawForm } from '@/components/wallet/withdraw-form';
 import PlayerHubLayout from '@/layouts/player-hub-layout';
@@ -13,7 +13,11 @@ export default function WalletWithdraw({
 }: WalletWithdrawProps) {
     return (
         <PlayerHubLayout>
-            <Head title="Withdraw — Wallet" />
+            <PageMeta
+                title="Withdraw — Wallet"
+                description="Withdraw USDT from your Stakly wallet."
+                noindex
+            />
 
             <div className="mx-auto max-w-lg px-4 py-10 md:py-14">
                 <BackLink fallback={walletIndex().url} />

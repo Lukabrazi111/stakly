@@ -1,8 +1,9 @@
-import { Form, Head, setLayoutProps } from '@inertiajs/react';
+import { Form, setLayoutProps } from '@inertiajs/react';
 import { REGEXP_ONLY_DIGITS } from 'input-otp';
 import { useMemo, useState } from 'react';
 import { authInputClass } from '@/components/auth/input-styles';
 import InputError from '@/components/input-error';
+import { PageMeta } from '@/components/site/page-meta';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -53,7 +54,11 @@ export default function TwoFactorChallenge() {
 
     return (
         <>
-            <Head title="Two-factor authentication" />
+            <PageMeta
+                title="Two-factor authentication"
+                description="Enter your 2FA code to continue."
+                noindex
+            />
 
             <Form
                 {...store.form()}

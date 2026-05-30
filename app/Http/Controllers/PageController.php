@@ -57,7 +57,7 @@ class PageController extends Controller
     }
 
     /**
-     * @return array{title: string, html: string, updated_at: string}|null
+     * @return array{title: string, html: string, description: string, updated_at: string}|null
      */
     private function payloadForPublic(string $slug, string $locale): ?array
     {
@@ -76,7 +76,7 @@ class PageController extends Controller
     }
 
     /**
-     * @return array{title: string, html: string, updated_at: string}|null
+     * @return array{title: string, html: string, description: string, updated_at: string}|null
      */
     private function payloadForPreview(string $slug, string $locale): ?array
     {
@@ -86,13 +86,25 @@ class PageController extends Controller
     }
 
     /**
-     * @return array{title: string, html: string, updated_at: string}
+     * @return array{title: string, html: string, description: string, updated_at: string}
      */
     private function renderPayload(Page $page): array
     {
+        $html = $page->renderedHtml();
+
         return [
             'title' => $page->title,
-            'html' => $page->renderedHtml(),
+            'html' => $html,
+            // Plain-text excerpt used as og:description / meta description by
+            // the frontend's PageMeta. Strip tags + collapse whitespace
+            // before truncating so the snippet reads as one continuous
+            // sentence rather than visible markdown leftovers. Cached
+            // alongside the rest of the payload — invalidated whenever the
+            // page is saved/deleted (see Page model events).
+            'description' => (string) str(strip_tags($html))
+                ->replaceMatches('/\s+/u', ' ')
+                ->trim()
+                ->limit(160),
             'updated_at' => $page->updated_at?->toIso8601String() ?? '',
         ];
     }

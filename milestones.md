@@ -325,13 +325,22 @@ Gotchas / what we learned:
 - **Audit pre-work that didn't need touching:** `use-mobile.tsx` (uses `useSyncExternalStore` with explicit `getServerSnapshot`), `use-current-url.ts`, and `wayfinder/index.ts` are fully SSR-safe via existing `typeof window === 'undefined'` guards. Every other browser-API usage in the codebase is safe by location (inside `useEffect` / event handlers / callbacks, never during render) — `crypto.randomUUID()` in `use-match-chat.ts`'s send callback, `document.createElement('canvas')` in `avatar-crop-modal.tsx`'s save handler, `window.history.back()` in `back-link.tsx`'s click handler, all `navigator.clipboard.writeText` usages, etc.
 - **Tolerable edge case not fixed:** `site-footer.tsx`'s `new Date().getFullYear()` only mismatches at midnight UTC on Dec 31. Negligible.
 
-**Phase 3 follow-ups** (unlocked by SSR but not in P3 scope — small, high-payoff)
+**Phase 3 follow-ups** ✅ Shipped 2026-05-30 (code) — image asset still pending
 
-Without these, SSR delivers SEO indexability but not the visible "nice link previews" win. Worth tackling as a one-day slice before the next major milestone.
+The "nice link previews" payoff of SSR. Shipped:
 
-- [ ] Set `APP_NAME=Stakly` in `.env` (currently defaults to "Laravel" — every page title says "Laravel").
-- [ ] Per-page `og:title` / `og:description` / `og:image` / `twitter:card` meta tags. Defaults in `resources/views/app.blade.php`; per-page overrides via Inertia's `<Head>` for listing detail (game + stake), profile (handle + completion rate), and the CMS pages. Brand image at `/og-image.png` (1200×630) — graphic design task.
-- [ ] Verification: paste a public URL (ngrok / staging) into Discord and see a rich preview with title + description + image.
+- [x] `APP_NAME=Stakly` set in `.env` (and `.env.example`).
+- [x] Always-present structural meta tags in `resources/views/app.blade.php` (canonical link, `og:type`, `og:site_name`, `og:url`, `og:image`, `og:image:width`/`height`, `twitter:card`, `twitter:image`). Live OUTSIDE the `<x-inertia::head>` slot because Inertia's SSR replaces the slot's contents entirely — anything inside is fallback for when SSR is off.
+- [x] Shared `PageMeta` React component (`resources/js/components/site/page-meta.tsx`) that wraps Inertia's `<Head>` with a typed API + `head-key` dedup for: `<title>`, `meta[name=description]`, `og:title`, `og:description`, `og:image`, `twitter:title`, `twitter:description`, `twitter:image`, `robots` (noindex), `og:type` (overrides website default).
+- [x] Global TS augmentation in `resources/js/types/global.d.ts` so `head-key` is type-clean on every JSX element.
+- [x] Public pages with PageMeta — homepage, listings index, listing detail (dynamic per-listing title + description including creator handle, stake, time controls, platform, skill range, completion stats), profile (dynamic title + description; backend-provided `og` payload enriched with `bio` fallback + stats-based fallback), CMS pages (dynamic title + description stripped from rendered HTML; payload caches alongside the rest).
+- [x] Private / auth-flow pages flagged `noindex,nofollow` — `match/*`, `wallet/*`, `settings/*`, `listings/mine`, `listings/create`, `auth/{confirm-password,two-factor-challenge,reset-password}`.
+- [x] Verification: `/`, `/listings`, `/listings/{id}`, `/users/{username}`, `/en/about` all return SSR HTML with the full meta block (canonical + structural defaults + page-specific og:/twitter:/description). Per-page canonical URL varies correctly. Backend cache cleared so old `cms/page` payload shape is rebuilt with the new `description` field.
+
+Outstanding (asset-only — not a code task):
+
+- [ ] Drop a 1200×630 `public/og-image.png` for link-preview cards. The tag is already wired; without the file, link previews show title + description but no image. Brand-design task — could be plain dark-bg "Stakly" wordmark on the pink→purple gradient, or a more designed card.
+- [ ] Public-URL preview check (paste an ngrok / staging URL into Discord, Twitter, Slack and see the rich card render). `localhost` URLs can't reach external link-preview bots.
 
 **Phase 4 — Locale switcher in `SiteHeader`** [deferred until a second language ships]
 

@@ -1,6 +1,7 @@
-import { Head, router } from '@inertiajs/react';
+import { router } from '@inertiajs/react';
 import { Inbox } from 'lucide-react';
 import { BackLink } from '@/components/site/back-link';
+import { PageMeta } from '@/components/site/page-meta';
 import { TransactionRow } from '@/components/wallet/transaction-row';
 import { WalletPagination } from '@/components/wallet/wallet-pagination';
 import PlayerHubLayout from '@/layouts/player-hub-layout';
@@ -43,7 +44,11 @@ export default function WalletHistory({
 
     return (
         <PlayerHubLayout>
-            <Head title="Transaction history — Wallet" />
+            <PageMeta
+                title="Transaction history — Wallet"
+                description="Your wallet transaction history."
+                noindex
+            />
 
             <div className="mx-auto max-w-5xl px-4 py-10 md:px-6 md:py-14">
                 <BackLink fallback={walletIndex().url} />

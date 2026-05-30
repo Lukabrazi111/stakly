@@ -715,7 +715,11 @@ test('og payload carries the profile-specific title + absolute url', function ()
 
     $response->assertOk();
     $response->assertInertia(fn ($page) => $page
-        ->where('og.title', 'Alice on Stakly')
+        // Real-name + handle combo (updated M26 P3 follow-up). og:site_name
+        // = "Stakly" is rendered separately by blade, so the title doesn't
+        // need to repeat it — crawler previews show name + (handle) above
+        // the site_name line.
+        ->where('og.title', 'Alice (@alice)')
         ->where('og.type', 'profile')
         ->where('og.url', route('users.show', 'alice'))
         ->has('og.description')

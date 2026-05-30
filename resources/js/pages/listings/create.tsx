@@ -1,7 +1,8 @@
-import { Head, Link, useForm, usePage } from '@inertiajs/react';
+import { Link, useForm, usePage } from '@inertiajs/react';
 import { AlertCircle, Crown, Link2 } from 'lucide-react';
 import type { ReactNode } from 'react';
 import InputError from '@/components/input-error';
+import { PageMeta } from '@/components/site/page-meta';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -92,7 +93,11 @@ export default function ListingsCreate({
     if (!hasChessLink) {
         return (
             <SiteLayout>
-                <Head title="Create a listing" />
+                <PageMeta
+                    title="Create a listing"
+                    description="Post a new chess staking listing."
+                    noindex
+                />
 
                 <div className="mx-auto max-w-2xl px-4 py-10 md:py-14">
                     <header className="mb-8">
@@ -133,7 +138,11 @@ export default function ListingsCreate({
 
     return (
         <SiteLayout>
-            <Head title="Create a listing" />
+            <PageMeta
+                title="Create a listing"
+                description="Post a new chess staking listing."
+                noindex
+            />
 
             <div className="mx-auto max-w-2xl px-4 py-10 md:py-14">
                 <header className="mb-8">

@@ -254,20 +254,33 @@ class UserController extends Controller
             'repeat_pair_count' => $repeatPairCount,
             'openListings' => ListingResource::collection($openListings),
             'matchHistory' => GameMatchResource::collection($matchHistory),
-            // M19 Phase 5 — Open Graph metadata for link previews. The
-            // frontend renders these into `<meta>` tags inside Inertia's
-            // `<Head>`; SSR (via `@inertiajs/vite`) ensures the tags reach
-            // crawlers (Discord, Telegram, Twitter), not just post-hydration.
+            // M19 Phase 5 — Open Graph metadata for link previews. M26 P3
+            // followup wired this through the shared `PageMeta` React
+            // component, which renders these into Inertia's `<Head>` with
+            // head-key dedup against the blade defaults in
+            // `resources/views/app.blade.php`. SSR ensures the tags reach
+            // crawlers (Discord, Telegram, Twitter) in the initial HTML.
             //
-            // `image` points at the apple-touch-icon (180×180) as a
-            // placeholder — drop a 1200×630 branded card at
-            // `public/og-default.png` and swap the path when ready. OG
-            // crawlers prefer larger images for in-feed thumbnails; the
-            // current placeholder will render small but still works.
+            // `image` points at `og-image.png` (1200×630) which the blade
+            // template also uses as its default — same brand image, no
+            // override needed for now. Per-profile generated cards (avatar +
+            // handle + completion stat on a Stakly-branded background)
+            // would be a follow-up if profile link sharing becomes a
+            // notable traffic source.
+            //
+            // `url` is the only field that genuinely needs server-side
+            // computation (absolute URL for the owner's share-link button
+            // in `OwnerAccountSection`); title + description are derived
+            // here so the resource shape stays self-contained.
             'og' => [
-                'title' => "{$user->name} on Stakly",
-                'description' => 'Stakly P2P gaming staking — stake your skill, settle in USDT.',
-                'image' => asset('apple-touch-icon.png'),
+                'title' => "{$user->name} (@{$user->username})",
+                'description' => $user->bio !== null && $user->bio !== ''
+                    ? (string) str($user->bio)->limit(160)
+                    : "View {$user->name}'s chess listings and match history on Stakly. "
+                        .($stats['total_matches'] > 0
+                            ? "{$stats['total_matches']} settled matches."
+                            : 'Take a listing to start a match.'),
+                'image' => asset('og-image.png'),
                 'url' => route('users.show', $user),
                 'type' => 'profile',
             ],

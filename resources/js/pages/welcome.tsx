@@ -1,9 +1,9 @@
-import { Head } from '@inertiajs/react';
 import { useMemo, useState } from 'react';
 import { FeaturedListings } from '@/components/home/featured-listings';
 import { GameSelector } from '@/components/home/game-selector';
 import { Hero } from '@/components/home/hero';
 import { HowItWorks } from '@/components/home/how-it-works';
+import { PageMeta } from '@/components/site/page-meta';
 import SiteLayout from '@/layouts/site-layout';
 import type { GameTile, Listing } from '@/types';
 
@@ -40,7 +40,10 @@ export default function Welcome({ featured, games }: Props) {
 
     return (
         <SiteLayout>
-            <Head title="Stake your skill. Find your match." />
+            <PageMeta
+                title="Stake your skill. Find your match."
+                description="Peer-to-peer chess staking marketplace. Post a listing, escrow your stake, play your opponent on chess.com or Lichess, and get paid when you win."
+            />
             <Hero />
             <GameSelector
                 games={tiles}

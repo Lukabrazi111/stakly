@@ -1,9 +1,10 @@
-import { Head, router } from '@inertiajs/react';
+import { router } from '@inertiajs/react';
 import { useEffect, useState } from 'react';
 import { ListingFiltersBar } from '@/components/listings/listing-filters-bar';
 import { ListingPagination } from '@/components/listings/listing-pagination';
 import { ListingRow } from '@/components/listings/listing-row';
 import { ListingRowSkeleton } from '@/components/listings/listing-row-skeleton';
+import { PageMeta } from '@/components/site/page-meta';
 import { BGPattern } from '@/components/ui/bg-pattern';
 import SiteLayout from '@/layouts/site-layout';
 import { index as listingsIndex } from '@/routes/listings';
@@ -52,7 +53,10 @@ export default function ListingsIndex({
 
     return (
         <SiteLayout>
-            <Head title="Listings" />
+            <PageMeta
+                title="Browse chess listings"
+                description="Live peer-to-peer chess staking marketplace. Filter open listings by stake, skill range, time control, and region. Take a listing to start a match — both stakes go in escrow until the game ends."
+            />
 
             <div className="relative isolate">
                 <BGPattern

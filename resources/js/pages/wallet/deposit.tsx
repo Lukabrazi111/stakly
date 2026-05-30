@@ -1,7 +1,7 @@
-import { Head } from '@inertiajs/react';
 import { AlertTriangle, Clock } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { BackLink } from '@/components/site/back-link';
+import { PageMeta } from '@/components/site/page-meta';
 import { AddressDisplay } from '@/components/wallet/address-display';
 import PlayerHubLayout from '@/layouts/player-hub-layout';
 import { index as walletIndex } from '@/routes/wallet';
@@ -10,7 +10,11 @@ import type { WalletDepositProps } from '@/types';
 export default function WalletDeposit({ tronAddress }: WalletDepositProps) {
     return (
         <PlayerHubLayout>
-            <Head title="Deposit — Wallet" />
+            <PageMeta
+                title="Deposit — Wallet"
+                description="Deposit USDT to your Stakly wallet."
+                noindex
+            />
 
             <div className="mx-auto max-w-lg px-4 py-10 md:py-14">
                 <BackLink fallback={walletIndex().url} />

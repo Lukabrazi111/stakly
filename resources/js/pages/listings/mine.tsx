@@ -1,4 +1,4 @@
-import { Head, Link, router, usePage } from '@inertiajs/react';
+import { Link, router, usePage } from '@inertiajs/react';
 import { Plus } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { ActiveModeToggle } from '@/components/listings/active-mode-toggle';
@@ -6,6 +6,7 @@ import { InactiveModeBanner } from '@/components/listings/inactive-mode-banner';
 import { MineListingRow } from '@/components/listings/mine-listing-row';
 import { MinePagination } from '@/components/listings/mine-pagination';
 import { MineTabs } from '@/components/listings/mine-tabs';
+import { PageMeta } from '@/components/site/page-meta';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import PlayerHubLayout from '@/layouts/player-hub-layout';
@@ -59,7 +60,11 @@ export default function ListingsMine({
 
     return (
         <PlayerHubLayout>
-            <Head title="My listings" />
+            <PageMeta
+                title="My listings"
+                description="Your listings dashboard."
+                noindex
+            />
 
             <div className="mx-auto max-w-5xl px-4 py-10 md:px-6 md:py-14">
                 {/* Header — title + count on left, toggle + Post listing on right */}

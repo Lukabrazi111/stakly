@@ -1,10 +1,11 @@
-import { Head, router } from '@inertiajs/react';
+import { router } from '@inertiajs/react';
 import { Swords } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { MatchListRow } from '@/components/match/match-list-row';
 import { MatchListRowSkeleton } from '@/components/match/match-list-row-skeleton';
 import { MatchesFilterChips } from '@/components/match/matches-filter-chips';
 import { MatchesPagination } from '@/components/match/matches-pagination';
+import { PageMeta } from '@/components/site/page-meta';
 import PlayerHubLayout from '@/layouts/player-hub-layout';
 import { index as matchesIndex } from '@/routes/matches';
 import type { MatchesIndexProps } from '@/types';
@@ -51,7 +52,11 @@ export default function MatchesIndex({ matches, filters }: MatchesIndexProps) {
 
     return (
         <PlayerHubLayout>
-            <Head title="Your matches" />
+            <PageMeta
+                title="Your matches"
+                description="Your active and historical matches on Stakly."
+                noindex
+            />
 
             <div className="mx-auto max-w-5xl px-4 py-10 md:px-6 md:py-14">
                 <header className="mb-8">
