@@ -106,6 +106,37 @@ services:
             - laravel.test
             - pgsql
             - redis
+    ssr:
+        # M26 Phase 3 — Inertia SSR sidecar. Runs `php artisan inertia:start-ssr`
+        # which boots the Node process from `bootstrap/ssr/ssr.js` and serves
+        # rendered HTML to the laravel.test container on port 13714.
+        #
+        # Profile-gated so `sail up` doesn't auto-start it before the SSR
+        # bundle exists — `inertia:start-ssr` exits when there's no bundle,
+        # which without a profile would surface as a confusing "exited"
+        # container in `docker compose ps`. Run `sail npm run build:ssr`
+        # first; once the bundle is present add `COMPOSE_PROFILES=ssr` to
+        # `.env` (or pass `--profile ssr` to `sail up`) and the sidecar
+        # becomes part of the default stack.
+        #
+        # When the sidecar is NOT running, Inertia falls back to client
+        # rendering — pages still work, just no SSR (no SEO, blank link
+        # previews). In production deploys, drop the `profiles` block so
+        # this service always runs.
+        image: 'sail-8.5/app'
+        command: 'php artisan inertia:start-ssr'
+        restart: unless-stopped
+        profiles:
+            - ssr
+        environment:
+            WWWUSER: '${WWWUSER}'
+            LARAVEL_SAIL: 1
+        volumes:
+            - '.:/var/www/html'
+        networks:
+            - sail
+        depends_on:
+            - laravel.test
     lichess-stream:
         # M16 Phase 4 — long-lived consumer of Lichess's
         # `/api/stream/games-by-users` NDJSON stream. Dispatches

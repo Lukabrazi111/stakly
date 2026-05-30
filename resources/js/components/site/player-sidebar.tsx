@@ -68,11 +68,24 @@ function readCollapsed(): boolean {
 export function PlayerSidebar() {
     const { url, props } = usePage();
     const username = props.auth.user?.username;
-    const [collapsed, setCollapsed] = useState(readCollapsed);
+    // Default to false during SSR + first client paint, then sync from
+    // localStorage after mount. Initializing via `useState(readCollapsed)`
+    // would render different widths on server vs client and cause a
+    // hydration mismatch + visible snap.
+    const [collapsed, setCollapsed] = useState(false);
 
     useEffect(() => {
-        window.localStorage.setItem(STORAGE_KEY, String(collapsed));
-    }, [collapsed]);
+        setCollapsed(readCollapsed());
+    }, []);
+
+    const toggleCollapsed = () => {
+        setCollapsed((current) => {
+            const next = !current;
+            window.localStorage.setItem(STORAGE_KEY, String(next));
+
+            return next;
+        });
+    };
 
     // Profile is owner-specific (matchPrefix uses the auth username). Other
     // items are user-agnostic, so they live in a static array; the profile
@@ -122,7 +135,7 @@ export function PlayerSidebar() {
             >
                 <button
                     type="button"
-                    onClick={() => setCollapsed((c) => !c)}
+                    onClick={toggleCollapsed}
                     aria-label={
                         collapsed ? 'Expand sidebar' : 'Collapse sidebar'
                     }

@@ -104,11 +104,16 @@ export function useAuthModal() {
 }
 
 export function AuthModalProvider({ children }: { children: ReactNode }) {
-    const [state, setState] = useState<State>(() =>
-        computeState(readAuthFromDom()),
-    );
+    // Default to closed during SSR + first client paint, then sync from
+    // URL + DOM after mount. Initializing via `computeState(readAuthFromDom())`
+    // would render a popped modal on server vs closed on client (or vice
+    // versa) when the URL carries `?auth=login`, causing a hydration
+    // mismatch and a visible flash.
+    const [state, setState] = useState<State>({ open: false, view: 'login' });
 
     useEffect(() => {
+        setState(computeState(readAuthFromDom()));
+
         // If a logged-in user landed here with `?auth=*` (shared link / leftover
         // history), strip the param so the modal never opens for them and the
         // URL doesn't bait a refresh into reopening it.

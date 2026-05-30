@@ -16,8 +16,13 @@ return [
     */
 
     'ssr' => [
-        'enabled' => true,
-        'url' => 'http://127.0.0.1:13714',
+        'enabled' => env('INERTIA_SSR_ENABLED', true),
+        // Env-driven so the Sail sidecar (which Laravel reaches via the
+        // docker service name `ssr`) and local-host runs (which reach it
+        // via 127.0.0.1) both work without touching this file. The default
+        // matches the loopback Inertia's `inertia:start-ssr` command binds
+        // to out of the box.
+        'url' => env('INERTIA_SSR_URL', 'http://127.0.0.1:13714'),
         // 'bundle' => base_path('bootstrap/ssr/ssr.mjs'),
 
     ],

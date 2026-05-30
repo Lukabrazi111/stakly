@@ -9,11 +9,11 @@ Frontend-first build. UI against real DB infrastructure + seeded fake data; back
 **Active / upcoming:**
 
 - **M13** — Chat anti-abuse + moderation [parked — design needs review]
-- **M14** — Outcome pipeline hardening (reframed from "automated outcome adapters" — observability + reliability + coverage of the auto-fetch pipeline; Slice A shipped, Phase 1 next)
+- **M14** — Outcome pipeline hardening (reframed from "automated outcome adapters" — observability + reliability + coverage of the auto-fetch pipeline; Slice A + Phase 1 shipped, Phases 2–4 remain)
 - **M20** — Notifications (email infrastructure + per-event preferences UI; M20 owns the surface end-to-end)
 - **M21** — Blacklist + safety (block users from listings + chat, with anti-evasion considerations)
 - **M15** — Multi-game expansion (FACEIT, OpenDota, Riot adapters)
-- **M26** — Filament-managed CMS pages (Privacy, Terms, About — multilingual schema, SEO-indexable via global Inertia SSR; Phase 1 + 2 shipped, Phase 3 next: global Inertia SSR enablement)
+- **M26** — Filament-managed CMS pages (Privacy, Terms, About — multilingual schema, SEO-indexable via global Inertia SSR; Phases 1–3 shipped; small follow-up for og: tags + APP_NAME; Phase 4 locale switcher deferred until a second language ships)
 - **M27** — In-app notifications + action-required UX + sound (bell in `SiteHeader`, real-time via Reverb, per-event sound priority, sticky action banners; designed to enable M20 email without rework)
 - **M28** — Designed Fees page (transparent commission disclosure, interactive calculator, header nav — hand-coded React, NOT CMS-managed)
 
@@ -300,16 +300,38 @@ Deferred out of Phase 2 (not blocking close):
 - Footer test asserting the four hardcoded link URLs. Low-value — these are presentational `<Link>` literals with no logic; if we add URL generation behind them later (locale-aware `route()` helpers), add the test alongside that change.
 - Manual content writing for Privacy / Terms / Support bodies. Editorial task, not engineering — the admin can write them at any time via Filament once they're ready; the routes 404 in the meantime, which is the desired pre-launch behaviour.
 
-**Phase 3 — Global Inertia SSR enablement (Path A)**
+**Phase 3 — Global Inertia SSR enablement (Path A)** ✅ Shipped 2026-05-30
 
-The big architectural piece. Benefits every Inertia page, not just CMS.
+The big architectural piece. Benefits every Inertia page, not just CMS — homepage, listings index, listing detail, and profile pages all become first-byte-rendered HTML. Also unlocks (but doesn't fully deliver — see Phase 3 follow-ups) social link previews on Discord / Twitter / Slack.
 
-- [ ] Configure `@inertiajs/vite` SSR mode. Dev SSR is automatic per the plugin.
-- [ ] Production SSR build step in `package.json` (`build:ssr`).
-- [ ] `compose.yaml` adds a Node SSR sidecar service (`stakly.ssr`) — same image base as the existing Node setup, runs the SSR server on a fixed port.
-- [ ] Laravel `config/inertia.php` — point SSR mode at the sidecar URL.
-- [ ] Audit pass for SSR-unsafe code: any `window.` / `document.` / `localStorage` access in initial render needs a `typeof window === 'undefined'` guard. Likely candidates: `AuthModalProvider` (already guarded — confirmed), any other `useEffect`-less browser-API usage in component bodies.
-- [ ] Verification: a curl-with-no-JS of the homepage / about page returns fully-rendered HTML. Optional: Lighthouse SEO score before/after.
+Audit pass surfaced that prior work already scaffolded the config (`'ssr' => ['enabled' => true, 'url' => '127.0.0.1:13714']` in `config/inertia.php`) and the build script (`build:ssr` in `package.json`). What was completed:
+
+- [x] **SSR entry.** `resources/js/ssr.tsx` mirrors `app.tsx` (TooltipProvider + AuthModalProvider + Toaster wrap, same layout switch). Uses `createServer` from `@inertiajs/react/server` + `ReactDOMServer.renderToString`. Critically does **NOT** call `configureEcho` — Echo's WebSocket client is client-only and would crash Node. Echo stays in `app.tsx`.
+- [x] **Hydration fixes** for six surfaces that rendered different content on server vs client first paint (throwing console warnings + brief visual flicker). Pattern applied to all six: initialize state to a stable neutral value during render, sync to the real value (`localStorage` / URL / `Date.now()`) inside a `useEffect` on mount.
+    - [x] `components/match/match-timer.tsx` — `useState(() => Date.now())` → null + `--:--:--` placeholder + mount sync
+    - [x] `components/match/waiting-for-game-card.tsx` — two `useState(() => Date.now())` calls → null pair + mount sync
+    - [x] `components/site/player-sidebar.tsx` — read localStorage during render → default false + mount sync (write moved into toggle handler to avoid clobbering on first paint)
+    - [x] `components/site/unverified-chip.tsx` — `useState(() => readCooldownRemaining())` → 0 + mount sync
+    - [x] `components/profile/profile-tabs.tsx` — `useState(readTabFromUrl)` → DEFAULT_TAB + mount sync
+    - [x] `components/auth/auth-modal-provider.tsx` — read URL + DOM during render → `{open: false, view: 'login'}` + mount sync
+- [x] **SSR URL env-driven.** `config/inertia.php` now reads `env('INERTIA_SSR_URL', 'http://127.0.0.1:13714')`. `.env.example` documents `INERTIA_SSR_URL=http://ssr:13714` so the Docker sidecar service name resolves inside the `laravel.test` container.
+- [x] **`compose.yaml` SSR sidecar.** New `ssr` service on the `sail-8.5/app` image running `php artisan inertia:start-ssr`. Profile-gated (`profiles: [ssr]`) so it doesn't auto-start before a bundle exists — `inertia:start-ssr` exits without a bundle and a profile-less service would surface as a confusing "exited" container in `docker compose ps`. Production deploys drop the profiles block.
+- [x] **Cross-platform pnpm install.** `pnpm-workspace.yaml` now declares `supportedArchitectures` for both `current` and `linux` / `arm64` / `x64`. Without this, a Mac-host `pnpm install` only hoists darwin native bindings, so Vite (which uses rolldown under the hood) crashes inside the Sail Linux container with "Cannot find native binding." Required a `rm -rf node_modules && sail pnpm install` to take effect once.
+- [x] **Verification.** `sail npm run build:ssr` produces `bootstrap/ssr/ssr.js` (574 KB). Four spot-checked pages return fully-rendered HTML via the sidecar at `http://ssr:13714`: `/` (71.9 KB), `/listings` (126.5 KB), `/users/testuser` (71.2 KB), `/en/about` (31.5 KB, all CMS markdown headings rendered).
+
+Gotchas / what we learned:
+
+- **Vite hot routing overrides the sidecar.** `Inertia\Ssr\HttpGateway::dispatch()` checks `Vite::isRunningHot()`. If `public/hot` exists, SSR goes to Vite's `/__inertia_ssr` endpoint instead of the sidecar — and Vite dev SSR isn't actually wired up in this project, so requests fail silently and Inertia falls back to client rendering. **For local SSR verification, kill `npm run dev` and `rm public/hot` first.** Dev workflow stays as-is (HMR + client render); SSR is a production / verification concern.
+- **Audit pre-work that didn't need touching:** `use-mobile.tsx` (uses `useSyncExternalStore` with explicit `getServerSnapshot`), `use-current-url.ts`, and `wayfinder/index.ts` are fully SSR-safe via existing `typeof window === 'undefined'` guards. Every other browser-API usage in the codebase is safe by location (inside `useEffect` / event handlers / callbacks, never during render) — `crypto.randomUUID()` in `use-match-chat.ts`'s send callback, `document.createElement('canvas')` in `avatar-crop-modal.tsx`'s save handler, `window.history.back()` in `back-link.tsx`'s click handler, all `navigator.clipboard.writeText` usages, etc.
+- **Tolerable edge case not fixed:** `site-footer.tsx`'s `new Date().getFullYear()` only mismatches at midnight UTC on Dec 31. Negligible.
+
+**Phase 3 follow-ups** (unlocked by SSR but not in P3 scope — small, high-payoff)
+
+Without these, SSR delivers SEO indexability but not the visible "nice link previews" win. Worth tackling as a one-day slice before the next major milestone.
+
+- [ ] Set `APP_NAME=Stakly` in `.env` (currently defaults to "Laravel" — every page title says "Laravel").
+- [ ] Per-page `og:title` / `og:description` / `og:image` / `twitter:card` meta tags. Defaults in `resources/views/app.blade.php`; per-page overrides via Inertia's `<Head>` for listing detail (game + stake), profile (handle + completion rate), and the CMS pages. Brand image at `/og-image.png` (1200×630) — graphic design task.
+- [ ] Verification: paste a public URL (ngrok / staging) into Discord and see a rich preview with title + description + image.
 
 **Phase 4 — Locale switcher in `SiteHeader`** [deferred until a second language ships]
 

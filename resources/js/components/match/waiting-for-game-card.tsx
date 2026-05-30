@@ -209,10 +209,17 @@ function FoundState({ platform }: { platform: ListingPlatform }) {
  * timer owns its own reset signal, decoupled from prop-change detection.
  */
 function useSecondsSinceLastVisit(): number {
-    const [resetAt, setResetAt] = useState(() => Date.now());
-    const [now, setNow] = useState(() => Date.now());
+    // null until the client mounts. Initializing to `Date.now()` would
+    // render different values on the server vs first client paint, causing
+    // a hydration mismatch on the "seconds ago" copy this hook feeds.
+    const [resetAt, setResetAt] = useState<number | null>(null);
+    const [now, setNow] = useState<number | null>(null);
 
     useEffect(() => {
+        const init = Date.now();
+        setResetAt(init);
+        setNow(init);
+
         return router.on('success', () => {
             setResetAt(Date.now());
             setNow(Date.now());
@@ -225,7 +232,9 @@ function useSecondsSinceLastVisit(): number {
         return () => window.clearInterval(id);
     }, []);
 
-    const elapsed = Math.max(0, Math.floor((now - resetAt) / 1000));
+    if (now === null || resetAt === null) {
+        return 0;
+    }
 
-    return elapsed;
+    return Math.max(0, Math.floor((now - resetAt) / 1000));
 }
