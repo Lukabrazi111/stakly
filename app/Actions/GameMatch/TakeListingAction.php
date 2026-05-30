@@ -10,6 +10,7 @@ use App\Models\GameMatch;
 use App\Models\Listing;
 use App\Models\MatchProviderSnapshot;
 use App\Models\User;
+use App\Notifications\ListingTakenNotification;
 use App\Services\Wallet;
 use Illuminate\Support\Facades\DB;
 
@@ -60,7 +61,7 @@ class TakeListingAction
             return 'not_linked';
         }
 
-        return DB::transaction(function () use ($listing, $user) {
+        $result = DB::transaction(function () use ($listing, $user) {
             $locked = Listing::query()->lockForUpdate()->findOrFail($listing->id);
 
             $this->assertNotSelfTake($locked, $user);
@@ -85,6 +86,13 @@ class TakeListingAction
 
             return $match;
         });
+
+        if ($result instanceof GameMatch) {
+            $result->loadMissing(['listing.user', 'taker']);
+            $result->listing->user->notify(new ListingTakenNotification($result));
+        }
+
+        return $result;
     }
 
     private function assertNotSelfTake(Listing $listing, User $user): void

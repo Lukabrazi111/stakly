@@ -6,6 +6,7 @@ use App\Actions\Message\PostSystemMessageAction;
 use App\Enums\MatchStatus;
 use App\Models\GameMatch;
 use App\Models\User;
+use App\Notifications\CancellationRejectedNotification;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -27,7 +28,9 @@ class RejectCancellationAction
 
     public function handle(User $rejecter, GameMatch $match): string
     {
-        return DB::transaction(function () use ($match, $rejecter) {
+        $requesterId = null;
+
+        $result = DB::transaction(function () use ($match, $rejecter, &$requesterId) {
             $locked = GameMatch::query()->lockForUpdate()->findOrFail($match->id);
 
             if ($locked->status !== MatchStatus::Pending) {
@@ -42,6 +45,8 @@ class RejectCancellationAction
                 return 'self_reject_forbidden';
             }
 
+            $requesterId = $locked->cancellation_requested_by;
+
             $this->recordRejection($locked);
 
             $locked->load('listing.user', 'taker');
@@ -55,6 +60,16 @@ class RejectCancellationAction
 
             return 'rejected';
         });
+
+        if ($result === 'rejected' && $requesterId !== null) {
+            $requester = User::find($requesterId);
+
+            if ($requester !== null) {
+                $requester->notify(new CancellationRejectedNotification($match->fresh(), $rejecter));
+            }
+        }
+
+        return $result;
     }
 
     private function recordRejection(GameMatch $match): void

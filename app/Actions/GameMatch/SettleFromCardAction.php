@@ -6,6 +6,7 @@ use App\Enums\LinkedAccountProvider;
 use App\Enums\MatchStatus;
 use App\Models\GameMatch;
 use App\Models\User;
+use App\Notifications\MatchSettledNotification;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
@@ -46,11 +47,11 @@ class SettleFromCardAction
      */
     public function handle(GameMatch $match, array $gameCard): void
     {
-        DB::transaction(function () use ($match, $gameCard) {
+        $outcome = DB::transaction(function () use ($match, $gameCard) {
             $locked = GameMatch::query()->lockForUpdate()->findOrFail($match->id);
 
             if ($locked->status !== MatchStatus::Pending) {
-                return;
+                return null;
             }
 
             $locked->load(['listing.user', 'taker', 'providerSnapshots']);
@@ -58,7 +59,7 @@ class SettleFromCardAction
             if ($this->isDraw($gameCard)) {
                 $this->settleDraw->handle($locked);
 
-                return;
+                return ['type' => 'draw'];
             }
 
             $winner = $this->resolveWinnerFromCard($locked, $gameCard);
@@ -70,11 +71,41 @@ class SettleFromCardAction
                     'provider' => $gameCard['provider'] ?? null,
                 ]);
 
-                return;
+                return null;
             }
 
             $this->settle->handle($locked, $winner);
+
+            return ['type' => 'win', 'winner' => $winner];
         });
+
+        if ($outcome === null) {
+            return;
+        }
+
+        $fresh = $match->fresh(['listing.user', 'taker']);
+
+        if ($outcome['type'] === 'draw') {
+            $this->notifyBothOfDraw($fresh);
+        } else {
+            $this->notifyWinLoss($fresh, $outcome['winner']);
+        }
+    }
+
+    private function notifyBothOfDraw(GameMatch $match): void
+    {
+        $notification = new MatchSettledNotification($match, 'draw');
+        $match->listing->user->notify($notification);
+        $match->taker->notify($notification);
+    }
+
+    private function notifyWinLoss(GameMatch $match, User $winner): void
+    {
+        $payout = SettleMatchAction::computeWinnerPayout((string) $match->listing->stake_amount);
+        $loser = $winner->id === $match->listing->user_id ? $match->taker : $match->listing->user;
+
+        $winner->notify(new MatchSettledNotification($match, 'won', $payout));
+        $loser->notify(new MatchSettledNotification($match, 'lost', '0'));
     }
 
     /**

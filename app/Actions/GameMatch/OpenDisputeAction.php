@@ -8,6 +8,7 @@ use App\Enums\MatchStatus;
 use App\Filament\Resources\GameMatches\GameMatchResource;
 use App\Models\GameMatch;
 use App\Models\User;
+use App\Notifications\DisputeOpenedNotification;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -49,10 +50,21 @@ class OpenDisputeAction
         // After-commit: inside the transaction the notification would fire even on rollback,
         // pointing the bell at a match that "didn't happen."
         if ($opened) {
-            $this->notifyAdminsOfDispute($match->fresh());
+            $fresh = $match->fresh(['listing.user', 'taker']);
+            $this->notifyAdminsOfDispute($fresh);
+            $this->notifyOpponent($fresh, $user);
         }
 
         return $opened;
+    }
+
+    private function notifyOpponent(GameMatch $match, User $opener): void
+    {
+        $opponent = $match->listing->user_id === $opener->id
+            ? $match->taker
+            : $match->listing->user;
+
+        $opponent->notify(new DisputeOpenedNotification($match, $opener));
     }
 
     private function flipToDisputed(GameMatch $match, User $opener): void
