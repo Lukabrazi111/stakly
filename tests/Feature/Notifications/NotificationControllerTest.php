@@ -7,11 +7,6 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
 
 /**
- * Insert a notification row directly so a test doesn't need to wire up
- * Listings + Matches just to exercise the bell controller. Player rows have
- * `data.event_type` set; Filament admin rows don't — that's the discriminator
- * `User::playerNotifications` uses.
- *
  * @param  array<string, mixed>  $dataOverrides
  */
 function makeNotif(
@@ -32,8 +27,6 @@ function makeNotif(
         'related_id' => 1,
     ];
 
-    // Filament admin rows are distinguished by the absence of `event_type` —
-    // simulate that by stripping the key when the test targets an admin row.
     if (str_starts_with($type, 'Filament\\')) {
         unset($defaultData['event_type']);
         $defaultData['format'] = 'filament';

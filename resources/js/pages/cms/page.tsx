@@ -9,7 +9,12 @@ interface Props {
     updated_at: string;
 }
 
-export default function CmsPage({ title, html, description, updated_at }: Props) {
+export default function CmsPage({
+    title,
+    html,
+    description,
+    updated_at,
+}: Props) {
     // CommonMark on the server side strips raw HTML by default, so the
     // string handed to `dangerouslySetInnerHTML` only contains the tags
     // produced by the markdown grammar — no XSS surface from admin input.
@@ -17,11 +22,7 @@ export default function CmsPage({ title, html, description, updated_at }: Props)
 
     return (
         <SiteLayout>
-            <PageMeta
-                title={title}
-                description={description}
-                type="article"
-            />
+            <PageMeta title={title} description={description} type="article" />
 
             <article className="relative mx-auto max-w-3xl px-4 py-14 sm:px-6 sm:py-20">
                 {/* Soft pink wash behind the header. Keeps the prose

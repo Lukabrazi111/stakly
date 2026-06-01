@@ -2,6 +2,7 @@ import { Link, usePage } from '@inertiajs/react';
 import { Search } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useAuthModal } from '@/components/auth/auth-modal-provider';
+import { BellButton } from '@/components/notifications/bell-button';
 import { BalanceChip } from '@/components/site/balance-chip';
 import { MobileMenu } from '@/components/site/mobile-menu';
 import { ProfileMenu } from '@/components/site/profile-menu';
@@ -71,6 +72,7 @@ export function SiteHeader() {
                             <>
                                 {isUnverified && <UnverifiedChip />}
                                 <BalanceChip balance={user.usdt_balance} />
+                                <BellButton />
                                 <ProfileMenu user={user} />
                             </>
                         ) : (
@@ -94,7 +96,10 @@ export function SiteHeader() {
                     </div>
                 </nav>
 
-                <MobileMenu />
+                <div className="flex items-center gap-1 md:hidden">
+                    {user && <BellButton />}
+                    <MobileMenu />
+                </div>
             </div>
         </header>
     );

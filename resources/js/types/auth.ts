@@ -46,12 +46,6 @@ export type User = {
         username: string;
         verified_at: string;
     }>;
-    // M27 Phase 2 — bell state. `notifications_last_seen_at` is bumped to
-    // `now()` each time the user opens the bell dropdown.
-    // `unread_notifications_count` is the count of player notifications with
-    // `created_at > notifications_last_seen_at` — independent of per-item
-    // `read_at`. Opening the bell clears the badge without auto-marking
-    // items as read; per-item read toggles via click or "Mark all read."
     notifications_last_seen_at: string | null;
     unread_notifications_count: number;
     created_at: string;

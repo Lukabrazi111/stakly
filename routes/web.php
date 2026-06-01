@@ -102,12 +102,6 @@ Route::middleware(['auth', 'verified'])->prefix('wallet')->name('wallet.')->grou
     Route::get('/history', [WalletController::class, 'history'])->name('history');
 });
 
-// M27 Phase 2 — player notification bell + full history page. JSON endpoints
-// for the bell (recent/seen/read/read-all) are hit via Inertia v3's useHttp;
-// `index` is the only Inertia-rendered route (full /notifications page).
-// `/{notification}/read` is declared last so the static `/seen` + `/read-all`
-// segments resolve first; the UUID regex constraint hard-rejects anything
-// else captured by that param.
 Route::middleware(['auth', 'verified'])->prefix('notifications')->name('notifications.')->group(function () {
     Route::get('/', [NotificationController::class, 'index'])->name('index');
     Route::get('/recent', [NotificationController::class, 'recent'])->name('recent');

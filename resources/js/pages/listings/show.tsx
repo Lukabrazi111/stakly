@@ -159,10 +159,7 @@ export default function ListingShow({ listing, match }: ListingShowProps) {
 
     return (
         <SiteLayout>
-            <PageMeta
-                title={metaTitle}
-                description={metaDescription}
-            />
+            <PageMeta title={metaTitle} description={metaDescription} />
 
             <div className="mx-auto max-w-6xl px-4 py-10 md:px-6 md:py-14">
                 <div className="mb-6">

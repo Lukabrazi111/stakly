@@ -64,13 +64,6 @@ class HandleInertiaRequests extends Middleware
                         ->map(fn ($provider) => $provider->value)
                         ->values()
                         ->all(),
-                    // M27 Phase 2 — bell state, shared on every authed page
-                    // navigate so the badge renders correct on first paint.
-                    // Badge count = player notifications with `created_at >
-                    // notifications_last_seen_at`; independent of per-item
-                    // `read_at`. Falls back to epoch when the user has never
-                    // opened the bell (null) so every existing notification
-                    // counts as new.
                     'notifications_last_seen_at' => $user->notifications_last_seen_at?->toIso8601String(),
                     'unread_notifications_count' => $user->playerNotifications()
                         ->where('created_at', '>', $user->notifications_last_seen_at ?? '1970-01-01')

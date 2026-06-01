@@ -128,17 +128,7 @@ class User extends Authenticatable implements FilamentUser, HasMedia, MustVerify
         return $this->hasOne(PendingVerification::class);
     }
 
-    /**
-     * Player notifications only — discriminated by the `event_type` key that
-     * `PlayerNotification::payload()` always emits. Filament admin rows on
-     * the same `notifications` table don't have `event_type` so they're
-     * excluded. Drives the bell dropdown, the /notifications page, and the
-     * Inertia-shared unread badge count. Postgres LIKE on the type column
-     * was tried first but the backslash escape semantics make
-     * `'App\\Notifications\\%'` unreliable across drivers — the JSON-path
-     * discriminator is database-agnostic and unchanged by namespace
-     * refactors.
-     */
+    // Excludes Filament admin rows — only PlayerNotification payloads set event_type.
     public function playerNotifications(): MorphMany
     {
         return $this->notifications()->whereNotNull('data->event_type');
