@@ -16,12 +16,19 @@ class NotificationController extends Controller
 
     public function index(Request $request): Response
     {
-        $notifications = $request->user()
-            ->playerNotifications()
-            ->paginate(self::INDEX_PER_PAGE);
+        $filter = $request->string('filter')->toString() === 'unread' ? 'unread' : 'all';
+
+        $query = $request->user()->playerNotifications();
+
+        if ($filter === 'unread') {
+            $query->whereNull('read_at');
+        }
+
+        $notifications = $query->paginate(self::INDEX_PER_PAGE)->withQueryString();
 
         return Inertia::render('notifications/index', [
             'notifications' => NotificationResource::collection($notifications),
+            'filter' => $filter,
         ]);
     }
 

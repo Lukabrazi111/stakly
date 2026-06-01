@@ -5,10 +5,9 @@ import {
     useCallback,
     useContext,
     useEffect,
-    useState
-    
+    useState,
 } from 'react';
-import type {ReactNode} from 'react';
+import type { ReactNode } from 'react';
 import { useNotificationSound } from '@/hooks/use-notification-sound';
 import type {
     Notification,

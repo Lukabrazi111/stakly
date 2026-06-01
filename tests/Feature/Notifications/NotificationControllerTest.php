@@ -93,6 +93,31 @@ test('index excludes other users notifications', function () {
         ->assertInertia(fn ($page) => $page->has('notifications.data', 1));
 });
 
+test('index filter=unread returns only unread notifications', function () {
+    $user = User::factory()->create();
+    makeNotif($user, readAt: now()->subHour());
+    makeNotif($user);
+    makeNotif($user);
+
+    $this->actingAs($user)
+        ->get('/notifications?filter=unread')
+        ->assertInertia(fn ($page) => $page
+            ->has('notifications.data', 2)
+            ->where('filter', 'unread'));
+});
+
+test('index filter=all is the default', function () {
+    $user = User::factory()->create();
+    makeNotif($user, readAt: now()->subHour());
+    makeNotif($user);
+
+    $this->actingAs($user)
+        ->get('/notifications')
+        ->assertInertia(fn ($page) => $page
+            ->has('notifications.data', 2)
+            ->where('filter', 'all'));
+});
+
 // ─── GET /notifications/recent (dropdown JSON) ──────────────────────────────
 
 test('recent returns up to 15 player notifications, newest first', function () {

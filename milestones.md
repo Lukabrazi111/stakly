@@ -453,16 +453,19 @@ Gotchas / what we learned:
 - **`routes/channels.php` already has the `App.Models.User.{id}` channel auth** — Laravel auto-creates it in the starter kit. No additional channel registration needed for broadcast notifications.
 - **`Inertia\Ssr\HttpGateway::dispatch()` Vite-hot routing was a separate concern** (M26 P3 gotcha) — unrelated to notification broadcasts which go directly to Reverb.
 - **Sound policy decision dropped 6 "urgent" events to None.** Original spec was sound-on-most-events; criterion-based rescope narrowed to ListingTaken only. See "Design decisions" above for the rule.
+- **Postgres `LIKE` on the `type` column doesn't work cross-driver** — `\%` in a Postgres LIKE pattern means literal `%` because `\` is the default escape character, so `'App\\Notifications\\%'` matched nothing. Switched the player/admin discriminator to `whereNotNull('data->event_type')` (every `PlayerNotification::payload()` emits `event_type`; Filament admin rows don't). Database-agnostic + survives namespace refactors.
+- **CSRF for the bell's mutation endpoints uses the `XSRF-TOKEN` cookie**, not a `<meta name="csrf-token">` tag. Inertia/Laravel already set the cookie; bell's `postJson()` helper reads it and sends as `X-XSRF-TOKEN` header. No meta tag was added.
 
 **Phase 2 — Bell UI in `SiteHeader` + real-time + sound**
 
-- [ ] Bell icon + unread count badge in `SiteHeader` (auth-gated — anonymous visitors see no bell).
-- [ ] Dropdown with last ~15 notifications, each linking to its `action_url`. "Mark all read" affordance. "View all" → full notifications page.
+- [x] Bell icon + unread count badge in `SiteHeader` (auth-gated — anonymous visitors see no bell). Popover on desktop, Sheet on mobile via `useIsMobile`.
+- [x] Dropdown with last ~15 notifications, each linking to its `action_url`. "Mark all read" affordance. "View all" → full notifications page. Optimistic local-state mark-read on click.
 - [ ] Full notifications page at `/notifications` — paginated list, all notifications, mark-individual + mark-all controls.
-- [ ] Laravel Echo subscribed to `private-users.{id}` channel; on broadcast, increment badge + prepend dropdown entry + invoke sound playback hook.
-- [ ] Sound assets in `public/sounds/` — `urgent.mp3` and `soft.mp3` (two sounds, three priorities — `none` plays nothing). Free, royalty-clear, short (<1s) chimes. Pick something tasteful — flag samples for review before committing.
-- [ ] `useNotificationSound` hook reads the sound priority off the broadcast, plays the matching file via `new Audio(...).play()` if user pref allows. Wraps the `BroadcastChannel` coordination so multi-tab plays once.
-- [ ] Browser autoplay policy is handled implicitly — by the time a notification lands, the user has interacted with Stakly at least once (they're logged in). No special permission UI needed.
+- [x] Laravel Echo subscribed to `App.Models.User.{id}` via `useEchoNotification` (kept the default channel rather than the originally-drafted `private-users.{id}` — the channel auth already exists in `routes/channels.php`, zero overrides needed). On broadcast: increment badge + prepend dropdown entry + invoke sound playback hook.
+- [ ] Sound assets in `public/sounds/` — `urgent.mp3` is the only one referenced today (`ListingTaken` is the only `Urgent` event); `soft.mp3` reserved for future. Free, royalty-clear, short (<1s) chimes. Hook ships ready — pending file commit.
+- [x] `useNotificationSound` hook reads the sound priority off the broadcast, plays the matching file via `new Audio(...).play()`. Multi-tab coordination via `BroadcastChannel('stakly:notification-sound')` — claiming tab posts `{type:'claim', at:ts}`; tabs receiving a claim within 500ms suppress.
+- [x] Browser autoplay policy handled implicitly — by the time a notification lands, the user has interacted with Stakly at least once.
+- [x] **`NotificationProvider` context** mounted in `SiteLayout` holds the unread count (initial from `auth.user.unread_notifications_count`, bumped on broadcast, cleared on bell open) and the `lastBroadcast` Notification (signal for the dropdown to prepend). The Echo subscription lives in an inner `AuthedNotificationProvider` so the hook only mounts for authed users. Re-syncs from Inertia share on every navigation (server is authoritative on multi-tab mark-read).
 
 **Phase 3 — Action-required banners on match pages**
 
@@ -485,6 +488,7 @@ Gotchas / what we learned:
 - [ ] Mandatory events have their toggles greyed-out with a tooltip explaining why.
 - [ ] Email column is visible but greyed-out with "Available when email notifications launch" until M20 ships, then becomes interactive.
 - [ ] Schema: `notification_preferences` table — `user_id`, `event_type`, `in_app` (bool), `sound` (bool), `email` (bool). UNIQUE `(user_id, event_type)`. Defaults inserted on user creation matching the per-event default policy.
+- [ ] **Sound choice picker.** When multiple `urgent` chimes ship (e.g. `urgent-classic.mp3`, `urgent-subtle.mp3`, `urgent-ding.mp3`), the preferences page exposes a radio + preview-play button so the user picks which file fires. Schema: `users.notification_sound` string nullable (null = system default). `useNotificationSound` reads `auth.user.notification_sound` to choose the file. Single global picker today since only `urgent` has a sound; if `soft` later gets a sound, becomes per-priority.
 
 ### Cross-milestone notes
 
