@@ -13,6 +13,7 @@ use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Laravel\Fortify\TwoFactorAuthenticatable;
@@ -86,6 +87,7 @@ class User extends Authenticatable implements FilamentUser, HasMedia, MustVerify
             'usdt_balance' => 'decimal:6',
             'is_platform' => 'boolean',
             'is_active_mode' => 'boolean',
+            'notifications_last_seen_at' => 'datetime',
         ];
     }
 
@@ -124,6 +126,22 @@ class User extends Authenticatable implements FilamentUser, HasMedia, MustVerify
     public function pendingVerification(): HasOne
     {
         return $this->hasOne(PendingVerification::class);
+    }
+
+    /**
+     * Player notifications only — discriminated by the `event_type` key that
+     * `PlayerNotification::payload()` always emits. Filament admin rows on
+     * the same `notifications` table don't have `event_type` so they're
+     * excluded. Drives the bell dropdown, the /notifications page, and the
+     * Inertia-shared unread badge count. Postgres LIKE on the type column
+     * was tried first but the backslash escape semantics make
+     * `'App\\Notifications\\%'` unreliable across drivers — the JSON-path
+     * discriminator is database-agnostic and unchanged by namespace
+     * refactors.
+     */
+    public function playerNotifications(): MorphMany
+    {
+        return $this->notifications()->whereNotNull('data->event_type');
     }
 
     /**

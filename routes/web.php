@@ -6,6 +6,7 @@ use App\Http\Controllers\HomeController;
 use App\Http\Controllers\LinkImageController;
 use App\Http\Controllers\ListingController;
 use App\Http\Controllers\MessageController;
+use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\PageController;
 use App\Http\Controllers\UserController;
 use App\Http\Controllers\WalletController;
@@ -99,6 +100,22 @@ Route::middleware(['auth', 'verified'])->prefix('wallet')->name('wallet.')->grou
     Route::get('/withdraw', [WalletController::class, 'withdraw'])->name('withdraw');
     Route::post('/withdraw', [WalletController::class, 'withdrawStore'])->name('withdraw.store');
     Route::get('/history', [WalletController::class, 'history'])->name('history');
+});
+
+// M27 Phase 2 — player notification bell + full history page. JSON endpoints
+// for the bell (recent/seen/read/read-all) are hit via Inertia v3's useHttp;
+// `index` is the only Inertia-rendered route (full /notifications page).
+// `/{notification}/read` is declared last so the static `/seen` + `/read-all`
+// segments resolve first; the UUID regex constraint hard-rejects anything
+// else captured by that param.
+Route::middleware(['auth', 'verified'])->prefix('notifications')->name('notifications.')->group(function () {
+    Route::get('/', [NotificationController::class, 'index'])->name('index');
+    Route::get('/recent', [NotificationController::class, 'recent'])->name('recent');
+    Route::post('/seen', [NotificationController::class, 'markSeen'])->name('seen');
+    Route::post('/read-all', [NotificationController::class, 'markAllRead'])->name('readAll');
+    Route::post('/{notification}/read', [NotificationController::class, 'markRead'])
+        ->where('notification', '[0-9a-f-]{36}')
+        ->name('read');
 });
 
 require __DIR__.'/settings.php';
