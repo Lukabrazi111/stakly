@@ -2,6 +2,7 @@ import { usePage } from '@inertiajs/react';
 import { Bell } from 'lucide-react';
 import { useState } from 'react';
 import { BellDropdown } from '@/components/notifications/bell-dropdown';
+import { useNotificationContext } from '@/components/notifications/notification-provider';
 import { Button } from '@/components/ui/button';
 import {
     Popover,
@@ -21,21 +22,20 @@ export function BellButton() {
     const user = auth.user;
     const isMobile = useIsMobile();
     const [open, setOpen] = useState(false);
-    const [localCount, setLocalCount] = useState<number | null>(null);
+    const { unreadCount, clearUnread } = useNotificationContext();
 
     if (!user) {
         return null;
     }
 
-    const count = localCount ?? user.unread_notifications_count;
-    const showBadge = count > 0;
-    const displayCount = count > 9 ? '9+' : String(count);
+    const showBadge = unreadCount > 0;
+    const displayCount = unreadCount > 9 ? '9+' : String(unreadCount);
 
     const handleOpenChange = (next: boolean) => {
         setOpen(next);
 
-        if (next && count > 0) {
-            setLocalCount(0);
+        if (next && unreadCount > 0) {
+            clearUnread();
         }
     };
 
@@ -44,7 +44,9 @@ export function BellButton() {
             variant="ghost"
             size="icon"
             aria-label={
-                showBadge ? `Notifications (${count} unread)` : 'Notifications'
+                showBadge
+                    ? `Notifications (${unreadCount} unread)`
+                    : 'Notifications'
             }
             className="relative size-10 cursor-pointer rounded-full text-muted-foreground transition-colors duration-150 ease-out hover:bg-primary/10 hover:text-primary data-[state=open]:bg-primary/10 data-[state=open]:text-primary"
         >

@@ -2,6 +2,7 @@ import { Link } from '@inertiajs/react';
 import { Bell as BellIcon } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { NotificationItem } from '@/components/notifications/notification-item';
+import { useNotificationContext } from '@/components/notifications/notification-provider';
 import {
     index as notificationsIndex,
     read as notificationsRead,
@@ -20,6 +21,7 @@ function xsrfToken(): string {
         .split('; ')
         .find((c) => c.startsWith('XSRF-TOKEN='))
         ?.split('=')[1];
+
     return value ? decodeURIComponent(value) : '';
 }
 
@@ -38,6 +40,7 @@ function postJson(url: string): Promise<Response> {
 export function BellDropdown({ onClose }: Props) {
     const [notifications, setNotifications] = useState<Notification[]>([]);
     const [loading, setLoading] = useState(true);
+    const { lastBroadcast } = useNotificationContext();
 
     useEffect(() => {
         let cancelled = false;
@@ -65,6 +68,20 @@ export function BellDropdown({ onClose }: Props) {
             cancelled = true;
         };
     }, []);
+
+    useEffect(() => {
+        if (!lastBroadcast) {
+            return;
+        }
+
+        setNotifications((prev) => {
+            if (prev.some((n) => n.id === lastBroadcast.id)) {
+                return prev;
+            }
+
+            return [lastBroadcast, ...prev];
+        });
+    }, [lastBroadcast]);
 
     const handleItemClick = useCallback(
         (id: string) => {
