@@ -9,6 +9,16 @@ import { ProfilePreview } from '@/components/settings/profile-preview';
 import { PageMeta } from '@/components/site/page-meta';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
+import {
+    Dialog,
+    DialogClose,
+    DialogContent,
+    DialogDescription,
+    DialogFooter,
+    DialogHeader,
+    DialogTitle,
+    DialogTrigger,
+} from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
@@ -56,6 +66,7 @@ export default function Profile({
     const [previewUrl, setPreviewUrl] = useState<string | null>(null);
     const [rawFileError, setRawFileError] = useState<string | null>(null);
     const [isRemovingAvatar, setIsRemovingAvatar] = useState(false);
+    const [removeConfirmOpen, setRemoveConfirmOpen] = useState(false);
     const fileInputRef = useRef<HTMLInputElement | null>(null);
 
     // Revoke the cropped-blob object URL on unmount or when it's replaced —
@@ -109,7 +120,10 @@ export default function Profile({
         setIsRemovingAvatar(true);
         router.delete(ProfileController.destroyAvatar.url(), {
             preserveScroll: true,
-            onFinish: () => setIsRemovingAvatar(false),
+            onFinish: () => {
+                setIsRemovingAvatar(false);
+                setRemoveConfirmOpen(false);
+            },
         });
     };
 
@@ -223,18 +237,64 @@ export default function Profile({
                                             Change avatar
                                         </Button>
                                         {user.avatar_url && !previewUrl && (
-                                            <Button
-                                                type="button"
-                                                variant="ghost"
-                                                size="sm"
-                                                onClick={handleRemoveAvatar}
-                                                disabled={isRemovingAvatar}
-                                                className="text-destructive [text-shadow:none] hover:text-destructive hover:[text-shadow:none]"
+                                            <Dialog
+                                                open={removeConfirmOpen}
+                                                onOpenChange={
+                                                    setRemoveConfirmOpen
+                                                }
                                             >
-                                                {isRemovingAvatar
-                                                    ? 'Removing…'
-                                                    : 'Remove'}
-                                            </Button>
+                                                <DialogTrigger asChild>
+                                                    <Button
+                                                        type="button"
+                                                        variant="ghost"
+                                                        size="sm"
+                                                        className="text-destructive [text-shadow:none] hover:text-destructive hover:[text-shadow:none]"
+                                                    >
+                                                        Remove
+                                                    </Button>
+                                                </DialogTrigger>
+                                                <DialogContent>
+                                                    <DialogHeader>
+                                                        <DialogTitle>
+                                                            Remove avatar?
+                                                        </DialogTitle>
+                                                        <DialogDescription>
+                                                            Your profile will go
+                                                            back to showing your
+                                                            initials. You can
+                                                            upload a new avatar
+                                                            any time.
+                                                        </DialogDescription>
+                                                    </DialogHeader>
+                                                    <DialogFooter>
+                                                        <DialogClose asChild>
+                                                            <Button
+                                                                type="button"
+                                                                variant="ghost"
+                                                                disabled={
+                                                                    isRemovingAvatar
+                                                                }
+                                                            >
+                                                                Cancel
+                                                            </Button>
+                                                        </DialogClose>
+                                                        <Button
+                                                            type="button"
+                                                            variant="destructive"
+                                                            onClick={
+                                                                handleRemoveAvatar
+                                                            }
+                                                            disabled={
+                                                                isRemovingAvatar
+                                                            }
+                                                        >
+                                                            {isRemovingAvatar
+                                                                ? 'Removing…'
+                                                                : 'Remove'}
+                                                        </Button>
+                                                    </DialogFooter>
+                                                </DialogContent>
+                                            </Dialog>
                                         )}
                                     </div>
                                     <p className="mt-1 text-xs text-muted-foreground">
