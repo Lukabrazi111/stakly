@@ -65,100 +65,86 @@ export function ProfileMenu({ user }: Props) {
                 </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent
-                // Transparent positioning wrapper — actual styled box is the
-                // inner div below. Ambient halo paints first as a sibling so
-                // only the outer glow shows past the menu's bg-card cover.
-                className="relative !w-auto !overflow-visible !rounded-none !border-0 !bg-transparent !p-0 !shadow-none !backdrop-blur-none"
+                className="w-60 rounded-xl border-border/60 bg-card/95 p-1.5 backdrop-blur-md"
                 align="end"
                 sideOffset={8}
             >
-                <div
-                    aria-hidden
-                    className="pointer-events-none absolute top-1/2 left-1/2 size-[460px] -translate-x-1/2 -translate-y-1/2 rounded-full blur-[100px]"
-                    style={{
-                        background:
-                            'radial-gradient(circle, color-mix(in srgb, var(--gradient-glow) 22%, transparent) 0%, transparent 65%)',
-                    }}
-                />
-
-                <div className="relative w-60 rounded-xl border border-glow bg-card p-1.5 backdrop-blur-md">
-                    <DropdownMenuLabel className="p-0 font-normal">
-                        <div className="flex flex-col gap-0.5 px-2.5 py-2">
-                            <span className="truncate text-sm font-medium text-foreground">
-                                {user.name}
-                            </span>
-                            <span className="truncate text-xs text-muted-foreground">
-                                {user.email}
-                            </span>
-                        </div>
-                    </DropdownMenuLabel>
-                    <DropdownMenuSeparator className="bg-border/60" />
-                    <DropdownMenuGroup className="py-1">
-                        <DropdownMenuItem asChild>
-                            <Link
-                                href={userShow(user.username).url}
-                                prefetch
-                                className={menuItemClass}
-                            >
-                                <UserIcon className="mr-2 size-4" />
-                                My profile
-                            </Link>
-                        </DropdownMenuItem>
-                        <DropdownMenuItem asChild>
-                            <Link
-                                href={listingsMine().url}
-                                prefetch
-                                className={menuItemClass}
-                            >
-                                <ListChecks className="mr-2 size-4" />
-                                My listings
-                            </Link>
-                        </DropdownMenuItem>
-                        <DropdownMenuItem asChild>
-                            <Link
-                                href={matchesIndex().url}
-                                prefetch
-                                className={menuItemClass}
-                            >
-                                <Swords className="mr-2 size-4" />
-                                Matches
-                            </Link>
-                        </DropdownMenuItem>
-                        <DropdownMenuItem asChild>
-                            <Link
-                                href={walletIndex().url}
-                                prefetch
-                                className={menuItemClass}
-                            >
-                                <Wallet className="mr-2 size-4" />
-                                Wallet
-                            </Link>
-                        </DropdownMenuItem>
-                        <DropdownMenuItem asChild>
-                            <Link
-                                href={editProfile()}
-                                prefetch
-                                className={menuItemClass}
-                            >
-                                <Settings className="mr-2 size-4" />
-                                Settings
-                            </Link>
-                        </DropdownMenuItem>
-                    </DropdownMenuGroup>
-                    <DropdownMenuSeparator className="bg-border/60" />
+                <DropdownMenuLabel className="p-0 font-normal">
+                    <div className="flex flex-col gap-0.5 px-2.5 py-2">
+                        <span className="truncate text-sm font-medium text-foreground">
+                            {user.name}
+                        </span>
+                        <span className="truncate text-xs text-muted-foreground">
+                            {user.email}
+                        </span>
+                    </div>
+                </DropdownMenuLabel>
+                <DropdownMenuSeparator className="bg-border/60" />
+                <DropdownMenuGroup className="py-1">
                     <DropdownMenuItem asChild>
                         <Link
-                            href={logout()}
-                            method="post"
-                            as="button"
-                            onClick={handleLogout}
-                            className="flex w-full cursor-pointer items-center rounded-md px-2.5 py-2 text-sm text-muted-foreground transition-colors duration-150 ease-out hover:bg-destructive/10 hover:text-destructive focus:bg-destructive/10 focus:text-destructive hover:[&_svg]:!text-destructive focus:[&_svg]:!text-destructive"
+                            href={userShow(user.username).url}
+                            prefetch
+                            className={menuItemClass}
                         >
-                            <LogOut className="mr-2 size-4" />
-                            Log out
+                            <UserIcon className="mr-2 size-4" />
+                            My profile
                         </Link>
                     </DropdownMenuItem>
-                </div>
+                    <DropdownMenuItem asChild>
+                        <Link
+                            href={listingsMine().url}
+                            prefetch
+                            className={menuItemClass}
+                        >
+                            <ListChecks className="mr-2 size-4" />
+                            My listings
+                        </Link>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem asChild>
+                        <Link
+                            href={matchesIndex().url}
+                            prefetch
+                            className={menuItemClass}
+                        >
+                            <Swords className="mr-2 size-4" />
+                            Matches
+                        </Link>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem asChild>
+                        <Link
+                            href={walletIndex().url}
+                            prefetch
+                            className={menuItemClass}
+                        >
+                            <Wallet className="mr-2 size-4" />
+                            Wallet
+                        </Link>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem asChild>
+                        <Link
+                            href={editProfile()}
+                            prefetch
+                            className={menuItemClass}
+                        >
+                            <Settings className="mr-2 size-4" />
+                            Settings
+                        </Link>
+                    </DropdownMenuItem>
+                </DropdownMenuGroup>
+                <DropdownMenuSeparator className="bg-border/60" />
+                <DropdownMenuItem asChild>
+                    <Link
+                        href={logout()}
+                        method="post"
+                        as="button"
+                        onClick={handleLogout}
+                        className="flex w-full cursor-pointer items-center rounded-md px-2.5 py-2 text-sm text-muted-foreground transition-colors duration-150 ease-out hover:bg-destructive/10 hover:text-destructive focus:bg-destructive/10 focus:text-destructive hover:[&_svg]:!text-destructive focus:[&_svg]:!text-destructive"
+                    >
+                        <LogOut className="mr-2 size-4" />
+                        Log out
+                    </Link>
+                </DropdownMenuItem>
             </DropdownMenuContent>
         </DropdownMenu>
     );

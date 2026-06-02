@@ -285,7 +285,7 @@ function StakeAmountInput({ filters, fullWidth }: StakeAmountInputProps) {
 
     return (
         <div
-            className={`h-9 items-center rounded-md border border-border/60 bg-card/60 transition-[color,box-shadow] focus-within:border-primary/40 focus-within:ring-2 focus-within:ring-primary/25 hover:border-border ${
+            className={`h-9 items-center rounded-md border border-border/60 bg-card/60 transition-[color,box-shadow] focus-within:border-ring focus-within:ring-1 focus-within:ring-ring focus-within:shadow-glow-sm ${
                 fullWidth ? 'flex w-full' : 'inline-flex'
             }`}
         >
