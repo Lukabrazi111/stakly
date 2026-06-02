@@ -66,7 +66,14 @@ class Message extends Model implements HasMedia
     public function registerMediaCollections(): void
     {
         $this->addMediaCollection(self::ATTACHMENTS_COLLECTION)
-            ->acceptsMimeTypes(['image/jpeg', 'image/png', 'image/webp'])
+            ->acceptsMimeTypes([
+                'image/jpeg',
+                'image/png',
+                'image/webp',
+                // PDFs only land here via dispute-opener evidence — chat sends
+                // are image-only at the form-request layer.
+                'application/pdf',
+            ])
             ->useDisk('local');
     }
 

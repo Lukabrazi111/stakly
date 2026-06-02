@@ -1,4 +1,4 @@
-import { Paperclip, Send, X } from 'lucide-react';
+import { FileText, Paperclip, Send, X } from 'lucide-react';
 import type {
     ChangeEvent,
     ClipboardEvent,
@@ -28,7 +28,12 @@ const MAX_CONTENT_LENGTH = 2000;
 // Mirrors `StoreMessageRequest::MAX_FILE_SIZE_KB`.
 const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024;
 
-const ACCEPTED_MIMES = ['image/jpeg', 'image/png', 'image/webp'];
+const ACCEPTED_MIMES = [
+    'image/jpeg',
+    'image/png',
+    'image/webp',
+    'application/pdf',
+];
 const ACCEPT_ATTR = ACCEPTED_MIMES.join(',');
 
 export function ChatInput({
@@ -64,7 +69,9 @@ export function ChatInput({
     // strict mode — the URL gets revoked during double-mount, leaving a
     // dead blob src.
     useEffect(() => {
-        if (!file) {
+        // Only image previews need a blob URL — PDFs render as a file icon
+        // tile, no inline preview.
+        if (!file || !file.type.startsWith('image/')) {
             setPreviewUrl(null);
 
             return;
@@ -161,12 +168,16 @@ export function ChatInput({
         >
             {hasFile && (
                 <div className="flex items-center gap-3 border-b border-border/40 px-3 py-2">
-                    {previewUrl && (
+                    {previewUrl ? (
                         <img
                             src={previewUrl}
                             alt={file.name}
                             className="size-12 shrink-0 rounded-md border border-border/60 object-cover"
                         />
+                    ) : (
+                        <span className="flex size-12 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
+                            <FileText className="size-5" />
+                        </span>
                     )}
                     <div className="min-w-0 flex-1">
                         <p className="truncate text-xs font-medium text-foreground">
@@ -213,7 +224,7 @@ export function ChatInput({
                     variant="ghost"
                     onClick={() => fileInputRef.current?.click()}
                     disabled={disabled || hasFile}
-                    aria-label="Attach image"
+                    aria-label="Attach file"
                     className="shrink-0"
                 >
                     <Paperclip className="size-4" />
@@ -260,13 +271,13 @@ export function ChatInput({
 /** Client-side preflight; server validates again as source of truth. */
 function validateFile(file: File): boolean {
     if (!ACCEPTED_MIMES.includes(file.type)) {
-        toast.error('Only JPEG, PNG, or WebP images can be sent in chat.');
+        toast.error('Only JPG, PNG, WebP, or PDF files can be sent in chat.');
 
         return false;
     }
 
     if (file.size > MAX_FILE_SIZE_BYTES) {
-        toast.error('Image is larger than 5 MB.');
+        toast.error('File is larger than 5 MB.');
 
         return false;
     }

@@ -157,8 +157,13 @@ export function useMatchChat(
                     optimistic_file: file
                         ? {
                               name: file.name,
-                              preview_url: URL.createObjectURL(file),
+                              // PDFs don't get an inline preview — the bubble
+                              // renders a file-icon tile from `mime` instead.
+                              preview_url: file.type.startsWith('image/')
+                                  ? URL.createObjectURL(file)
+                                  : null,
                               size: file.size,
+                              mime: file.type,
                           }
                         : undefined,
                 };

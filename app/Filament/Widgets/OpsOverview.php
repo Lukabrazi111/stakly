@@ -32,6 +32,7 @@ class OpsOverview extends StatsOverviewWidget
     {
         return [
             $this->openDisputesStat(),
+            $this->agingDisputesStat(),
             $this->matchesTodayStat(),
             $this->platformEarningsStat(),
             $this->activeUsersStat(),
@@ -84,6 +85,56 @@ class OpsOverview extends StatsOverviewWidget
         };
 
         return ["Oldest: {$oldest->diffForHumans(syntax: 1)}", $color];
+    }
+
+    // ─── Aging disputes (M27 P4 SLA surface) ───────────────────────────────
+
+    private function agingDisputesStat(): Stat
+    {
+        $statuses = [MatchStatus::Disputed, MatchStatus::ManualReview];
+
+        // Aging timestamp: `dispute_opened_at` for genuine disputes (and
+        // ManualReview from dispute-Unknown). ManualReview from timeout has
+        // no dispute event so we fall back to `updated_at` (when status
+        // flipped to MR). Matches the source-of-truth used by the table
+        // column color in GameMatchesTable.
+        $count6h = $this->countAgingDisputesSince($statuses, now()->subHours(6));
+        $count12h = $this->countAgingDisputesSince($statuses, now()->subHours(12));
+
+        [$description, $color] = $this->agingDisputesDescription($count6h, $count12h);
+
+        return Stat::make('Aging disputes (≥6h)', (string) $count6h)
+            ->description($description)
+            ->descriptionIcon('heroicon-m-exclamation-triangle')
+            ->color($color)
+            ->url(GameMatchResource::getUrl('index'));
+    }
+
+    /**
+     * @param  array<int, MatchStatus>  $statuses
+     */
+    private function countAgingDisputesSince(array $statuses, CarbonImmutable $threshold): int
+    {
+        return GameMatch::query()
+            ->whereIn('status', $statuses)
+            ->whereRaw('COALESCE(dispute_opened_at, updated_at) <= ?', [$threshold])
+            ->count();
+    }
+
+    /**
+     * @return array{0: string, 1: string}
+     */
+    private function agingDisputesDescription(int $count6h, int $count12h): array
+    {
+        if ($count6h === 0) {
+            return ['No aging disputes', 'success'];
+        }
+
+        if ($count12h > 0) {
+            return ["{$count12h} over 12h", 'danger'];
+        }
+
+        return ["{$count6h} between 6h–12h", 'warning'];
     }
 
     // ─── Matches today ─────────────────────────────────────────────────────

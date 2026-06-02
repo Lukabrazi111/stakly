@@ -210,7 +210,7 @@ test('OpenDisputeAction notifies only the opponent, not the opener', function ()
     Notification::fake();
     [$creator, $taker, , $match] = pendingMatch();
 
-    app(OpenDisputeAction::class)->handle($creator, $match);
+    app(OpenDisputeAction::class)->handle($creator, $match, 'opponent claims they won but the game shows me winning');
 
     Notification::assertSentTo($taker, DisputeOpenedNotification::class);
     Notification::assertNotSentTo($creator, DisputeOpenedNotification::class);

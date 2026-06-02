@@ -465,20 +465,44 @@ Gotchas / what we learned:
 - [x] Browser autoplay policy handled implicitly — by the time a notification lands, the user has interacted with Stakly at least once.
 - [x] **`NotificationProvider` context** mounted in `SiteLayout` holds the unread count (initial from `auth.user.unread_notifications_count`, bumped on broadcast, cleared on bell open) and the `lastBroadcast` Notification (signal for the dropdown to prepend). The Echo subscription lives in an inner `AuthedNotificationProvider` so the hook only mounts for authed users. Re-syncs from Inertia share on every navigation (server is authoritative on multi-tab mark-read).
 
-**Phase 3 — Action-required banners on match pages**
+**Phase 3 — Action-required banners on match pages** ✅ Shipped 2026-06-02
 
-- [ ] Sticky banners on `match/show.tsx` for states requiring the player's response:
-    - Cancellation requested by opponent → "Accept / Reject" banner with both buttons. Persists until actioned.
-    - Match in `ManualReview` → "Post evidence in chat" banner with chat-focus CTA.
-    - Match `Disputed` opened by opponent → "Your opponent reported a problem — admin reviewing" info banner.
-- [ ] These are UI surfaces tied to match status, not new notification types — visible whenever the player views the match page, even if they dismissed the bell entry already.
-- [ ] Tests assert each banner renders for the right status × viewer combination.
+Full-width status banners at the top of `match/show.tsx`, mutually exclusive by status. Visible whenever the player views the match page, independent of bell state — the banner is the source of truth for "what does this player need to do here."
 
-**Phase 4 — Admin SLA surfaces**
+- [x] **`CancellationRequestBanner`** — Pending matches with an open cancellation request. Two viewer-aware variants in one component: `RequesterWaitingBanner` (Clock icon, "Cancellation request sent" + opponent name) for the requester, `RespondBanner` (Handshake icon, requester name in title, Accept/Decline buttons with processing states) for the opponent. Both render the reason in a card below the body. Shipped pre-M27 as part of the cancellation flow.
+- [x] **`AdminReviewBanner`** — Disputed + ManualReview matches. Three copy variants via a single `resolveCopy(match, viewerId)` helper:
+    - `manual_review` → "Match flagged for admin review" (auto-flag, no human opener).
+    - `disputed` + viewer opened it → "You reported a problem" + escrow + evidence prompt.
+    - `disputed` + opponent opened it → "{Opener name} reported a problem" + same prompt. Opener resolved client-side from `match.dispute.opened_by_id`, matched against `creator.id` / `taker.id`.
+    - All three carry a "Post evidence in chat" outline button that dispatches a `stakly:focus-chat` window event.
+- [x] **Chat-focus mechanism via `window` custom event `stakly:focus-chat`** — banner fires the event; `ChatInput` always listens and focuses + scrollIntoView's its textarea; `MobileChatTrigger` listens only when `useIsMobile()` is true and opens the Sheet first, then re-fires the event 250ms later so the freshly-mounted inner `ChatInput` catches it. `open` guard breaks the re-dispatch loop.
+- [x] **`GameMatchResource` exposes `dispute.opened_by_id` + `dispute.opened_at`** so the frontend can do the viewer-aware split. Backend columns existed since dispute flow shipped; just weren't on the resource.
+- [x] **Tests**: 4 new Pest feature tests in `tests/Feature/GameMatchShowTest.php` cover the dispute resource shape — fresh match nulls, Disputed opened by creator (creator id surfaced), Disputed opened by taker (taker id surfaced), ManualReview (null opener — auto-flag). UI rendering assertions are not part of this slice because Stakly's test suite is Pest-only; the React side has no Vitest/RTL setup. The component is small, pure, and exercised manually + via the resource-shape contract above.
 
-- [ ] Extend `OpsOverview` with a "Disputes > 6h old" stat — separate from total open disputes, color escalates `warning` at 6h, `danger` at 12h.
-- [ ] `GameMatchResource` table — sort default puts oldest unactioned at the top. Per-row age badge (green / amber / red) matching the SLA color scale.
-- [ ] (Optional, deferred) Slack / Discord webhook to admin channel when a dispute crosses the 12h `danger` threshold without action. Out of scope for Phase 4 itself; opens a follow-up if the email-to-admin pattern isn't enough.
+Gotchas / what we learned:
+
+- **Mobile chat-focus needs a re-dispatch.** On mobile, `MobileChatTrigger`'s ChatInput isn't mounted while the sheet is closed — the in-input event listener doesn't exist yet, so a direct dispatch from the banner would no-op. The trigger listens for the same event, opens the sheet (state change → render → ChatInput mounts), and re-fires the event after a 250ms delay so the now-mounted listener picks it up. The `if (open) return` guard short-circuits the re-fire on the second pass so we don't loop.
+- **`useIsMobile()` gating on the trigger's listener is required** — without it, on desktop the trigger's listener would still fire and `setOpen(true)` the Sheet (which renders via portal regardless of the `lg:hidden` wrapper), causing the sheet's ChatInput to ALSO claim focus and steal it from the always-mounted desktop ChatInput.
+- **React 19 forwards refs through function components by default.** No `forwardRef` needed on the Textarea primitive — passing `ref={textareaRef}` to `<Textarea>` flows through to the underlying `<textarea>` via `{...props}`. Saved a primitive rewrite.
+
+**Phase 4 — Admin SLA surfaces** ✅ Shipped 2026-06-02
+
+- [x] **`OpsOverview` → new "Aging disputes (≥6h)" stat** alongside the existing "Open disputes" stat. Stat value = count of Disputed + ManualReview matches whose aging timestamp is ≥6h old. Description + color escalation:
+    - 0 aging → green / "No aging disputes"
+    - 1+ in 6h–12h window → amber / "N between 6h–12h"
+    - 1+ over 12h → red / "N over 12h"
+
+    The two dispute stats render side-by-side on row 1 of the dashboard (`getColumns() = 2`) so admins see "total" + "aging" together.
+- [x] **Aging timestamp = `COALESCE(dispute_opened_at, updated_at)`** — Disputed matches have `dispute_opened_at` set, and ManualReview routed from a Dispute-Unknown branch also has it. ManualReview matches from match-timeout (no dispute event ever fired) fall back to `updated_at`, which corresponds to when the status flipped to MR. One consistent aging field across both statuses.
+- [x] **`GameMatchesTable` default sort: newest first** (`created_at DESC`). The earlier P4 iteration tried "oldest unactioned at top" via a COALESCE expression, but admin browsing UX consistently wants the most recent at the top — the SLA cues live in the Age column's color badge + the OpsOverview "Aging disputes" stat, not in the row ordering. Click-sort on the Age column gives admin oldest-first when they want to triage.
+- [x] **Per-row age badge** — the existing `dispute_opened_at` column is relabeled "Age" and rendered as a colored `->badge()` with the same SLA scale as the OpsOverview widget (success / warning / danger at the same 6h / 12h thresholds). Non-dispute rows (when admin widens the filter past the default) render `'gray'` and a `—` placeholder. Color resolver is `GameMatchesTable::ageBadgeColor()` — kept inside the table class so the SLA scale lives in one place.
+- [ ] (Deferred) Slack / Discord webhook to admin channel when a dispute crosses the 12h `danger` threshold without action. Out of scope for now; opens a follow-up if email-to-admin pings prove too quiet in practice.
+- [x] **Tests**: 4 new Livewire tests in `tests/Feature/Admin/DashboardWidgetsTest.php` covering the aging-disputes stat (zero / between-6h-12h / over-12h / MR-from-timeout fallback to updated_at). 1 new test in `tests/Feature/Admin/GameMatchResourceTest.php` asserting `assertCanSeeTableRecordsInOrder([oldest, middle, newest])` for the default-sort behavior.
+
+Gotchas:
+
+- **Filament 4 `defaultSort()` accepts a Closure.** When the sort key isn't a simple column (we need `COALESCE(dispute_opened_at, updated_at)`), pass a `fn (Builder $q) => $q->orderByRaw(...)` instead of column name + direction. The closure form is documented but easy to miss; the column-name form would have required a virtual column on the model.
+- **`getColumns(): int` controls the stats-row wrap.** Adding a 5th stat to a 2-column grid produces a 2 / 2 / 1 layout (the last stat alone in row 3). Acceptable here because "active users" sits alone on row 3 cleanly. If we add another stat later, bump to 3 columns or shuffle the pairing.
 
 **Phase 5 — Preferences UI (shared surface with M20)** ✅ Shipped 2026-06-02
 

@@ -4,11 +4,16 @@ namespace App\Actions\GameMatch;
 
 use App\Actions\Admin\NotifyAdminsAction;
 use App\Actions\Message\PostSystemMessageAction;
+use App\Actions\Message\SendMessageAction;
 use App\Enums\MatchStatus;
+use App\Enums\MessageType;
+use App\Events\MessageSent;
 use App\Filament\Resources\GameMatches\GameMatchResource;
 use App\Models\GameMatch;
+use App\Models\Message;
 use App\Models\User;
 use App\Notifications\DisputeOpenedNotification;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -25,9 +30,13 @@ class OpenDisputeAction
         private readonly NotifyAdminsAction $notifyAdmins,
     ) {}
 
-    public function handle(User $user, GameMatch $match): bool
-    {
-        $opened = DB::transaction(function () use ($match, $user) {
+    public function handle(
+        User $user,
+        GameMatch $match,
+        ?string $reason = null,
+        ?UploadedFile $evidence = null,
+    ): bool {
+        $opened = DB::transaction(function () use ($match, $user, $reason, $evidence) {
             $locked = GameMatch::query()->lockForUpdate()->findOrFail($match->id);
 
             if ($locked->status !== MatchStatus::Pending) {
@@ -44,6 +53,8 @@ class OpenDisputeAction
                 [['type' => 'dispute_prompt']],
             );
 
+            $this->postOpenerClaim($locked, $user, $reason, $evidence);
+
             return true;
         });
 
@@ -56,6 +67,36 @@ class OpenDisputeAction
         }
 
         return $opened;
+    }
+
+    /**
+     * Posts the disputing user's reason + optional evidence image as a chat
+     * message authored by them, tagged with the `dispute_opening` attachment
+     * marker so the bubble renders a "Reason for dispute" header. Closes the
+     * fairness gap of "opponent sees a banner but doesn't know what's being
+     * claimed" — and gives admin a single anchor message to read first when
+     * a dispute lands in ManualReview.
+     */
+    private function postOpenerClaim(
+        GameMatch $match,
+        User $user,
+        ?string $reason,
+        ?UploadedFile $evidence,
+    ): void {
+        $message = Message::create([
+            'match_id' => $match->id,
+            'user_id' => $user->id,
+            'type' => MessageType::Text,
+            'content' => $reason,
+            'attachments_json' => [['type' => 'dispute_opening']],
+        ]);
+
+        if ($evidence !== null) {
+            SendMessageAction::attachFileTo($message, $evidence);
+            $message->load('media');
+        }
+
+        MessageSent::dispatch($message);
     }
 
     private function notifyOpponent(GameMatch $match, User $opener): void

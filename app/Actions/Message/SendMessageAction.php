@@ -72,7 +72,7 @@ class SendMessageAction
             ]);
 
             if ($file !== null) {
-                $this->attachImage($message, $file);
+                self::attachFileTo($message, $file);
                 // Ensure in-memory model carries media for the post-commit broadcast worker.
                 $message->load('media');
             }
@@ -192,10 +192,36 @@ class SendMessageAction
     }
 
     /**
-     * Re-encode via GD/Imagick to strip EXIF (camera GPS / device fingerprint / capture time)
-     * before persisting — doesn't belong in a money-chat audit trail.
+     * Branch attach by mime: images go through the EXIF-strip + dimension
+     * pipeline, everything else (PDFs) gets a direct store. Shared between
+     * the chat path and `OpenDisputeAction::postOpenerClaim`.
      */
-    private function attachImage(Message $message, UploadedFile $file): void
+    public static function attachFileTo(Message $message, UploadedFile $file): void
+    {
+        $isImage = str_starts_with((string) $file->getMimeType(), 'image/');
+
+        if ($isImage) {
+            self::attachImageTo($message, $file);
+
+            return;
+        }
+
+        $extension = strtolower($file->getClientOriginalExtension() ?: 'pdf');
+
+        $message
+            ->addMedia($file->getRealPath())
+            ->usingName($file->getClientOriginalName())
+            ->usingFileName(Str::uuid()->toString().'.'.$extension)
+            ->toMediaCollection(Message::ATTACHMENTS_COLLECTION);
+    }
+
+    /**
+     * Re-encode via GD/Imagick to strip EXIF (camera GPS / device fingerprint / capture time)
+     * before persisting — doesn't belong in a money-chat audit trail. Public + static so
+     * OpenDisputeAction can attach evidence to the user's dispute-opening message with the
+     * same EXIF-stripping + dimension-capture pipeline as a normal chat upload.
+     */
+    public static function attachImageTo(Message $message, UploadedFile $file): void
     {
         $extension = strtolower($file->getClientOriginalExtension());
         $tempPath = tempnam(sys_get_temp_dir(), 'stakly-chat-img-');

@@ -22,7 +22,12 @@ interface ChatPanelProps {
     bare?: boolean;
 }
 
-const ACCEPTED_MIMES = ['image/jpeg', 'image/png', 'image/webp'];
+const ACCEPTED_MIMES = [
+    'image/jpeg',
+    'image/png',
+    'image/webp',
+    'application/pdf',
+];
 const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024;
 
 /**
@@ -106,13 +111,15 @@ export function ChatPanel({
         }
 
         if (!ACCEPTED_MIMES.includes(file.type)) {
-            toast.error('Only JPEG, PNG, or WebP images can be sent in chat.');
+            toast.error(
+                'Only JPG, PNG, WebP, or PDF files can be sent in chat.',
+            );
 
             return;
         }
 
         if (file.size > MAX_FILE_SIZE_BYTES) {
-            toast.error('Image is larger than 5 MB.');
+            toast.error('File is larger than 5 MB.');
 
             return;
         }
@@ -181,10 +188,10 @@ export function ChatPanel({
                 <div className="pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-primary/60 bg-primary/10 backdrop-blur-sm">
                     <ImagePlus className="size-8 text-primary" />
                     <p className="text-sm font-medium text-foreground">
-                        Drop image to attach
+                        Drop file to attach
                     </p>
                     <p className="text-xs text-muted-foreground">
-                        JPEG, PNG, or WebP up to 5 MB
+                        JPG, PNG, WebP, or PDF up to 5 MB
                     </p>
                 </div>
             )}

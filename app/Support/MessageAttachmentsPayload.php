@@ -19,17 +19,23 @@ class MessageAttachmentsPayload
     public static function forMessage(Message $message): array
     {
         return [
-            ...self::imageEntries($message),
+            ...self::mediaEntries($message),
             ...self::linkEntries($message),
             ...self::gameCardEntries($message),
             ...self::disputePromptEntries($message),
+            ...self::disputeOpeningEntries($message),
         ];
     }
 
     /**
+     * Image media → `type: 'image'` (thumb + dimensions). Non-image media
+     * (PDFs from dispute-opener evidence) → `type: 'file'` (download tile).
+     * Single iteration over the collection so mixed messages render in
+     * collection order.
+     *
      * @return list<array<string, mixed>>
      */
-    private static function imageEntries(Message $message): array
+    private static function mediaEntries(Message $message): array
     {
         $entries = [];
 
@@ -47,16 +53,31 @@ class MessageAttachmentsPayload
             // browser can't reach.
             $url = route('matches.messages.attachment', $base, absolute: false);
 
+            $isImage = str_starts_with((string) $media->mime_type, 'image/');
+
+            if ($isImage) {
+                $entries[] = [
+                    'type' => 'image',
+                    'media_id' => $media->id,
+                    'name' => $media->file_name,
+                    'mime' => $media->mime_type,
+                    'size' => $media->size,
+                    'width' => $media->getCustomProperty('width'),
+                    'height' => $media->getCustomProperty('height'),
+                    'url' => $url,
+                    'thumb_url' => $url.'?conversion='.Message::THUMBNAIL_CONVERSION,
+                ];
+
+                continue;
+            }
+
             $entries[] = [
-                'type' => 'image',
+                'type' => 'file',
                 'media_id' => $media->id,
-                'name' => $media->file_name,
+                'name' => $media->name ?: $media->file_name,
                 'mime' => $media->mime_type,
                 'size' => $media->size,
-                'width' => $media->getCustomProperty('width'),
-                'height' => $media->getCustomProperty('height'),
                 'url' => $url,
-                'thumb_url' => $url.'?conversion='.Message::THUMBNAIL_CONVERSION,
             ];
         }
 
@@ -191,6 +212,40 @@ class MessageAttachmentsPayload
             }
 
             $entries[] = ['type' => 'dispute_prompt'];
+        }
+
+        return $entries;
+    }
+
+    /**
+     * Dispute-opening markers. Written by `OpenDisputeAction::postOpenerClaim`
+     * on the user-authored message that carries the disputing player's
+     * reason (+ optional evidence). Surfaces the marker to the frontend so
+     * `ChatMessageBubble` renders the "Reason for dispute" header above
+     * the bubble.
+     *
+     * @return list<array<string, mixed>>
+     */
+    private static function disputeOpeningEntries(Message $message): array
+    {
+        $raw = $message->attachments_json;
+
+        if (! is_array($raw) || $raw === []) {
+            return [];
+        }
+
+        $entries = [];
+
+        foreach ($raw as $item) {
+            if (! is_array($item)) {
+                continue;
+            }
+
+            if (($item['type'] ?? null) !== 'dispute_opening') {
+                continue;
+            }
+
+            $entries[] = ['type' => 'dispute_opening'];
         }
 
         return $entries;

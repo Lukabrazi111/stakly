@@ -172,11 +172,34 @@ export interface ChatDisputePromptAttachment {
     type: 'dispute_prompt';
 }
 
+// Tagged on the user-authored message that carries the disputing player's
+// reason (+ optional evidence file) at the moment they open the dispute.
+// `ChatMessageBubble` adds a "Reason for dispute" header above the bubble
+// content so opponent + admin see this is the formal claim, not just chat.
+export interface ChatDisputeOpeningAttachment {
+    type: 'dispute_opening';
+}
+
+// Non-image media (PDFs from dispute-opener evidence). Rendered as a
+// download tile rather than an inline preview — chat-input itself is still
+// image-only at the form-request layer, so this branch only fires from the
+// dispute-opening flow.
+export interface ChatFileAttachment {
+    type: 'file';
+    media_id: number;
+    name: string;
+    mime: string;
+    size: number;
+    url: string;
+}
+
 export type ChatAttachment =
     | ChatImageAttachment
     | ChatLinkAttachment
     | ChatGameCardAttachment
-    | ChatDisputePromptAttachment;
+    | ChatDisputePromptAttachment
+    | ChatDisputeOpeningAttachment
+    | ChatFileAttachment;
 
 export interface ChatMessage {
     id: number;
@@ -206,7 +229,14 @@ export interface ChatMessage {
     // Local-only mirror of the queued file used to render the optimistic
     // bubble while the upload is in flight. Replaced by the broadcast's
     // `attachments` entries when the server confirms.
-    optimistic_file?: { name: string; preview_url: string; size: number };
+    optimistic_file?: {
+        name: string;
+        // Object URL for image previews; null for non-image (PDF) attachments
+        // which render as a file-icon tile in `OptimisticAttachment`.
+        preview_url: string | null;
+        size: number;
+        mime: string;
+    };
 }
 
 export interface MatchShowProps {

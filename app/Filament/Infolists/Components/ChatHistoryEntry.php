@@ -70,13 +70,55 @@ class ChatHistoryEntry extends Entry
             return null;
         }
 
-        return route(
+        $base = route(
             'matches.messages.attachment',
             [
                 'match' => $message->match_id,
                 'message' => $message->id,
                 'media' => $media->id,
             ],
-        ).($thumb ? '?conversion='.Message::THUMBNAIL_CONVERSION : '');
+        );
+
+        // Thumbnail conversion only exists for image media — PDFs return the
+        // original file at the same URL regardless of the `thumb` flag.
+        return $thumb && str_starts_with((string) $media->mime_type, 'image/')
+            ? $base.'?conversion='.Message::THUMBNAIL_CONVERSION
+            : $base;
+    }
+
+    public function attachmentIsImage(Message $message): bool
+    {
+        $media = $message->getFirstMedia(Message::ATTACHMENTS_COLLECTION);
+
+        return $media !== null
+            && str_starts_with((string) $media->mime_type, 'image/');
+    }
+
+    public function attachmentName(Message $message): ?string
+    {
+        $media = $message->getFirstMedia(Message::ATTACHMENTS_COLLECTION);
+
+        return $media?->name ?: $media?->file_name;
+    }
+
+    public function attachmentSizeLabel(Message $message): ?string
+    {
+        $media = $message->getFirstMedia(Message::ATTACHMENTS_COLLECTION);
+
+        if (! $media) {
+            return null;
+        }
+
+        $bytes = (int) $media->size;
+
+        if ($bytes < 1024) {
+            return "{$bytes} B";
+        }
+
+        if ($bytes < 1024 * 1024) {
+            return number_format($bytes / 1024, 1).' KB';
+        }
+
+        return number_format($bytes / 1024 / 1024, 1).' MB';
     }
 }

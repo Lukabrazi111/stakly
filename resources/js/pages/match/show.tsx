@@ -13,6 +13,7 @@ import { OpenDisputeButton } from '@/components/match/open-dispute-button';
 import { RequestCancellationButton } from '@/components/match/request-cancellation-button';
 import { SettlementSummary } from '@/components/match/settlement-summary';
 import { WaitingForGameCard } from '@/components/match/waiting-for-game-card';
+import { useNotificationContext } from '@/components/notifications/notification-provider';
 import { BackLink } from '@/components/site/back-link';
 import { PageMeta } from '@/components/site/page-meta';
 import { useMatchChat } from '@/hooks/use-match-chat';
@@ -155,6 +156,8 @@ export default function MatchShow({ match, messages }: MatchShowProps) {
 
     return (
         <SiteLayout>
+            <MatchLiveUpdater matchId={match.id} />
+
             <PageMeta
                 title={`Match #${match.id}`}
                 description="Match details and chat. Private to participants."
@@ -347,4 +350,27 @@ export default function MatchShow({ match, messages }: MatchShowProps) {
             </div>
         </SiteLayout>
     );
+}
+
+/**
+ * Live-update bridge from the player notification stream. Lives INSIDE
+ * `SiteLayout` so it can read from `NotificationProvider`'s context (the
+ * provider is mounted in SiteLayout — the outer Show component is its
+ * parent in the React tree, not a descendant, so a context read up there
+ * gets the default empty value). When a match-scoped notification arrives
+ * (admin settle, opponent dispute/cancellation, etc.) we fire a full
+ * `router.reload()` to refresh `match` + shared `auth.user.usdt_balance`.
+ */
+function MatchLiveUpdater({ matchId }: { matchId: number }) {
+    const { lastBroadcast } = useNotificationContext();
+
+    useEffect(() => {
+        if (lastBroadcast?.related_id !== matchId) {
+            return;
+        }
+
+        router.reload();
+    }, [lastBroadcast, matchId]);
+
+    return null;
 }

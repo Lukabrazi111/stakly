@@ -1,7 +1,9 @@
 import {
+    AlertTriangle,
     BadgeCheck,
     Crown,
     ExternalLink,
+    FileText,
     Link as LinkIcon,
     Loader2,
     Megaphone,
@@ -16,7 +18,9 @@ import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { useInitials } from '@/hooks/use-initials';
 import { cn } from '@/lib/utils';
 import type {
+    ChatDisputeOpeningAttachment,
     ChatDisputePromptAttachment,
+    ChatFileAttachment,
     ChatGameCardAttachment,
     ChatImageAttachment,
     ChatLinkAttachment,
@@ -64,9 +68,18 @@ export function ChatMessageBubble({
     const isOwn = message.user_id === viewerId;
     const sender = message.user_id === creator.id ? creator : taker;
 
+    const isDisputeOpening = message.attachments.some(
+        (attachment): attachment is ChatDisputeOpeningAttachment =>
+            attachment.type === 'dispute_opening',
+    );
+
     const images = message.attachments.filter(
         (attachment): attachment is ChatImageAttachment =>
             attachment.type === 'image',
+    );
+    const files = message.attachments.filter(
+        (attachment): attachment is ChatFileAttachment =>
+            attachment.type === 'file',
     );
     const links = message.attachments.filter(
         (attachment): attachment is ChatLinkAttachment =>
@@ -98,12 +111,20 @@ export function ChatMessageBubble({
                     isPending && 'opacity-70',
                 )}
             >
+                {isDisputeOpening && (
+                    <span className="inline-flex items-center gap-1.5 rounded-full border border-warning/40 bg-warning/10 px-2.5 py-1 text-[11px] font-medium text-warning">
+                        <AlertTriangle className="size-3" aria-hidden />
+                        Reason for dispute
+                    </span>
+                )}
+
                 {/* Local-file preview while upload is in flight or after a
                     failure; replaced when the broadcast lands. */}
                 {hasOptimisticFile && message.optimistic_file && (
-                    <OptimisticImage
+                    <OptimisticAttachment
                         previewUrl={message.optimistic_file.preview_url}
                         name={message.optimistic_file.name}
+                        size={message.optimistic_file.size}
                         isOwn={isOwn}
                         isFailed={isFailed}
                     />
@@ -117,6 +138,14 @@ export function ChatMessageBubble({
                             isOwn={isOwn}
                         />
                     ))}
+
+                {files.map((file) => (
+                    <FileAttachment
+                        key={file.media_id}
+                        file={file}
+                        isOwn={isOwn}
+                    />
+                ))}
 
                 {hasContent && (
                     <div
@@ -209,6 +238,51 @@ function ImageAttachment({ image, isOwn }: ImageAttachmentProps) {
     );
 }
 
+interface FileAttachmentProps {
+    file: ChatFileAttachment;
+    isOwn: boolean;
+}
+
+/** Download tile for non-image attachments (PDFs from dispute opener evidence).
+ *  Click opens the file in a new tab; the user can save via the browser. */
+function FileAttachment({ file, isOwn }: FileAttachmentProps) {
+    return (
+        <a
+            href={file.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className={cn(
+                'group inline-flex max-w-[300px] items-center gap-3 rounded-2xl border border-border/60 bg-card px-3 py-2.5 transition-shadow hover:shadow-glow-sm focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none',
+                isOwn ? 'rounded-br-md' : 'rounded-bl-md',
+            )}
+        >
+            <span className="inline-flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                <FileText className="size-4" />
+            </span>
+            <span className="flex min-w-0 flex-col">
+                <span className="truncate text-sm font-medium text-foreground">
+                    {file.name}
+                </span>
+                <span className="text-[11px] text-muted-foreground">
+                    {formatFileSize(file.size)}
+                </span>
+            </span>
+        </a>
+    );
+}
+
+function formatFileSize(bytes: number): string {
+    if (bytes < 1024) {
+        return `${bytes} B`;
+    }
+
+    if (bytes < 1024 * 1024) {
+        return `${(bytes / 1024).toFixed(1)} KB`;
+    }
+
+    return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}
+
 interface LinkCardProps {
     link: ChatLinkAttachment;
     isOwn: boolean;
@@ -264,41 +338,72 @@ function LinkCard({ link, isOwn }: LinkCardProps) {
     );
 }
 
-interface OptimisticImageProps {
-    previewUrl: string;
+interface OptimisticAttachmentProps {
+    previewUrl: string | null;
     name: string;
+    size: number;
     isOwn: boolean;
     isFailed: boolean;
 }
 
 /** Local-blob preview rendered while upload is in flight or after a
- *  failure. Not clickable — the original doesn't exist on the server yet. */
-function OptimisticImage({
+ *  failure. Not clickable — the original doesn't exist on the server yet.
+ *  Image attachments show the blob; non-image (PDFs) show a file-icon tile. */
+function OptimisticAttachment({
     previewUrl,
     name,
+    size,
     isOwn,
     isFailed,
-}: OptimisticImageProps) {
+}: OptimisticAttachmentProps) {
+    if (previewUrl) {
+        return (
+            <div
+                className={cn(
+                    'relative overflow-hidden rounded-2xl border border-border/60 bg-card',
+                    isOwn ? 'rounded-br-md' : 'rounded-bl-md',
+                    isFailed && 'border-destructive/60',
+                )}
+            >
+                <img
+                    src={previewUrl}
+                    alt={name}
+                    className={cn(
+                        'max-h-64 max-w-[300px] object-contain',
+                        isFailed && 'opacity-50',
+                    )}
+                />
+                {!isFailed && (
+                    <div className="absolute inset-0 flex items-center justify-center bg-background/60 backdrop-blur-[1px]">
+                        <Loader2 className="size-6 animate-spin text-primary" />
+                    </div>
+                )}
+            </div>
+        );
+    }
+
     return (
         <div
             className={cn(
-                'relative overflow-hidden rounded-2xl border border-border/60 bg-card',
+                'relative inline-flex max-w-[300px] items-center gap-3 rounded-2xl border border-border/60 bg-card px-3 py-2.5',
                 isOwn ? 'rounded-br-md' : 'rounded-bl-md',
                 isFailed && 'border-destructive/60',
+                isFailed && 'opacity-70',
             )}
         >
-            <img
-                src={previewUrl}
-                alt={name}
-                className={cn(
-                    'max-h-64 max-w-[300px] object-contain',
-                    isFailed && 'opacity-50',
-                )}
-            />
+            <span className="inline-flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                <FileText className="size-4" />
+            </span>
+            <span className="flex min-w-0 flex-col">
+                <span className="truncate text-sm font-medium text-foreground">
+                    {name}
+                </span>
+                <span className="text-[11px] text-muted-foreground">
+                    {formatFileSize(size)}
+                </span>
+            </span>
             {!isFailed && (
-                <div className="absolute inset-0 flex items-center justify-center bg-background/60 backdrop-blur-[1px]">
-                    <Loader2 className="size-6 animate-spin text-primary" />
-                </div>
+                <Loader2 className="size-4 shrink-0 animate-spin text-primary" />
             )}
         </div>
     );

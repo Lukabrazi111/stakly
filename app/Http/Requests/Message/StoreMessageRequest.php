@@ -19,8 +19,9 @@ class StoreMessageRequest extends FormRequest
     /** KB — caps bandwidth + storage while leaving room for clean screenshots. */
     public const MAX_FILE_SIZE_KB = 5120;
 
-    /** Image-only in v1; PDFs / videos / generic files are rejected. */
-    public const ALLOWED_MIMES = 'jpeg,jpg,png,webp';
+    /** Image formats + PDF. Chat is the evidence channel for disputes, so
+     *  PDF receipts / fairplay reports / printable game records belong here. */
+    public const ALLOWED_MIMES = 'jpeg,jpg,png,webp,pdf';
 
     public function authorize(): bool
     {
@@ -60,7 +61,6 @@ class StoreMessageRequest extends FormRequest
                 'nullable',
                 'required_without:content',
                 'file',
-                'image',
                 'mimes:'.self::ALLOWED_MIMES,
                 'max:'.self::MAX_FILE_SIZE_KB,
             ],

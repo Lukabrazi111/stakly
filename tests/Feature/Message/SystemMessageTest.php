@@ -116,7 +116,7 @@ test('opening a dispute posts a "Dispute opened by {name}" system message with d
     // marker so the React `SystemBubble` renders the warning variant.
     [$creator, , , $match] = pendingMatch();
 
-    app(OpenDisputeAction::class)->handle($creator, $match);
+    app(OpenDisputeAction::class)->handle($creator, $match, 'opponent claims they won but the game shows me winning');
 
     $message = Message::query()
         ->where('match_id', $match->id)

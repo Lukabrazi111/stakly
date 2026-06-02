@@ -12,6 +12,7 @@ use App\Exceptions\InsufficientBalanceException;
 use App\Http\Requests\GameMatch\IndexMatchesRequest;
 use App\Http\Requests\GameMatch\RequestCancellationRequest;
 use App\Http\Requests\GameMatch\TakeRequest;
+use App\Http\Requests\Match\OpenDisputeRequest;
 use App\Http\Resources\GameMatchResource;
 use App\Http\Resources\MessageResource;
 use App\Models\GameMatch;
@@ -193,13 +194,18 @@ class GameMatchController extends Controller
      * Pending (alongside `RequestCancellationAction` for cooperative exit).
      * Business logic lives in `OpenDisputeAction`.
      */
-    public function openDispute(Request $request, GameMatch $match, OpenDisputeAction $action): RedirectResponse
+    public function openDispute(OpenDisputeRequest $request, GameMatch $match, OpenDisputeAction $action): RedirectResponse
     {
         $user = $request->user();
 
         abort_if($user->cannot('openDispute', $match), 403);
 
-        $opened = $action->handle($user, $match);
+        $opened = $action->handle(
+            $user,
+            $match,
+            $request->input('reason'),
+            $request->file('evidence'),
+        );
 
         Inertia::flash('toast', $opened
             ? ['type' => 'warning', 'message' => __('Dispute opened — an admin will review and resolve this match.')]

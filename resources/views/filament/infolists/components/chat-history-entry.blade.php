@@ -112,19 +112,42 @@
                             @endif
 
                             @if ($attachmentUrl)
-                                <a
-                                    href="{{ $attachmentFullUrl }}"
-                                    target="_blank"
-                                    rel="noopener"
-                                    class="block max-w-md overflow-hidden rounded-md border border-gray-300 transition hover:border-primary-500 dark:border-gray-700"
-                                >
-                                    <img
-                                        src="{{ $attachmentUrl }}"
-                                        alt="Chat attachment"
-                                        class="max-h-72 w-full object-contain"
-                                        loading="lazy"
-                                    />
-                                </a>
+                                @if ($entry->attachmentIsImage($message))
+                                    <a
+                                        href="{{ $attachmentFullUrl }}"
+                                        target="_blank"
+                                        rel="noopener"
+                                        class="block max-w-md overflow-hidden rounded-md border border-gray-300 transition hover:border-primary-500 dark:border-gray-700"
+                                    >
+                                        <img
+                                            src="{{ $attachmentUrl }}"
+                                            alt="Chat attachment"
+                                            class="max-h-72 w-full object-contain"
+                                            loading="lazy"
+                                        />
+                                    </a>
+                                @else
+                                    <a
+                                        href="{{ $attachmentFullUrl }}"
+                                        target="_blank"
+                                        rel="noopener"
+                                        class="inline-flex max-w-md items-center gap-3 rounded-md border border-gray-300 bg-gray-50 px-3 py-2.5 transition hover:border-primary-500 dark:border-gray-700 dark:bg-gray-800/60"
+                                    >
+                                        <span class="flex size-9 shrink-0 items-center justify-center rounded-md bg-primary-100 text-primary-700 dark:bg-primary-900/40 dark:text-primary-300">
+                                            <svg class="size-5" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24" aria-hidden="true">
+                                                <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" />
+                                            </svg>
+                                        </span>
+                                        <span class="flex min-w-0 flex-col">
+                                            <span class="truncate text-sm font-medium text-gray-900 dark:text-gray-100">
+                                                {{ $entry->attachmentName($message) ?? 'Attachment' }}
+                                            </span>
+                                            <span class="text-xs text-gray-500 dark:text-gray-400">
+                                                {{ $entry->attachmentSizeLabel($message) }}
+                                            </span>
+                                        </span>
+                                    </a>
+                                @endif
                             @endif
 
                             @if (count($attachments) > 0)

@@ -58,6 +58,22 @@ test('list page can show all statuses when filter is cleared', function () {
         ->assertCanSeeTableRecords([$disputed, $settled]);
 });
 
+test('list page sorts matches newest-first by created_at (latest disputes at top)', function () {
+    [, , , $oldest] = pendingMatch();
+    $oldest->forceFill(['created_at' => now()->subDays(2)])->save();
+    $oldest->update(['status' => MatchStatus::Disputed, 'dispute_opened_at' => now()->subHours(10)]);
+
+    [, , , $middle] = pendingMatch();
+    $middle->forceFill(['created_at' => now()->subDay()])->save();
+    $middle->update(['status' => MatchStatus::Disputed, 'dispute_opened_at' => now()->subHours(5)]);
+
+    [, , , $newest] = pendingMatch();
+    $newest->update(['status' => MatchStatus::Disputed, 'dispute_opened_at' => now()->subHour()]);
+
+    Livewire::test(ListGameMatches::class)
+        ->assertCanSeeTableRecords([$newest, $middle, $oldest], inOrder: true);
+});
+
 // ─── View page render ──────────────────────────────────────────────────────
 
 test('view page renders for a Disputed match', function () {

@@ -134,12 +134,32 @@ test('rejects empty content with no file', function () {
     expect(Message::count())->toBe(0);
 });
 
-test('rejects PDF file as wrong MIME', function () {
+test('accepts PDF file attachment', function () {
+    [$creator, , $match] = attachmentMatch();
+
+    // Real PDF magic header so Spatie's mime detection (which inspects the
+    // file body, not the claimed type) returns `application/pdf`.
+    $pdfBody = "%PDF-1.4\n%\xE2\xE3\xCF\xD3\n1 0 obj\n<<>>\nendobj\n%%EOF\n";
+
+    $this->actingAs($creator)
+        ->post("/matches/{$match->id}/messages", [
+            'file' => UploadedFile::fake()->createWithContent('proof.pdf', $pdfBody),
+        ])
+        ->assertRedirect();
+
+    $message = Message::query()->where('match_id', $match->id)->firstOrFail();
+    $media = $message->getMedia(Message::ATTACHMENTS_COLLECTION);
+
+    expect($media)->toHaveCount(1)
+        ->and($media->first()->mime_type)->toBe('application/pdf');
+});
+
+test('rejects unsupported file type (text/plain)', function () {
     [$creator, , $match] = attachmentMatch();
 
     $this->actingAs($creator)
         ->postJson("/matches/{$match->id}/messages", [
-            'file' => UploadedFile::fake()->create('document.pdf', 100, 'application/pdf'),
+            'file' => UploadedFile::fake()->create('notes.txt', 5, 'text/plain'),
         ])
         ->assertJsonValidationErrors('file');
 
