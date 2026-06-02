@@ -704,3 +704,150 @@ Setup steps documented inline in `config/services.php` (where to log in, where t
 - **Lichess Bot API (`bot:play` scope / `/api/bot/*`).** Stakly observes games, doesn't play them. Account-upgrade-to-bot is one-way and would lock the account out of human play.
 - **OAuth user delegation.** Each end user proves Lichess ownership via the existing M8 bio-code flow; we never need to act as the user on Lichess, only read public game data. Per-user OAuth tokens would add infrastructure (per-user storage, refresh tokens, revocation handling) for zero new capability.
 - **Stream-only settlement path.** Stream is an optimisation over the 5-min cron + page-visit + chat-send triggers; the multi-trigger layering survives so a stream outage isn't a frozen-match scenario.
+## M27 — In-app notifications + action-required UX + sound ✅ shipped 2026-06-02
+
+The synchronous in-app channel that complements M20 (email, asynchronous). Today Stakly has no player-facing notification surface — if Bob takes Alice's listing while she's offline, and Alice visits Stakly later without checking email, she has no visible signal anything happened until she navigates to `/matches`. M27 closes that gap with a bell in `SiteHeader` + real-time push via Reverb + a sound for high-priority events. Symmetric on the admin side — `OpsOverview` gets SLA-aware surfaces so old disputes can't be ignored accidentally.
+
+The `notifications` table already exists (it shipped with M12's `NotifyAdminsAction` for the Filament admin bell). M27 reuses that table via Laravel's `database` notification channel; M20 layers `mail` channel on top later.
+
+### Design decisions taken into this milestone
+
+- **Real-time via Reverb + Laravel Echo + private per-user channel.** Already in the stack. No polling fallback. Sub-second push is what makes sound notifications usable — a 30s polling delay would feel broken.
+- **Sound default is narrow, sound preference is per-event.** Defaults to ON for `listing_taken` only (`PlayerNotification::SOUND_DEFAULT_EVENT_TYPES`) — the only event where the user is reliably away from the page and needs to come back NOW. The other 4 configurable events (`match_settled`, `match_manual_review`, `dispute_opened`, `cancellation_requested`) default OFF, but the user can opt them in via /settings/notifications Sound checkboxes. The 4 informational events (`listing_expired`, `dispute_resolved`, `cancellation_accepted`, `cancellation_rejected`) are non-configurable + always silent — pings, not signals.
+- **Multi-tab sound coordination via `BroadcastChannel`.** If a user has multiple Stakly tabs open, only the first tab to receive the broadcast plays the sound — the others suppress. Prevents triple-ding when one event lands. (Phase 2 work.)
+- **Notification classes designed to support `mail` channel from day one** even though M27 only lights up `database` + `broadcast`. M20 wires the Blade templates later without touching dispatch sites or class signatures.
+- **Sound toggle lives on the preferences page (M27 Phase 5)**, alongside per-event in-app and email toggles. Default: `ListingTaken` sound ON for everyone, no other event has a sound toggle because no other event plays sound.
+- **Mandatory events cannot be silenced.** "Settled — you won/lost" and "Cancellation request awaiting response" are operational, not informational — turning them off would let users miss money-affecting events. UI greys those toggles.
+- **Coexist with Filament admin bell in the same `notifications` table** via the `type` discriminator. Filament reads `data->>'format' = 'filament'`; player notifications have `type = 'App\Notifications\XxxNotification'` and no `format` key, so each consumer queries its own subset. No schema changes, no migration of existing admin notifications.
+- **`ShouldQueue` from day one.** `broadcast` channel hits Reverb over HTTP — a sync dispatch on a Reverb hiccup would fail the originating user's action (e.g. TakeListing). Queued notifications process in 100-500ms via Redis worker; user-action state (match created, listing taken) remains synchronous.
+- **After-commit dispatch, never inside transactions.** Mirrors the existing `OpenDisputeAction::notifyAdminsOfDispute()` pattern — inside the transaction, a notification would fire even on rollback, pointing the bell at a match that "didn't happen." Settle Actions return an outcome marker from their `DB::transaction` closure; the outer `handle()` dispatches notifications after commit.
+
+### Phases
+
+**Phase 1 — Notification dispatch infrastructure** ✅ Shipped 2026-05-30
+
+Scope expanded from 7 → 9 notification classes during P1 (added `DisputeResolvedNotification` so the admin-intervened path reads distinctly from auto-settle, and `ListingExpiredNotification` since the existing `ExpireListingAction` scheduler had no user signal beyond a wallet ledger row).
+
+- [x] `App\Notifications\PlayerNotification` abstract base — handles `via(['database','broadcast'])`, `toDatabase()`, `toBroadcast(BroadcastMessage)`, assembles uniform payload `{event_type, title, body, action_url, related_id}`. Subclasses implement 5 abstract methods. `ShouldQueue` so Reverb hiccups don't fail user actions.
+- [x] 9 concrete notification classes — `ListingTaken` (creator), `MatchSettled` (both), `MatchManualReview` (both), `DisputeOpened` (opponent of opener), `DisputeResolved` (both), `CancellationRequested` (opponent), `CancellationAccepted` (original requester), `CancellationRejected` (original requester), `ListingExpired` (creator).
+- [x] After-commit dispatch wired into 11 Actions:
+    - `TakeListingAction` → `ListingTakenNotification` to creator
+    - `SettleFromCardAction` → `MatchSettledNotification` to both (won/lost branch + draw branch)
+    - `AdminSettleToWinnerAction` → `MatchSettledNotification` to both (admin manual settle of ManualReview)
+    - `AdminSettleDrawAction` → `MatchSettledNotification` to both (admin manual draw)
+    - `ResolveDisputeAction` → `DisputeResolvedNotification` to both (Confirmed + Drawn branches) OR `MatchManualReviewNotification` to both (Unknown branch)
+    - `ResolveMatchTimeoutAction` → `MatchManualReviewNotification` to both (alongside existing admin Filament bell)
+    - `OpenDisputeAction` → `DisputeOpenedNotification` to opponent (alongside existing admin Filament bell)
+    - `RequestCancellationAction` → `CancellationRequestedNotification` to opponent
+    - `AcceptCancellationAction` → `CancellationAcceptedNotification` to original requester
+    - `RejectCancellationAction` → `CancellationRejectedNotification` to original requester
+    - `ExpireListingAction` → `ListingExpiredNotification` to creator
+- [x] `SettleMatchAction::computeWinnerPayout($stake)` public static helper so calling Actions can render payout in `MatchSettledNotification` / `DisputeResolvedNotification` body without duplicating the bcmul chain.
+- [x] Tests: 14 Pest tests in `tests/Feature/Notifications/PlayerNotificationsTest.php` — one per (Action, expected_notification, expected_recipient) tuple.
+- [x] Existing 877 tests stay green — Action signature changes (transaction return shape on `SettleFromCardAction`, `ResolveDisputeAction`, cancellation Actions) are internal; public `handle()` signatures unchanged.
+
+Gotchas / what we learned:
+
+- **`routes/channels.php` already has the `App.Models.User.{id}` channel auth** — Laravel auto-creates it in the starter kit. No additional channel registration needed for broadcast notifications.
+- **`Inertia\Ssr\HttpGateway::dispatch()` Vite-hot routing was a separate concern** (M26 P3 gotcha) — unrelated to notification broadcasts which go directly to Reverb.
+- **Postgres `LIKE` on the `type` column doesn't work cross-driver** — `\%` in a Postgres LIKE pattern means literal `%` because `\` is the default escape character, so `'App\\Notifications\\%'` matched nothing. Switched the player/admin discriminator to `whereNotNull('data->event_type')` (every `PlayerNotification::payload()` emits `event_type`; Filament admin rows don't). Database-agnostic + survives namespace refactors.
+- **CSRF for the bell's mutation endpoints uses the `XSRF-TOKEN` cookie**, not a `<meta name="csrf-token">` tag. Inertia/Laravel already set the cookie; bell's `postJson()` helper reads it and sends as `X-XSRF-TOKEN` header. No meta tag was added.
+- **`SoundPriority` enum was wrong abstraction — removed during P5 testing.** Original P1 design declared a per-class `SoundPriority` enum (`Urgent | Soft | None`); the frontend hook gated playback on `priority !== 'none'`. P5 then exposed per-event Sound checkboxes — but those checkboxes were silently no-ops on 4 of 5 events because the classes still returned `None`. Two unrelated concepts had collided: backend "event urgency" and the user's chime choice (the user-facing values `classic / soft / ding` even share the word "soft" with the enum but mean an audio file). Fix: deleted the enum, the abstract `soundPriority()` method, and the `sound_priority` payload field. Sound playback is now gated only by (a) user's `notification_sound !== 'off'` and (b) the per-event `notification_sound_map[event_type]` preference. Default audibility lives in `SOUND_DEFAULT_EVENT_TYPES = ['listing_taken']` — same outcome for new users, but the rest of the events now respect the user's checkbox.
+
+**Phase 2 — Bell UI in `SiteHeader` + real-time + sound** ✅ Shipped 2026-06-02
+
+- [x] Bell icon + unread count badge in `SiteHeader` (auth-gated — anonymous visitors see no bell). Popover on desktop, Sheet on mobile via `useIsMobile`.
+- [x] Dropdown with last ~15 notifications, each linking to its `action_url`. "Mark all read" affordance. "View all" → full notifications page. Optimistic local-state mark-read on click.
+- [x] Full notifications page at `/notifications` — paginated list, all notifications, expanded card rows with event icon + title + body + timestamp + read indicator. All / Unread filter chips with filter-aware optimistic mark-read. Mark-individual (click) + mark-all controls.
+- [x] Laravel Echo subscribed to `App.Models.User.{id}` via `useEchoNotification` (kept the default channel rather than the originally-drafted `private-users.{id}` — the channel auth already exists in `routes/channels.php`, zero overrides needed). On broadcast: increment badge + prepend dropdown entry + invoke sound playback hook.
+- [x] Sound assets in `public/sounds/` — `classic.mp3`, `soft.mp3`, `ding.mp3` committed (royalty-free chimes; the user picks which one plays via /settings/notifications).
+- [x] `useNotificationSound` hook reads the user's `notification_sound` choice off Inertia share, plays the matching file via `new Audio('/sounds/${choice}.mp3').play()`. Multi-tab coordination via `BroadcastChannel('stakly:notification-sound')` — claiming tab posts `{type:'claim', at:ts}`; tabs receiving a claim within 500ms suppress.
+- [x] Browser autoplay policy handled implicitly — by the time a notification lands, the user has interacted with Stakly at least once.
+- [x] **`NotificationProvider` context** mounted in `SiteLayout` holds the unread count (initial from `auth.user.unread_notifications_count`, bumped on broadcast, cleared on bell open) and the `lastBroadcast` Notification (signal for the dropdown to prepend). The Echo subscription lives in an inner `AuthedNotificationProvider` so the hook only mounts for authed users. Re-syncs from Inertia share on every navigation (server is authoritative on multi-tab mark-read).
+
+**Phase 3 — Action-required banners on match pages** ✅ Shipped 2026-06-02
+
+Full-width status banners at the top of `match/show.tsx`, mutually exclusive by status. Visible whenever the player views the match page, independent of bell state — the banner is the source of truth for "what does this player need to do here."
+
+- [x] **`CancellationRequestBanner`** — Pending matches with an open cancellation request. Two viewer-aware variants in one component: `RequesterWaitingBanner` (Clock icon, "Cancellation request sent" + opponent name) for the requester, `RespondBanner` (Handshake icon, requester name in title, Accept/Decline buttons with processing states) for the opponent. Both render the reason in a card below the body. Shipped pre-M27 as part of the cancellation flow.
+- [x] **`AdminReviewBanner`** — Disputed + ManualReview matches. Three copy variants via a single `resolveCopy(match, viewerId)` helper:
+    - `manual_review` → "Match flagged for admin review" (auto-flag, no human opener).
+    - `disputed` + viewer opened it → "You reported a problem" + escrow + evidence prompt.
+    - `disputed` + opponent opened it → "{Opener name} reported a problem" + same prompt. Opener resolved client-side from `match.dispute.opened_by_id`, matched against `creator.id` / `taker.id`.
+    - All three carry a "Post evidence in chat" outline button that dispatches a `stakly:focus-chat` window event.
+- [x] **Chat-focus mechanism via `window` custom event `stakly:focus-chat`** — banner fires the event; `ChatInput` always listens and focuses + scrollIntoView's its textarea; `MobileChatTrigger` listens only when `useIsMobile()` is true and opens the Sheet first, then re-fires the event 250ms later so the freshly-mounted inner `ChatInput` catches it. `open` guard breaks the re-dispatch loop.
+- [x] **`GameMatchResource` exposes `dispute.opened_by_id` + `dispute.opened_at`** so the frontend can do the viewer-aware split. Backend columns existed since dispute flow shipped; just weren't on the resource.
+- [x] **Tests**: 4 new Pest feature tests in `tests/Feature/GameMatchShowTest.php` cover the dispute resource shape — fresh match nulls, Disputed opened by creator (creator id surfaced), Disputed opened by taker (taker id surfaced), ManualReview (null opener — auto-flag). UI rendering assertions are not part of this slice because Stakly's test suite is Pest-only; the React side has no Vitest/RTL setup. The component is small, pure, and exercised manually + via the resource-shape contract above.
+
+P3 follow-up slices (also 2026-06-02):
+
+- [x] **Dispute opener-claim** — the "Report a problem" dialog captures the disputing player's reason + an optional evidence file (image OR PDF). On submit, `OpenDisputeAction::postOpenerClaim` posts a USER-authored chat message owned by the disputing player, tagged with a new `dispute_opening` attachment marker. Closes the fairness gap of "opponent sees a banner but doesn't know what's being claimed" — and gives admin an anchor message to read first if the dispute escalates to ManualReview. Reason or evidence is required (either-or, mirrors chat's `required_without` pattern); reason is uncapped on min length to keep filing friction low. `ChatMessageBubble` renders a `⚠ Reason for dispute` warning-toned pill above the user's bubble when the marker is present. New tests in `GameMatchOpenDisputeTest.php` cover the require-either rule, evidence-only path, PDF acceptance, and unsupported-mime rejection.
+- [x] **Live page sync via `MatchLiveUpdater`** — any `PlayerNotification` whose `related_id === match.id` triggers a `router.reload()` on the match page. Closes the UX gap where admin-resolved settlements left the banner, status chip, action card, and shared `auth.user.usdt_balance` stale until the user manually refreshed. Covers admin settle (both branches), admin draw, dispute resolve (Confirmed/Drawn/Unknown), opponent-opens-dispute, opponent-requests-cancellation, cancellation-accepted/rejected — every match-state-mutating notification path already in M27 P1.
+- [x] **Chat universally accepts PDFs** (started as dispute-only, generalized). `StoreMessageRequest::ALLOWED_MIMES` now includes `pdf`, dropped the `image` rule. New shared `SendMessageAction::attachFileTo` static helper branches by mime — images go through the existing EXIF-strip + dimension-capture pipeline, PDFs get a direct media store. Used by both chat sends AND dispute-opener evidence (replaced the earlier private `attachEvidence` duplicate). `MessageAttachmentsPayload::mediaEntries` (renamed from `imageEntries`) emits `type: 'image'` vs `type: 'file'` based on the media mime so the same payload shape works for both. Frontend chat-input, chat-panel drag-drop, and a new `OptimisticAttachment` component branch by mime: image previews via blob URL, PDFs render a `FileText` icon tile with name + size. `Message::registerMediaCollections::acceptsMimeTypes` extended to `application/pdf` (defense in depth at the storage layer).
+- [x] **Admin Filament chat-history Blade now renders PDFs as download tiles.** `ChatHistoryEntry` gained `attachmentIsImage()` / `attachmentName()` / `attachmentSizeLabel()` helpers; the Blade template branches by mime so non-image media gets a clickable document-icon tile linking to the file (was previously a broken `<img>` with alt "Chat attachment").
+- [x] **Fix: `dispute_opening` marker was being stored but never serialized to the frontend.** `MessageAttachmentsPayload::forMessage()` was missing `disputeOpeningEntries()`. Without this, the warning-toned "Reason for dispute" pill never rendered for anyone. Added the entry method + updated the `forMessage` spread.
+- [x] **Fix: long PDF filenames broke the dispute dialog layout.** `DialogContent` is a CSS grid; unbreakable filename text was forcing the grid track wider than the dialog's `max-w-lg`, defeating the inner `truncate`. Added `min-w-0` on the dialog body wrapper + `min-w-0 overflow-hidden` on the file tile so the truncate engages reliably.
+
+Gotchas / what we learned:
+
+- **Mobile chat-focus needs a re-dispatch.** On mobile, `MobileChatTrigger`'s ChatInput isn't mounted while the sheet is closed — the in-input event listener doesn't exist yet, so a direct dispatch from the banner would no-op. The trigger listens for the same event, opens the sheet (state change → render → ChatInput mounts), and re-fires the event after a 250ms delay so the now-mounted listener picks it up. The `if (open) return` guard short-circuits the re-fire on the second pass so we don't loop.
+- **`useIsMobile()` gating on the trigger's listener is required** — without it, on desktop the trigger's listener would still fire and `setOpen(true)` the Sheet (which renders via portal regardless of the `lg:hidden` wrapper), causing the sheet's ChatInput to ALSO claim focus and steal it from the always-mounted desktop ChatInput.
+- **React 19 forwards refs through function components by default.** No `forwardRef` needed on the Textarea primitive — passing `ref={textareaRef}` to `<Textarea>` flows through to the underlying `<textarea>` via `{...props}`. Saved a primitive rewrite.
+- **`NotificationProvider` is mounted inside `SiteLayout`, NOT at app root.** Pages that want to read `useNotificationContext()` must call it from a component RENDERED inside `<SiteLayout>{...}</SiteLayout>` — not from the outer page component. The outer page is the provider's PARENT in the tree, so a context read there returns the default empty value. Fix pattern: extract a tiny child component (e.g. `MatchLiveUpdater`) and render it inside the return tree of `<SiteLayout>`. First attempt at the live-update bridge was silently a no-op for exactly this reason — symptom was "the chime plays + the bell badge bumps, but the page doesn't refresh" because chat updates go through `useMatchChat`'s own Echo subscription (mounted inside the chat panel, also inside SiteLayout).
+- **Spatie media `acceptsMimeTypes` is collection-level defense in depth.** When extending mime support at the form-request layer, you must ALSO extend `Message::registerMediaCollections::acceptsMimeTypes()` — otherwise Spatie rejects the upload at storage time. Symptom was "validation passes, no exception thrown, but the Message ends up with zero media." Easy to miss because it's silent.
+- **Grid items size to min-content by default; long unbreakable text expands grid tracks past the parent's max-width.** `DialogContent` is a CSS grid (`grid w-full max-w-lg`); a PDF filename like `529978784udII46jNzRq…pdf` has no whitespace, so its min-content equals its full pixel width, which inflates the grid track and defeats any inner `truncate`. Fix: `min-w-0` on the grid item lets it shrink below content size, then the inner `truncate` engages. Cheap insurance to add at `min-w-0` on every direct child of a `Dialog`/`Sheet`/`Popover` content wrapper that might hold variable-width content.
+- **`MessageAttachmentsPayload` is two-pronged.** Media (Spatie collection) iterates `getMedia(...)` once and emits per-media entries. JSON markers (`attachments_json`) iterate the array once per marker type and emit per-marker entries. When you add a new marker type (`dispute_opening` was the gotcha), you have to add it to BOTH `forMessage()`'s spread AND a dedicated `xxxEntries()` method. Skipping the entry method silently drops the marker from the broadcast payload — the message persists fine, the frontend just never sees the discriminator.
+
+**Phase 4 — Admin SLA surfaces** ✅ Shipped 2026-06-02
+
+- [x] **`OpsOverview` → new "Aging disputes (≥6h)" stat** alongside the existing "Open disputes" stat. Stat value = count of Disputed + ManualReview matches whose aging timestamp is ≥6h old. Description + color escalation:
+    - 0 aging → green / "No aging disputes"
+    - 1+ in 6h–12h window → amber / "N between 6h–12h"
+    - 1+ over 12h → red / "N over 12h"
+
+    The two dispute stats render side-by-side on row 1 of the dashboard (`getColumns() = 2`) so admins see "total" + "aging" together.
+- [x] **Aging timestamp = `COALESCE(dispute_opened_at, updated_at)`** — Disputed matches have `dispute_opened_at` set, and ManualReview routed from a Dispute-Unknown branch also has it. ManualReview matches from match-timeout (no dispute event ever fired) fall back to `updated_at`, which corresponds to when the status flipped to MR. One consistent aging field across both statuses.
+- [x] **`GameMatchesTable` default sort: newest first** (`created_at DESC`). The earlier P4 iteration tried "oldest unactioned at top" via a COALESCE expression, but admin browsing UX consistently wants the most recent at the top — the SLA cues live in the Age column's color badge + the OpsOverview "Aging disputes" stat, not in the row ordering. Click-sort on the Age column gives admin oldest-first when they want to triage.
+- [x] **Per-row age badge** — the existing `dispute_opened_at` column is relabeled "Age" and rendered as a colored `->badge()` with the same SLA scale as the OpsOverview widget (success / warning / danger at the same 6h / 12h thresholds). Non-dispute rows (when admin widens the filter past the default) render `'gray'` and a `—` placeholder. Color resolver is `GameMatchesTable::ageBadgeColor()` — kept inside the table class so the SLA scale lives in one place.
+- [ ] (Deferred) Slack / Discord webhook to admin channel when a dispute crosses the 12h `danger` threshold without action. Out of scope for now; opens a follow-up if email-to-admin pings prove too quiet in practice.
+- [x] **Tests**: 4 new Livewire tests in `tests/Feature/Admin/DashboardWidgetsTest.php` covering the aging-disputes stat (zero / between-6h-12h / over-12h / MR-from-timeout fallback to updated_at). 1 new test in `tests/Feature/Admin/GameMatchResourceTest.php` asserting `assertCanSeeTableRecordsInOrder([oldest, middle, newest])` for the default-sort behavior.
+
+Gotchas:
+
+- **Filament 4 `defaultSort()` accepts a Closure.** When the sort key isn't a simple column (we need `COALESCE(dispute_opened_at, updated_at)`), pass a `fn (Builder $q) => $q->orderByRaw(...)` instead of column name + direction. The closure form is documented but easy to miss; the column-name form would have required a virtual column on the model.
+- **`getColumns(): int` controls the stats-row wrap.** Adding a 5th stat to a 2-column grid produces a 2 / 2 / 1 layout (the last stat alone in row 3). Acceptable here because "active users" sits alone on row 3 cleanly. If we add another stat later, bump to 3 columns or shuffle the pairing.
+
+**Phase 5 — Preferences UI (shared surface with M20)** ✅ Shipped 2026-06-02
+
+Final design landed after three iterations (icon-tile + custom Switch → single combined card → Dribbble-style **matrix grid**, which is what shipped).
+
+- [x] New `/settings/notifications` page — sub-header with title + two pill bulk-action buttons (Switch off all / Email only — one-shot client-side state mutations, respect mandatory In-app), then **three cards** using a shared row pattern: card header strip (title + description) + divider + event/choice rows underneath.
+    - **Match activity** card — Listing taken, Match settled (locked), Cancellation requested (locked).
+    - **Disputes & moderation** card — Dispute opened, Match flagged for review.
+    - Each event row = event name (+ Lock icon for mandatory events with tooltip "Required — affects your money. Can't be silenced.") + 3 checkbox+label columns: **In-app / Sound / Email**.
+    - **Sound** card — 4 radio rows (Off / Classic / Soft / Ding) with contextual lucide icons (`VolumeX`, `Bell`, `Music`, `BellRing`); each non-Off row has a ▶ preview button.
+- [x] Checkboxes use a custom `components/ui/checkbox.tsx` rebuilt on the **native peer pattern** — `<input type="checkbox" className="peer sr-only">` + sibling box `<span>` + sibling lucide `<Check>`, all wrapped in a `relative inline-flex`. State driven entirely by Tailwind `peer-checked:` / `peer-focus-visible:` / `peer-disabled:` modifiers. 16px box, no motion. Public API (`checked` / `onCheckedChange` / `disabled` / `aria-label`) is shadcn-compatible.
+- [x] Per-event preferences scoped to the 5 main events: `listing_taken`, `match_settled`, `match_manual_review`, `dispute_opened`, `cancellation_requested`. The other 4 (`listing_expired`, `dispute_resolved`, `cancellation_accepted`, `cancellation_rejected`) always fire and aren't user-configurable — they're after-the-fact informational pings, not signals that need a mute toggle. `PlayerNotification::CONFIGURABLE_EVENT_TYPES` is the source of truth.
+- [x] Email column is freely togglable. The backend records the preference today; delivery activates with M20 (no UI placeholder gating — just an honest "set it now, mailer ships later" model).
+- [x] Schema: `notification_preferences` table — `user_id` FK cascade, `event_type` string, `in_app` + `sound` + `email` booleans, UNIQUE `(user_id, event_type)`. Per-event `sound` toggle gates whether the chime fires for that event; the global `users.notification_sound` choice (Off/Classic/Soft/Ding) decides which file plays. Lazy default policy in code instead of seeding rows on user creation — `PlayerNotification::defaultPreference($eventType)` returns the default (sound defaults ON only for `listing_taken`); `User::getNotificationPreference` returns the DB row if present, else the default. Avoids backfill and keeps the table sparse.
+- [x] Sound choice picker — `users.notification_sound` string nullable column on users. Four valid values: `off | classic | soft | ding` (validated server-side via `Rule::in(PlayerNotification::SOUND_CHOICES)`). `useNotificationSound` reads `auth.user.notification_sound` (defaults to `'classic'` when null) and skips playback entirely when the choice is `off`. The per-event `sound` preference is shared as `auth.user.notification_sound_map` and checked by `NotificationProvider` before calling the hook — `false` (explicitly muted) suppresses, `true` or missing plays normally. Per-sound preview button on the settings page plays the file directly via `new Audio(url).play()`. Sound files (`public/sounds/{classic,soft,ding}.mp3`) committed alongside P2.
+- [x] Backend enforcement: `PlayerNotification::via()` returns `[]` for muted optional events (suppresses both database + broadcast channels). Mandatory events bypass the preference unconditionally.
+- [x] Cleanup: the abandoned `components/ui/switch.tsx` and `components/ui/radio-group.tsx` (built for earlier P5 iterations) are deleted — both confirmed unreferenced before removal.
+
+### Cross-milestone notes
+
+- **M20** plugs into M27's notification classes by writing Blade email templates + wiring SMTP config. The dispatch layer is reused as-is. M20's preferences UI piggybacks on M27 Phase 5's page.
+- **M9 (chain integration)** will add `DepositConfirmedNotification` and `WithdrawalProcessingNotification` when it lands. The pattern is established by M27.
+- **M13 (chat anti-abuse)** can add `MessageFlaggedForReviewNotification` (admin-side) when it ships, using the same dispatch pattern.
+- **M14** ManualReview escalation already exists via `ResolveMatchTimeoutAction` → `NotifyAdminsAction`; M27 P4 surfaces it as an SLA-tracked dashboard widget rather than just a single admin bell ping.
+
+### Not in M27
+
+- Mobile push (APNS / FCM). Web push (browser Notification API) is also out of scope — `Notification.requestPermission()` introduces a permission-prompt UX that's worth handling deliberately, not bundling into the in-app milestone.
+- SMS notifications. Different channel, different milestone if ever needed.
+- Email channel. M20 owns that end-to-end; M27 just makes sure the dispatch layer supports it without rework.
+- Notification analytics / read-rate tracking. Premature.
+- Per-tab focus-aware sound suppression (i.e. "don't ding the tab the user is actively looking at"). The `BroadcastChannel` coordination already prevents the triple-ding case; layering "is this tab focused" on top is polish that can wait for user feedback.
+
+---
+

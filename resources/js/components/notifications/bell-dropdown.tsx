@@ -1,8 +1,9 @@
 import { Link } from '@inertiajs/react';
-import { Bell as BellIcon } from 'lucide-react';
+import { Bell as BellIcon, X } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { NotificationItem } from '@/components/notifications/notification-item';
 import { useNotificationContext } from '@/components/notifications/notification-provider';
+import { cn } from '@/lib/utils';
 import {
     index as notificationsIndex,
     read as notificationsRead,
@@ -14,6 +15,9 @@ import type { Notification } from '@/types/notification';
 
 interface Props {
     onClose: () => void;
+    /** Mobile sheet variant — fills parent height, list scrolls in `flex-1`,
+     *  header gets right padding to clear the Sheet's absolute X close button. */
+    fullHeight?: boolean;
 }
 
 function xsrfToken(): string {
@@ -37,7 +41,7 @@ function postJson(url: string): Promise<Response> {
     });
 }
 
-export function BellDropdown({ onClose }: Props) {
+export function BellDropdown({ onClose, fullHeight = false }: Props) {
     const [notifications, setNotifications] = useState<Notification[]>([]);
     const [loading, setLoading] = useState(true);
     const { lastBroadcast } = useNotificationContext();
@@ -109,23 +113,40 @@ export function BellDropdown({ onClose }: Props) {
     const hasUnread = notifications.some((n) => n.read_at === null);
 
     return (
-        <div className="flex flex-col">
+        <div className={cn('flex flex-col', fullHeight && 'h-full')}>
             <div className="flex items-center justify-between border-b border-border/60 px-4 py-3">
                 <span className="text-sm font-semibold text-foreground">
                     Notifications
                 </span>
-                {hasUnread && (
-                    <button
-                        type="button"
-                        onClick={handleMarkAllRead}
-                        className="cursor-pointer text-xs text-primary transition-colors hover:text-primary/80"
-                    >
-                        Mark all read
-                    </button>
-                )}
+                <div className="flex items-center gap-3">
+                    {hasUnread && (
+                        <button
+                            type="button"
+                            onClick={handleMarkAllRead}
+                            className="cursor-pointer text-xs text-primary transition-colors hover:text-primary/80"
+                        >
+                            Mark all read
+                        </button>
+                    )}
+                    {fullHeight && (
+                        <button
+                            type="button"
+                            onClick={onClose}
+                            aria-label="Close"
+                            className="inline-flex size-8 cursor-pointer items-center justify-center rounded-full text-muted-foreground transition-colors duration-150 ease-out hover:bg-primary/10 hover:text-primary"
+                        >
+                            <X className="size-4" />
+                        </button>
+                    )}
+                </div>
             </div>
 
-            <div className="max-h-[28rem] flex-1 overflow-y-auto">
+            <div
+                className={cn(
+                    'flex-1 overflow-y-auto',
+                    !fullHeight && 'max-h-[28rem]',
+                )}
+            >
                 {loading ? (
                     <div className="space-y-3 px-4 py-4">
                         {[0, 1, 2].map((i) => (

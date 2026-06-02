@@ -66,9 +66,12 @@ export function BellButton() {
         return (
             <Sheet open={open} onOpenChange={handleOpenChange}>
                 <SheetTrigger asChild>{trigger}</SheetTrigger>
-                <SheetContent side="right" className="w-full p-0 sm:max-w-md">
+                <SheetContent
+                    side="right"
+                    className="w-full p-0 sm:max-w-md [&>button.absolute]:hidden"
+                >
                     <SheetTitle className="sr-only">Notifications</SheetTitle>
-                    <BellDropdown onClose={() => setOpen(false)} />
+                    <BellDropdown onClose={() => setOpen(false)} fullHeight />
                 </SheetContent>
             </Sheet>
         );
