@@ -1,32 +1,53 @@
-import * as CheckboxPrimitive from '@radix-ui/react-checkbox';
 import { Check } from 'lucide-react';
 import * as React from 'react';
 import { cn } from '@/lib/utils';
 
-type CheckboxProps = React.ComponentPropsWithoutRef<
-    typeof CheckboxPrimitive.Root
->;
+interface CheckboxProps
+    extends Omit<
+        React.InputHTMLAttributes<HTMLInputElement>,
+        'type' | 'onChange'
+    > {
+    onCheckedChange?: (checked: boolean) => void;
+}
 
-function Checkbox({ className, ...props }: CheckboxProps) {
+function Checkbox({
+    className,
+    checked,
+    disabled,
+    onCheckedChange,
+    ...props
+}: CheckboxProps) {
     return (
-        <CheckboxPrimitive.Root
+        <span
             data-slot="checkbox"
             className={cn(
-                'peer flex size-4 shrink-0 items-center justify-center rounded border border-border bg-card/60 transition-colors duration-150',
-                'data-[state=checked]:border-primary data-[state=checked]:bg-primary data-[state=checked]:text-primary-foreground',
-                'focus-visible:ring-primary/25 focus-visible:ring-offset-background focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none',
-                'disabled:cursor-not-allowed disabled:opacity-50',
+                'relative inline-flex shrink-0',
+                disabled && 'opacity-50',
                 className,
             )}
-            {...props}
         >
-            <CheckboxPrimitive.Indicator
-                data-slot="checkbox-indicator"
-                className="flex items-center justify-center text-current"
-            >
-                <Check className="size-3" strokeWidth={3} />
-            </CheckboxPrimitive.Indicator>
-        </CheckboxPrimitive.Root>
+            <input
+                type="checkbox"
+                checked={checked}
+                disabled={disabled}
+                onChange={(e) => onCheckedChange?.(e.target.checked)}
+                className="peer sr-only"
+                {...props}
+            />
+            <span
+                aria-hidden
+                className={cn(
+                    'size-4 rounded border border-border bg-card/60 transition-colors',
+                    'peer-checked:border-primary peer-checked:bg-primary',
+                    'peer-focus-visible:ring-2 peer-focus-visible:ring-primary/25 peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-background',
+                )}
+            />
+            <Check
+                aria-hidden
+                strokeWidth={3}
+                className="pointer-events-none absolute top-1/2 left-1/2 hidden size-3 -translate-x-1/2 -translate-y-1/2 text-primary-foreground peer-checked:block"
+            />
+        </span>
     );
 }
 
