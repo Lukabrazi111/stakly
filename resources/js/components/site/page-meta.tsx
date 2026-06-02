@@ -40,11 +40,7 @@ export function PageMeta({
                 content={description}
             />
             {image && (
-                <meta
-                    head-key="og:image"
-                    property="og:image"
-                    content={image}
-                />
+                <meta head-key="og:image" property="og:image" content={image} />
             )}
             <meta
                 head-key="twitter:title"

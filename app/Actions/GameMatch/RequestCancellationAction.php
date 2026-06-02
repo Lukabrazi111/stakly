@@ -6,6 +6,7 @@ use App\Actions\Message\PostSystemMessageAction;
 use App\Enums\MatchStatus;
 use App\Models\GameMatch;
 use App\Models\User;
+use App\Notifications\CancellationRequestedNotification;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -22,7 +23,7 @@ class RequestCancellationAction
 
     public function handle(User $requester, GameMatch $match, ?string $reason = null): string
     {
-        return DB::transaction(function () use ($match, $requester, $reason) {
+        $result = DB::transaction(function () use ($match, $requester, $reason) {
             $locked = GameMatch::query()->lockForUpdate()->findOrFail($match->id);
 
             if ($locked->status !== MatchStatus::Pending) {
@@ -44,6 +45,16 @@ class RequestCancellationAction
 
             return 'requested';
         });
+
+        if ($result === 'requested') {
+            $fresh = $match->fresh(['listing.user', 'taker']);
+            $opponent = $fresh->listing->user_id === $requester->id
+                ? $fresh->taker
+                : $fresh->listing->user;
+            $opponent->notify(new CancellationRequestedNotification($fresh, $requester));
+        }
+
+        return $result;
     }
 
     /**

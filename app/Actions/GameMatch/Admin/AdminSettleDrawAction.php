@@ -7,6 +7,7 @@ use App\Enums\MatchAdminResolutionAction;
 use App\Models\GameMatch;
 use App\Models\MatchAdminResolution;
 use App\Models\User;
+use App\Notifications\MatchSettledNotification;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -27,7 +28,7 @@ class AdminSettleDrawAction
         User $admin,
         string $reason,
     ): MatchAdminResolution {
-        return DB::transaction(function () use ($match, $admin, $reason) {
+        $resolution = DB::transaction(function () use ($match, $admin, $reason) {
             $this->settleDraw->handle($match);
 
             return MatchAdminResolution::create([
@@ -38,5 +39,12 @@ class AdminSettleDrawAction
                 'reason' => $reason,
             ]);
         });
+
+        $fresh = $match->fresh(['listing.user', 'taker']);
+        $notification = new MatchSettledNotification($fresh, 'draw');
+        $fresh->listing->user->notify($notification);
+        $fresh->taker->notify($notification);
+
+        return $resolution;
     }
 }

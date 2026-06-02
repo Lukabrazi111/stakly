@@ -342,10 +342,58 @@ Outstanding (asset-only — not a code task):
 - [ ] Drop a 1200×630 `public/og-image.png` for link-preview cards. The tag is already wired; without the file, link previews show title + description but no image. Brand-design task — could be plain dark-bg "Stakly" wordmark on the pink→purple gradient, or a more designed card.
 - [ ] Public-URL preview check (paste an ngrok / staging URL into Discord, Twitter, Slack and see the rich card render). `localhost` URLs can't reach external link-preview bots.
 
-**Phase 4 — Locale switcher in `SiteHeader`** [deferred until a second language ships]
+**Phase 4 — Full-site i18n (UI strings + locale switcher + multi-locale CMS rows)**
 
-- [ ] Dropdown in header — sets `app()->setLocale($locale)` (sticky cookie) + reroutes to `/{newLocale}/{currentSlug}` if on a localised page.
-- [ ] When only `en` exists, this phase doesn't ship — adding the switcher without other languages is dead UI.
+Decision pivot: instead of waiting for a second language before shipping the switcher, build full i18n infrastructure now. The whole Stakly site (UI strings, CMS pages, validation messages) becomes translatable. Initial active locales planned: `en`, `ka` (Georgian), `ru` (Russian). Framework supports adding more as a content task.
+
+Design decisions taken into this phase:
+
+- **URL: path prefix everywhere.** `/en/listings`, `/ka/listings`, `/ru/listings`. Unprefixed routes (`/listings`) → 301 redirect to `/{defaultLocale}/listings` (cookie-remembered if user has switched before, else `en`). Cleanest for SEO and link sharing. Matches M26 P1's existing `/{locale}/{slug}` CMS pattern — the whole app now uses the same shape.
+- **Tech: Laravel-native bridge, NOT `react-i18next`.** Store strings in standard `lang/en.json`, `lang/ka.json`, `lang/ru.json`. `HandleInertiaRequests::share()` exposes the active locale's bag as a shared Inertia prop. React `useT()` hook reads from it. One source of truth — `__('Create listing')` in PHP and `t('Create listing')` in React both read the same file. Backend strings (validation, future M20 notification emails) work out of the box because Laravel already uses `lang/*.json`. Swap to `react-i18next` later if we ever need ICU plural rules or lazy-loaded locale bundles; call sites change but translation files port cleanly.
+- **`URL::defaults(['locale' => ...])` keeps Wayfinder generators clean.** Middleware sets the URL default at request boundary so `route('listings.index')` and `index().url` auto-prefix without per-call-site changes. No Wayfinder regen needed.
+- **Filament admin stays unprefixed and English-only.** `/admin/*` is internal, single-language. No locale switcher in admin chrome. Reduces surface area and admin training.
+- **CMS pages translate per-locale.** Schema already supports it (M26 P1 baked in `locale` + UNIQUE `(slug, locale)`). Filament resource gets a locale select + filter so admin writes one row per (slug, locale). `PageController::show` queries current locale with fallback to `en`.
+- **User-generated content (listing notes, bios, chat) NOT translated.** Shown in whatever language the user typed in. Machine translation (DeepL / Google) is a future polish if ever needed.
+- **Detection: no `Accept-Language` sniff.** Always default to `en` on first visit. User picks via switcher, cookie remembers. Avoids surprise redirects, simpler edge cases with VPNs / bots / crawlers / SEO.
+- **Translation labor is a content task, not engineering.** Framework ships either way. `lang/ka.json` and `lang/ru.json` start mostly empty; Laravel falls back to the key (English) when a translation is missing, so the site stays usable while copy is written.
+
+Sub-phases:
+
+**P4 Slice A — Foundation (no UI changes)**
+
+- [ ] `SetLocale` middleware reads `{locale}` from URL, calls `App::setLocale()`, sets `URL::defaults(['locale' => ...])`.
+- [ ] `RedirectUnprefixedLocale` middleware: any web request without a locale prefix → 301 to `/{defaultLocale}/<path>` (cookie-aware default, fallback `en`).
+- [ ] All web routes wrapped in `Route::prefix('{locale}')->whereIn('locale', ['en','ka','ru'])->group(...)`. Admin (Filament), API (if added), and Reverb WS routes stay unprefixed.
+- [ ] `lang/en.json` populated with a starter set; `lang/ka.json` + `lang/ru.json` empty (Laravel falls back to key).
+- [ ] `HandleInertiaRequests::share()` adds `translations` (cached per locale), `locale` (current), `availableLocales` (list with native labels).
+- [ ] React `useT()` hook with `:name` interpolation.
+- [ ] Dynamic `<html lang="{$locale}">` in `app.blade.php` + `og:locale` + `<link rel="alternate" hreflang="...">` per supported locale.
+- [ ] Tests: middleware behavior, redirect for unprefixed requests, unsupported locale → 404, cookie-remembered default.
+
+**P4 Slice B — CMS multi-locale**
+
+- [ ] Filament `PageResource` gets locale `Select` on form, locale column on table, locale filter.
+- [ ] `PageController::show` already uses `forSlugWithFallback($slug, $locale)` from M26 P1 — verify it picks current locale and falls back to `en` when row missing.
+- [ ] Seeder writes `About` in `en` + stubs `ka` + `ru` versions (or leaves them missing to exercise fallback path).
+- [ ] Tests assert: Georgian request gets Georgian row if present, English fallback if not, 404 only when no locale's row exists.
+
+**P4 Slice C — Switcher UI + first string extraction**
+
+- [ ] `LocaleSwitcher` dropdown in `SiteHeader` — native labels (English / ქართული / Русский). On change: set `stakly:locale` cookie + `router.visit('/{newLocale}/{currentSlug}', { preserveScroll: true })`.
+- [ ] Extract strings from `SiteHeader`, `SiteFooter`, `MarqueeStrip`, `Hero`, `GameSelector` into translation keys.
+- [ ] Smoke test the full loop: switch to `/ka`, see Georgian where keys are translated, English fallback elsewhere.
+
+**P4 Slices D+ — Page-by-page extraction (one slice per area, each its own commit)**
+
+- [ ] Listings (index + detail + create + mine + filters).
+- [ ] Profile (header + tabs + match history + listings section).
+- [ ] Match (show + chat + banners + waiting card + settled card).
+- [ ] Wallet (index + deposit + withdraw + history).
+- [ ] Settings (profile + security + linked accounts).
+- [ ] Auth flows (login + register + forgot/reset password + 2FA + email verification).
+- [ ] Validation messages + flash toasts + error pages.
+
+Translation labor (writing `lang/ka.json` and `lang/ru.json` content) tracked separately as content backlog; engineering treats those files as drop-in.
 
 ### Not in M26
 
@@ -365,37 +413,59 @@ The `notifications` table already exists (it shipped with M12's `NotifyAdminsAct
 ### Design decisions taken into this milestone
 
 - **Real-time via Reverb + Laravel Echo + private per-user channel.** Already in the stack. No polling fallback. Sub-second push is what makes sound notifications usable — a 30s polling delay would feel broken.
-- **Per-event sound priority on the notification class itself.** Each `App\Notifications\*` declares a `soundPriority(): 'urgent' | 'soft' | 'none'`. The frontend uses this to pick which audio file to play (or skip silently). "Listing taken" is `urgent` (your money is now in a live match); "Settled" is `soft`; informational events are `none`. Avoids the "every notification dings" anti-pattern.
-- **Multi-tab sound coordination via `BroadcastChannel`.** If a user has multiple Stakly tabs open, only the first tab to receive the broadcast plays the sound — the others suppress. Prevents triple-ding when one event lands.
-- **Notification classes designed to support `mail` channel from day one** even though M27 only lights up `database`. M20 wires the Blade templates later without touching dispatch sites or class signatures.
-- **Sound toggle lives on the preferences page (M27 Phase 5)**, alongside per-event in-app and email toggles. Defaults: urgent ON, soft OFF (most users find soft confirmation sounds annoying after the first day — opt-in).
+- **Sound is scoped narrowly to `ListingTakenNotification` only.** The criterion: user is doing something else (away from the page), can't act until they switch context, and the event requires fast attention. Only `ListingTaken` fits — creator posts a listing, walks away, an opponent appears, they need to come back NOW to start playing. Everything else either happens while the user is already on the match page (DisputeOpened, CancellationRequested), confirms something they initiated (CancellationAccepted/Rejected, ListingExpired refund), or follows a game they just played (MatchSettled, ManualReview, DisputeResolved). A bell badge is the right signal for those; sound would be noise.
+- **`App\Enums\SoundPriority` enum** with `Urgent | Soft | None` cases, kept for extensibility (future M9 `DepositConfirmed` is a plausible second sound event). Today only `Urgent` is used (by ListingTaken); other 8 classes return `None`.
+- **Multi-tab sound coordination via `BroadcastChannel`.** If a user has multiple Stakly tabs open, only the first tab to receive the broadcast plays the sound — the others suppress. Prevents triple-ding when one event lands. (Phase 2 work.)
+- **Notification classes designed to support `mail` channel from day one** even though M27 only lights up `database` + `broadcast`. M20 wires the Blade templates later without touching dispatch sites or class signatures.
+- **Sound toggle lives on the preferences page (M27 Phase 5)**, alongside per-event in-app and email toggles. Default: `ListingTaken` sound ON for everyone, no other event has a sound toggle because no other event plays sound.
 - **Mandatory events cannot be silenced.** "Settled — you won/lost" and "Cancellation request awaiting response" are operational, not informational — turning them off would let users miss money-affecting events. UI greys those toggles.
+- **Coexist with Filament admin bell in the same `notifications` table** via the `type` discriminator. Filament reads `data->>'format' = 'filament'`; player notifications have `type = 'App\Notifications\XxxNotification'` and no `format` key, so each consumer queries its own subset. No schema changes, no migration of existing admin notifications.
+- **`ShouldQueue` from day one.** `broadcast` channel hits Reverb over HTTP — a sync dispatch on a Reverb hiccup would fail the originating user's action (e.g. TakeListing). Queued notifications process in 100-500ms via Redis worker; user-action state (match created, listing taken) remains synchronous.
+- **After-commit dispatch, never inside transactions.** Mirrors the existing `OpenDisputeAction::notifyAdminsOfDispute()` pattern — inside the transaction, a notification would fire even on rollback, pointing the bell at a match that "didn't happen." Settle Actions return an outcome marker from their `DB::transaction` closure; the outer `handle()` dispatches notifications after commit.
 
 ### Phases
 
-**Phase 1 — Notification dispatch infrastructure**
+**Phase 1 — Notification dispatch infrastructure** ✅ Shipped 2026-05-30
 
-- [ ] One `App\Notifications\*` class per event:
-    - `ListingTakenNotification` (creator-side — sound priority `urgent`)
-    - `MatchSettledNotification` (both sides — `soft`)
-    - `MatchManualReviewNotification` (both sides — `urgent`)
-    - `DisputeOpenedNotification` (the opponent of the opener — `urgent`)
-    - `CancellationRequestedNotification` (the opponent of the requester — `urgent`)
-    - `CancellationAcceptedNotification` (the original requester — `soft`)
-    - `CancellationRejectedNotification` (the original requester — `soft`)
-- [ ] Each class implements `via()` returning `['database', 'mail']` (mail no-ops until M20 ships the Blade templates), `toDatabase()` returning shape `{title, body, action_url, event_type, sound_priority, related_id}`, and `soundPriority()`.
-- [ ] Dispatch sites: each Action that triggers the corresponding event calls `$user->notify(new XxxNotification(...))` after the DB transaction commits (never inside — broadcast on rollback would lie).
-- [ ] Tests with `Notification::fake()` confirm each Action dispatches the right class to the right user.
+Scope expanded from 7 → 9 notification classes during P1 (added `DisputeResolvedNotification` so the admin-intervened path reads distinctly from auto-settle, and `ListingExpiredNotification` since the existing `ExpireListingAction` scheduler had no user signal beyond a wallet ledger row).
+
+- [x] `App\Enums\SoundPriority` enum (`Urgent | Soft | None`).
+- [x] `App\Notifications\PlayerNotification` abstract base — handles `via(['database','broadcast'])`, `toDatabase()`, `toBroadcast(BroadcastMessage)`, assembles uniform payload `{event_type, title, body, action_url, sound_priority, related_id}`. Subclasses implement 6 abstract methods. `ShouldQueue` so Reverb hiccups don't fail user actions.
+- [x] 9 concrete notification classes — `ListingTaken` (creator, **Urgent**), `MatchSettled` (both, None), `MatchManualReview` (both, None), `DisputeOpened` (opponent of opener, None), `DisputeResolved` (both, None), `CancellationRequested` (opponent, None), `CancellationAccepted` (original requester, None), `CancellationRejected` (original requester, None), `ListingExpired` (creator, None).
+- [x] After-commit dispatch wired into 11 Actions:
+    - `TakeListingAction` → `ListingTakenNotification` to creator
+    - `SettleFromCardAction` → `MatchSettledNotification` to both (won/lost branch + draw branch)
+    - `AdminSettleToWinnerAction` → `MatchSettledNotification` to both (admin manual settle of ManualReview)
+    - `AdminSettleDrawAction` → `MatchSettledNotification` to both (admin manual draw)
+    - `ResolveDisputeAction` → `DisputeResolvedNotification` to both (Confirmed + Drawn branches) OR `MatchManualReviewNotification` to both (Unknown branch)
+    - `ResolveMatchTimeoutAction` → `MatchManualReviewNotification` to both (alongside existing admin Filament bell)
+    - `OpenDisputeAction` → `DisputeOpenedNotification` to opponent (alongside existing admin Filament bell)
+    - `RequestCancellationAction` → `CancellationRequestedNotification` to opponent
+    - `AcceptCancellationAction` → `CancellationAcceptedNotification` to original requester
+    - `RejectCancellationAction` → `CancellationRejectedNotification` to original requester
+    - `ExpireListingAction` → `ListingExpiredNotification` to creator
+- [x] `SettleMatchAction::computeWinnerPayout($stake)` public static helper so calling Actions can render payout in `MatchSettledNotification` / `DisputeResolvedNotification` body without duplicating the bcmul chain.
+- [x] Tests: 15 Pest tests in `tests/Feature/Notifications/PlayerNotificationsTest.php` — one per (Action, expected_notification, expected_recipient) tuple, plus a sound-policy assertion (`ListingTaken` is `Urgent`, all 8 others are `None`).
+- [x] Existing 877 tests stay green — Action signature changes (transaction return shape on `SettleFromCardAction`, `ResolveDisputeAction`, cancellation Actions) are internal; public `handle()` signatures unchanged.
+
+Gotchas / what we learned:
+
+- **`routes/channels.php` already has the `App.Models.User.{id}` channel auth** — Laravel auto-creates it in the starter kit. No additional channel registration needed for broadcast notifications.
+- **`Inertia\Ssr\HttpGateway::dispatch()` Vite-hot routing was a separate concern** (M26 P3 gotcha) — unrelated to notification broadcasts which go directly to Reverb.
+- **Sound policy decision dropped 6 "urgent" events to None.** Original spec was sound-on-most-events; criterion-based rescope narrowed to ListingTaken only. See "Design decisions" above for the rule.
+- **Postgres `LIKE` on the `type` column doesn't work cross-driver** — `\%` in a Postgres LIKE pattern means literal `%` because `\` is the default escape character, so `'App\\Notifications\\%'` matched nothing. Switched the player/admin discriminator to `whereNotNull('data->event_type')` (every `PlayerNotification::payload()` emits `event_type`; Filament admin rows don't). Database-agnostic + survives namespace refactors.
+- **CSRF for the bell's mutation endpoints uses the `XSRF-TOKEN` cookie**, not a `<meta name="csrf-token">` tag. Inertia/Laravel already set the cookie; bell's `postJson()` helper reads it and sends as `X-XSRF-TOKEN` header. No meta tag was added.
 
 **Phase 2 — Bell UI in `SiteHeader` + real-time + sound**
 
-- [ ] Bell icon + unread count badge in `SiteHeader` (auth-gated — anonymous visitors see no bell).
-- [ ] Dropdown with last ~15 notifications, each linking to its `action_url`. "Mark all read" affordance. "View all" → full notifications page.
+- [x] Bell icon + unread count badge in `SiteHeader` (auth-gated — anonymous visitors see no bell). Popover on desktop, Sheet on mobile via `useIsMobile`.
+- [x] Dropdown with last ~15 notifications, each linking to its `action_url`. "Mark all read" affordance. "View all" → full notifications page. Optimistic local-state mark-read on click.
 - [ ] Full notifications page at `/notifications` — paginated list, all notifications, mark-individual + mark-all controls.
-- [ ] Laravel Echo subscribed to `private-users.{id}` channel; on broadcast, increment badge + prepend dropdown entry + invoke sound playback hook.
-- [ ] Sound assets in `public/sounds/` — `urgent.mp3` and `soft.mp3` (two sounds, three priorities — `none` plays nothing). Free, royalty-clear, short (<1s) chimes. Pick something tasteful — flag samples for review before committing.
-- [ ] `useNotificationSound` hook reads the sound priority off the broadcast, plays the matching file via `new Audio(...).play()` if user pref allows. Wraps the `BroadcastChannel` coordination so multi-tab plays once.
-- [ ] Browser autoplay policy is handled implicitly — by the time a notification lands, the user has interacted with Stakly at least once (they're logged in). No special permission UI needed.
+- [x] Laravel Echo subscribed to `App.Models.User.{id}` via `useEchoNotification` (kept the default channel rather than the originally-drafted `private-users.{id}` — the channel auth already exists in `routes/channels.php`, zero overrides needed). On broadcast: increment badge + prepend dropdown entry + invoke sound playback hook.
+- [ ] Sound assets in `public/sounds/` — `urgent.mp3` is the only one referenced today (`ListingTaken` is the only `Urgent` event); `soft.mp3` reserved for future. Free, royalty-clear, short (<1s) chimes. Hook ships ready — pending file commit.
+- [x] `useNotificationSound` hook reads the sound priority off the broadcast, plays the matching file via `new Audio(...).play()`. Multi-tab coordination via `BroadcastChannel('stakly:notification-sound')` — claiming tab posts `{type:'claim', at:ts}`; tabs receiving a claim within 500ms suppress.
+- [x] Browser autoplay policy handled implicitly — by the time a notification lands, the user has interacted with Stakly at least once.
+- [x] **`NotificationProvider` context** mounted in `SiteLayout` holds the unread count (initial from `auth.user.unread_notifications_count`, bumped on broadcast, cleared on bell open) and the `lastBroadcast` Notification (signal for the dropdown to prepend). The Echo subscription lives in an inner `AuthedNotificationProvider` so the hook only mounts for authed users. Re-syncs from Inertia share on every navigation (server is authoritative on multi-tab mark-read).
 
 **Phase 3 — Action-required banners on match pages**
 
@@ -414,10 +484,14 @@ The `notifications` table already exists (it shipped with M12's `NotifyAdminsAct
 
 **Phase 5 — Preferences UI (shared surface with M20)**
 
-- [ ] New `/settings/notifications` page — per-event grid: rows are event types, columns are channels (in-app, sound, email).
-- [ ] Mandatory events have their toggles greyed-out with a tooltip explaining why.
-- [ ] Email column is visible but greyed-out with "Available when email notifications launch" until M20 ships, then becomes interactive.
-- [ ] Schema: `notification_preferences` table — `user_id`, `event_type`, `in_app` (bool), `sound` (bool), `email` (bool). UNIQUE `(user_id, event_type)`. Defaults inserted on user creation matching the per-event default policy.
+- [x] New `/settings/notifications` page — two cards, both using the same row pattern: icon (in a rounded tinted square) on the left, title + one-line description in the middle, control on the right. **Sound** card carries 4 rows (Off / Classic / Soft / Ding) with contextual lucide icons (`VolumeX`, `Bell`, `Music`, `BellRing`); each non-Off row has a ▶ preview button. **Event notifications** card carries 5 rows (one per configurable event) with event-type icons, descriptions, and 3 label-over-switch controls (In-app / Sound / Email) stacked on the right. Switches use a custom `components/ui/switch.tsx` (no Radix dep — pure button + role="switch" + aria-checked + thumb-translate animation).
+- [x] Per-event preferences scoped to the 5 main events: `listing_taken`, `match_settled`, `match_manual_review`, `dispute_opened`, `cancellation_requested`. The other 4 (`listing_expired`, `dispute_resolved`, `cancellation_accepted`, `cancellation_rejected`) always fire and aren't user-configurable — they're after-the-fact informational pings, not signals that need a mute toggle. `PlayerNotification::CONFIGURABLE_EVENT_TYPES` is the source of truth.
+- [x] Mandatory events (`match_settled`, `cancellation_requested`) have their In-app switch disabled with a Lock icon + tooltip ("Required — affects your money. Can't be silenced.").
+- [x] Email switch on every row is disabled with "Available when email notifications launch." tooltip until M20 ships.
+- [x] Per-event Sound switch auto-disables (with "Sound is off globally." tooltip) when the global Sound choice is set to Off — prevents the confused state of having sound switches checked while no sound can play.
+- [x] Schema: `notification_preferences` table — `user_id` FK cascade, `event_type` string, `in_app` + `sound` + `email` booleans, UNIQUE `(user_id, event_type)`. Per-event `sound` toggle gates whether the chime fires for that event; the global `users.notification_sound` choice (Off/Classic/Soft/Ding) decides which file plays. Lazy default policy in code instead of seeding rows on user creation — `PlayerNotification::defaultPreference($eventType)` returns the default (sound defaults ON only for `listing_taken`); `User::getNotificationPreference` returns the DB row if present, else the default. Avoids backfill and keeps the table sparse.
+- [x] Sound choice picker — `users.notification_sound` string nullable column on users. Four valid values: `off | classic | soft | ding` (validated server-side via `Rule::in(PlayerNotification::SOUND_CHOICES)`). `useNotificationSound` reads `auth.user.notification_sound` (defaults to `'classic'` when null) and skips playback entirely when the choice is `off`. The per-event `sound` preference is shared as `auth.user.notification_sound_map` and checked by `NotificationProvider` before calling the hook — `false` (explicitly muted) suppresses, `true` or missing plays normally. Per-sound preview button on the settings page plays the file directly via `new Audio(url).play()`. **Sound files** (`public/sounds/{classic,soft,ding}.mp3`) are pending commit by the user — picking actual royalty-free chimes is a taste call.
+- [x] Backend enforcement: `PlayerNotification::via()` returns `[]` for muted optional events (suppresses both database + broadcast channels). Mandatory events bypass the preference unconditionally.
 
 ### Cross-milestone notes
 

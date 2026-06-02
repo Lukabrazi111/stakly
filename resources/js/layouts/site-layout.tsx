@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import { AuthModal } from '@/components/auth/auth-modal';
+import { NotificationProvider } from '@/components/notifications/notification-provider';
 import type { MarqueeItem } from '@/components/site/marquee-strip';
 import { MarqueeStrip } from '@/components/site/marquee-strip';
 import { SiteFooter } from '@/components/site/site-footer';
@@ -37,12 +38,14 @@ export default function SiteLayout({
     useFlashToast();
 
     return (
-        <div className="flex min-h-screen flex-col bg-background text-foreground">
-            <SiteHeader />
-            <MarqueeStrip items={marqueeItems} />
-            <main className="flex-1">{children}</main>
-            <SiteFooter />
-            <AuthModal />
-        </div>
+        <NotificationProvider>
+            <div className="flex min-h-screen flex-col bg-background text-foreground">
+                <SiteHeader />
+                <MarqueeStrip items={marqueeItems} />
+                <main className="flex-1">{children}</main>
+                <SiteFooter />
+                <AuthModal />
+            </div>
+        </NotificationProvider>
     );
 }

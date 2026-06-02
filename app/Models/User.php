@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Enums\LinkedAccountProvider;
+use App\Notifications\PlayerNotification;
 use Database\Factories\UserFactory;
 use Filament\Models\Contracts\FilamentUser;
 use Filament\Panel;
@@ -13,6 +14,7 @@ use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Laravel\Fortify\TwoFactorAuthenticatable;
@@ -86,6 +88,8 @@ class User extends Authenticatable implements FilamentUser, HasMedia, MustVerify
             'usdt_balance' => 'decimal:6',
             'is_platform' => 'boolean',
             'is_active_mode' => 'boolean',
+            'notifications_last_seen_at' => 'datetime',
+            'notification_sound' => 'string',
         ];
     }
 
@@ -124,6 +128,37 @@ class User extends Authenticatable implements FilamentUser, HasMedia, MustVerify
     public function pendingVerification(): HasOne
     {
         return $this->hasOne(PendingVerification::class);
+    }
+
+    // Excludes Filament admin rows — only PlayerNotification payloads set event_type.
+    public function playerNotifications(): MorphMany
+    {
+        return $this->notifications()->whereNotNull('data->event_type');
+    }
+
+    public function notificationPreferences(): HasMany
+    {
+        return $this->hasMany(NotificationPreference::class);
+    }
+
+    /**
+     * @return array{in_app: bool, sound: bool, email: bool}
+     */
+    public function getNotificationPreference(string $eventType): array
+    {
+        $row = $this->relationLoaded('notificationPreferences')
+            ? $this->notificationPreferences->firstWhere('event_type', $eventType)
+            : $this->notificationPreferences()->where('event_type', $eventType)->first();
+
+        if ($row === null) {
+            return PlayerNotification::defaultPreference($eventType);
+        }
+
+        return [
+            'in_app' => (bool) $row->in_app,
+            'sound' => (bool) $row->sound,
+            'email' => (bool) $row->email,
+        ];
     }
 
     /**

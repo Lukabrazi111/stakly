@@ -7,6 +7,7 @@ use App\Enums\MatchAdminResolutionAction;
 use App\Models\GameMatch;
 use App\Models\MatchAdminResolution;
 use App\Models\User;
+use App\Notifications\MatchSettledNotification;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -32,7 +33,7 @@ class AdminSettleToWinnerAction
         MatchAdminResolutionAction $action,
         string $reason,
     ): MatchAdminResolution {
-        return DB::transaction(function () use ($match, $winner, $admin, $action, $reason) {
+        $resolution = DB::transaction(function () use ($match, $winner, $admin, $action, $reason) {
             $this->settle->handle($match, $winner);
 
             return MatchAdminResolution::create([
@@ -43,5 +44,18 @@ class AdminSettleToWinnerAction
                 'reason' => $reason,
             ]);
         });
+
+        $this->notifyPlayers($match->fresh(['listing.user', 'taker']), $winner);
+
+        return $resolution;
+    }
+
+    private function notifyPlayers(GameMatch $match, User $winner): void
+    {
+        $payout = SettleMatchAction::computeWinnerPayout((string) $match->listing->stake_amount);
+        $loser = $winner->id === $match->listing->user_id ? $match->taker : $match->listing->user;
+
+        $winner->notify(new MatchSettledNotification($match, 'won', $payout));
+        $loser->notify(new MatchSettledNotification($match, 'lost', '0'));
     }
 }

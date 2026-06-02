@@ -49,6 +49,14 @@ return new class extends Migration
             // immediately takeable while they're still exploring.
             $table->boolean('is_active_mode')->default(false);
 
+            // Bell-dropdown badge anchor: bumped on bell open, decoupled from
+            // per-item `notifications.read_at`.
+            $table->timestamp('notifications_last_seen_at')->nullable();
+
+            // Notification sound choice. Null = system default. Special value
+            // 'off' silences all sounds. Other values map to /sounds/{value}.mp3.
+            $table->string('notification_sound', 16)->nullable();
+
             // Spendable USDT balance. NEVER written outside `App\Services\Wallet`.
             // Invariant (asserted in tests): equals SUM(wallet_transactions.amount)
             // for this user at all times. decimal(18, 6) matches Tron's USDT precision.

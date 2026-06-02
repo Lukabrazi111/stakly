@@ -7,6 +7,8 @@ use App\Enums\GameApiConfidence;
 use App\Enums\MatchStatus;
 use App\Models\GameMatch;
 use App\Models\User;
+use App\Notifications\DisputeResolvedNotification;
+use App\Notifications\MatchManualReviewNotification;
 use App\Services\GameApi\GameApi;
 use App\Services\GameApi\GameApiResult;
 use Illuminate\Support\Facades\DB;
@@ -30,11 +32,11 @@ class ResolveDisputeAction
 
     public function handle(GameMatch $match): void
     {
-        DB::transaction(function () use ($match) {
+        $outcome = DB::transaction(function () use ($match) {
             $locked = GameMatch::query()->lockForUpdate()->findOrFail($match->id);
 
             if ($this->isTerminal($locked)) {
-                return;
+                return null;
             }
 
             $this->assertDisputed($locked);
@@ -45,8 +47,46 @@ class ResolveDisputeAction
 
             $this->persistApiAudit($locked, $result);
 
-            $this->dispatchOnConfidence($locked, $result);
+            return $this->dispatchOnConfidence($locked, $result);
         });
+
+        if ($outcome === null) {
+            return;
+        }
+
+        $this->notifyPlayers($match->fresh(['listing.user', 'taker']), $outcome);
+    }
+
+    /**
+     * @param  array{type: string, winner?: User}  $outcome
+     */
+    private function notifyPlayers(GameMatch $match, array $outcome): void
+    {
+        $creator = $match->listing->user;
+        $taker = $match->taker;
+
+        if ($outcome['type'] === 'manual_review') {
+            $notification = new MatchManualReviewNotification($match);
+            $creator->notify($notification);
+            $taker->notify($notification);
+
+            return;
+        }
+
+        if ($outcome['type'] === 'draw') {
+            $notification = new DisputeResolvedNotification($match, 'draw');
+            $creator->notify($notification);
+            $taker->notify($notification);
+
+            return;
+        }
+
+        $winner = $outcome['winner'];
+        $payout = SettleMatchAction::computeWinnerPayout((string) $match->listing->stake_amount);
+        $loser = $winner->id === $creator->id ? $taker : $creator;
+
+        $winner->notify(new DisputeResolvedNotification($match, 'won', $payout));
+        $loser->notify(new DisputeResolvedNotification($match, 'lost', '0'));
     }
 
     private function isTerminal(GameMatch $match): bool
@@ -79,24 +119,29 @@ class ResolveDisputeAction
         ]);
     }
 
-    private function dispatchOnConfidence(GameMatch $match, GameApiResult $result): void
+    /**
+     * @return array{type: string, winner?: User}
+     */
+    private function dispatchOnConfidence(GameMatch $match, GameApiResult $result): array
     {
         if ($result->confidence === GameApiConfidence::Unknown) {
             $this->flipToManualReview($match);
 
-            return;
+            return ['type' => 'manual_review'];
         }
 
         if ($result->confidence === GameApiConfidence::Drawn) {
             // Nested DB::transaction composes via savepoint — atomic with the outer audit-trail update.
             $this->settleDraw->handle($match);
 
-            return;
+            return ['type' => 'draw'];
         }
 
         $winner = $this->resolveWinner($match, $result);
 
         $this->settle->handle($match, $winner);
+
+        return ['type' => 'win', 'winner' => $winner];
     }
 
     /**

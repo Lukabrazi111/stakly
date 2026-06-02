@@ -7,6 +7,7 @@ use App\Enums\ListingStatus;
 use App\Enums\MatchStatus;
 use App\Models\GameMatch;
 use App\Models\User;
+use App\Notifications\CancellationAcceptedNotification;
 use App\Services\Wallet;
 use Illuminate\Support\Facades\DB;
 
@@ -28,7 +29,7 @@ class AcceptCancellationAction
 
     public function handle(User $accepter, GameMatch $match): string
     {
-        return DB::transaction(function () use ($match, $accepter) {
+        $result = DB::transaction(function () use ($match, $accepter) {
             $locked = GameMatch::query()->lockForUpdate()->findOrFail($match->id);
 
             if ($locked->status === MatchStatus::Cancelled) {
@@ -62,6 +63,17 @@ class AcceptCancellationAction
 
             return 'cancelled';
         });
+
+        if ($result === 'cancelled') {
+            $fresh = $match->fresh(['listing.user', 'taker']);
+            $requester = User::find($fresh->cancellation_requested_by);
+
+            if ($requester !== null) {
+                $requester->notify(new CancellationAcceptedNotification($fresh, $accepter));
+            }
+        }
+
+        return $result;
     }
 
     /**

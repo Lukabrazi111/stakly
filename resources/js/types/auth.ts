@@ -46,6 +46,10 @@ export type User = {
         username: string;
         verified_at: string;
     }>;
+    notifications_last_seen_at: string | null;
+    unread_notifications_count: number;
+    notification_sound: string;
+    notification_sound_map: Record<string, boolean>;
     created_at: string;
     updated_at: string;
     [key: string]: unknown;

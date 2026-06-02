@@ -7,6 +7,7 @@ use App\Actions\Message\PostSystemMessageAction;
 use App\Enums\MatchStatus;
 use App\Filament\Resources\GameMatches\GameMatchResource;
 use App\Models\GameMatch;
+use App\Notifications\MatchManualReviewNotification;
 use DateTimeInterface;
 use Illuminate\Support\Facades\DB;
 
@@ -41,10 +42,23 @@ class ResolveMatchTimeoutAction
         });
 
         if ($outcome === 'manual-review') {
-            $this->notifyAdminsOfTimeout(GameMatch::query()->find($matchId));
+            $fresh = GameMatch::query()->with(['listing.user', 'taker'])->find($matchId);
+            $this->notifyAdminsOfTimeout($fresh);
+            $this->notifyPlayers($fresh);
         }
 
         return $outcome;
+    }
+
+    private function notifyPlayers(?GameMatch $match): void
+    {
+        if ($match === null) {
+            return;
+        }
+
+        $notification = new MatchManualReviewNotification($match);
+        $match->listing->user->notify($notification);
+        $match->taker->notify($notification);
     }
 
     /**
