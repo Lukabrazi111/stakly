@@ -2,6 +2,7 @@
 
 namespace App\Http\Middleware;
 
+use App\Notifications\PlayerNotification;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
 
@@ -68,6 +69,12 @@ class HandleInertiaRequests extends Middleware
                     'unread_notifications_count' => $user->playerNotifications()
                         ->where('created_at', '>', $user->notifications_last_seen_at ?? '1970-01-01')
                         ->count(),
+                    'notification_sound' => $user->notification_sound ?? PlayerNotification::DEFAULT_SOUND_CHOICE,
+                    'notification_sound_map' => collect(PlayerNotification::EVENT_TYPES)
+                        ->mapWithKeys(fn (string $eventType) => [
+                            $eventType => $user->getNotificationPreference($eventType)['sound'],
+                        ])
+                        ->all(),
                 ] : null,
             ],
             'status' => fn () => $request->session()->get('status'),

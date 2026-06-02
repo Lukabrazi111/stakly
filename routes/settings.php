@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Settings\LinkedAccountController;
+use App\Http\Controllers\Settings\NotificationPreferencesController;
 use App\Http\Controllers\Settings\ProfileController;
 use App\Http\Controllers\Settings\SecurityController;
 use Illuminate\Support\Facades\Route;
@@ -29,4 +30,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     // otherwise the enum binding would try to resolve 'pending' as a provider.
     Route::delete('settings/linked-accounts/pending', [LinkedAccountController::class, 'cancelPending'])->name('linked-accounts.cancel-pending');
     Route::delete('settings/linked-accounts/{provider}', [LinkedAccountController::class, 'destroy'])->name('linked-accounts.unlink');
+
+    Route::get('settings/notifications', [NotificationPreferencesController::class, 'edit'])->name('notification-preferences.edit');
+    Route::patch('settings/notifications', [NotificationPreferencesController::class, 'update'])->name('notification-preferences.update');
 });

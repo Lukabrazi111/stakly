@@ -78,6 +78,8 @@ function AuthedNotificationProvider({
     initialCount,
     children,
 }: AuthedProps) {
+    const { auth } = usePage().props;
+    const soundMap = auth.user?.notification_sound_map ?? {};
     const [unreadCount, setUnreadCount] = useState(initialCount);
     const [lastBroadcast, setLastBroadcast] = useState<Notification | null>(
         null,
@@ -109,7 +111,13 @@ function AuthedNotificationProvider({
                 read_at: null,
                 created_at: new Date().toISOString(),
             });
-            playSound(payload.sound_priority);
+
+            // Per-event sound preference gates the chime. Only `false` (user
+            // explicitly muted this event) suppresses; missing or `true`
+            // plays normally.
+            if (soundMap[payload.event_type] !== false) {
+                playSound(payload.sound_priority);
+            }
         },
     );
 

@@ -1,11 +1,6 @@
+import { usePage } from '@inertiajs/react';
 import { useCallback, useEffect, useRef } from 'react';
 import type { NotificationSoundPriority } from '@/types/notification';
-
-const SOUND_URLS: Record<NotificationSoundPriority, string | null> = {
-    urgent: '/sounds/urgent.mp3',
-    soft: '/sounds/soft.mp3',
-    none: null,
-};
 
 const CHANNEL_NAME = 'stakly:notification-sound';
 
@@ -14,6 +9,7 @@ const CHANNEL_NAME = 'stakly:notification-sound';
 const DEDUP_WINDOW_MS = 500;
 
 export function useNotificationSound() {
+    const { auth } = usePage().props;
     const channelRef = useRef<BroadcastChannel | null>(null);
     const lastClaimAtRef = useRef<number>(0);
 
@@ -41,26 +37,29 @@ export function useNotificationSound() {
         };
     }, []);
 
-    return useCallback((priority: NotificationSoundPriority) => {
-        const url = SOUND_URLS[priority];
+    const choice = auth.user?.notification_sound ?? 'classic';
 
-        if (!url) {
-            return;
-        }
+    return useCallback(
+        (priority: NotificationSoundPriority) => {
+            if (priority === 'none' || choice === 'off') {
+                return;
+            }
 
-        const now = Date.now();
+            const now = Date.now();
 
-        if (now - lastClaimAtRef.current < DEDUP_WINDOW_MS) {
-            return;
-        }
+            if (now - lastClaimAtRef.current < DEDUP_WINDOW_MS) {
+                return;
+            }
 
-        lastClaimAtRef.current = now;
-        channelRef.current?.postMessage({ type: 'claim', at: now });
+            lastClaimAtRef.current = now;
+            channelRef.current?.postMessage({ type: 'claim', at: now });
 
-        const audio = new Audio(url);
-        audio.volume = 0.5;
-        audio.play().catch(() => {
-            // Autoplay blocked (no user gesture yet) or file missing.
-        });
-    }, []);
+            const audio = new Audio(`/sounds/${choice}.mp3`);
+            audio.volume = 0.5;
+            audio.play().catch(() => {
+                // Autoplay blocked or file missing — silently skip.
+            });
+        },
+        [choice],
+    );
 }

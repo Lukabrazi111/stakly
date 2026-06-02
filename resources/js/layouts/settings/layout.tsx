@@ -1,10 +1,11 @@
 import { Link } from '@inertiajs/react';
-import { Link2, Shield, User as UserIcon } from 'lucide-react';
+import { Bell, Link2, Shield, User as UserIcon } from 'lucide-react';
 import type { PropsWithChildren } from 'react';
 import Heading from '@/components/heading';
 import { useCurrentUrl } from '@/hooks/use-current-url';
 import { cn } from '@/lib/utils';
 import { edit as editLinkedAccounts } from '@/routes/linked-accounts';
+import { edit as editNotifications } from '@/routes/notification-preferences';
 import { edit as editProfile } from '@/routes/profile';
 import { edit as editSecurity } from '@/routes/security';
 
@@ -12,6 +13,7 @@ const settingsNavItems = [
     { title: 'Profile', href: editProfile(), icon: UserIcon },
     { title: 'Security', href: editSecurity(), icon: Shield },
     { title: 'Linked accounts', href: editLinkedAccounts(), icon: Link2 },
+    { title: 'Notifications', href: editNotifications(), icon: Bell },
 ];
 
 export default function SettingsLayout({ children }: PropsWithChildren) {
