@@ -3,7 +3,9 @@
 namespace App\Models;
 
 use App\Enums\LinkedAccountProvider;
+use App\Enums\MatchStatus;
 use App\Notifications\PlayerNotification;
+use Carbon\CarbonImmutable;
 use Database\Factories\UserFactory;
 use Filament\Models\Contracts\FilamentUser;
 use Filament\Panel;
@@ -67,9 +69,28 @@ class User extends Authenticatable implements FilamentUser, HasMedia, MustVerify
         return $this->hasRole('admin');
     }
 
+    public const USERNAME_CHANGE_COOLDOWN_DAYS = 30;
+
+    public const USERNAME_RESERVATION_DAYS = 30;
+
+    /**
+     * System handles + route-segment names a `/users/{x}` URL could collide
+     * with. Shared by registration (`CreateNewUser`) and the rename validator.
+     *
+     * @var list<string>
+     */
+    public const RESERVED_USERNAMES = [
+        'admin', 'administrator', 'staff', 'support', 'help',
+        'stakly', 'platform', 'system', 'root', 'null',
+        'listings', 'settings', 'login', 'register', 'logout',
+        'wallet', 'match', 'matches', 'api', 'users', 'user',
+    ];
+
     /**
      * Route model binding on `username` so `/users/{user}` resolves via the
-     * public handle. Username is derived at registration and immutable.
+     * public handle. Renames are gated by `canChangeUsername()` and old
+     * handles stay reserved via `username_history` for
+     * `USERNAME_RESERVATION_DAYS` after release.
      */
     public function getRouteKeyName(): string
     {
@@ -90,6 +111,7 @@ class User extends Authenticatable implements FilamentUser, HasMedia, MustVerify
             'is_active_mode' => 'boolean',
             'notifications_last_seen_at' => 'datetime',
             'notification_sound' => 'string',
+            'username_changed_at' => 'immutable_datetime',
         ];
     }
 
@@ -113,6 +135,63 @@ class User extends Authenticatable implements FilamentUser, HasMedia, MustVerify
     public function gameMatchesAsTaker(): HasMany
     {
         return $this->hasMany(GameMatch::class, 'taker_user_id');
+    }
+
+    public function usernameHistory(): HasMany
+    {
+        return $this->hasMany(UsernameHistory::class);
+    }
+
+    public function canChangeUsername(): bool
+    {
+        return $this->usernameChangeBlockers() === [];
+    }
+
+    /**
+     * Cooldown clock end (null when no cooldown blocker). UI uses this to
+     * render the "available again in N days" hint without inferring the
+     * window length client-side.
+     */
+    public function usernameChangeAvailableAt(): ?CarbonImmutable
+    {
+        if ($this->username_changed_at === null) {
+            return null;
+        }
+
+        $available = $this->username_changed_at->addDays(self::USERNAME_CHANGE_COOLDOWN_DAYS);
+
+        return $available->isFuture() ? $available : null;
+    }
+
+    /**
+     * One reason per condition currently blocking a rename. Empty array =
+     * allowed. Order is deliberate: cooldown first so a user inside the
+     * window sees the date instead of "you have a match" when both are true.
+     *
+     * @return list<'cooldown'|'in_flight_match'>
+     */
+    public function usernameChangeBlockers(): array
+    {
+        $blockers = [];
+
+        if ($this->usernameChangeAvailableAt() !== null) {
+            $blockers[] = 'cooldown';
+        }
+
+        $hasInFlightMatch = GameMatch::query()
+            ->forParticipant($this->id)
+            ->whereIn('status', [
+                MatchStatus::Pending,
+                MatchStatus::Disputed,
+                MatchStatus::ManualReview,
+            ])
+            ->exists();
+
+        if ($hasInFlightMatch) {
+            $blockers[] = 'in_flight_match';
+        }
+
+        return $blockers;
     }
 
     /**

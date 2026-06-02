@@ -22,6 +22,12 @@ return new class extends Migration
             // collision handling — `CreateNewUser` retries on violation.
             $table->string('username', 30)->unique();
 
+            // Last time the user changed their username. Drives the 30-day
+            // cooldown enforced in `User::canChangeUsername()` /
+            // `ChangeUsernameAction`. Null on accounts that have never
+            // renamed (post-registration default).
+            $table->timestamp('username_changed_at')->nullable();
+
             // Optional 500-char bio shown on the public profile (M5 → M18).
             // Bounded length, not text — bio is never queried/filtered. Plain
             // text with line breaks; React's JSX interpolation escapes on

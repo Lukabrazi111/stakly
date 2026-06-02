@@ -18,16 +18,6 @@ class CreateNewUser implements CreatesNewUsers
     use PasswordValidationRules, ProfileValidationRules;
 
     /**
-     * Reserved system handles + route-segment names a future `/users/{x}` URL could conflict with.
-     */
-    private const RESERVED_USERNAMES = [
-        'admin', 'administrator', 'staff', 'support', 'help',
-        'stakly', 'platform', 'system', 'root', 'null',
-        'listings', 'settings', 'login', 'register', 'logout',
-        'wallet', 'match', 'matches', 'api', 'users', 'user',
-    ];
-
-    /**
      * Total username must fit varchar(30); last-resort suffix `-{Str::random(6)}` is 7 chars, so base ≤ 23.
      */
     private const MAX_BASE_LENGTH = 23;
@@ -119,7 +109,7 @@ class CreateNewUser implements CreatesNewUsers
 
     private function isReserved(string $username): bool
     {
-        return in_array($username, self::RESERVED_USERNAMES, true);
+        return in_array($username, User::RESERVED_USERNAMES, true);
     }
 
     /**

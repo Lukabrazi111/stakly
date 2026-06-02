@@ -75,6 +75,11 @@ class HandleInertiaRequests extends Middleware
                             $eventType => $user->getNotificationPreference($eventType)['sound'],
                         ])
                         ->all(),
+                    'username_edit' => [
+                        'can_change' => $user->canChangeUsername(),
+                        'available_at' => $user->usernameChangeAvailableAt()?->toIso8601String(),
+                        'blockers' => $user->usernameChangeBlockers(),
+                    ],
                 ] : null,
             ],
             'status' => fn () => $request->session()->get('status'),

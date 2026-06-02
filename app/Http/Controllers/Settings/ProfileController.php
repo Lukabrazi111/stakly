@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Settings;
 
+use App\Actions\Profile\ChangeUsernameAction;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Settings\ProfileUpdateRequest;
 use Illuminate\Contracts\Auth\MustVerifyEmail;
@@ -22,15 +23,21 @@ class ProfileController extends Controller
 
     /**
      * Avatar is extracted from the validated array before `fill()` so the
-     * file instance never reaches mass-assignment.
+     * file instance never reaches mass-assignment. Username changes detour
+     * through `ChangeUsernameAction` which handles the row-locked re-check,
+     * reservation write, and cooldown bump atomically.
      */
-    public function update(ProfileUpdateRequest $request): RedirectResponse
+    public function update(ProfileUpdateRequest $request, ChangeUsernameAction $changeUsername): RedirectResponse
     {
         $validated = $request->validated();
         $avatarFile = $request->file('avatar');
         unset($validated['avatar']);
 
         $user = $request->user();
+
+        $submittedUsername = $validated['username'] ?? null;
+        unset($validated['username']);
+
         $user->fill($validated);
 
         if ($user->isDirty('email')) {
@@ -38,6 +45,10 @@ class ProfileController extends Controller
         }
 
         $user->save();
+
+        if (is_string($submittedUsername) && $submittedUsername !== $user->username) {
+            $changeUsername->handle($user, $submittedUsername);
+        }
 
         if ($avatarFile !== null) {
             $user->addMedia($avatarFile)->toMediaCollection('profile-avatar');

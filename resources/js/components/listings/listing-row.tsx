@@ -43,7 +43,7 @@ export function ListingRow({ listing }: Props) {
             {/* Overlay: entire row → listing detail */}
             <Link
                 href={showListing(listing.id).url}
-                aria-label={`View listing from @${listing.creator.username}`}
+                aria-label={`View listing from ${listing.creator.username}`}
                 className="absolute inset-0 rounded-2xl focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none"
             />
 
@@ -64,7 +64,7 @@ export function ListingRow({ listing }: Props) {
 
                 <div className="flex min-w-0 flex-col gap-0.5">
                     <span className="truncate text-sm font-semibold text-foreground transition-colors hover:text-primary">
-                        @{listing.creator.username}
+                        {listing.creator.username}
                     </span>
                     <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-muted-foreground">
                         {listing.region && (

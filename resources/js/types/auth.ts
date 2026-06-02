@@ -50,6 +50,11 @@ export type User = {
     unread_notifications_count: number;
     notification_sound: string;
     notification_sound_map: Record<string, boolean>;
+    username_edit: {
+        can_change: boolean;
+        available_at: string | null;
+        blockers: Array<'cooldown' | 'in_flight_match'>;
+    };
     created_at: string;
     updated_at: string;
     [key: string]: unknown;

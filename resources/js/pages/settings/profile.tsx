@@ -47,12 +47,14 @@ export default function Profile({
 
     const { data, setData, post, processing, errors, reset } = useForm<{
         name: string;
+        username: string;
         email: string;
         bio: string;
         avatar: Blob | null;
         _method: 'patch';
     }>({
         name: user.name,
+        username: user.username,
         email: user.email,
         bio: user.bio ?? '',
         avatar: null,
@@ -67,7 +69,12 @@ export default function Profile({
     const [rawFileError, setRawFileError] = useState<string | null>(null);
     const [isRemovingAvatar, setIsRemovingAvatar] = useState(false);
     const [removeConfirmOpen, setRemoveConfirmOpen] = useState(false);
+    const [usernameConfirmOpen, setUsernameConfirmOpen] = useState(false);
     const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+    const usernameEdit = user.username_edit;
+    const usernameBlocker = usernameEdit.blockers[0] ?? null;
+    const usernameDirty = data.username.trim() !== user.username;
 
     // Revoke the cropped-blob object URL on unmount or when it's replaced —
     // otherwise the blob stays alive in memory for the page's lifetime.
@@ -127,22 +134,30 @@ export default function Profile({
         });
     };
 
-    const handleSubmit = (e: FormEvent) => {
-        e.preventDefault();
+    const submitForm = () => {
         post(ProfileController.update.url(), {
             preserveScroll: true,
             forceFormData: true,
             onSuccess: () => {
-                // Avatar uploaded — clear the staged blob + preview so the
-                // form goes back to a clean state showing the saved avatar.
                 if (previewUrl) {
                     URL.revokeObjectURL(previewUrl);
                 }
 
                 setPreviewUrl(null);
                 reset('avatar');
+                setUsernameConfirmOpen(false);
             },
         });
+    };
+
+    const handleSubmit = (e: FormEvent) => {
+        e.preventDefault();
+        if (usernameDirty && usernameEdit.can_change) {
+            setUsernameConfirmOpen(true);
+
+            return;
+        }
+        submitForm();
     };
 
     const displayAvatarSrc = previewUrl ?? user.avatar_url ?? undefined;
@@ -172,7 +187,7 @@ export default function Profile({
             <div className="space-y-6">
                 <ProfilePreview
                     name={data.name}
-                    username={user.username}
+                    username={data.username || user.username}
                     bio={data.bio}
                     avatarSrc={displayAvatarSrc}
                     joinedAt={user.created_at}
@@ -312,6 +327,32 @@ export default function Profile({
                             <InputError
                                 message={rawFileError ?? errors.avatar}
                             />
+                        </div>
+
+                        <div className="grid gap-2">
+                            <Label htmlFor="username">Username</Label>
+                            <Input
+                                id="username"
+                                className="block w-full"
+                                value={data.username}
+                                onChange={(e) =>
+                                    setData(
+                                        'username',
+                                        e.target.value.toLowerCase(),
+                                    )
+                                }
+                                name="username"
+                                required
+                                autoComplete="off"
+                                spellCheck={false}
+                                disabled={!usernameEdit.can_change}
+                                placeholder="your-handle"
+                            />
+                            <UsernameHelper
+                                blocker={usernameBlocker}
+                                availableAt={usernameEdit.available_at}
+                            />
+                            <InputError message={errors.username} />
                         </div>
 
                         <div className="grid gap-2">
@@ -456,6 +497,90 @@ export default function Profile({
                 onClose={handleCropClose}
                 onConfirm={handleCropConfirm}
             />
+
+            <Dialog
+                open={usernameConfirmOpen}
+                onOpenChange={(next) => {
+                    if (!processing) {
+                        setUsernameConfirmOpen(next);
+                    }
+                }}
+            >
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle>Change your username?</DialogTitle>
+                        <DialogDescription>
+                            Renaming{' '}
+                            <span className="font-medium text-foreground">
+                                {user.username}
+                            </span>{' '}
+                            to{' '}
+                            <span className="font-medium text-foreground">
+                                {data.username}
+                            </span>{' '}
+                            also updates your profile URL. You won't be able to
+                            change it again for 30 days.
+                        </DialogDescription>
+                    </DialogHeader>
+                    <DialogFooter>
+                        <Button
+                            type="button"
+                            variant="ghost"
+                            onClick={() => setUsernameConfirmOpen(false)}
+                            disabled={processing}
+                        >
+                            Cancel
+                        </Button>
+                        <Button
+                            type="button"
+                            variant="gradient"
+                            size="pill"
+                            onClick={submitForm}
+                            disabled={processing}
+                        >
+                            {processing ? 'Saving…' : 'Confirm change'}
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
         </>
+    );
+}
+
+function UsernameHelper({
+    blocker,
+    availableAt,
+}: {
+    blocker: 'cooldown' | 'in_flight_match' | null;
+    availableAt: string | null;
+}) {
+    if (blocker === 'cooldown' && availableAt) {
+        const date = new Date(availableAt).toLocaleDateString('en-US', {
+            month: 'short',
+            day: 'numeric',
+            year: 'numeric',
+        });
+
+        return (
+            <p className="text-xs text-muted-foreground">
+                You can change it again on {date}.
+            </p>
+        );
+    }
+
+    if (blocker === 'in_flight_match') {
+        return (
+            <p className="text-xs text-muted-foreground">
+                You can't change your username while you have a match in
+                progress or an open dispute.
+            </p>
+        );
+    }
+
+    return (
+        <p className="text-xs text-muted-foreground">
+            Lowercase letters, numbers, and hyphens. 3–30 characters. Changing
+            it locks the field for 30 days.
+        </p>
     );
 }
