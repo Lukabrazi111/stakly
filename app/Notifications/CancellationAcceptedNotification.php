@@ -2,7 +2,6 @@
 
 namespace App\Notifications;
 
-use App\Enums\SoundPriority;
 use App\Models\GameMatch;
 use App\Models\User;
 
@@ -20,11 +19,6 @@ class CancellationAcceptedNotification extends PlayerNotification
     public function eventType(): string
     {
         return 'cancellation_accepted';
-    }
-
-    public function soundPriority(): SoundPriority
-    {
-        return SoundPriority::None;
     }
 
     public function title(): string

@@ -2,7 +2,6 @@
 
 namespace App\Notifications;
 
-use App\Enums\SoundPriority;
 use App\Models\Listing;
 
 /**
@@ -17,11 +16,6 @@ class ListingExpiredNotification extends PlayerNotification
     public function eventType(): string
     {
         return 'listing_expired';
-    }
-
-    public function soundPriority(): SoundPriority
-    {
-        return SoundPriority::None;
     }
 
     public function title(): string

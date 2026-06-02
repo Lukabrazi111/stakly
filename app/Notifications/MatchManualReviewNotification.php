@@ -2,7 +2,6 @@
 
 namespace App\Notifications;
 
-use App\Enums\SoundPriority;
 use App\Models\GameMatch;
 
 /**
@@ -18,11 +17,6 @@ class MatchManualReviewNotification extends PlayerNotification
     public function eventType(): string
     {
         return 'match_manual_review';
-    }
-
-    public function soundPriority(): SoundPriority
-    {
-        return SoundPriority::None;
     }
 
     public function title(): string

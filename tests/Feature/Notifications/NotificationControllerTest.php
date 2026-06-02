@@ -23,7 +23,6 @@ function makeNotif(
         'title' => 'Your listing was taken!',
         'body' => 'Someone took your $100 match.',
         'action_url' => '/matches/1',
-        'sound_priority' => 'urgent',
         'related_id' => 1,
     ];
 
@@ -157,7 +156,6 @@ test('recent payload exposes the player-facing fields', function () {
         'title' => 'Bob took your listing',
         'body' => 'Match starting now',
         'action_url' => '/matches/42',
-        'sound_priority' => 'urgent',
         'related_id' => 42,
     ]);
 
@@ -168,7 +166,6 @@ test('recent payload exposes the player-facing fields', function () {
         ->and($row['title'])->toBe('Bob took your listing')
         ->and($row['body'])->toBe('Match starting now')
         ->and($row['action_url'])->toBe('/matches/42')
-        ->and($row['sound_priority'])->toBe('urgent')
         ->and($row['related_id'])->toBe(42)
         ->and($row['read_at'])->toBeNull()
         ->and($row['created_at'])->toBeString();

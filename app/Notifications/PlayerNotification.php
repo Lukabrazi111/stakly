@@ -2,7 +2,6 @@
 
 namespace App\Notifications;
 
-use App\Enums\SoundPriority;
 use App\Models\User;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -105,8 +104,6 @@ abstract class PlayerNotification extends Notification implements ShouldQueue
 
     abstract public function eventType(): string;
 
-    abstract public function soundPriority(): SoundPriority;
-
     abstract public function title(): string;
 
     abstract public function body(): string;
@@ -125,7 +122,6 @@ abstract class PlayerNotification extends Notification implements ShouldQueue
             'title' => $this->title(),
             'body' => $this->body(),
             'action_url' => $this->actionUrl(),
-            'sound_priority' => $this->soundPriority()->value,
             'related_id' => $this->relatedId(),
         ];
     }

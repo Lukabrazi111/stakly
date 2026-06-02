@@ -2,14 +2,8 @@
 
 namespace App\Notifications;
 
-use App\Enums\SoundPriority;
 use App\Models\GameMatch;
 
-/**
- * Sent to the listing creator the moment an opponent takes the match.
- * The ONLY sound-enabled notification in Stakly — creator is typically
- * away from the page waiting, and the match starts immediately.
- */
 class ListingTakenNotification extends PlayerNotification
 {
     public function __construct(public readonly GameMatch $match) {}
@@ -17,11 +11,6 @@ class ListingTakenNotification extends PlayerNotification
     public function eventType(): string
     {
         return 'listing_taken';
-    }
-
-    public function soundPriority(): SoundPriority
-    {
-        return SoundPriority::Urgent;
     }
 
     public function title(): string

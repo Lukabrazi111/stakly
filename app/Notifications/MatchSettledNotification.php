@@ -2,7 +2,6 @@
 
 namespace App\Notifications;
 
-use App\Enums\SoundPriority;
 use App\Models\GameMatch;
 
 /**
@@ -23,11 +22,6 @@ class MatchSettledNotification extends PlayerNotification
     public function eventType(): string
     {
         return 'match_settled';
-    }
-
-    public function soundPriority(): SoundPriority
-    {
-        return SoundPriority::None;
     }
 
     public function title(): string

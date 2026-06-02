@@ -9,11 +9,7 @@ import {
 } from 'react';
 import type { ReactNode } from 'react';
 import { useNotificationSound } from '@/hooks/use-notification-sound';
-import type {
-    Notification,
-    NotificationEventType,
-    NotificationSoundPriority,
-} from '@/types/notification';
+import type { Notification, NotificationEventType } from '@/types/notification';
 
 interface BroadcastPayload {
     id: string;
@@ -22,7 +18,6 @@ interface BroadcastPayload {
     title: string;
     body: string;
     action_url: string | null;
-    sound_priority: NotificationSoundPriority;
     related_id: number | null;
 }
 
@@ -107,16 +102,12 @@ function AuthedNotificationProvider({
                 body: payload.body,
                 action_url: payload.action_url,
                 related_id: payload.related_id,
-                sound_priority: payload.sound_priority,
                 read_at: null,
                 created_at: new Date().toISOString(),
             });
 
-            // Per-event sound preference gates the chime. Only `false` (user
-            // explicitly muted this event) suppresses; missing or `true`
-            // plays normally.
             if (soundMap[payload.event_type] !== false) {
-                playSound(payload.sound_priority);
+                playSound();
             }
         },
     );

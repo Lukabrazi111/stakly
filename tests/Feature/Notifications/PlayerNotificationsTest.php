@@ -14,7 +14,6 @@ use App\Actions\Listing\ExpireListingAction;
 use App\Enums\LinkedAccountProvider;
 use App\Enums\MatchAdminResolutionAction;
 use App\Enums\MatchStatus;
-use App\Enums\SoundPriority;
 use App\Models\GameMatch;
 use App\Models\Listing;
 use App\Models\MatchProviderSnapshot;
@@ -271,20 +270,3 @@ test('ExpireListingAction notifies the listing creator with ListingExpiredNotifi
 });
 
 // ─── Sound policy ──────────────────────────────────────────────────────────
-
-test('ListingTakenNotification is the only sound-enabled notification — all others are silent', function () {
-    [, , , $match] = pendingMatch();
-    $listing = $match->listing;
-    $opener = $match->taker;
-
-    expect((new ListingTakenNotification($match))->soundPriority())->toBe(SoundPriority::Urgent);
-
-    expect((new MatchSettledNotification($match, 'won', '180'))->soundPriority())->toBe(SoundPriority::None)
-        ->and((new MatchManualReviewNotification($match))->soundPriority())->toBe(SoundPriority::None)
-        ->and((new DisputeOpenedNotification($match, $opener))->soundPriority())->toBe(SoundPriority::None)
-        ->and((new DisputeResolvedNotification($match, 'won', '180'))->soundPriority())->toBe(SoundPriority::None)
-        ->and((new CancellationRequestedNotification($match, $opener))->soundPriority())->toBe(SoundPriority::None)
-        ->and((new CancellationAcceptedNotification($match, $opener))->soundPriority())->toBe(SoundPriority::None)
-        ->and((new CancellationRejectedNotification($match, $opener))->soundPriority())->toBe(SoundPriority::None)
-        ->and((new ListingExpiredNotification($listing))->soundPriority())->toBe(SoundPriority::None);
-});

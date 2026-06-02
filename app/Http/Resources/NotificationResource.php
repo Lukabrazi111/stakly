@@ -25,7 +25,6 @@ class NotificationResource extends JsonResource
             'body' => $data['body'] ?? '',
             'action_url' => $data['action_url'] ?? null,
             'related_id' => $data['related_id'] ?? null,
-            'sound_priority' => $data['sound_priority'] ?? 'none',
             'read_at' => $this->read_at?->toIso8601String(),
             'created_at' => $this->created_at?->toIso8601String(),
         ];

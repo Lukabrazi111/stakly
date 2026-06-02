@@ -1,6 +1,5 @@
 import { usePage } from '@inertiajs/react';
 import { useCallback, useEffect, useRef } from 'react';
-import type { NotificationSoundPriority } from '@/types/notification';
 
 const CHANNEL_NAME = 'stakly:notification-sound';
 
@@ -39,27 +38,24 @@ export function useNotificationSound() {
 
     const choice = auth.user?.notification_sound ?? 'classic';
 
-    return useCallback(
-        (priority: NotificationSoundPriority) => {
-            if (priority === 'none' || choice === 'off') {
-                return;
-            }
+    return useCallback(() => {
+        if (choice === 'off') {
+            return;
+        }
 
-            const now = Date.now();
+        const now = Date.now();
 
-            if (now - lastClaimAtRef.current < DEDUP_WINDOW_MS) {
-                return;
-            }
+        if (now - lastClaimAtRef.current < DEDUP_WINDOW_MS) {
+            return;
+        }
 
-            lastClaimAtRef.current = now;
-            channelRef.current?.postMessage({ type: 'claim', at: now });
+        lastClaimAtRef.current = now;
+        channelRef.current?.postMessage({ type: 'claim', at: now });
 
-            const audio = new Audio(`/sounds/${choice}.mp3`);
-            audio.volume = 0.5;
-            audio.play().catch(() => {
-                // Autoplay blocked or file missing — silently skip.
-            });
-        },
-        [choice],
-    );
+        const audio = new Audio(`/sounds/${choice}.mp3`);
+        audio.volume = 0.5;
+        audio.play().catch(() => {
+            // Autoplay blocked or file missing — silently skip.
+        });
+    }, [choice]);
 }

@@ -9,8 +9,6 @@ export type NotificationEventType =
     | 'cancellation_accepted'
     | 'cancellation_rejected';
 
-export type NotificationSoundPriority = 'urgent' | 'soft' | 'none';
-
 export interface Notification {
     id: string;
     event_type: NotificationEventType | null;
@@ -18,7 +16,6 @@ export interface Notification {
     body: string;
     action_url: string | null;
     related_id: number | null;
-    sound_priority: NotificationSoundPriority;
     read_at: string | null;
     created_at: string;
 }

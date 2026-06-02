@@ -2,7 +2,6 @@
 
 namespace App\Notifications;
 
-use App\Enums\SoundPriority;
 use App\Models\GameMatch;
 use App\Models\User;
 
@@ -21,11 +20,6 @@ class DisputeOpenedNotification extends PlayerNotification
     public function eventType(): string
     {
         return 'dispute_opened';
-    }
-
-    public function soundPriority(): SoundPriority
-    {
-        return SoundPriority::None;
     }
 
     public function title(): string
