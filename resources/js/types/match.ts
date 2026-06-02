@@ -52,6 +52,11 @@ export interface MatchSnapshots {
 //   - `match.status === 'cancelled'` → terminal banner
 // `requested_by_id` lets the FE look up the name client-side from the
 // already-loaded creator/taker — saves a backend eager-load.
+export interface MatchDispute {
+    opened_by_id: number | null;
+    opened_at: string | null;
+}
+
 export interface MatchCancellation {
     requested_by_id: number | null;
     requested_at: string | null;
@@ -75,6 +80,7 @@ export interface Match {
     settled_at: string | null;
     created_at: string | null;
     cancellation: MatchCancellation;
+    dispute: MatchDispute;
 }
 
 // Chat messages on a match. Mirrors `App\Http\Resources\MessageResource` AND

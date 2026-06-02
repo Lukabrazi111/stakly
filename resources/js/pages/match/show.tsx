@@ -1,5 +1,6 @@
 import { router, usePage } from '@inertiajs/react';
 import { useEffect, useMemo, useState } from 'react';
+import { AdminReviewBanner } from '@/components/match/admin-review-banner';
 import { CancellationRequestBanner } from '@/components/match/cancellation-request-banner';
 import { CancellationSummary } from '@/components/match/cancellation-summary';
 import { ChatPanel } from '@/components/match/chat-panel';
@@ -180,19 +181,10 @@ export default function MatchShow({ match, messages }: MatchShowProps) {
                     </div>
                 )}
 
-                {(match.status === 'disputed' ||
-                    match.status === 'manual_review') && (
-                    <section className="mb-6 rounded-2xl border border-destructive/40 bg-destructive/5 p-6">
-                        <h2 className="mb-2 font-display text-lg font-semibold text-foreground">
-                            Admin review pending
-                        </h2>
-                        <p className="text-sm text-muted-foreground">
-                            {match.status === 'disputed'
-                                ? 'A Stakly admin will review this match and resolve it. Please post any evidence (screenshots, game URLs, PGN) in the chat below so the reviewer has the full picture. Your stake stays in escrow until resolved.'
-                                : 'This match was auto-flagged for admin review after the confirmation window expired without an API-verified game record. A Stakly admin will review the chat and resolve. Your stake stays in escrow until then.'}
-                        </p>
-                    </section>
-                )}
+                <AdminReviewBanner
+                    match={match}
+                    viewerId={auth.user?.id ?? null}
+                />
 
                 <div className="mb-6">
                     <BackLink fallback={listingShow(match.listing.id).url} />

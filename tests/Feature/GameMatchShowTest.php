@@ -224,6 +224,66 @@ test('Cancelled match emits cancelled_at on the resource', function () {
         );
 });
 
+// ─── Dispute shape on GameMatchResource (M27 P3) ────────────────────────────
+
+test('fresh match emits a dispute block with all-null fields', function () {
+    $match = GameMatch::factory()->create();
+
+    $this->actingAs($match->taker)
+        ->get(route('matches.show', $match))
+        ->assertInertia(fn ($page) => $page
+            ->has('match.dispute')
+            ->where('match.dispute.opened_by_id', null)
+            ->where('match.dispute.opened_at', null)
+        );
+});
+
+test('Disputed match opened by creator surfaces creator id on the resource', function () {
+    $match = GameMatch::factory()->create();
+    $creator = $match->listing->user;
+    $match->update([
+        'status' => MatchStatus::Disputed,
+        'dispute_opened_by' => $creator->id,
+        'dispute_opened_at' => now(),
+    ]);
+
+    $this->actingAs($match->taker)
+        ->get(route('matches.show', $match))
+        ->assertInertia(fn ($page) => $page
+            ->where('match.status', 'disputed')
+            ->where('match.dispute.opened_by_id', $creator->id)
+            ->whereNot('match.dispute.opened_at', null)
+        );
+});
+
+test('Disputed match opened by taker surfaces taker id on the resource', function () {
+    $match = GameMatch::factory()->create();
+    $match->update([
+        'status' => MatchStatus::Disputed,
+        'dispute_opened_by' => $match->taker->id,
+        'dispute_opened_at' => now(),
+    ]);
+
+    $this->actingAs($match->listing->user)
+        ->get(route('matches.show', $match))
+        ->assertInertia(fn ($page) => $page
+            ->where('match.status', 'disputed')
+            ->where('match.dispute.opened_by_id', $match->taker->id)
+        );
+});
+
+test('ManualReview match has a null dispute opener (auto-flag, no human opener)', function () {
+    $match = GameMatch::factory()->create();
+    $match->update(['status' => MatchStatus::ManualReview]);
+
+    $this->actingAs($match->taker)
+        ->get(route('matches.show', $match))
+        ->assertInertia(fn ($page) => $page
+            ->where('match.status', 'manual_review')
+            ->where('match.dispute.opened_by_id', null)
+        );
+});
+
 // ─── M16 Phase 2 — page-visit auto-fetch trigger ────────────────────────────
 
 test('visiting a Pending Lichess match dispatches AutoFetchLichessGameJob', function () {

@@ -88,6 +88,12 @@ class GameMatchResource extends JsonResource
                 'rejected_at' => $this->cancellation_rejected_at?->toIso8601String(),
                 'cancelled_at' => $this->cancelled_at?->toIso8601String(),
             ],
+            // Dispute opener — drives viewer-aware copy on the Disputed
+            // banner ("you opened it" vs "{opponent} opened it").
+            'dispute' => [
+                'opened_by_id' => $this->dispute_opened_by,
+                'opened_at' => $this->dispute_opened_at?->toIso8601String(),
+            ],
         ];
     }
 }

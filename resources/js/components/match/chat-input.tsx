@@ -41,6 +41,24 @@ export function ChatInput({
     const [content, setContent] = useState('');
     const [previewUrl, setPreviewUrl] = useState<string | null>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+    useEffect(() => {
+        const handler = () => {
+            const el = textareaRef.current;
+
+            if (!el) {
+                return;
+            }
+
+            el.focus();
+            el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        };
+
+        window.addEventListener('stakly:focus-chat', handler);
+
+        return () => window.removeEventListener('stakly:focus-chat', handler);
+    }, []);
 
     // setState-inside-effect: useMemo + cleanup-only effect breaks under
     // strict mode — the URL gets revoked during double-mount, leaving a
@@ -202,6 +220,7 @@ export function ChatInput({
                 </Button>
                 <div className="flex-1 space-y-1">
                     <Textarea
+                        ref={textareaRef}
                         value={content}
                         onChange={(e) => setContent(e.target.value)}
                         onKeyDown={handleKeyDown}
