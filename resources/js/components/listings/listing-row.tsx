@@ -43,7 +43,7 @@ export function ListingRow({ listing }: Props) {
             {/* Overlay: entire row → listing detail */}
             <Link
                 href={showListing(listing.id).url}
-                aria-label={`View listing from ${listing.creator.name}`}
+                aria-label={`View listing from @${listing.creator.username}`}
                 className="absolute inset-0 rounded-2xl focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none"
             />
 
@@ -55,7 +55,7 @@ export function ListingRow({ listing }: Props) {
                 <Avatar className="size-11 shrink-0 overflow-hidden rounded-full">
                     <AvatarImage
                         src={listing.creator.avatar_thumb_url ?? undefined}
-                        alt={listing.creator.name}
+                        alt={listing.creator.username}
                     />
                     <AvatarFallback className="bg-gradient-primary text-sm font-semibold text-primary-foreground">
                         {getInitials(listing.creator.name)}
@@ -64,7 +64,7 @@ export function ListingRow({ listing }: Props) {
 
                 <div className="flex min-w-0 flex-col gap-0.5">
                     <span className="truncate text-sm font-semibold text-foreground transition-colors hover:text-primary">
-                        {listing.creator.name}
+                        @{listing.creator.username}
                     </span>
                     <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-muted-foreground">
                         {listing.region && (
@@ -134,9 +134,11 @@ export function ListingRow({ listing }: Props) {
                 </div>
             </div>
 
-            {/* `relative` keeps the Take CTA above the absolute overlay so
-                it captures its own clicks. */}
-            <div className="relative flex items-center gap-2 md:shrink-0">
+            {/* Fixed `md:w-44` so the desktop column header strip in
+                `pages/listings/index.tsx` aligns — "Ends in" / "Stake" labels
+                stay over their data columns instead of drifting right. Width
+                accommodates the longest CTA text ("Link chess.com"). */}
+            <div className="relative flex items-center justify-end gap-2 md:w-44 md:shrink-0">
                 <TakeButton listing={listing} className="w-full md:w-auto" />
             </div>
         </article>

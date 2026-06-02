@@ -100,11 +100,12 @@ export default function ListingsIndex({
                         </p>
                     ) : (
                         <div className="flex flex-col gap-3">
-                            {/* M22 Phase 2 — desktop-only column header strip.
-                                Widths mirror the column widths inside
-                                `listing-row.tsx` so the labels align with the
-                                data underneath. Hidden on mobile where rows
-                                stack vertically and labels would only confuse. */}
+                            {/* Desktop-only column header strip. Widths mirror
+                                the row's column widths in `listing-row.tsx` —
+                                including the trailing `w-40` spacer for the
+                                Take/Manage CTA — so each label sits over its
+                                data column. Hidden on mobile where rows stack
+                                vertically and labels would only confuse. */}
                             <div
                                 className="hidden gap-6 px-5 text-[10px] font-medium tracking-wider text-muted-foreground uppercase md:flex md:items-center"
                                 aria-hidden="true"
@@ -119,6 +120,7 @@ export default function ListingsIndex({
                                         Stake
                                     </div>
                                 </div>
+                                <div className="w-44 shrink-0" />
                             </div>
 
                             {listings.data.map((listing) => (

@@ -30,7 +30,7 @@ export function ListingRowSkeleton() {
                 <Skeleton className="h-7 w-20" />
             </div>
 
-            <div className="md:shrink-0">
+            <div className="md:flex md:w-44 md:shrink-0 md:justify-end">
                 <Skeleton className="h-9 w-24 rounded-full" />
             </div>
         </div>
