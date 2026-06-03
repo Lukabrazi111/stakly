@@ -2,19 +2,21 @@
 
 Frontend-first build. UI against real DB infrastructure + seeded fake data; backend logic (escrow, payouts, on-chain integration) lands per page once the UI is validated. Milestones are work-chunk labels, not version commitments — decisions inside any of them are revisitable.
 
-> **Shipped milestones live in `milestones_archived.md`** (M1, M2, M2.5, M3, M3.5, M4, M5, M6, M7, M8 all phases, M10, M11, M12 all phases, M14 Slice A, M16 all phases, M17, M18, M19, M22, M23, M24, M25, M27 all phases). This file is for active + upcoming work + the cross-cutting architectural decisions that earlier milestones established.
+> **Shipped milestones live in `milestones_archived.md`** (M1, M2, M2.5, M3, M3.5, M4, M5, M6, M7, M8 all phases, M10, M11, M12 all phases, M14 Slice A, M16 all phases, M17, M18, M19, M22, M23, M24, M25, M27 all phases, M29 all phases). **Parked milestones** (work that isn't being picked up right now) also live in the archive — currently M13. This file is for active + upcoming work + the cross-cutting architectural decisions that earlier milestones established.
 
 ## Phases (map)
 
 **Active / upcoming:**
 
-- **M13** — Chat anti-abuse + moderation [parked — design needs review]
 - **M14** — Outcome pipeline hardening (reframed from "automated outcome adapters" — observability + reliability + coverage of the auto-fetch pipeline; Slice A + Phase 1 shipped, Phases 2–4 remain)
 - **M20** — Notifications (email infrastructure + per-event preferences UI; M20 owns the surface end-to-end)
 - **M21** — Blacklist + safety (block users from listings + chat, with anti-evasion considerations)
 - **M15** — Multi-game expansion (FACEIT, OpenDota, Riot adapters)
 - **M26** — Filament-managed CMS pages (Privacy, Terms, About — multilingual schema, SEO-indexable via global Inertia SSR; Phases 1–3 shipped; small follow-up for og: tags + APP_NAME; Phase 4 locale switcher deferred until a second language ships)
 - **M28** — Designed Fees page (transparent commission disclosure, interactive calculator, header nav — hand-coded React, NOT CMS-managed)
+- **M30** — Admin user management (Filament `UserResource` — search, view, impersonate, manual email verify, reset 2FA, ban toggle; closes the biggest support gap in the admin panel)
+- **M31** — Admin wallet ledger (Filament `WalletTransactionResource`, read-only — filter / sort / drill into every money movement; the money-audit surface for the custodial platform)
+- **M32** — Admin listing management (Filament `ListingResource` — index, filter, force-cancel via the existing `CancelListingAction` so escrow releases cleanly)
 
 > Active milestone keeps a detailed task list. Future milestones expand when started. Any of this can shift — flag the change, update the doc.
 
@@ -38,32 +40,6 @@ Decisions made earlier that have shaped a lot of code downstream. Not locked —
 - **User-supplied free-text never lands in system messages** (M10 Phase 3). System messages bypass the M13 chat anti-abuse layer by construction. Any user-supplied text (cancellation reasons, future dispute notes, etc.) surfaces in structured banner UI we control — never spliced into chat lifecycle narration. The banner is the sanitization surface; chat stays for player-to-player communication that DOES go through M13 filters.
 - **Outcome is API-truth, not player self-report** (M16). Match results come from the game API (Lichess stream, chess.com archive polling) — not from "I won / lost / drawn" player buttons. Player self-reports were always non-binding (the API was the tiebreaker on disagreement); M16 removes the redundant confirm layer entirely. The dispute surface (`Report a problem`) survives as the manual escalation path for unresolvable cases. "Mutual cancellation" (M10) remains the cooperative early-exit when no game gets played.
 - **Trust signal = single composite "completion rate", not per-failure-mode rates** (M18 Phase 3 Slice B). One metric — "of your engaged matches, how many reached Settled?" — replaces separate dispute + cancellation rate badges. Positive framing (higher = better), forgiveness buffer for cooperative cancellation (3 free per rolling 30 days), no arbitrary threshold colors, no initiator-vs-defender ambiguity (a match that's disputed-then-settled is still a completion for both parties). Rolling 30-day headline + lifetime breakdown in the "more info" modal. Shown on both profile pages and listing rows so the signal travels with the user wherever their reputation might matter.
-
----
-
-## M13 — Chat anti-abuse + moderation
-
-Chat is the highest-abuse-surface feature on the platform. M13 builds the policing layer. M12 shipped so admin tools now exist for reviewing flags + banning abusers.
-
-### Phases
-
-**Phase 1 — Off-platform deal detection** (~2-3 days)
-
-- [ ] Regex flags in `SendMessageAction`: TRC20 wallet addresses (`T[1-9A-HJ-NP-Za-km-z]{33}`), ERC20 addresses (`0x[a-fA-F0-9]{40}`), BTC addresses, common payment-method names ("revolut", "paypal", "venmo", "cashapp"), messenger handles ("telegram @", "discord:", "wickr"), trade-coordination keywords ("send me", "outside stakly", "off platform").
-- [ ] Flagged messages still post (we don't want to tip the abuser), but write to a `flagged_messages` table with the trigger pattern.
-- [ ] Filament dashboard widget: recent flags, click-through to chat context.
-
-**Phase 2 — Rate limits + report-user button** (~1-2 days)
-
-- [ ] Per-user chat rate limit (10 messages / 10s, already in M8 Phase 2 — Phase 2 here adds the soft-warn UI: "You're sending messages quickly — pause a moment").
-- [ ] Per-match-day cap (200 messages/day/user/match) — prevents flooding.
-- [ ] Report-user button on each message: opens a Filament-routed report record with the message ID, reporter, reason.
-
-**Phase 3 — Blocked words + admin moderation tools** (~2 days)
-
-- [ ] Configurable blocked words list (slurs, harassment terms). Filtered server-side in `SendMessageAction` — message is replaced with a placeholder + flagged for admin.
-- [ ] Admin moderation panel: list flagged + reported users, ban/mute tools, history of actions per user.
-- [ ] Mute = can't send messages for N hours (configurable). Ban = account suspended (manual unban only).
 
 ---
 
@@ -448,4 +424,78 @@ Not CMS-managed on purpose. The Filament CMS template (`cms/page.tsx`) is intent
 - A/B testing infrastructure for headline copy. Premature for a page that isn't even live yet.
 - Affiliate / referral fee tracking. Different scope; if revenue-share programs ship, they own their own page.
 - Localised currency conversion ("how much is this in EUR?"). USDT is the unit on every Stakly surface; introducing currency conversion UI confuses the platform's denomination.
+
+---
+
+## M30 — Admin user management
+
+A first-class user moderation + support surface inside Filament. Today the admin panel has zero user UI — moderation, investigation, manual interventions all require Tinker queries. The first time a real user files a support ticket or a chat-abuse report surfaces, the admin needs to investigate without dropping to the shell. M30 closes that gap.
+
+This is the single biggest support gap in the panel today. For a custodial money platform with player-to-player chat, the longer it takes to act on abuse, the worse it gets.
+
+### Design decisions taken into this milestone
+
+- **Index page** — table search across `username`, `name`, `email`. Filters: verified email yes/no, banned yes/no, has-2FA yes/no, has-active-listing yes/no. Sortable by `created_at`, `usdt_balance`, `settled_lifetime`. Hides `is_platform = true` rows (consistent with how every user-facing surface hides them).
+- **View page — stacked sections.** Profile summary (avatar, name, username, bio, member-since), linked accounts (provider + verified date), wallet snapshot (balance + lifetime fees paid + last deposit), username history (released handles from `username_history` + reservation expiry), recent listings (last 10 with state badges), recent matches (last 10 with status badges), open disputes the user is party to.
+- **Impersonate action.** Single highest-leverage support tool. Logs in as the user; reproducing a bug report from their view is impossible otherwise. Implementation: signed temporary token (15 min) + audit row written to a new `admin_impersonations` table so we can see who used it and why. Bypasses 2FA on the way in (the admin already authenticated; re-prompting 2FA defeats the purpose). Blocked for `is_platform` users. Surfaces a persistent "viewing as {user}" banner across the impersonated session with a one-click exit.
+- **Manual email verify action.** Flip `email_verified_at` to now. Forgot-password + inbox-issue support scenarios.
+- **Reset 2FA action.** Clear `two_factor_secret` / `two_factor_recovery_codes` / `two_factor_confirmed_at`. User locked out of their authenticator; admin re-allows them to enroll on next login.
+- **Ban action — column lands here, enforcement is M21.** Adds `users.banned_at` (nullable timestamp) + a Filament toggle that flips it. M21 (blacklist + safety) is the milestone that fully wires the ban into take-listing / chat / marketplace guards — but the column exists here so the admin can stop bleeding while M21 lands. Until M21 ships, the toggle is informational and hides the user from marketplace listings; full enforcement (chat-send block, take-listing block) routes through M21's guards.
+- **No delete action.** Hard-deleting users breaks FK chains across listings, matches, messages, wallet transactions. `banned_at` is the correct mechanism. If a user requests data deletion under privacy law, that is a user-owned legal call, not an engineering action.
+- **Invariant verification button** in the wallet snapshot section. Recomputes `SUM(wallet_transactions WHERE user_id = X)` and asserts equals `users.usdt_balance`. Reports drift in red. Should always pass; the button exists to catch a regression early when poking around a problem user.
+
+### Not in M30
+
+- Bulk actions (bulk ban, bulk verify). Solo-dev support cadence doesn't need bulk operations.
+- Full M21 ban-enforcement wiring. The `banned_at` column lands here; the take-listing / chat / marketplace guards are M21's scope.
+- Admin action audit log (who banned whom, when). Useful once there are multiple admins; today the solo dev is the only one acting and `git log` + the impersonation table cover the audit need. Worth revisiting if a second admin ever joins.
+- Polished "your account has been suspended" page for banned users. Banned users see a generic banner via M21; the full design polish can come later.
+- Notification preference / linked account mutating on behalf of the user. View-only on the user page is enough; changes to those values should still go through the user-facing settings flow.
+
+---
+
+## M31 — Admin wallet ledger
+
+Read-only audit visibility into every money movement on the platform. The single most important support tool for a custodial platform — without it, "where did my $12.50 go?" requires reconstructing the ledger by hand in Tinker. M31 makes the answer one filter-click away.
+
+The architectural decisions about money writes (M3.5 — Wallet service is the only path, BCMath strings, append-only ledger) all stay intact. This milestone is purely a read surface on top of the ledger that already exists.
+
+### Design decisions taken into this milestone
+
+- **Read-only resource.** Zero write actions, zero mass-mutation. Every money write must continue to go through `App\Services\Wallet` to preserve the `users.usdt_balance == SUM(wallet_transactions.amount)` invariant asserted in `WalletTest.php`. Filament resources default to allowing edit / create — both explicitly disabled here.
+- **Index columns** — user (link to UserResource view), type badge (Deposit / Hold / Release / Payout / Fee / Withdrawal with semantic colors mirroring the wallet UI), amount (right-aligned, BCMath-string display, NOT cast to float for display precision), `reference_id` (truncated with copy-to-clipboard), `created_at` (humanized + raw on hover).
+- **Filters** — user typeahead (by username), type multi-select, date range, amount range, `reference_id` contains.
+- **View page** — full row data plus contextual links. If `reference_id` matches a known pattern (`match-{id}` / `listing-{id}` / `cancel-{id}`), surface a link to the related match or listing. "Sibling transactions" section lists other rows sharing the same `reference_id` — useful for the deposit-confirm pattern where one event generates several rows.
+- **Footer sum.** Below the table, total of currently-visible rows broken down by type. Lets the admin filter "type = Fee, this month" and see the platform's monthly revenue in one click without exporting. `OpsOverview` widget already gives a top-line number; this is the drill-down.
+- **No "create transaction" action.** If a manual correction is ever genuinely needed, it routes through a future `Wallet::adjust(...)` method that does not exist today. By design — every money write today has a domain reason routed through a specific service method.
+
+### Not in M31
+
+- CSV export. Useful for tax / accounting but premature pre-launch. Add when the user actually needs it.
+- Charts / time-series of money flow. Visual summary belongs on the dashboard widget, not the resource list. `OpsOverview` already exposes monthly platform earnings.
+- Per-currency filtering. USDT-only today; if M15-era multi-currency happens, this extends.
+- Refund / adjust mutation actions. Genuinely don't belong here — refunds happen via `Wallet::release` triggered by match-state events; manual adjustments don't have a domain reason today.
+- Cross-user transfer / "send money from A to B" action. Same reason — no domain trigger, just a footgun if it existed.
+
+---
+
+## M32 — Admin listing management
+
+Operational visibility + force-cancel for the marketplace. The lowest-urgency of the three admin gaps, but enables takedown of abusive listings (sub-penny stakes, off-platform deal solicitation in the title, harassment-style descriptions) without dropping to Tinker. Admin views every listing the same way users see them, plus a single moderation action.
+
+### Design decisions taken into this milestone
+
+- **Index columns** — id, creator (link to UserResource view), state badge (Open / Taken / Cancelled / Expired), platform (chess.com / Lichess), stake_amount (right-aligned), skill range, time controls, region, languages, created_at, expires_at.
+- **Filters** — state multi-select, platform, stake range, creator typeahead, region, has-language.
+- **One action: Force cancel.** Routes through the existing `CancelListingAction` so escrow releases via `Wallet::release` and the ledger stays clean — the admin never writes to `usdt_balance` directly. Confirm dialog names the listing id + stake + creator so a wrong click is hard. Listing must be in `Open` state; Taken / Cancelled / Expired states have no force-cancel action (the corresponding match flow handles those cases through `GameMatchResource`).
+- **View page.** Full listing data, related match (if Taken — link to `GameMatchResource`), related wallet transactions (escrow hold + any release on cancel).
+- **No edit action.** Stake / skill range / platform are immutable on a real listing — changing them mid-flight invalidates expectations for any taker. If a listing needs changes, the right path is force-cancel + the creator re-creates.
+- **No bulk cancel.** One listing at a time; bulk-cancel is a footgun and there's no operational scenario that needs it.
+
+### Not in M32
+
+- Manual "create listing on behalf of a user" action. No legitimate support reason; a vector for admin abuse if it existed.
+- Force-expire (separate from force-cancel). The expiry clock is automatic; manual expiry without refund is a money operation that should go through the existing cancellation path. If we ever need "skip the timer," it's the cancellation action with the same refund behavior.
+- Listing dispute moderation (separate from match dispute moderation). Match disputes are covered by `GameMatchResource` (M12). Pre-match listing disputes don't exist as a concept.
+- Editing listing description / title (no fields exist today on listings — listing is just stake + skill + time control + region + languages). If a future listing schema adds free-text fields, moderation routes through M13 chat-anti-abuse patterns, not via direct admin edits.
 

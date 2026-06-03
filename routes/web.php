@@ -11,6 +11,8 @@ use App\Http\Controllers\PageController;
 use App\Http\Controllers\UserController;
 use App\Http\Controllers\WalletController;
 use App\Models\Page;
+use App\Models\UsernameHistory;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', [HomeController::class, 'index'])->name('home');
@@ -89,7 +91,30 @@ Route::get('/listings/{listing}', [ListingController::class, 'show'])->name('lis
 
 // Public read-only player profile. Resolved by `username` via User's
 // getRouteKeyName override. The platform user is hidden inside the controller.
-Route::get('/users/{user:username}', [UserController::class, 'show'])->name('users.show');
+// `missing()` callback redirects 301 from a released handle still inside its
+// 30-day `username_history` reservation to the original owner's current
+// profile — keeps old bookmarks + indexed URLs working after a rename.
+Route::get('/users/{user:username}', [UserController::class, 'show'])
+    ->name('users.show')
+    ->missing(function (Request $request) {
+        $handle = $request->route('user');
+
+        if (! is_string($handle)) {
+            abort(404);
+        }
+
+        $historyRow = UsernameHistory::reserved()
+            ->where('username', $handle)
+            ->whereNotNull('user_id')
+            ->with('user')
+            ->first();
+
+        if ($historyRow?->user !== null) {
+            return redirect()->route('users.show', ['user' => $historyRow->user], 301);
+        }
+
+        abort(404);
+    });
 
 // Wallet UI (M7). All routes require auth + verified email. The platform user
 // is explicitly 403'd in each controller method — defense in depth on top of

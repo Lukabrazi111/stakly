@@ -851,3 +851,89 @@ Final design landed after three iterations (icon-tile + custom Switch → single
 
 ---
 
+## M29 — Editable username (with cooldown + reservation) ✅ shipped 2026-06-03
+
+Registration auto-derives the username via `Str::slug($name)` — users have no direct control over their handle at signup. M29 gives them a one-per-month rename path, with the guardrails a money platform needs: a 30-day cooldown on a per-user basis, a 30-day reservation on the released handle so nobody can impersonate the original holder, a hard block while the user has an in-flight match or open dispute, and a 301 redirect from the released handle to the current owner during the reservation window so old bookmarks + indexed URLs stay alive.
+
+Full name remains freely editable (no cooldown, no audit). It's display-only — not a route key, not a reputation key, none of username's weight.
+
+### Design decisions taken into this milestone
+
+- **30-day cooldown.** Once renamed, the user can't rename again for 30 days. Matches GitHub / eBay precedent. Stops "rename mid-match to dodge a dispute" abuse.
+- **30-day reservation on the released handle.** Old handle goes into `username_history` and can't be reclaimed by anyone — including the original owner — during the window. Mitigates impersonation: if Alice renames `alice-pro → alice-new`, nobody can grab `alice-pro` for 30 days.
+- **In-flight match blocks rename.** Any `GameMatch` where the user is participant and status ∈ {Pending, Disputed, ManualReview} blocks the field. One blocker key (`in_flight_match`) covers all three sub-states.
+- **M9 withdrawal blocker deferred.** No withdrawal model exists yet (chain paused). Clean spot to add when M9 resumes.
+- **Active listings DO NOT block.** Listings link to user by FK id, not handle. The 30-day URL redirect covers shared listing-detail links during the window.
+- **Old URL → current owner redirect.** During the 30-day reservation, hitting `/users/{old-handle}` 301-redirects to the current owner's profile via the route's `missing()` callback querying `UsernameHistory::reserved()`.
+- **Atomic rename via `ChangeUsernameAction`.** Row-locks the user inside a transaction, re-checks blockers + availability, writes the reservation row, bumps `username_changed_at` — closes the validate-then-act race.
+- **Lowercase normalization at the FormRequest layer.** `prepareForValidation` lowercases the input (`Alice-Pro` → `alice-pro`) so the storage / display invariant holds without surprising the user with a rejection.
+- **Full name stays freely editable.** Already worked via the existing `ProfileController::update`. No cooldown, no audit — `name` doesn't have the load that `username` does.
+
+### Phases
+
+**Phase 1 — Drop `@` from listings username display** ✅ shipped 2026-06-03
+
+Two-line tweak in `components/listings/listing-row.tsx`: removed the `@` prefix from both the rendered username and the `aria-label`. Companion fix bundled in: gave the Take CTA wrapper a fixed `md:w-44` and added a matching placeholder column to the desktop header strip in `pages/listings/index.tsx`, so the `Ends in` / `Stake` header labels sit over their data columns instead of drifting over the Take button.
+
+**Phase 2 — Schema + model** ✅ shipped 2026-06-03
+
+- `users.username_changed_at` (nullable `immutable_datetime`) — cooldown anchor.
+- `username_history` table — `id`, `user_id` FK (`nullOnDelete` so history survives a hard-delete and keeps the reservation timer), `username` (indexed), `released_at` (indexed).
+- `UsernameHistory` model — `user()` BelongsTo + `scopeReserved()` (rows where `released_at > now`).
+- `User` model — constants `USERNAME_CHANGE_COOLDOWN_DAYS = 30` / `USERNAME_RESERVATION_DAYS = 30`, the `RESERVED_USERNAMES` list lifted up from `CreateNewUser` so both registration and rename share it, `usernameHistory()` HasMany, and three helpers: `canChangeUsername()`, `usernameChangeAvailableAt()`, `usernameChangeBlockers()`.
+
+**Phase 3 — Backend update path + tests** ✅ shipped 2026-06-03
+
+- `ProfileUpdateRequest` extended — username rule is `sometimes|required|min:3|max:30|regex:^[a-z0-9]+(?:-[a-z0-9]+)*$|unique`. Auto-lowercase via `prepareForValidation`. An `after()` callback layers the domain checks: reserved-word rejection, reservation rejection, cooldown + in-flight-match blocker messages. `sometimes` so existing PATCH payloads that omit username still pass.
+- `App\Actions\Profile\ChangeUsernameAction` — `DB::transaction` + `User::lockForUpdate()`, re-checks blockers + reserved-words + uniqueness + reservation, writes the old handle to `username_history` with `released_at = now() + 30 days`, updates `users.username` + `users.username_changed_at`. No-op when the submitted value equals the current handle.
+- `ProfileController::update` — pulls `username` out of validated, runs the action when it differs from current.
+- 27 Pest feature tests in `tests/Feature/Settings/UsernameChangeTest.php` — happy path, history-row shape (`released_at = now + 30d`), lowercase normalization, idempotent same-value submit, 8 format edge cases (leading / trailing / consecutive hyphens, underscore, space, dot, too short, too long), reserved-word rejection, uniqueness rejection, reservation window (own + others), reservation expiry, cooldown enter / exit, in-flight match / dispute / manual-review blockers, terminal-match non-blockers, User-model helpers.
+
+**Phase 4 — Frontend UI** ✅ shipped 2026-06-03
+
+- `HandleInertiaRequests::share` exposes `auth.user.username_edit: { can_change, available_at, blockers }`.
+- `resources/js/types/auth.ts` — `username_edit` typed on `User`.
+- `pages/settings/profile.tsx` — username field above name, lowercase on input, disabled when `!can_change`, helper text branches (cooldown date / in-flight-match message / default format hint). Server-side errors flow into `InputError`.
+- Confirmation dialog intercepts submit when the field is dirty + allowed. Cancel keeps form open; Confirm fires `submitForm()`. Quotes before/after handles so the user sees what they're changing.
+- Live preview — `ProfilePreview` reads `data.username` (not the saved value) so the handle on the preview card updates as the user types.
+
+**Phase 5 — Old-URL redirect during the reservation window** ✅ shipped 2026-06-03
+
+- `routes/web.php` — `users.show` route's `missing()` callback queries `UsernameHistory::reserved()->where('username', $handle)->whereNotNull('user_id')`. If found, 301 → the current owner via `redirect()->route('users.show', ['user' => $historyRow->user], 301)` (binds via `getRouteKeyName() = 'username'`, so picks up the user's current handle).
+- 7 Pest feature tests in `tests/Feature/UsernameRedirectTest.php` — in-window redirect, expired-window 404, chained-rename behavior (verifies the 30-day cooldown == 30-day reservation symmetry so only the most recent prior handle stays redirected), orphan history rows (user hard-deleted) → 404, unknown handle → 404, current owner of a previously-released handle renders normally (no redirect loop), stale history row with past `released_at` doesn't trigger redirect.
+
+### Cleanup decision (post-ship)
+
+- **No scheduled cleanup of `username_history`.** Volume is bounded by the 30-day cooldown (max ~12 rows / user / year), each row is ~80 bytes, and the rows retain audit value beyond the reservation window (who used to be called X, useful for support tickets and abuse investigations). Easy to add a daily prune-after-1-year Artisan command later if it ever matters; no schema lock-in by waiting.
+
+### Not in M29
+
+- Pick-your-own-username at registration. Considered when discussing whether to remove rename entirely; landed on keeping rename (Option A) since registration auto-derives via `Str::slug($name)` and users need *some* way to fix a bad handle. A pick-at-registration flow stays an option later if rename ever proves too noisy.
+- "Formerly known as alice-pro" trust signal on the profile. The data exists in `username_history`; rendering it is a future trust-signal decision, not engineering scope today.
+- Username change audit log shown on the profile. The data is in `username_history` — surface it if a use case appears.
+- Cleanup / pruning job. See cleanup decision above.
+
+---
+
+## Parked milestones
+
+Work that has a clear shape but isn't being picked up right now. Lives in the archive so the active milestones list stays focused on what we can act on; revisit if priorities shift.
+
+### M13 — Chat anti-abuse + moderation [parked]
+
+**Why parked:** the original framing assumed every flagged-keyword case was a clear off-platform-deal attempt, but the actual designs (regex flags + flagged-messages dashboard + per-day caps + blocked-words list) need a tighter problem definition before they're worth building. Pre-launch with no real chat volume, building a moderation pipeline against hypothetical patterns risks false positives across legitimate match-coordination chat. Revisit once there's real chat traffic to study OR a concrete abuse incident to design against.
+
+**Sketch that was drafted (kept for future reference):**
+
+- Phase 1 — Off-platform deal detection: regex flags in `SendMessageAction` for TRC20 / ERC20 / BTC addresses + payment-method names + messenger handles + trade-coordination phrases. Flagged messages still post (don't tip the abuser) but write to a `flagged_messages` table with the trigger pattern. Filament dashboard widget for recent flags.
+- Phase 2 — Rate limits + report-user button: per-user chat soft-warn UI on top of the M8 Phase 2 10-msg/10s limit, per-match-day cap (200 messages), per-message report-user button writing a Filament-routed report.
+- Phase 3 — Blocked words + admin moderation tools: configurable blocked-words list (slurs / harassment) filtered server-side, admin moderation panel for flagged + reported users, mute / ban tools with history.
+
+**Adjacent dependencies (when picked up):**
+
+- M20 — could add `MessageFlaggedForReviewNotification` (admin bell) using M27's dispatch pattern.
+- M21 — blacklist enforcement overlaps with mute / ban; align the two before scoping M13's admin tools to avoid duplicate ban paths.
+- M30 — admin user ban / moderation actions land in M30; M13's mute is a chat-specific subset rather than an account-wide ban.
+
+
+
