@@ -5,6 +5,8 @@ namespace App\Filament\Resources\Users\Pages;
 use App\Filament\Resources\Users\UserResource;
 use App\Models\User;
 use App\Models\UserModerationLog;
+use App\Notifications\AccountBanned;
+use App\Notifications\AccountRestored;
 use Filament\Actions\Action;
 use Filament\Forms\Components\Textarea;
 use Filament\Notifications\Notification;
@@ -128,16 +130,21 @@ class ViewUser extends ViewRecord
                     ? UserModerationLog::ACTION_UNBAN
                     : UserModerationLog::ACTION_BAN;
 
-                DB::transaction(function () use ($record, $newState, $action, $data): void {
+                $log = DB::transaction(function () use ($record, $newState, $action, $data): UserModerationLog {
                     $record->forceFill(['banned_at' => $newState])->save();
 
-                    UserModerationLog::create([
+                    return UserModerationLog::create([
                         'user_id' => $record->id,
                         'admin_user_id' => auth()->id(),
                         'action' => $action,
                         'reason' => $data['reason'],
                     ]);
                 });
+
+                $record->notify($action === UserModerationLog::ACTION_BAN
+                    ? new AccountBanned($log)
+                    : new AccountRestored($log),
+                );
 
                 Notification::make()
                     ->title($action === UserModerationLog::ACTION_BAN

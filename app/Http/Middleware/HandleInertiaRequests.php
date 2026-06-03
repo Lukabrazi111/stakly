@@ -44,6 +44,12 @@ class HandleInertiaRequests extends Middleware
         // no N+1 across the hot Inertia shared-data path.
         $user?->load('linkedAccounts');
 
+        // Only join the moderation log when the user is actually banned —
+        // skips an extra query on every Inertia request for the common case.
+        if ($user !== null && $user->banned_at !== null) {
+            $user->load('latestBanLog');
+        }
+
         return [
             ...parent::share($request),
             'name' => config('app.name'),
@@ -80,6 +86,10 @@ class HandleInertiaRequests extends Middleware
                         'available_at' => $user->usernameChangeAvailableAt()?->toIso8601String(),
                         'blockers' => $user->usernameChangeBlockers(),
                     ],
+                    'ban' => $user->banned_at !== null ? [
+                        'reason' => $user->latestBanLog?->reason ?? __('Reason not recorded.'),
+                        'banned_at' => $user->banned_at->toIso8601String(),
+                    ] : null,
                 ] : null,
             ],
             'status' => fn () => $request->session()->get('status'),

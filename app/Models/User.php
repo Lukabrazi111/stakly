@@ -148,6 +148,24 @@ class User extends Authenticatable implements FilamentUser, HasMedia, MustVerify
         return $this->hasMany(UsernameHistory::class);
     }
 
+    public function moderationLogs(): HasMany
+    {
+        return $this->hasMany(UserModerationLog::class);
+    }
+
+    /**
+     * Latest `action = ban` row for this user — the source of truth for the
+     * suspension reason rendered by the persistent banner + bell card. After
+     * an unban this row stays in `user_moderation_logs` (append-only audit),
+     * but the banner only reads it while `banned_at !== null`.
+     */
+    public function latestBanLog(): HasOne
+    {
+        return $this->hasOne(UserModerationLog::class)
+            ->where('action', UserModerationLog::ACTION_BAN)
+            ->latestOfMany();
+    }
+
     public function canChangeUsername(): bool
     {
         return $this->usernameChangeBlockers() === [];

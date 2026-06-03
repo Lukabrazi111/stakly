@@ -1,6 +1,8 @@
 import { Link } from '@inertiajs/react';
 import {
     AlertTriangle,
+    BadgeCheck,
+    Ban,
     Check,
     Clock,
     Hand,
@@ -29,6 +31,8 @@ const ICONS: Record<NotificationEventType, LucideIcon> = {
     cancellation_requested: Hand,
     cancellation_accepted: Check,
     cancellation_rejected: X,
+    account_banned: Ban,
+    account_restored: BadgeCheck,
 };
 
 function relativeTime(iso: string): string {
