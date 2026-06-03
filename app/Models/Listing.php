@@ -75,13 +75,17 @@ class Listing extends Model
 
     /**
      * Publicly takeable RIGHT NOW. Extends `scopeOpen` with the owner's
-     * Active Mode check — when the owner toggles Inactive, none of their
-     * listings appear in the public marketplace or visitor profile views.
+     * Active Mode check + the M30 ban gate — when the owner is suspended
+     * OR has toggled Inactive, none of their listings appear in the public
+     * marketplace or visitor profile views.
      */
     public function scopeOnPublicMarketplace(Builder $query): Builder
     {
         return $query
             ->open()
-            ->whereHas('user', fn (Builder $q) => $q->where('is_active_mode', true));
+            ->whereHas('user', fn (Builder $q) => $q
+                ->where('is_active_mode', true)
+                ->whereNull('banned_at'),
+            );
     }
 }

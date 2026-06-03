@@ -53,8 +53,12 @@ export type User = {
     username_edit: {
         can_change: boolean;
         available_at: string | null;
-        blockers: Array<'cooldown' | 'in_flight_match'>;
+        blockers: Array<'banned' | 'cooldown' | 'in_flight_match'>;
     };
+    ban: {
+        reason: string;
+        banned_at: string;
+    } | null;
     created_at: string;
     updated_at: string;
     [key: string]: unknown;

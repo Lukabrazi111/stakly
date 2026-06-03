@@ -42,6 +42,12 @@ class AdminUserSeeder extends Seeder
                 'username' => 'admin',
                 'password' => Hash::make($password),
                 'email_verified_at' => now(),
+                // M30 P3 — admin-panel gate redirects unenrolled admins to
+                // `/settings/security`. Stamping `two_factor_confirmed_at`
+                // here keeps local dev + CI smooth. For production, the
+                // operator should re-enroll for real 2FA after first login
+                // (admin → Settings → Security → Enable two-factor auth).
+                'two_factor_confirmed_at' => now(),
             ],
         );
 

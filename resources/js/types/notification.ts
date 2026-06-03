@@ -7,7 +7,9 @@ export type NotificationEventType =
     | 'dispute_resolved'
     | 'cancellation_requested'
     | 'cancellation_accepted'
-    | 'cancellation_rejected';
+    | 'cancellation_rejected'
+    | 'account_banned'
+    | 'account_restored';
 
 export interface Notification {
     id: string;

@@ -112,7 +112,13 @@ class User extends Authenticatable implements FilamentUser, HasMedia, MustVerify
             'notifications_last_seen_at' => 'datetime',
             'notification_sound' => 'string',
             'username_changed_at' => 'immutable_datetime',
+            'banned_at' => 'immutable_datetime',
         ];
+    }
+
+    public function isBanned(): bool
+    {
+        return $this->banned_at !== null;
     }
 
     /**
@@ -142,6 +148,24 @@ class User extends Authenticatable implements FilamentUser, HasMedia, MustVerify
         return $this->hasMany(UsernameHistory::class);
     }
 
+    public function moderationLogs(): HasMany
+    {
+        return $this->hasMany(UserModerationLog::class);
+    }
+
+    /**
+     * Latest `action = ban` row for this user — the source of truth for the
+     * suspension reason rendered by the persistent banner + bell card. After
+     * an unban this row stays in `user_moderation_logs` (append-only audit),
+     * but the banner only reads it while `banned_at !== null`.
+     */
+    public function latestBanLog(): HasOne
+    {
+        return $this->hasOne(UserModerationLog::class)
+            ->where('action', UserModerationLog::ACTION_BAN)
+            ->latestOfMany();
+    }
+
     public function canChangeUsername(): bool
     {
         return $this->usernameChangeBlockers() === [];
@@ -165,14 +189,19 @@ class User extends Authenticatable implements FilamentUser, HasMedia, MustVerify
 
     /**
      * One reason per condition currently blocking a rename. Empty array =
-     * allowed. Order is deliberate: cooldown first so a user inside the
-     * window sees the date instead of "you have a match" when both are true.
+     * allowed. Order is deliberate: banned first (it's terminal — every
+     * other blocker is moot for a suspended account), then cooldown (has a
+     * date), then in-flight match.
      *
-     * @return list<'cooldown'|'in_flight_match'>
+     * @return list<'banned'|'cooldown'|'in_flight_match'>
      */
     public function usernameChangeBlockers(): array
     {
         $blockers = [];
+
+        if ($this->isBanned()) {
+            $blockers[] = 'banned';
+        }
 
         if ($this->usernameChangeAvailableAt() !== null) {
             $blockers[] = 'cooldown';

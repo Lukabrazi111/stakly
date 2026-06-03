@@ -14,7 +14,7 @@ Frontend-first build. UI against real DB infrastructure + seeded fake data; back
 - **M15** — Multi-game expansion (FACEIT, OpenDota, Riot adapters)
 - **M26** — Filament-managed CMS pages (Privacy, Terms, About — multilingual schema, SEO-indexable via global Inertia SSR; Phases 1–3 shipped; small follow-up for og: tags + APP_NAME; Phase 4 locale switcher deferred until a second language ships)
 - **M28** — Designed Fees page (transparent commission disclosure, interactive calculator, header nav — hand-coded React, NOT CMS-managed)
-- **M30** — Admin user management (Filament `UserResource` — search, view, impersonate, manual email verify, reset 2FA, ban toggle; closes the biggest support gap in the admin panel)
+- **M30** — Admin user management (Filament `UserResource` — search, view, manual email verify, reset 2FA, ban toggle with real enforcement, mandatory 2FA on admin role, user-facing ban feedback, custom impersonation flow, 2FA challenge on every admin login; closes the biggest support gap in the admin panel + hardens admin access). **Phases 1 + 2 + 3 + 4 + 6 shipped 2026-06-03. Phase 5 (impersonate) remains.** <- (in process)
 - **M31** — Admin wallet ledger (Filament `WalletTransactionResource`, read-only — filter / sort / drill into every money movement; the money-audit surface for the custodial platform)
 - **M32** — Admin listing management (Filament `ListingResource` — index, filter, force-cancel via the existing `CancelListingAction` so escrow releases cleanly)
 
@@ -435,22 +435,88 @@ This is the single biggest support gap in the panel today. For a custodial money
 
 ### Design decisions taken into this milestone
 
-- **Index page** — table search across `username`, `name`, `email`. Filters: verified email yes/no, banned yes/no, has-2FA yes/no, has-active-listing yes/no. Sortable by `created_at`, `usdt_balance`, `settled_lifetime`. Hides `is_platform = true` rows (consistent with how every user-facing surface hides them).
-- **View page — stacked sections.** Profile summary (avatar, name, username, bio, member-since), linked accounts (provider + verified date), wallet snapshot (balance + lifetime fees paid + last deposit), username history (released handles from `username_history` + reservation expiry), recent listings (last 10 with state badges), recent matches (last 10 with status badges), open disputes the user is party to.
-- **Impersonate action.** Single highest-leverage support tool. Logs in as the user; reproducing a bug report from their view is impossible otherwise. Implementation: signed temporary token (15 min) + audit row written to a new `admin_impersonations` table so we can see who used it and why. Bypasses 2FA on the way in (the admin already authenticated; re-prompting 2FA defeats the purpose). Blocked for `is_platform` users. Surfaces a persistent "viewing as {user}" banner across the impersonated session with a one-click exit.
-- **Manual email verify action.** Flip `email_verified_at` to now. Forgot-password + inbox-issue support scenarios.
-- **Reset 2FA action.** Clear `two_factor_secret` / `two_factor_recovery_codes` / `two_factor_confirmed_at`. User locked out of their authenticator; admin re-allows them to enroll on next login.
-- **Ban action — column lands here, enforcement is M21.** Adds `users.banned_at` (nullable timestamp) + a Filament toggle that flips it. M21 (blacklist + safety) is the milestone that fully wires the ban into take-listing / chat / marketplace guards — but the column exists here so the admin can stop bleeding while M21 lands. Until M21 ships, the toggle is informational and hides the user from marketplace listings; full enforcement (chat-send block, take-listing block) routes through M21's guards.
+- **Always-rendered wallet invariant on the view page.** Compares `users.usdt_balance` to `SUM(wallet_transactions)` and renders a success/danger badge. Should always pass — exists to catch a regression early when investigating a problem user.
+- **Ban toggle requires a reason in both directions.** Initial ban captures *why*; lifting captures *why now*. Months later we want a single trail of "what happened" without cross-referencing.
+- **Ban actually does something day one — four enforcement guards land in M30.** The spec was originally "M30 ships the column, M21 wires the enforcement" but that leaves the toggle informational. Instead, M30 wires the four guards that actually *stop the bleed*: (1) `ListingController::create + store` rejects banned users so no new abuse-vector listings land; (2) `ProfileController::update` rejects banned users so they can't evade by changing name / avatar; (3) `ChangeUsernameAction` gains `banned` as a blocker on top of cooldown + in-flight-match, so rename isn't an evasion path; (4) listing-marketplace scopes filter `where('users.banned_at', null)` so existing listings disappear from the public board. M21 still owns chat-send-block, take-listing-block, polished "you've been suspended" page, blacklist (user-to-user) UI, and multi-account anti-evasion.
 - **No delete action.** Hard-deleting users breaks FK chains across listings, matches, messages, wallet transactions. `banned_at` is the correct mechanism. If a user requests data deletion under privacy law, that is a user-owned legal call, not an engineering action.
-- **Invariant verification button** in the wallet snapshot section. Recomputes `SUM(wallet_transactions WHERE user_id = X)` and asserts equals `users.usdt_balance`. Reports drift in red. Should always pass; the button exists to catch a regression early when poking around a problem user.
+- **Mandatory 2FA on admin role.** New middleware on `/admin/*` gates access on `two_factor_confirmed_at IS NOT NULL` for users with the `admin` Spatie role. Unenrolled admin → redirected to Fortify's existing two-factor-authentication enrollment page with a flash notice. Hardens the admin panel against credential phishing now that admin can impersonate any user. Uses Fortify's existing TOTP infrastructure — no new auth surface, just a route guard.
+- **Decision: admin 2FA challenge on every login bridges to Fortify (Phase 6), not a plugin swap.** P3's middleware enforces 2FA *enrollment* before reaching the panel, but Filament's built-in `->login()` form bypasses Fortify's pipeline, so the on-every-login TOTP prompt doesn't fire. The `stephenjude/filament-two-factor-authentication` plugin was evaluated 2026-06-03 and rejected: (a) its `TwoFactorAuthenticatable` trait collides method-name-wise with Fortify's, so installing it requires removing Fortify's 2FA *app-wide* — not localized to admin; (b) Stakly's `/settings/security` is Inertia/React but the plugin's 2FA setup is Livewire, so adopting it routes every user (not just admins) through Filament/Livewire for 2FA setup; (c) `spatie/laravel-passkeys` is a hard composer dep for an unused feature. DIY bridge instead — custom Filament `Login` subclass detects admins with 2FA, bounces to a Stakly-styled `/admin/two-factor-challenge` Inertia page that validates codes via Fortify's existing `TwoFactorAuthenticationProvider`, plus a defense-in-depth middleware that catches the same condition on direct panel hits. Reuses Fortify's TOTP setup at `/settings/security` unchanged; ~200 LOC + tests.
+- **User-facing ban feedback fires across three channels (P4).** When admin bans a user, the user MUST learn about it through (a) a persistent banner on every Stakly page they touch, (b) an in-app notification through M27's `PlayerNotification` pipeline (bell + `/notifications` page + real-time Reverb push), and (c) email. Production-grade: any single channel can fail (email in spam, user not on site for the bell push, banner missed because user is reading via email) — together the three guarantee the message lands. Same three channels on unban for symmetry.
+- **Ban-feedback banner is non-dismissible.** Banned users shouldn't be able to hide the explanation of why they can't act on the platform. Sticky at top of every page, destructive tone, includes the reason from `user_moderation_logs` + a link to the CMS Support page.
+- **Reason source of truth for ban feedback: `user_moderation_logs.reason`.** The banner reads the latest row where `action = 'ban'` via a new `auth.user.banned_reason` field exposed through `HandleInertiaRequests::share()`. The notification snapshots the reason in its own payload so old notifications keep showing the original reason even if a later ban/unban cycle changes "latest."
+- **Custom impersonation, not a package.** Stakly is custodial money — minimizing third-party auth packages is the call. The full flow (start route + session marker + banner + exit route + audit) is ~200 LOC under our control. Avoids tracking a package's compatibility matrix against Filament 5.x upgrades.
+- **Impersonation requires password confirm before start.** Mirrors GitHub. Route guarded by Fortify's `password.confirm` middleware — admin re-enters their password before the impersonation session starts, even if they're already in `/admin`. Re-confirms every hour (Fortify default).
+- **Impersonation auto-expires after 30 minutes.** `started_at` on the audit row; middleware compares against `now` and force-exits past 30 min. Prevents "admin walked away from the desk" scenarios.
+- **Impersonation banner rendered in `app.blade.php`.** Persists across every page the impersonating admin lands on — Stakly app pages, auth pages, error pages, even `/admin` if they navigate there. Single source of truth, no React provider plumbing. Shows "Viewing as @username · Exit" with the exit button always one click away.
+- **Impersonation reason required at start.** Free-text field on the start modal ("Investigating Alice's wallet-history bug"). The audit row's reason is the answer to "why did admin X impersonate user Y three weeks ago?" — timestamp alone is too thin.
+- **Impersonation exit returns to the user's admin page**, not the admin's previous location. Rationale: the admin came to this user's view page to impersonate; they'll likely want to act on what they saw (ban, take notes, escalate). They can navigate back to `/admin` manually if needed.
+- **Impersonation blocked for `is_platform` users, banned users, and self.** Three guards on the start route.
+
+### Phases
+
+**Phase 1 — Schema + `UserResource` scaffold + index page** ✅ shipped 2026-06-03
+
+Migrations for `users.banned_at` + the append-only `admin_impersonations` audit table; `Filament/Resources/Users/` folder; index page with 3-column search + 4 filters, `is_platform` excluded, `canCreate() = false`. `AdminImpersonation` model landed here too (was originally scoped to P5 — cleaner alongside the migration). Pest tests cover admin-only access + the filters / search / sort + no-create gate.
+
+**Phase 2 — View page + non-impersonate actions + ban enforcement** ✅ shipped 2026-06-03
+
+Schema: append-only `user_moderation_logs` (`action: ban | unban`, `UPDATED_AT = null`). `UserInfolist` with 7 stacked sections including an always-rendered wallet invariant badge that compares `users.usdt_balance` to `SUM(wallet_transactions.amount)`. Header actions: View as visitor / Verify email / Reset 2FA / Ban toggle (reason required both directions; DB transaction wraps `banned_at` flip + audit row write).
+
+`App\Support\BanGuard` helper centralises `isBanned()` / `rejectionMessage()` / `supportUrl()` across the four enforcement surfaces (listing create+store, profile update, username rename blocker, marketplace scope). 14 Pest tests across `UserResourceActionsTest` + `BanEnforcementTest`.
+
+Two calls flagged in the ship report: skipped the parallel `banned-user store-listing` test (the create-form test already proves the controller-level guard); switched flash style from `->with('toast', ...)` to `Inertia::flash('toast', ...)` because the former tripped `assertRedirect`'s session-error inspection.
+
+**Phase 3 — Mandatory 2FA for admin role** ✅ shipped 2026-06-03
+
+`App\Http\Middleware\RequireAdminTwoFactor` registered in `AdminPanelProvider::authMiddleware` — redirects admins without `two_factor_confirmed_at` to `/settings/security` with a toast flash. Non-admins fall through to Filament's `canAccessPanel` 403. `UserFactory::admin()` + `AdminUserSeeder` stamp the column so existing tests + local dev + CI don't trip the gate. Production checklist: operator re-enrolls real 2FA after first login.
+
+Gotcha documented in tests: `/settings/security` is itself behind Fortify's `password.confirm` (`confirmPassword: true` in `config/fortify.php`), so the real flow is `/admin → /settings/security → /user/confirm-password → /settings/security → enrolls 2FA`. 5 Pest tests assert the full chain.
+
+**Phase 4 — User-facing ban feedback (banner + bell + email)** ✅ shipped 2026-06-03
+
+P2 shipped enforcement (banned users can't act) but only a generic flash on guarded actions. P4 closes the explanation loop across three channels so the user can't miss it.
+
+- `BannedBanner` in `SiteLayout` above `SiteHeader`. Reads `auth.user.ban` ({reason, banned_at}) lazy-loaded via `User::latestBanLog` (HasOne with `latestOfMany`) only when `banned_at !== null` — unbanned users skip the join entirely.
+- `AccountBanned` / `AccountRestored` extend `PlayerNotification` but override `via()` to fan out `['database', 'broadcast', 'mail']` unconditionally. Bypasses parent's preference flow because moderation can't be silenced. Mail uses `MailMessage` greeting/line/action with Laravel's default `notifications::email` Blade layout — custom branded templates deferred to a polish pass.
+- Real-time banner refresh: `NotificationProvider` calls `router.reload({ only: ['auth'] })` on the `account_banned` / `account_restored` broadcast.
+- Dispatch sits outside the DB transaction (`ViewUser::banToggleAction`) so a queue/notification failure doesn't roll back the moderation write.
+- 9 Pest tests in `BanNotificationTest` (44 assertions) cover dispatch, channels, mail content, Inertia share, ban→unban→ban chain.
+
+Support CTA is `mailto:support@stakly.com` (dedicated `/support` page deferred to M21).
+
+**Phase 5 — Impersonate action + audit + banner**
+
+- [ ] Routes: `POST /admin/impersonate/{target}` (start), `POST /impersonate/exit` (stop). Both auth-gated; start additionally guarded by `password.confirm` middleware.
+- [ ] `ImpersonationController::start(User $target)` — guards against `is_platform`, `banned`, and self. Writes `admin_impersonations` row with `started_at`, `reason`, `ip_address`, `user_agent`. Sets session marker `impersonated_by` to the admin's id. Calls `Auth::login($target)`. Redirects to `route('home')`.
+- [ ] `ImpersonationController::stop()` — reads `impersonated_by`, force-logs back in as that admin, stamps `ended_at` on the active row, returns to the user's admin page (`route('filament.admin.resources.users.view', $target)`).
+- [ ] Header action on `ViewUser` page: "Impersonate" → opens modal with required reason Textarea → submits to start route.
+- [ ] Middleware `App\Http\Middleware\HandleImpersonation` — for any request with the `impersonated_by` session marker: (a) reject if `now() - started_at > 30 min` (force-exit and flash "Impersonation session expired"); (b) inject a Blade-renderable signal so the banner partial shows.
+- [ ] Blade partial `resources/views/partials/impersonation-banner.blade.php` included unconditionally in `app.blade.php`. Reads the session marker + target's username; renders the persistent banner with the exit `POST` form.
+- [ ] Pest tests: full round trip (start → see banner → exit → audit row has `ended_at`), reason required, password-confirm gate, 30-min auto-expiry, blocked for `is_platform` / `banned` / self, exit lands on the user's admin view page.
+
+**Phase 6 — Admin 2FA challenge on every login (bridge to Fortify)** ✅ shipped 2026-06-03
+
+Build-time research found Filament 5 ships **native multi-factor authentication** in `Filament\Auth\Pages\Login::authenticate()` — it iterates registered `MultiFactorAuthenticationProvider`s, swaps the login form to a challenge form, re-runs validation on submit, and rate-limits at 5 attempts per user. The original spec (custom login subclass + dedicated route + Inertia page + controller + middleware + rate limiter) collapses to a single provider class.
+
+- `App\Filament\MultiFactor\FortifyAppAuthentication` (5 contract methods, ~120 LOC) bridges Filament's MFA hook to Fortify's existing 2FA columns. `isEnabled` reads `two_factor_confirmed_at`. `getChallengeFormComponents` returns `OneTimeCodeInput` + recovery `TextInput` with toggle. Validation rules call into Fortify's `TwoFactorAuthenticationProvider::verify(Fortify::currentEncrypter()->decrypt($user->two_factor_secret), $code)` and `replaceRecoveryCode(...)`. `getManagementSchemaComponents` returns `[]` so the Filament panel doesn't leak its own 2FA setup UI — admins enroll at `/settings/security` (Inertia/React), same as every other user.
+- Registered in `AdminPanelProvider` via `->multiFactorAuthentication([FortifyAppAuthentication::make()])`. No custom login subclass, routes, controller, Inertia page, rate limiter, or middleware.
+- `RequireAdminTwoFactor` middleware (P3) stays — it enforces 2FA *enrollment* before reaching the panel; P6 enforces 2FA *challenge* on every login. Complementary, both run.
+- 8 Pest tests in `AdminTwoFactorChallengeTest` cover the full Livewire MFA flow including recovery code consumption + the admin-without-2FA fallthrough. TOTP codes generated per-test via `(new Google2FA)->getCurrentOtp(...)` — Fortify encrypts the secret via its own encrypter, not a model cast.
+
+No "I lost my TOTP device" cancel button: admins close the tab (no session leak, they're not logged in yet) and contact support, who uses the existing `reset_2fa` action in `ViewUser` (P2) to wipe the columns. Recovery codes remain the in-band escape.
 
 ### Not in M30
 
 - Bulk actions (bulk ban, bulk verify). Solo-dev support cadence doesn't need bulk operations.
-- Full M21 ban-enforcement wiring. The `banned_at` column lands here; the take-listing / chat / marketplace guards are M21's scope.
-- Admin action audit log (who banned whom, when). Useful once there are multiple admins; today the solo dev is the only one acting and `git log` + the impersonation table cover the audit need. Worth revisiting if a second admin ever joins.
-- Polished "your account has been suspended" page for banned users. Banned users see a generic banner via M21; the full design polish can come later.
+- Chat-send-block + take-listing-block enforcement of `banned_at`. Those land in M21 (blacklist + safety) — same column, additional guards inside `SendMessageAction` + `TakeListingAction`.
+- Polished "your account has been suspended" full-page landing (separate from the banner). M30 P4 ships the persistent banner + in-app notification + email — those cover the "user knows they're banned and why" surface area. A dedicated suspension-landing page (the experience when banned users click the banner's CTA or hit a guarded route) is still M21's scope alongside the broader appeals UX.
+- Multi-account / IP-evasion detection for banned users. Lives with M21's anti-evasion scope.
+- User-to-user blacklist UI (Alice blocks Bob). Different mental model — admin ban vs user-driven block. M21 owns the user-driven version.
+- Admin action audit log beyond `admin_impersonations` + `user_moderation_logs`. M30 P2 + P4 cover the two highest-leverage audit surfaces (ban actions, impersonation sessions). Broader action coverage — a generic `admin_actions` table logging every Filament action across every resource — is its own milestone; revisit when a second-admin scenario, internal-audit requirement, or specific compliance need drives the shape.
 - Notification preference / linked account mutating on behalf of the user. View-only on the user page is enough; changes to those values should still go through the user-facing settings flow.
+- Admin session timeout / IP allowlist / email-on-admin-login. Adjacent admin-hardening ideas; mandatory 2FA covers the highest-leverage threat (credential phishing). Layer more on if a concrete incident drives it.
+- Support / read-only admin role with restricted resource access. The `admin` Spatie role is the only privileged role today. When a real support hire happens, add a `support` role + per-resource Filament policies (read-only on UserResource / WalletTransactionResource, no impersonation, no ban, no 2FA reset). Doesn't block M30; revisit when there's a second person in the admin panel.
+- Built-in support ticket system / contact form. The CMS Support page covers the contact channel today (admin writes whatever — email / Discord / form). A dedicated ticket queue is its own milestone if volume justifies.
 
 ---
 
@@ -471,7 +537,7 @@ The architectural decisions about money writes (M3.5 — Wallet service is the o
 
 ### Not in M31
 
-- CSV export. Useful for tax / accounting but premature pre-launch. Add when the user actually needs it.
+- CSV export. Add when the user has a concrete external workflow that needs it (tax filing, accounting integration, auditor request) — the column / format decisions follow the destination.
 - Charts / time-series of money flow. Visual summary belongs on the dashboard widget, not the resource list. `OpsOverview` already exposes monthly platform earnings.
 - Per-currency filtering. USDT-only today; if M15-era multi-currency happens, this extends.
 - Refund / adjust mutation actions. Genuinely don't belong here — refunds happen via `Wallet::release` triggered by match-state events; manual adjustments don't have a domain reason today.

@@ -14,6 +14,7 @@ use App\Http\Resources\ListingResource;
 use App\Models\Listing;
 use App\Services\SellerTrust;
 use App\Services\Wallet;
+use App\Support\BanGuard;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -133,9 +134,15 @@ class ListingController extends Controller
      * count so the form can disable submit when stake > balance OR the cap
      * is hit. `StoreListingRequest` re-validates both server-side.
      */
-    public function create(Request $request): Response
+    public function create(Request $request): Response|RedirectResponse
     {
         $user = $request->user();
+
+        if (BanGuard::isBanned($user)) {
+            Inertia::flash('toast', ['type' => 'error', 'message' => BanGuard::rejectionMessage()]);
+
+            return to_route('listings.index');
+        }
 
         $activeCount = $user->listings()
             ->where('status', ListingStatus::Open)
@@ -232,6 +239,12 @@ class ListingController extends Controller
      */
     public function store(StoreListingRequest $request, CreateListingAction $action): RedirectResponse
     {
+        if (BanGuard::isBanned($request->user())) {
+            Inertia::flash('toast', ['type' => 'error', 'message' => BanGuard::rejectionMessage()]);
+
+            return to_route('listings.index');
+        }
+
         try {
             $result = $action->handle($request->user(), $request->validated());
         } catch (InsufficientBalanceException) {

@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Settings;
 use App\Actions\Profile\ChangeUsernameAction;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Settings\ProfileUpdateRequest;
+use App\Support\BanGuard;
 use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -29,6 +30,12 @@ class ProfileController extends Controller
      */
     public function update(ProfileUpdateRequest $request, ChangeUsernameAction $changeUsername): RedirectResponse
     {
+        if (BanGuard::isBanned($request->user())) {
+            Inertia::flash('toast', ['type' => 'error', 'message' => BanGuard::rejectionMessage()]);
+
+            return to_route('profile.edit');
+        }
+
         $validated = $request->validated();
         $avatarFile = $request->file('avatar');
         unset($validated['avatar']);

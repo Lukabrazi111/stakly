@@ -1,4 +1,4 @@
-import { usePage } from '@inertiajs/react';
+import { router, usePage } from '@inertiajs/react';
 import { useEchoNotification } from '@laravel/echo-react';
 import {
     createContext,
@@ -108,6 +108,16 @@ function AuthedNotificationProvider({
 
             if (soundMap[payload.event_type] !== false) {
                 playSound();
+            }
+
+            // Account moderation events flip the persistent banner + the
+            // marketplace guards in shared data. Reload `auth` so the new
+            // state lands without waiting for the next navigation.
+            if (
+                payload.event_type === 'account_banned' ||
+                payload.event_type === 'account_restored'
+            ) {
+                router.reload({ only: ['auth'] });
             }
         },
     );

@@ -152,11 +152,13 @@ export default function Profile({
 
     const handleSubmit = (e: FormEvent) => {
         e.preventDefault();
+
         if (usernameDirty && usernameEdit.can_change) {
             setUsernameConfirmOpen(true);
 
             return;
         }
+
         submitForm();
     };
 
@@ -551,9 +553,13 @@ function UsernameHelper({
     blocker,
     availableAt,
 }: {
-    blocker: 'cooldown' | 'in_flight_match' | null;
+    blocker: 'banned' | 'cooldown' | 'in_flight_match' | null;
     availableAt: string | null;
 }) {
+    if (blocker === 'banned') {
+        return null;
+    }
+
     if (blocker === 'cooldown' && availableAt) {
         const date = new Date(availableAt).toLocaleDateString('en-US', {
             month: 'short',
