@@ -5,6 +5,7 @@ namespace App\Http\Requests\Settings;
 use App\Concerns\ProfileValidationRules;
 use App\Models\User;
 use App\Models\UsernameHistory;
+use App\Support\BanGuard;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Foundation\Http\FormRequest;
@@ -116,6 +117,7 @@ class ProfileUpdateRequest extends FormRequest
     private function blockerMessage(string $blocker, User $user): string
     {
         return match ($blocker) {
+            'banned' => BanGuard::rejectionMessage(),
             'cooldown' => __('You can change your username again on :date.', [
                 'date' => $user->usernameChangeAvailableAt()?->format('M j, Y') ?? '',
             ]),

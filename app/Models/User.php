@@ -171,14 +171,19 @@ class User extends Authenticatable implements FilamentUser, HasMedia, MustVerify
 
     /**
      * One reason per condition currently blocking a rename. Empty array =
-     * allowed. Order is deliberate: cooldown first so a user inside the
-     * window sees the date instead of "you have a match" when both are true.
+     * allowed. Order is deliberate: banned first (it's terminal — every
+     * other blocker is moot for a suspended account), then cooldown (has a
+     * date), then in-flight match.
      *
-     * @return list<'cooldown'|'in_flight_match'>
+     * @return list<'banned'|'cooldown'|'in_flight_match'>
      */
     public function usernameChangeBlockers(): array
     {
         $blockers = [];
+
+        if ($this->isBanned()) {
+            $blockers[] = 'banned';
+        }
 
         if ($this->usernameChangeAvailableAt() !== null) {
             $blockers[] = 'cooldown';

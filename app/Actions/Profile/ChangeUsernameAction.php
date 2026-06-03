@@ -4,6 +4,7 @@ namespace App\Actions\Profile;
 
 use App\Models\User;
 use App\Models\UsernameHistory;
+use App\Support\BanGuard;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -47,6 +48,7 @@ class ChangeUsernameAction
 
         throw ValidationException::withMessages([
             'username' => match ($blockers[0]) {
+                'banned' => BanGuard::rejectionMessage(),
                 'cooldown' => __('You can change your username again on :date.', [
                     'date' => $user->usernameChangeAvailableAt()?->format('M j, Y') ?? '',
                 ]),

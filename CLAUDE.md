@@ -35,7 +35,22 @@ This application is a Laravel application and its main Laravel ecosystems packag
 
 ## Skills Activation
 
-This project has domain-specific skills available in `**/skills/**`. You MUST activate the relevant skill whenever you work in that domain—don't wait until you're stuck.
+This project has domain-specific skills available in `**/skills/**`. You MUST activate the relevant skill PROACTIVELY when you start work in that domain — don't wait until you're stuck, don't skip activation because the task seems small, and don't assume the previous activation is still loaded if you've changed domains. One activation per session per skill is enough; the loaded skill stays in context.
+
+**Trigger table — activate when:**
+
+| Skill | Activate when... |
+|---|---|
+| `ui-ux-pro-max` | Designing or reviewing any UI / component / page / animation / palette / typography decision. Also see "Design assistance" section below for the full trigger list. |
+| `pest-testing` | Writing, fixing, or refactoring ANY Pest test — feature, unit, browser, datasets, arch, Livewire component tests. Includes "tests broke after a change, make them pass" work. |
+| `laravel-best-practices` | Writing or refactoring Laravel PHP — controllers, models, FormRequests, jobs, services, Eloquent queries, route patterns, caching strategies. |
+| `tailwindcss-development` | Writing or fixing Tailwind classes in JSX / Blade — layouts, responsive grids, dark mode, components, spacing, hover/focus states. |
+| `wayfinder-development` | Wiring frontend to backend routes / controllers via `@/actions` / `@/routes` Wayfinder helpers, fixing route TS errors, running `wayfinder:generate`. |
+| `inertia-react-development` | React pages, forms (`useForm`), `<Link>` / `<Form>`, deferred props, optimistic updates, polling, `setLayoutProps`. |
+| `echo-react-development` | Laravel Echo hooks in React (`useEchoNotification`, `useEcho`, `useEchoPresence`) — any real-time broadcast subscriber on the frontend. |
+| `fortify-development` | Auth / login / registration / password reset / email verification / 2FA / passkeys / `app/Actions/Fortify/` work. |
+
+Skipping a skill activation for a domain it covers is a regression — the user has flagged this multiple times. If unsure whether a skill applies, err on the side of activating.
 
 ## Conventions
 
@@ -380,6 +395,7 @@ Conventions for this phase:
 
 ## Conventions for AI Assistance
 
+- **Default to production-grade. Do not trim scope on "solo dev" or "pre-launch" grounds.** Stakly is being built to production standards from day one. When choosing between a simpler-but-weaker option and a more-correct-but-bigger one, lead with the more-correct option. Recommendations should mirror what would ship to real users at real scale — security, UX, audit, performance. Surface trade-offs honestly so the user can decide, but never bias toward less rigor because "solo dev today" or "pre-launch." If a milestone "Not in" item is justified on solo-dev / pre-launch grounds, that's a code smell — rephrase the rationale in terms of the actual technical reason it can wait (different milestone, downstream dependency, etc.) or include it.
 - **Proactively surface suggestions, improvements, and security/abuse concerns *before* building.** Don't silently apply the safest defaults — call out non-obvious design choices, alternatives, and trade-offs so we can decide together. Especially for: input validation, pagination caps, sort/filter whitelists, exposing data via API resources, auth/access boundaries, rate limiting, and anything that touches money or user PII. A two-sentence "I'd do X because Y, alternative is Z — okay?" is the right shape; don't over-explain. If you spot a security issue mid-implementation, stop and flag it rather than patching silently.
 - **Flag bigger asks, don't refuse them.** If a request implies team matches, Dota 2 support, multi-chain, or non-USDT currencies, surface the additional surface area (schema changes, abuse surface, time cost) so we can weigh it together. Don't auto-reject on scope grounds.
 - **Don't add Solidity, smart-contract escrow, or wallet-connect flows without explicit go-ahead.** The current custody model is custodial-by-database. Switching to non-custodial escrow is a real architectural change — surface the tradeoffs if the topic comes up; don't quietly start building it.

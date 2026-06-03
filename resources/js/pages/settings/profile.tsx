@@ -152,11 +152,13 @@ export default function Profile({
 
     const handleSubmit = (e: FormEvent) => {
         e.preventDefault();
+
         if (usernameDirty && usernameEdit.can_change) {
             setUsernameConfirmOpen(true);
 
             return;
         }
+
         submitForm();
     };
 

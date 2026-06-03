@@ -139,13 +139,23 @@ class UserFactory extends Factory
      */
     public function admin(): static
     {
-        return $this->afterCreating(function (User $user) {
-            $role = Role::firstOrCreate([
-                'name' => 'admin',
-                'guard_name' => 'web',
-            ]);
+        return $this
+            ->state(fn () => [
+                // M30 P3 — admin-panel gate requires `two_factor_confirmed_at`
+                // to be set. Factory stamps it by default so existing tests
+                // that do `User::factory()->admin()->create()` keep reaching
+                // `/admin` without needing per-test 2FA wiring. To exercise
+                // the gate's redirect path, override with
+                // `->create(['two_factor_confirmed_at' => null])`.
+                'two_factor_confirmed_at' => now(),
+            ])
+            ->afterCreating(function (User $user) {
+                $role = Role::firstOrCreate([
+                    'name' => 'admin',
+                    'guard_name' => 'web',
+                ]);
 
-            $user->assignRole($role);
-        });
+                $user->assignRole($role);
+            });
     }
 }
