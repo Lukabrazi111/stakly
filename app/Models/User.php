@@ -112,7 +112,13 @@ class User extends Authenticatable implements FilamentUser, HasMedia, MustVerify
             'notifications_last_seen_at' => 'datetime',
             'notification_sound' => 'string',
             'username_changed_at' => 'immutable_datetime',
+            'banned_at' => 'immutable_datetime',
         ];
+    }
+
+    public function isBanned(): bool
+    {
+        return $this->banned_at !== null;
     }
 
     /**

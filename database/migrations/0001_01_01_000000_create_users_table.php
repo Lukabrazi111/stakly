@@ -55,6 +55,14 @@ return new class extends Migration
             // immediately takeable while they're still exploring.
             $table->boolean('is_active_mode')->default(false);
 
+            // Admin-set suspension flag (M30 P2). Null = active. Timestamp
+            // set when the admin flips the toggle. Enforced across four
+            // surfaces: `ListingController` create/store + `ProfileController`
+            // update + `ChangeUsernameAction` blocker + public marketplace
+            // scopes filter (banned creator's listings hide). Chat-send +
+            // take-listing enforcement is M21's scope on the same column.
+            $table->timestamp('banned_at')->nullable();
+
             // Bell-dropdown badge anchor: bumped on bell open, decoupled from
             // per-item `notifications.read_at`.
             $table->timestamp('notifications_last_seen_at')->nullable();
