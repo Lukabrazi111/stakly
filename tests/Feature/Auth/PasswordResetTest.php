@@ -24,7 +24,7 @@ test('reset password link can be requested and flashes a toast', function () {
 
     Notification::assertSentTo($user, ResetPassword::class);
 
-    $response->assertRedirect('/');
+    $response->assertRedirect(route('home'));
     $response->assertInertiaFlash('toast', [
         'type' => 'success',
         'message' => "Password reset link sent to {$user->email}.",
@@ -52,7 +52,7 @@ test('reset password screen redirects home when token is missing or already used
 
     $response = $this->get(route('password.reset', 'bogus-token').'?email='.urlencode($user->email));
 
-    $response->assertRedirect('/');
+    $response->assertRedirect(route('home'));
     $response->assertInertiaFlash('toast', [
         'type' => 'error',
         'message' => 'This password reset link is invalid or has expired.',
@@ -62,7 +62,7 @@ test('reset password screen redirects home when token is missing or already used
 test('reset password screen redirects home when email is missing', function () {
     $response = $this->get(route('password.reset', 'some-token'));
 
-    $response->assertRedirect('/');
+    $response->assertRedirect(route('home'));
 });
 
 test('password can be reset with valid token', function () {

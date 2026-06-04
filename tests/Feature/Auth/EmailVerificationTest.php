@@ -15,7 +15,7 @@ test('verification notice redirects to home', function () {
 
     $this->actingAs($user)
         ->get(route('verification.notice'))
-        ->assertRedirect('/');
+        ->assertRedirect(route('home'));
 });
 
 test('email can be verified and flashes a toast', function () {
@@ -33,7 +33,7 @@ test('email can be verified and flashes a toast', function () {
 
     Event::assertDispatched(Verified::class);
     expect($user->fresh()->hasVerifiedEmail())->toBeTrue();
-    $response->assertRedirect('/');
+    $response->assertRedirect(route('home'));
     $response->assertInertiaFlash('toast', [
         'type' => 'success',
         'message' => 'Email verified.',
@@ -82,7 +82,7 @@ test('verified user is redirected home from verification prompt', function () {
     $response = $this->actingAs($user)->get(route('verification.notice'));
 
     Event::assertNotDispatched(Verified::class);
-    $response->assertRedirect('/');
+    $response->assertRedirect(route('home'));
 });
 
 test('already verified user visiting verification link is redirected without firing event again', function () {
@@ -97,7 +97,7 @@ test('already verified user visiting verification link is redirected without fir
     );
 
     $this->actingAs($user)->get($verificationUrl)
-        ->assertRedirect('/');
+        ->assertRedirect(route('home'));
 
     Event::assertNotDispatched(Verified::class);
     expect($user->fresh()->hasVerifiedEmail())->toBeTrue();

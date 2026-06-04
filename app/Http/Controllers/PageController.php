@@ -3,8 +3,8 @@
 namespace App\Http\Controllers;
 
 use App\Models\Page;
-use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\App;
 use Illuminate\Support\Facades\Cache;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -18,13 +18,20 @@ use Inertia\Response;
  *     (`URL::temporarySignedRoute`, 30 min). Bypasses cache + published-at
  *     gate so drafts and scheduled rows render.
  *
- * Missing translations fall back to `Page::DEFAULT_LOCALE` via the model
+ * Missing translations fall back to `Page::defaultLocale()` via the model
  * resolver.
  */
 class PageController extends Controller
 {
-    public function show(Request $request, string $locale, string $slug): Response
+    public function show(Request $request, string $slug): Response
     {
+        // `{locale}` is on the route URI but `SetLocale` strips it from
+        // the route's parameter bag before dispatch (to avoid Laravel's
+        // positional dependency-resolver misalignment), so the active
+        // locale is read from `App::getLocale()` here instead of taking
+        // it as a typed argument.
+        $locale = App::getLocale();
+
         $payload = $request->hasValidSignature()
             ? $this->payloadForPreview($slug, $locale)
             : $this->payloadForPublic($slug, $locale);
@@ -32,23 +39,6 @@ class PageController extends Controller
         abort_if($payload === null, 404);
 
         return Inertia::render('cms/page', $payload);
-    }
-
-    /**
-     * Bare-slug entry — `/about` → 301 to `/en/about`. Validates the slug
-     * exists + is published first so unknown slugs 404 here instead of
-     * redirecting to a route that will also 404.
-     */
-    public function redirectToDefault(string $slug): RedirectResponse
-    {
-        $payload = $this->payloadForPublic($slug, Page::DEFAULT_LOCALE);
-
-        abort_if($payload === null, 404);
-
-        return redirect()->route('pages.show', [
-            'locale' => Page::DEFAULT_LOCALE,
-            'slug' => $slug,
-        ], 301);
     }
 
     /**

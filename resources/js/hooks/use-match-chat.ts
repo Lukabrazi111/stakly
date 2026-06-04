@@ -94,7 +94,7 @@ export function useMatchChat(
                 payload.file = file;
             }
 
-            router.post(sendMessageRoute(matchId).url, payload, {
+            router.post(sendMessageRoute({ match: matchId }).url, payload, {
                 preserveState: true,
                 preserveScroll: true,
                 forceFormData: Boolean(file),

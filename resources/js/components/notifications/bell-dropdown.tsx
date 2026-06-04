@@ -89,7 +89,7 @@ export function BellDropdown({ onClose, fullHeight = false }: Props) {
 
     const handleItemClick = useCallback(
         (id: string) => {
-            postJson(notificationsRead(id).url);
+            postJson(notificationsRead({ notification: id }).url);
             setNotifications((prev) =>
                 prev.map((n) =>
                     n.id === id && n.read_at === null

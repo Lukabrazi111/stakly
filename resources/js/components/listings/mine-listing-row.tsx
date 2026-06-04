@@ -48,7 +48,7 @@ export function MineListingRow({ listing }: Props) {
     return (
         <article className="group relative flex flex-col gap-2 border-t border-border/40 px-4 py-4 transition-colors duration-200 ease-out first:border-t-0 hover:bg-primary/5 md:flex-row md:items-center md:gap-4 md:px-5">
             <Link
-                href={showListing(listing.id).url}
+                href={showListing({ listing: listing.id }).url}
                 className="absolute inset-0 rounded-lg focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none"
                 aria-label={`View listing #${listing.id}`}
             />

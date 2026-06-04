@@ -22,7 +22,7 @@ test('new users can register and land on home with a toast flash', function () {
     ]);
 
     $this->assertAuthenticated();
-    $response->assertRedirect('/');
+    $response->assertRedirect(route('home'));
     $response->assertInertiaFlash('toast', [
         'type' => 'success',
         'message' => "We've sent a verification link to test@example.com.",

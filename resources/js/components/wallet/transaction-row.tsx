@@ -51,7 +51,7 @@ export function TransactionRow({ transaction }: Props) {
                             {' '}
                             <Link
                                 href={
-                                    showMatch(transaction.related_match.id).url
+                                    showMatch({ match: transaction.related_match.id }).url
                                 }
                                 className="font-medium text-primary underline-offset-2 transition-colors hover:text-primary/80 hover:underline"
                             >
@@ -64,7 +64,7 @@ export function TransactionRow({ transaction }: Props) {
                             {' '}
                             <Link
                                 href={
-                                    showListing(transaction.related_listing.id)
+                                    showListing({ listing: transaction.related_listing.id })
                                         .url
                                 }
                                 className="font-medium text-primary underline-offset-2 transition-colors hover:text-primary/80 hover:underline"

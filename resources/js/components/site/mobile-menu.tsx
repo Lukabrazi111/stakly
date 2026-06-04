@@ -215,7 +215,7 @@ export function MobileMenu() {
                             <div className="flex flex-col gap-0.5 border-t border-border/60 p-2">
                                 <SheetClose asChild>
                                     <Link
-                                        href={userShow(user.username).url}
+                                        href={userShow({ user: user.username }).url}
                                         prefetch
                                         className={mobileMenuItemClass}
                                     >

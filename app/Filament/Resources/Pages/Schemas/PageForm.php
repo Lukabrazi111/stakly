@@ -36,14 +36,14 @@ class PageForm
                     ignoreRecord: true,
                     modifyRuleUsing: fn (Unique $rule, Get $get) => $rule->where(
                         'locale',
-                        $get('locale') ?? Page::DEFAULT_LOCALE,
+                        $get('locale') ?? Page::defaultLocale(),
                     ),
                 ),
 
             Select::make('locale')
                 ->label('Locale')
-                ->options(array_combine(Page::SUPPORTED_LOCALES, Page::SUPPORTED_LOCALES))
-                ->default(Page::DEFAULT_LOCALE)
+                ->options(array_combine(Page::supportedLocales(), Page::supportedLocales()))
+                ->default(Page::defaultLocale())
                 ->required()
                 ->native(false),
 

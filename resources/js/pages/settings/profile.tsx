@@ -174,7 +174,7 @@ export default function Profile({
             username: account.username,
         }),
     );
-    const publicProfileUrl = userShow(user.username).url;
+    const publicProfileUrl = userShow({ user: user.username }).url;
 
     return (
         <>

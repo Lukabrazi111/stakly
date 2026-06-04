@@ -24,8 +24,10 @@ interface NavItem {
     href: string;
     label: string;
     icon: LucideIcon;
-    /** URL prefix that activates this item. Wallet uses `/wallet` to
-     *  activate across the whole subsection (deposit/withdraw/history). */
+    /** URL prefix that activates this item. Sourced from the Wayfinder
+     *  generator so the active locale prefix is included; `startsWith`
+     *  then activates the parent across the whole subsection (eg. wallet
+     *  stays lit on `/{locale}/wallet/deposit` + `/withdraw` + `/history`). */
     matchPrefix: string;
 }
 
@@ -69,10 +71,10 @@ export function PlayerSidebar() {
         ...(username
             ? [
                   {
-                      href: userShow(username).url,
+                      href: userShow({ user: username }).url,
                       label: 'My profile',
                       icon: UserIcon,
-                      matchPrefix: userShow(username).url,
+                      matchPrefix: userShow({ user: username }).url,
                   },
               ]
             : []),
@@ -80,19 +82,19 @@ export function PlayerSidebar() {
             href: listingsMine().url,
             label: 'My listings',
             icon: ListChecks,
-            matchPrefix: '/listings/mine',
+            matchPrefix: listingsMine().url,
         },
         {
             href: matchesIndex().url,
             label: 'Matches',
             icon: Swords,
-            matchPrefix: '/matches',
+            matchPrefix: matchesIndex().url,
         },
         {
             href: walletIndex().url,
             label: 'Wallet',
             icon: WalletIcon,
-            matchPrefix: '/wallet',
+            matchPrefix: walletIndex().url,
         },
     ];
 

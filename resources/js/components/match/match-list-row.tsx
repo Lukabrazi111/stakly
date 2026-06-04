@@ -34,13 +34,13 @@ export function MatchListRow({ match }: Props) {
     return (
         <article className="group relative flex flex-col gap-4 border-t border-border/40 px-4 py-4 transition-colors duration-200 ease-out first:border-t-0 hover:bg-primary/5 md:flex-row md:items-center md:gap-6 md:px-5">
             <Link
-                href={matchShow(match.id).url}
+                href={matchShow({ match: match.id }).url}
                 aria-label={`View match vs ${opponent.name}`}
                 className="absolute inset-0 rounded-lg focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none"
             />
 
             <Link
-                href={userShow(opponent.username).url}
+                href={userShow({ user: opponent.username }).url}
                 className="relative flex min-w-0 items-center gap-3 rounded-lg focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none md:w-52 md:shrink-0"
             >
                 <Avatar className="size-10 shrink-0 overflow-hidden rounded-full">

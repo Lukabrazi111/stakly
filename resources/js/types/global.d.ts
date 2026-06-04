@@ -1,6 +1,7 @@
 import '@inertiajs/core';
 import 'react';
 import type { Auth } from '@/types/auth';
+import type { LocaleMeta, Translations } from '@/lib/i18n';
 import type { FlashToast } from '@/types/ui';
 
 declare module '@inertiajs/core' {
@@ -9,6 +10,9 @@ declare module '@inertiajs/core' {
             name: string;
             auth: Auth;
             sidebarOpen: boolean;
+            locale: string;
+            availableLocales: LocaleMeta[];
+            translations: Translations;
             [key: string]: unknown;
         };
         flashDataType: {

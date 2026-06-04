@@ -45,7 +45,7 @@ export function ProfileMatchRow({ match, profileUserId }: Props) {
             </span>
 
             <Link
-                href={userShow(opponent.username).url}
+                href={userShow({ user: opponent.username }).url}
                 className="flex min-w-0 flex-1 items-center gap-3 rounded-lg focus-visible:ring-2 focus-visible:ring-primary/25 focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none"
             >
                 <Avatar className="size-9 shrink-0 overflow-hidden rounded-full">

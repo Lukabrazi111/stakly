@@ -14,14 +14,14 @@ Frontend-first build. UI against real DB infrastructure + seeded fake data; back
 
 **Next up:**
 
+- **M26 Phase 4** — Full-site i18n. Closes M26 (P1–3 + follow-ups already shipped). Locale-prefixed routing (`/en/`, `/ka/`, `/ru/`), `SetLocale` + `RedirectUnprefixedLocale` middleware, Laravel-native `lang/*.json` bridge + React `useT()` hook, `LocaleSwitcher` UI, multi-locale CMS rows, page-by-page string extraction across the whole user-facing app. Admin (Filament) stays English-only by design. Realistic scope: 1–2 weeks of engineering (translation content is tracked separately).
+
+**Active / upcoming** (after M26):
+
 - **M28** — Designed Fees page. Hand-coded marketing surface — transparent 5–10% commission disclosure, interactive calculator, replaces footer Support link in header nav. Highest-leverage pre-launch trust signal; design-driven (`ui-ux-pro-max` skill).
-
-**Active / upcoming** (after M28):
-
 - **M14** — Outcome pipeline hardening. Slice A + Phase 1 shipped; **Phases 2 (reliability — retries / rate-limit awareness / circuit breaker), 3 (coverage — aborted games / multi-candidate disambiguation / time-control mismatch), 4 (dispute fast-path)** remain. Production-critical for the settlement engine.
 - **M20** — Email notifications. **Spec materially shrunk**: M27 P5 already shipped the in-app preferences UI + `notification_preferences` table + 9 `PlayerNotification` classes; M30 P4 wired the `mail` channel for ban notifications. What's left = branded HTML email templates, flip `'mail'` into `via()` on the remaining PlayerNotification subclasses, un-disable the Email toggle in `/settings/notifications`, production SMTP config. Realistically 2–3 days.
 - **M21** — Blacklist + safety. Block users from listings + chat, with anti-evasion considerations. Has open design questions (block semantics + multi-account evasion) — needs alignment before coding.
-- **M26 Phase 4** — Full-site i18n (locale switcher + UI string extraction + multi-locale CMS rows). P1–3 shipped; P4 deferred until a second language is genuinely planned.
 - **M15** — Multi-game expansion (FACEIT, OpenDota, Riot adapters). Large; awaits a concrete game push to motivate scope.
 
 > Active milestone keeps a detailed task list. Future milestones expand when started. Any of this can shift — flag the change, update the doc.
@@ -325,7 +325,11 @@ Outstanding (asset-only — not a code task):
 
 **Phase 4 — Full-site i18n (UI strings + locale switcher + multi-locale CMS rows)**
 
-Decision pivot: instead of waiting for a second language before shipping the switcher, build full i18n infrastructure now. The whole Stakly site (UI strings, CMS pages, validation messages) becomes translatable. Initial active locales planned: `en`, `ka` (Georgian), `ru` (Russian). Framework supports adding more as a content task.
+Decision pivot: instead of waiting for a second language before shipping the switcher, build full i18n infrastructure now. The whole Stakly site (UI strings, CMS pages, validation messages) becomes translatable. Initial active locales: `en`, `ka` (Georgian), `ru` (Russian). Framework supports adding more as a content task.
+
+**Scope estimate:** roughly 1–2 weeks of engineering — Slice A (Foundation) is ~1–2 days, Slice B (CMS) is ~half a day, Slice C (Switcher + first extraction) is ~1 day, Slice D+ (page-by-page extraction across ~7 surface areas) is the bulk. Translation labor (writing `lang/ka.json` and `lang/ru.json` content) is a separate content backlog; engineering treats those files as drop-in.
+
+**Admin (Filament) is exempt from translation.** Per the design decision below, `/admin/*` chrome + every admin resource (M12 disputes, M24 games, M26 pages, M30 users, M31 wallet ledger, M32 listings) stays English-only. Don't accidentally extract Filament strings during Slice D+ extraction passes.
 
 Design decisions taken into this phase:
 
@@ -344,11 +348,12 @@ Sub-phases:
 
 - [ ] `SetLocale` middleware reads `{locale}` from URL, calls `App::setLocale()`, sets `URL::defaults(['locale' => ...])`.
 - [ ] `RedirectUnprefixedLocale` middleware: any web request without a locale prefix → 301 to `/{defaultLocale}/<path>` (cookie-aware default, fallback `en`).
-- [ ] All web routes wrapped in `Route::prefix('{locale}')->whereIn('locale', ['en','ka','ru'])->group(...)`. Admin (Filament), API (if added), and Reverb WS routes stay unprefixed.
+- [ ] All web routes wrapped in `Route::prefix('{locale}')->whereIn('locale', ['en','ka','ru'])->group(...)`. Admin (Filament `/admin/*`), Fortify auth POST endpoints (`/login`, `/logout`, etc), and Reverb WS routes stay unprefixed.
 - [ ] `lang/en.json` populated with a starter set; `lang/ka.json` + `lang/ru.json` empty (Laravel falls back to key).
 - [ ] `HandleInertiaRequests::share()` adds `translations` (cached per locale), `locale` (current), `availableLocales` (list with native labels).
 - [ ] React `useT()` hook with `:name` interpolation.
 - [ ] Dynamic `<html lang="{$locale}">` in `app.blade.php` + `og:locale` + `<link rel="alternate" hreflang="...">` per supported locale.
+- [ ] **Wayfinder verification.** `URL::defaults(['locale' => ...])` should auto-prefix every Wayfinder-generated URL (`route('listings.index')`, `index().url`, etc) — but this depends on Wayfinder honouring the URL default at generator runtime, which has changed shape in past minor versions. **Verify with a smoke test**: hit `/en/listings`, log in, navigate to `/listings/{id}` via a `<Link>`-rendered URL → assert the generated href is `/en/listings/{id}`. If Wayfinder skips the default, fall back to either (a) `npm run build` regen with a `?locale=` param convention, or (b) a Wayfinder generator override in `vite.config.ts`. Document whichever path we take.
 - [ ] Tests: middleware behavior, redirect for unprefixed requests, unsupported locale → 404, cookie-remembered default.
 
 **P4 Slice B — CMS multi-locale**
@@ -370,9 +375,11 @@ Sub-phases:
 - [ ] Profile (header + tabs + match history + listings section).
 - [ ] Match (show + chat + banners + waiting card + settled card).
 - [ ] Wallet (index + deposit + withdraw + history).
-- [ ] Settings (profile + security + linked accounts).
-- [ ] Auth flows (login + register + forgot/reset password + 2FA + email verification).
-- [ ] Validation messages + flash toasts + error pages.
+- [ ] Notifications (bell dropdown + `/notifications` history page + `NotificationCard` + `/settings/notifications` preferences UI). M27 surfaces.
+- [ ] Settings (profile + security + linked accounts + notification preferences cards).
+- [ ] Auth modal + auth flows (login + register + forgot-password modal + reset-password + 2FA challenge + email verification + confirm-password). M2 modal-only auth surface + page-only post-login landings.
+- [ ] User-facing M30 surfaces — `BannedBanner` (already in `SiteLayout`), `AccountBanned` / `AccountRestored` notification copy. Admin-side M30 (`UserResource`, impersonation modal, etc) stays English-only.
+- [ ] Validation messages + flash toasts + error pages (404 / 403 / 500 / 419).
 
 Translation labor (writing `lang/ka.json` and `lang/ru.json` content) tracked separately as content backlog; engineering treats those files as drop-in.
 

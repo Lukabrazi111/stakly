@@ -166,7 +166,7 @@ function VerifiedRow({ provider }: { provider: Provider }) {
                         </DialogDescription>
                     </DialogHeader>
                     <Form
-                        action={unlink(provider.value).url}
+                        action={unlink({ provider: provider.value }).url}
                         method="delete"
                         options={{ preserveScroll: true }}
                         onSuccess={() => setConfirmOpen(false)}

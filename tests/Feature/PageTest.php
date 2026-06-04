@@ -87,13 +87,13 @@ test('renderedHtml escapes raw HTML by default (XSS guard)', function () {
 test('saving a page busts its cache key for every supported locale', function () {
     $page = Page::factory()->create(['slug' => 'about', 'locale' => 'en']);
 
-    foreach (Page::SUPPORTED_LOCALES as $locale) {
+    foreach (Page::supportedLocales() as $locale) {
         Cache::put(Page::cacheKey('about', $locale), 'sentinel', 60);
     }
 
     $page->update(['title' => 'New title']);
 
-    foreach (Page::SUPPORTED_LOCALES as $locale) {
+    foreach (Page::supportedLocales() as $locale) {
         expect(Cache::get(Page::cacheKey('about', $locale)))->toBeNull();
     }
 });
@@ -101,13 +101,13 @@ test('saving a page busts its cache key for every supported locale', function ()
 test('deleting a page busts its cache key for every supported locale', function () {
     $page = Page::factory()->create(['slug' => 'about', 'locale' => 'en']);
 
-    foreach (Page::SUPPORTED_LOCALES as $locale) {
+    foreach (Page::supportedLocales() as $locale) {
         Cache::put(Page::cacheKey('about', $locale), 'sentinel', 60);
     }
 
     $page->delete();
 
-    foreach (Page::SUPPORTED_LOCALES as $locale) {
+    foreach (Page::supportedLocales() as $locale) {
         expect(Cache::get(Page::cacheKey('about', $locale)))->toBeNull();
     }
 });

@@ -21,7 +21,7 @@ class PageSeeder extends Seeder
     public function run(): void
     {
         Page::updateOrCreate(
-            ['slug' => 'about', 'locale' => Page::DEFAULT_LOCALE],
+            ['slug' => 'about', 'locale' => Page::defaultLocale()],
             [
                 'title' => 'About Stakly',
                 'body' => $this->aboutBody(),
@@ -30,7 +30,7 @@ class PageSeeder extends Seeder
         );
 
         Page::updateOrCreate(
-            ['slug' => 'privacy', 'locale' => Page::DEFAULT_LOCALE],
+            ['slug' => 'privacy', 'locale' => Page::defaultLocale()],
             [
                 'title' => 'Privacy Policy',
                 'body' => $this->privacyStarterBody(),
@@ -39,7 +39,7 @@ class PageSeeder extends Seeder
         );
 
         Page::updateOrCreate(
-            ['slug' => 'terms', 'locale' => Page::DEFAULT_LOCALE],
+            ['slug' => 'terms', 'locale' => Page::defaultLocale()],
             [
                 'title' => 'Terms of Service',
                 'body' => $this->termsStarterBody(),
@@ -48,7 +48,7 @@ class PageSeeder extends Seeder
         );
 
         Page::updateOrCreate(
-            ['slug' => 'support', 'locale' => Page::DEFAULT_LOCALE],
+            ['slug' => 'support', 'locale' => Page::defaultLocale()],
             [
                 'title' => 'Support',
                 'body' => $this->supportStarterBody(),

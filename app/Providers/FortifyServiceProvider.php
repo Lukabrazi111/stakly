@@ -64,7 +64,16 @@ class FortifyServiceProvider extends ServiceProvider
 
         Fortify::requestPasswordResetLinkView(fn () => redirect('/?auth=forgot-password'));
 
-        Fortify::resetPasswordView(function (Request $request) {
+        // M26 P4 — Fortify auth routes live unprefixed at app root, so the
+        // SetLocale middleware never fires for them and `URL::defaults`
+        // isn't populated. Redirect targets to the public site must be
+        // locale-prefixed manually; default to the configured default
+        // locale (English). Users land on `/en/` and the cookie-aware
+        // RedirectUnprefixedLocale middleware preserves the choice from
+        // then on.
+        $defaultHome = '/'.config('stakly.default_locale', 'en');
+
+        Fortify::resetPasswordView(function (Request $request) use ($defaultHome) {
             $email = (string) $request->query('email', '');
             $token = (string) $request->route('token');
 
@@ -76,7 +85,7 @@ class FortifyServiceProvider extends ServiceProvider
                     'message' => 'This password reset link is invalid or has expired.',
                 ]);
 
-                return redirect('/');
+                return redirect($defaultHome);
             }
 
             return Inertia::render('auth/reset-password', [
@@ -85,7 +94,7 @@ class FortifyServiceProvider extends ServiceProvider
             ]);
         });
 
-        Fortify::verifyEmailView(fn () => redirect('/'));
+        Fortify::verifyEmailView(fn () => redirect($defaultHome));
 
         Fortify::twoFactorChallengeView(fn () => Inertia::render('auth/two-factor-challenge'));
 

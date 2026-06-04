@@ -19,7 +19,7 @@ test('users can authenticate using the login endpoint', function () {
     ]);
 
     $this->assertAuthenticated();
-    $response->assertRedirect('/');
+    $response->assertRedirect(route('home'));
 });
 
 test('users with two factor enabled are redirected to two factor challenge', function () {
