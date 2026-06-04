@@ -58,6 +58,7 @@
         </x-inertia::head>
     </head>
     <body class="font-sans antialiased">
+        @include('partials.impersonation-banner')
         <x-inertia::app />
     </body>
 </html>

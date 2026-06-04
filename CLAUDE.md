@@ -35,22 +35,7 @@ This application is a Laravel application and its main Laravel ecosystems packag
 
 ## Skills Activation
 
-This project has domain-specific skills available in `**/skills/**`. You MUST activate the relevant skill PROACTIVELY when you start work in that domain — don't wait until you're stuck, don't skip activation because the task seems small, and don't assume the previous activation is still loaded if you've changed domains. One activation per session per skill is enough; the loaded skill stays in context.
-
-**Trigger table — activate when:**
-
-| Skill | Activate when... |
-|---|---|
-| `ui-ux-pro-max` | Designing or reviewing any UI / component / page / animation / palette / typography decision. Also see "Design assistance" section below for the full trigger list. |
-| `pest-testing` | Writing, fixing, or refactoring ANY Pest test — feature, unit, browser, datasets, arch, Livewire component tests. Includes "tests broke after a change, make them pass" work. |
-| `laravel-best-practices` | Writing or refactoring Laravel PHP — controllers, models, FormRequests, jobs, services, Eloquent queries, route patterns, caching strategies. |
-| `tailwindcss-development` | Writing or fixing Tailwind classes in JSX / Blade — layouts, responsive grids, dark mode, components, spacing, hover/focus states. |
-| `wayfinder-development` | Wiring frontend to backend routes / controllers via `@/actions` / `@/routes` Wayfinder helpers, fixing route TS errors, running `wayfinder:generate`. |
-| `inertia-react-development` | React pages, forms (`useForm`), `<Link>` / `<Form>`, deferred props, optimistic updates, polling, `setLayoutProps`. |
-| `echo-react-development` | Laravel Echo hooks in React (`useEchoNotification`, `useEcho`, `useEchoPresence`) — any real-time broadcast subscriber on the frontend. |
-| `fortify-development` | Auth / login / registration / password reset / email verification / 2FA / passkeys / `app/Actions/Fortify/` work. |
-
-Skipping a skill activation for a domain it covers is a regression — the user has flagged this multiple times. If unsure whether a skill applies, err on the side of activating.
+This project has domain-specific skills available in `**/skills/**`. You MUST activate the relevant skill whenever you work in that domain—don't wait until you're stuck.
 
 ## Conventions
 
@@ -389,9 +374,10 @@ Conventions for this phase:
 
 ## Library / Documentation Lookups
 
-- **Always use the Context7 MCP** (`mcp__context7__resolve-library-id` then `mcp__context7__query-docs`) when the user asks about a library, framework, or API — including ones in this stack (Inertia v3, Laravel 13, Tailwind v4, React 19, Pest 4, Fortify, Wayfinder, shadcn/ui, etc.). Do not rely on training data, even when confident — versions move fast.
-- This is in addition to Boost's `search-docs` tool, which covers the project's installed Laravel-ecosystem packages. Use Boost's tool first for installed Laravel packages; Context7 for everything else (frontend libraries, third-party APIs, etc.).
+- **Use Context7 PROACTIVELY, not on request.** The instant you're about to write or edit code that uses a library / framework / API — Filament 5, Inertia v3, Laravel 13, Tailwind v4, React 19, Pest 4, Fortify, Wayfinder, shadcn/ui, OR any installed third-party package — call `mcp__context7__resolve-library-id` then `mcp__context7__query-docs` BEFORE committing to an API shape. Don't wait to be reminded. Don't rely on training data even when confident — versions move fast and the current docs are the source of truth. This rule applies even when subclassing, extending a package, or wiring two packages together — verify the contract you're depending on.
+- For installed Laravel-ecosystem packages, Boost's `search-docs` is a complementary quick lookup; Context7 remains the authoritative source. Use both where the topic warrants.
 - When citing docs in an answer, mention the version retrieved.
+- Narrow carve-out: skip Context7 only for pure-language work (PHP / TypeScript syntax) with no framework surface, or for edits where you verified the exact same API in the same session via Context7 already. When in doubt, query.
 
 ## Conventions for AI Assistance
 
@@ -409,10 +395,3 @@ Conventions for this phase:
 - **Wayfinder regen via artisan needs `--with-form`.** Vite's wayfinder plugin (configured `formVariants: true` in `vite.config.ts`) generates `.form` accessors automatically on `npm run dev` / `npm run build`. The standalone `vendor/bin/sail artisan wayfinder:generate` defaults to NO form variants and silently breaks any `<Form>` spreading `.form()` — always pass `--with-form` when regenerating via artisan, or just use `npm run build`.
 - **Performance is always a concern, not a backlog item.** Optimization habits — eager-loading related models, queueing external API calls (chess.com, Lichess, future chain provider, etc.), caching slow-changing reads, code-splitting routes, enabling SSR — must be baked into the initial implementation, not deferred as "polish later." This is not premature optimization or speculative abstraction; it's about writing the code we're already writing in a way that doesn't accumulate performance debt. If a query / controller / page is about to ship with a known issue ("we'll cache it later," "we'll queue it later," "fix the N+1 later"), flag it and fix it before the work is called done.
 - **Comments are scarce and small.** Default to no comments. Add one only when the WHY is non-obvious — hidden constraints, subtle invariants, library gotchas, surprising behavior. Skip task tags ("M27 Phase 2", "Slice X"), docblocks on self-explanatory props or methods, callsite references ("used by X"), and historical context ("we tried Y first"). Those belong in commit messages, not files — they rot. When a comment is warranted, one short line beats a paragraph.
-
-## Open questions (don't assume answers)
-
-- Anti-collusion and anti-cheat strategy beyond commission rake — specifically: sandbagging via low-rated alt accounts (strong player creates a weak-rated alt to farm beginners), multi-accounting for bonus abuse, money laundering via stake rotation. Not actively designed yet; surface tradeoffs if the topic comes up. (Match lifecycle state machine is in milestones.md M6.)
-
-(Custody model is decided — custodial via internal Postgres ledger; see M3.5 in milestones.md. Jurisdiction / licensing / legal posture is user-owned and out of engineering scope — see rule above.)
-

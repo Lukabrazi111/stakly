@@ -17,7 +17,8 @@
         "laravel/wayfinder": "^0.1.14",
         "spatie/laravel-medialibrary": "^11.22",
         "spatie/laravel-permission": "^7.4",
-        "spatie/laravel-query-builder": "^7.3"
+        "spatie/laravel-query-builder": "^7.3",
+        "stechstudio/filament-impersonate": "^5.5"
     },
     "require-dev": {
         "fakerphp/faker": "^1.24",
