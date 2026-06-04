@@ -1009,6 +1009,49 @@ No "I lost my TOTP device" cancel button: admins close the tab (no session leak,
 - Built-in support ticket system / contact form. The CMS Support page covers the contact channel today (admin writes whatever — email / Discord / form). A dedicated ticket queue is its own milestone if volume justifies.
 
 
+
+## M31 — Admin wallet ledger ✅ shipped 2026-06-04
+
+Read-only audit visibility into every money movement on the platform — the "where did my $12.50 go?" support tool for the custodial money platform. Filament resource over `wallet_transactions`. Two phases shipped in one day.
+
+### Design decisions
+
+- **Read-only resource.** `canCreate / canEdit / canDelete = false`. Every money write continues to go through `App\Services\Wallet` to preserve the `users.usdt_balance == SUM(wallet_transactions.amount)` invariant asserted in `WalletTest`. No "create transaction" / "adjust" / "transfer" actions — no such domain trigger exists today, and adding one would be a footgun.
+- **`HasColor` + `HasLabel` on `WalletTransactionType` enum.** Filament's TextColumn::badge() + infolist TextEntry auto-style each case. Deposit/Payout=success, Withdrawal=danger, EscrowHold=warning, EscrowRelease=info, Fee=gray. The enum lives in `App\Enums\WalletTransactionType`; the contracts add `getLabel()` + `getColor()` methods without changing serialized values.
+- **BCMath-aware money formatter on the model.** `WalletTransaction::formatAmount(string $amount): string` is used by both the table column and the infolist amount entries. Truncates to 2 decimals at scale, prepends `$`, applies thousand separators, preserves sign — without round-tripping through float. The decimal(18,6) string from the cast stays as a string the whole way through.
+- **Sum summarizer on the amount column.** Footer total of currently-visible rows. Filtering by `type = Fee` + this month gives the platform's monthly revenue in one click — the drill-down companion to `OpsOverview`'s top-line stat.
+- **"Sibling transactions" share an entity, NOT a reference_id.** The original M31 spec said siblings share the same `reference_id`, but the column has a UNIQUE constraint (it's the idempotency key for Wallet service writes — `findByReference` returns existing rows on repeat). The actual pattern is "two rows referencing the same match" via different prefixes — e.g. `match-payout:7` + `match-fee:7`. Implemented via `WalletReferenceParser::parseEntity()` returning `[kind, id]` and `allReferencesFor($kind, $id)` returning every known prefix combo, then a `whereIn` against the unique index. Fast lookup, no LIKE.
+- **Reference parser maps to the resources that exist today.** Listing-bound prefixes (`listing-create:` / `listing-cancel:` / `listing-expire:` / `match-take:`) link to the public `listings.show` page; match-bound prefixes (`match-payout:` / `match-fee:` / `match-draw-*:` / `cancel-refund-*:`) link to the admin Disputes resource (M12's `GameMatchResource`). When M32 lands a proper `ListingResource`, only the parser needs updating — every consumer reads through it.
+- **No CSV export, no charts, no per-currency filtering, no edit/adjust mutations.** Spec carve-outs hold — adjacent surfaces (`OpsOverview` widget for charts, `ListingResource` for listings) own those concerns.
+
+### Phases
+
+**Phase 1 — Resource scaffold + index page + filters + sum summarizer** ✅ shipped 2026-06-04
+
+- `WalletTransactionType` enum implements `HasColor` + `HasLabel`.
+- `app/Filament/Resources/WalletTransactions/` mirroring M30's structure: `WalletTransactionResource` (read-only gates, banknotes icon, Operations group, slug `wallet-transactions`), `Pages/ListWalletTransactions`, `Tables/WalletTransactionsTable`.
+- Index columns: Tx# / User (link to `UserResource` view) / Type (auto-colored badge) / Amount (right-aligned, BCMath-formatted, color-coded by sign) / Reference (truncated + copyable) / When (relative + tooltip with absolute datetime).
+- Filters: type multi-select (`->options(WalletTransactionType::class)` — Filament auto-detects the enum), user typeahead via relationship (no `preload()` — caused rendering issues in tests), date range, amount range, reference-contains.
+- `Sum` summarizer on the amount column with the same BCMath formatter for the footer total.
+- Default sort: `created_at` DESC.
+- 14 Pest tests in `tests/Feature/Admin/WalletTransactionResourceTest.php` (48 assertions).
+
+**Phase 2 — View page + Infolist + reference parser + sibling-entity lookup** ✅ shipped 2026-06-04
+
+- `ViewWalletTransaction` page registered in `getPages()` + table-level `ViewAction` row action.
+- `WalletTransactionInfolist` with three sections: Transaction (id, type badge, when, user link, amount + balance_after BCMath-formatted), Reference (raw id + parsed contextual link + description + related listing FK), Sibling transactions (other rows referencing the same listing/match).
+- `App\Support\WalletReferenceParser` — `parse()` returns `[label, url]`; `parseEntity()` returns `[kind, id]`; `allReferencesFor()` returns every known prefix combo for an entity. Single source of truth for prefix→entity mapping.
+- Sibling section uses `parseEntity` + `allReferencesFor` + `whereIn` so it hits the unique index instead of LIKE. Hidden when reference is unparseable / null.
+- 11 additional feature tests (parser + view page + siblings + formatter) — total M31 suite is 25 tests, 122 assertions. 151/151 admin suite + 101/101 wallet suite passing.
+
+### Not in M31
+
+- CSV export. Add when there's a concrete external workflow (tax filing, accounting integration, auditor request) — column / format decisions follow the destination.
+- Charts / time-series. `OpsOverview` widget already exposes monthly platform earnings; this resource is the drill-down.
+- Per-currency filtering. USDT-only today; extends when M15-era multi-currency happens.
+- Refund / adjust / cross-user-transfer actions. No domain trigger today; refunds happen via `Wallet::release` triggered by match-state events. Manual adjustments would require a future `Wallet::adjust(...)` method that doesn't exist.
+
+---
 ---
 
 ## Parked milestones

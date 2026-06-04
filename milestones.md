@@ -2,20 +2,27 @@
 
 Frontend-first build. UI against real DB infrastructure + seeded fake data; backend logic (escrow, payouts, on-chain integration) lands per page once the UI is validated. Milestones are work-chunk labels, not version commitments — decisions inside any of them are revisitable.
 
-> **Shipped milestones live in `milestones_archived.md`** (M1, M2, M2.5, M3, M3.5, M4, M5, M6, M7, M8 all phases, M10, M11, M12 all phases, M14 Slice A, M16 all phases, M17, M18, M19, M22, M23, M24, M25, M27 all phases, M29 all phases, M30 all phases). **Parked milestones** (work that isn't being picked up right now) also live in the archive — currently M13. This file is for active + upcoming work + the cross-cutting architectural decisions that earlier milestones established.
+> **Shipped milestones live in `milestones_archived.md`** (M1, M2, M2.5, M3, M3.5, M4, M5, M6, M7, M8 all phases, M10, M11, M12 all phases, M14 Slice A, M16 all phases, M17, M18, M19, M22, M23, M24, M25, M27 all phases, M29 all phases, M30 all phases, M31 all phases). **Parked milestones** (work that isn't being picked up right now) also live in the archive — currently M13. This file is for active + upcoming work + the cross-cutting architectural decisions that earlier milestones established.
 
 ## Phases (map)
 
-**Active / upcoming:**
+**Recently shipped** (this week):
 
-- **M14** — Outcome pipeline hardening (reframed from "automated outcome adapters" — observability + reliability + coverage of the auto-fetch pipeline; Slice A + Phase 1 shipped, Phases 2–4 remain)
-- **M20** — Notifications (email infrastructure + per-event preferences UI; M20 owns the surface end-to-end)
-- **M21** — Blacklist + safety (block users from listings + chat, with anti-evasion considerations)
-- **M15** — Multi-game expansion (FACEIT, OpenDota, Riot adapters)
-- **M26** — Filament-managed CMS pages (Privacy, Terms, About — multilingual schema, SEO-indexable via global Inertia SSR; Phases 1–3 shipped; small follow-up for og: tags + APP_NAME; Phase 4 locale switcher deferred until a second language ships)
-- **M28** — Designed Fees page (transparent commission disclosure, interactive calculator, header nav — hand-coded React, NOT CMS-managed)
-- **M31** — Admin wallet ledger (Filament `WalletTransactionResource`, read-only — filter / sort / drill into every money movement; the money-audit surface for the custodial platform)
-- **M32** — Admin listing management (Filament `ListingResource` — index, filter, force-cancel via the existing `CancelListingAction` so escrow releases cleanly)
+- **M30** — Admin user management (all 6 phases, 2026-06-03 → 2026-06-04). UserResource, ban toggle + four enforcement guards, mandatory 2FA on admin role, on-every-login 2FA challenge via Fortify bridge, user-facing ban feedback (banner + bell + email), impersonation via `stechstudio/filament-impersonate` + Stakly audit/reason/expiry layer.
+- **M31** — Admin wallet ledger (both phases, 2026-06-04). Read-only `WalletTransactionResource` with filters + sum summarizer, ViewWalletTransaction with infolist + reference-ID parser + sibling-entity lookup.
+
+**Next up:**
+
+- **M32** — Admin listing management. Closes the admin trio (Users + Wallet + Listings = "investigate any state without Tinker"). Filament `ListingResource` with one money-touching action (force-cancel via existing `CancelListingAction`).
+
+**Active / upcoming** (after M32):
+
+- **M28** — Designed Fees page. Hand-coded marketing surface — transparent 5–10% commission disclosure, interactive calculator, replaces footer Support link in header nav. Highest-leverage pre-launch trust signal; design-driven (`ui-ux-pro-max` skill).
+- **M14** — Outcome pipeline hardening. Slice A + Phase 1 shipped; **Phases 2 (reliability — retries / rate-limit awareness / circuit breaker), 3 (coverage — aborted games / multi-candidate disambiguation / time-control mismatch), 4 (dispute fast-path)** remain. Production-critical for the settlement engine.
+- **M20** — Email notifications. **Spec materially shrunk**: M27 P5 already shipped the in-app preferences UI + `notification_preferences` table + 9 `PlayerNotification` classes; M30 P4 wired the `mail` channel for ban notifications. What's left = branded HTML email templates, flip `'mail'` into `via()` on the remaining PlayerNotification subclasses, un-disable the Email toggle in `/settings/notifications`, production SMTP config. Realistically 2–3 days.
+- **M21** — Blacklist + safety. Block users from listings + chat, with anti-evasion considerations. Has open design questions (block semantics + multi-account evasion) — needs alignment before coding.
+- **M26 Phase 4** — Full-site i18n (locale switcher + UI string extraction + multi-locale CMS rows). P1–3 shipped; P4 deferred until a second language is genuinely planned.
+- **M15** — Multi-game expansion (FACEIT, OpenDota, Riot adapters). Large; awaits a concrete game push to motivate scope.
 
 > Active milestone keeps a detailed task list. Future milestones expand when started. Any of this can shift — flag the change, update the doc.
 
@@ -423,31 +430,6 @@ Not CMS-managed on purpose. The Filament CMS template (`cms/page.tsx`) is intent
 - A/B testing infrastructure for headline copy. Premature for a page that isn't even live yet.
 - Affiliate / referral fee tracking. Different scope; if revenue-share programs ship, they own their own page.
 - Localised currency conversion ("how much is this in EUR?"). USDT is the unit on every Stakly surface; introducing currency conversion UI confuses the platform's denomination.
-
----
-
-## M31 — Admin wallet ledger
-
-Read-only audit visibility into every money movement on the platform. The single most important support tool for a custodial platform — without it, "where did my $12.50 go?" requires reconstructing the ledger by hand in Tinker. M31 makes the answer one filter-click away.
-
-The architectural decisions about money writes (M3.5 — Wallet service is the only path, BCMath strings, append-only ledger) all stay intact. This milestone is purely a read surface on top of the ledger that already exists.
-
-### Design decisions taken into this milestone
-
-- **Read-only resource.** Zero write actions, zero mass-mutation. Every money write must continue to go through `App\Services\Wallet` to preserve the `users.usdt_balance == SUM(wallet_transactions.amount)` invariant asserted in `WalletTest.php`. Filament resources default to allowing edit / create — both explicitly disabled here.
-- **Index columns** — user (link to UserResource view), type badge (Deposit / Hold / Release / Payout / Fee / Withdrawal with semantic colors mirroring the wallet UI), amount (right-aligned, BCMath-string display, NOT cast to float for display precision), `reference_id` (truncated with copy-to-clipboard), `created_at` (humanized + raw on hover).
-- **Filters** — user typeahead (by username), type multi-select, date range, amount range, `reference_id` contains.
-- **View page** — full row data plus contextual links. If `reference_id` matches a known pattern (`match-{id}` / `listing-{id}` / `cancel-{id}`), surface a link to the related match or listing. "Sibling transactions" section lists other rows sharing the same `reference_id` — useful for the deposit-confirm pattern where one event generates several rows.
-- **Footer sum.** Below the table, total of currently-visible rows broken down by type. Lets the admin filter "type = Fee, this month" and see the platform's monthly revenue in one click without exporting. `OpsOverview` widget already gives a top-line number; this is the drill-down.
-- **No "create transaction" action.** If a manual correction is ever genuinely needed, it routes through a future `Wallet::adjust(...)` method that does not exist today. By design — every money write today has a domain reason routed through a specific service method.
-
-### Not in M31
-
-- CSV export. Add when the user has a concrete external workflow that needs it (tax filing, accounting integration, auditor request) — the column / format decisions follow the destination.
-- Charts / time-series of money flow. Visual summary belongs on the dashboard widget, not the resource list. `OpsOverview` already exposes monthly platform earnings.
-- Per-currency filtering. USDT-only today; if M15-era multi-currency happens, this extends.
-- Refund / adjust mutation actions. Genuinely don't belong here — refunds happen via `Wallet::release` triggered by match-state events; manual adjustments don't have a domain reason today.
-- Cross-user transfer / "send money from A to B" action. Same reason — no domain trigger, just a footgun if it existed.
 
 ---
 
