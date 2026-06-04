@@ -445,6 +445,29 @@ Operational visibility + force-cancel for the marketplace. The lowest-urgency of
 - **View page.** Full listing data, related match (if Taken — link to `GameMatchResource`), related wallet transactions (escrow hold + any release on cancel).
 - **No edit action.** Stake / skill range / platform are immutable on a real listing — changing them mid-flight invalidates expectations for any taker. If a listing needs changes, the right path is force-cancel + the creator re-creates.
 - **No bulk cancel.** One listing at a time; bulk-cancel is a footgun and there's no operational scenario that needs it.
+- **`ListingStatus` gets `HasColor` + `HasLabel`.** Same pattern M31 used for `WalletTransactionType` — auto-colored badges across every Filament surface that reads this enum (admin index, view page, dashboard widgets, M32 + future).
+- **The M31 wallet-reference parser already knows about listing prefixes.** `listing-create:` / `listing-cancel:` / `listing-expire:` / `match-take:` are all entity-mapped to "listing" via `WalletReferenceParser::parseEntity()`. The View page's wallet-transactions section calls `WalletReferenceParser::allReferencesFor('listing', $id)` + `whereIn('reference_id', $candidates)` (plus FK match on `related_listing_id`) — fast indexed lookup, no LIKE, no parser logic re-implementation.
+
+### Phases
+
+**Phase 1 — Resource scaffold + index page + filters**
+
+- [ ] `App\Enums\ListingStatus` implements `HasColor` + `HasLabel`. Open=success, Taken=warning, Expired=gray, Cancelled=danger.
+- [ ] `app/Filament/Resources/Listings/` folder: `ListingResource` (read-only — `canCreate / canEdit / canDelete = false` on the resource, force-cancel surfaces only as a header action on the View page in P2), `Pages/ListListings`, `Tables/ListingsTable`.
+- [ ] Index columns — id, Creator (link to `filament.admin.resources.users.view`), Game, Platform, Stake (right-aligned, `$X.XX USDT` via `number_format((float) $state, 2)` — `decimal(12,2)` doesn't need BCMath display precision the way the ledger does), Skill range (formatted "1200–1600"), Time controls (joined from the `time_control` jsonb column), Region, Languages (joined from the `language` jsonb column), Status (auto-colored badge), Created at, Expires at.
+- [ ] Filters — status multi-select via `->options(ListingStatus::class)`, platform select, stake range (custom Filter with min/max TextInputs), creator typeahead via `relationship('user', 'username')->searchable()`, region select, has-language text/contains filter against the jsonb column.
+- [ ] Default sort: `created_at` DESC.
+- [ ] Pest tests in `tests/Feature/Admin/ListingResourceTest.php` — admin-only access, non-admin 403, guest redirect, list renders, read-only posture (canCreate/canEdit/canDelete all false), each filter narrows correctly, default sort newest-first.
+
+**Phase 2 — View page + force-cancel action + related entities**
+
+- [ ] `Pages/ViewListing` registered in `getPages()` + table-level `ViewAction` row action.
+- [ ] `Schemas/ListingInfolist` with three sections:
+  - **Listing details** — every column rendered, creator link to `UserResource` view, status / platform / game badges.
+  - **Related match** — visible only when `status === Taken`; link to `route('filament.admin.resources.disputes.view', $match->id)` (the M12 `GameMatchResource`). Hidden otherwise.
+  - **Wallet transactions** — every `wallet_transactions` row tied to this listing. Lookup combines `whereIn('reference_id', WalletReferenceParser::allReferencesFor('listing', $id))` with `orWhere('related_listing_id', $id)` so the FK-bound rows (escrow holds via `match-take:{listingId}`, escrow holds on listing-create, refunds on cancel) all appear. Reuses M31's HTML-summary pattern.
+- [ ] Force-cancel header action — `danger` color, confirm modal showing `Listing #X · $Y stake · @creator` so misclick risk is low. `visible(fn $r => $r->status === ListingStatus::Open)`. Callback: `app(CancelListingAction::class)->handle($record)`. Defense-in-depth re-check `status === Open` inside the callback (stale-cache safety). Filament notification on success.
+- [ ] Pest tests — view page renders, force-cancel action hidden on Taken/Expired/Cancelled, action visible+working on Open, force-cancel flips status to Cancelled AND emits an `escrow_release` ledger row with `listing-cancel:{id}` reference (via `Wallet::release`), creator's balance returns to pre-listing state, action stays hidden after cancel (idempotent at the visibility layer).
 
 ### Not in M32
 
