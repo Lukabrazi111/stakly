@@ -1,10 +1,14 @@
 <?php
 
 use App\Enums\ListingStatus;
+use App\Enums\WalletTransactionType;
 use App\Filament\Resources\Listings\ListingResource;
 use App\Filament\Resources\Listings\Pages\ListListings;
+use App\Filament\Resources\Listings\Pages\ViewListing;
 use App\Models\Listing;
 use App\Models\User;
+use App\Models\WalletTransaction;
+use App\Services\Wallet;
 use Livewire\Livewire;
 
 use function Pest\Laravel\actingAs;
@@ -125,4 +129,81 @@ test('default sort is newest first', function () {
 
     Livewire::test(ListListings::class)
         ->assertCanSeeTableRecords([$new, $old], inOrder: true);
+});
+
+// ─── View page (Phase 2) ──────────────────────────────────────────────────
+
+test('admin can view a listing', function () {
+    $listing = Listing::factory()->open()->create();
+
+    Livewire::test(ViewListing::class, ['record' => $listing->getRouteKey()])
+        ->assertOk();
+});
+
+test('view page renders the wallet transactions section', function () {
+    platformUser();
+    $creator = User::factory()->active()->create();
+    Wallet::deposit($creator, '500', reference: 'test:listing-view:'.$creator->id);
+
+    $listing = Listing::factory()->open()->for($creator)->create(['stake_amount' => 50]);
+    Wallet::hold($creator, '50', $listing, reference: "listing-create:{$listing->id}");
+
+    Livewire::test(ViewListing::class, ['record' => $listing->getRouteKey()])
+        ->assertSeeText("listing-create:{$listing->id}");
+});
+
+// ─── Force-cancel visibility ──────────────────────────────────────────────
+
+test('force-cancel action is visible on Open listings', function () {
+    $listing = Listing::factory()->open()->create();
+
+    Livewire::test(ViewListing::class, ['record' => $listing->getRouteKey()])
+        ->assertActionVisible('force_cancel');
+});
+
+test('force-cancel action is hidden on Taken listings', function () {
+    $listing = Listing::factory()->taken()->create();
+
+    Livewire::test(ViewListing::class, ['record' => $listing->getRouteKey()])
+        ->assertActionHidden('force_cancel');
+});
+
+test('force-cancel action is hidden on Expired listings', function () {
+    $listing = Listing::factory()->expired()->create();
+
+    Livewire::test(ViewListing::class, ['record' => $listing->getRouteKey()])
+        ->assertActionHidden('force_cancel');
+});
+
+test('force-cancel action is hidden on already-Cancelled listings', function () {
+    $listing = Listing::factory()->cancelled()->create();
+
+    Livewire::test(ViewListing::class, ['record' => $listing->getRouteKey()])
+        ->assertActionHidden('force_cancel');
+});
+
+// ─── Force-cancel behavior ────────────────────────────────────────────────
+
+test('force-cancel refunds the creator and flips status to Cancelled', function () {
+    platformUser();
+    $creator = User::factory()->active()->create();
+    Wallet::deposit($creator, '500', reference: 'test:fc-refund:'.$creator->id);
+
+    $listing = Listing::factory()->open()->for($creator)->create(['stake_amount' => 75]);
+    Wallet::hold($creator, '75', $listing, reference: "listing-create:{$listing->id}");
+
+    $balanceBefore = Wallet::balanceFor($creator->fresh());
+
+    Livewire::test(ViewListing::class, ['record' => $listing->getRouteKey()])
+        ->callAction('force_cancel')
+        ->assertHasNoActionErrors();
+
+    expect($listing->fresh()->status)->toBe(ListingStatus::Cancelled);
+    expect(Wallet::balanceFor($creator->fresh()))->toBe(bcadd($balanceBefore, '75', 6));
+
+    $releaseRow = WalletTransaction::query()
+        ->where('reference_id', "listing-cancel:{$listing->id}")
+        ->first();
+    expect($releaseRow)->not->toBeNull();
+    expect($releaseRow->type)->toBe(WalletTransactionType::EscrowRelease);
 });

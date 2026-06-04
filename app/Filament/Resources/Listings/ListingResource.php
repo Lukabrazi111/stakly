@@ -3,10 +3,13 @@
 namespace App\Filament\Resources\Listings;
 
 use App\Filament\Resources\Listings\Pages\ListListings;
+use App\Filament\Resources\Listings\Pages\ViewListing;
+use App\Filament\Resources\Listings\Schemas\ListingInfolist;
 use App\Filament\Resources\Listings\Tables\ListingsTable;
 use App\Models\Listing;
 use BackedEnum;
 use Filament\Resources\Resource;
+use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
 
@@ -34,6 +37,11 @@ class ListingResource extends Resource
 
     protected static ?string $slug = 'listings';
 
+    public static function infolist(Schema $schema): Schema
+    {
+        return ListingInfolist::configure($schema);
+    }
+
     public static function table(Table $table): Table
     {
         return ListingsTable::configure($table);
@@ -43,6 +51,7 @@ class ListingResource extends Resource
     {
         return [
             'index' => ListListings::route('/'),
+            'view' => ViewListing::route('/{record}'),
         ];
     }
 

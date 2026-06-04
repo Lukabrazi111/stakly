@@ -2,7 +2,7 @@
 
 Frontend-first build. UI against real DB infrastructure + seeded fake data; backend logic (escrow, payouts, on-chain integration) lands per page once the UI is validated. Milestones are work-chunk labels, not version commitments — decisions inside any of them are revisitable.
 
-> **Shipped milestones live in `milestones_archived.md`** (M1, M2, M2.5, M3, M3.5, M4, M5, M6, M7, M8 all phases, M10, M11, M12 all phases, M14 Slice A, M16 all phases, M17, M18, M19, M22, M23, M24, M25, M27 all phases, M29 all phases, M30 all phases, M31 all phases). **Parked milestones** (work that isn't being picked up right now) also live in the archive — currently M13. This file is for active + upcoming work + the cross-cutting architectural decisions that earlier milestones established.
+> **Shipped milestones live in `milestones_archived.md`** (M1, M2, M2.5, M3, M3.5, M4, M5, M6, M7, M8 all phases, M10, M11, M12 all phases, M14 Slice A, M16 all phases, M17, M18, M19, M22, M23, M24, M25, M27 all phases, M29 all phases, M30 all phases, M31 all phases, M32 all phases). **Parked milestones** (work that isn't being picked up right now) also live in the archive — currently M13. This file is for active + upcoming work + the cross-cutting architectural decisions that earlier milestones established.
 
 ## Phases (map)
 
@@ -10,14 +10,14 @@ Frontend-first build. UI against real DB infrastructure + seeded fake data; back
 
 - **M30** — Admin user management (all 6 phases, 2026-06-03 → 2026-06-04). UserResource, ban toggle + four enforcement guards, mandatory 2FA on admin role, on-every-login 2FA challenge via Fortify bridge, user-facing ban feedback (banner + bell + email), impersonation via `stechstudio/filament-impersonate` + Stakly audit/reason/expiry layer.
 - **M31** — Admin wallet ledger (both phases, 2026-06-04). Read-only `WalletTransactionResource` with filters + sum summarizer, ViewWalletTransaction with infolist + reference-ID parser + sibling-entity lookup.
+- **M32** — Admin listing management (both phases, 2026-06-04). Read-only `ListingResource` with status/platform/creator/stake/region/language filters, ViewListing with infolist (details + related match if Taken + wallet transactions via M31 parser) + force-cancel action routed through `CancelListingAction`. **Admin trio now complete — every state on the platform is investigable + actionable from `/admin` without Tinker.**
 
 **Next up:**
 
-- **M32** — Admin listing management. Closes the admin trio (Users + Wallet + Listings = "investigate any state without Tinker"). Filament `ListingResource` with one money-touching action (force-cancel via existing `CancelListingAction`).
-
-**Active / upcoming** (after M32):
-
 - **M28** — Designed Fees page. Hand-coded marketing surface — transparent 5–10% commission disclosure, interactive calculator, replaces footer Support link in header nav. Highest-leverage pre-launch trust signal; design-driven (`ui-ux-pro-max` skill).
+
+**Active / upcoming** (after M28):
+
 - **M14** — Outcome pipeline hardening. Slice A + Phase 1 shipped; **Phases 2 (reliability — retries / rate-limit awareness / circuit breaker), 3 (coverage — aborted games / multi-candidate disambiguation / time-control mismatch), 4 (dispute fast-path)** remain. Production-critical for the settlement engine.
 - **M20** — Email notifications. **Spec materially shrunk**: M27 P5 already shipped the in-app preferences UI + `notification_preferences` table + 9 `PlayerNotification` classes; M30 P4 wired the `mail` channel for ban notifications. What's left = branded HTML email templates, flip `'mail'` into `via()` on the remaining PlayerNotification subclasses, un-disable the Email toggle in `/settings/notifications`, production SMTP config. Realistically 2–3 days.
 - **M21** — Blacklist + safety. Block users from listings + chat, with anti-evasion considerations. Has open design questions (block semantics + multi-account evasion) — needs alignment before coding.
@@ -432,47 +432,3 @@ Not CMS-managed on purpose. The Filament CMS template (`cms/page.tsx`) is intent
 - Localised currency conversion ("how much is this in EUR?"). USDT is the unit on every Stakly surface; introducing currency conversion UI confuses the platform's denomination.
 
 ---
-
-## M32 — Admin listing management
-
-Operational visibility + force-cancel for the marketplace. The lowest-urgency of the three admin gaps, but enables takedown of abusive listings (sub-penny stakes, off-platform deal solicitation in the title, harassment-style descriptions) without dropping to Tinker. Admin views every listing the same way users see them, plus a single moderation action.
-
-### Design decisions taken into this milestone
-
-- **Index columns** — id, creator (link to UserResource view), state badge (Open / Taken / Cancelled / Expired), platform (chess.com / Lichess), stake_amount (right-aligned), skill range, time controls, region, languages, created_at, expires_at.
-- **Filters** — state multi-select, platform, stake range, creator typeahead, region, has-language.
-- **One action: Force cancel.** Routes through the existing `CancelListingAction` so escrow releases via `Wallet::release` and the ledger stays clean — the admin never writes to `usdt_balance` directly. Confirm dialog names the listing id + stake + creator so a wrong click is hard. Listing must be in `Open` state; Taken / Cancelled / Expired states have no force-cancel action (the corresponding match flow handles those cases through `GameMatchResource`).
-- **View page.** Full listing data, related match (if Taken — link to `GameMatchResource`), related wallet transactions (escrow hold + any release on cancel).
-- **No edit action.** Stake / skill range / platform are immutable on a real listing — changing them mid-flight invalidates expectations for any taker. If a listing needs changes, the right path is force-cancel + the creator re-creates.
-- **No bulk cancel.** One listing at a time; bulk-cancel is a footgun and there's no operational scenario that needs it.
-- **`ListingStatus` gets `HasColor` + `HasLabel`.** Same pattern M31 used for `WalletTransactionType` — auto-colored badges across every Filament surface that reads this enum (admin index, view page, dashboard widgets, M32 + future).
-- **The M31 wallet-reference parser already knows about listing prefixes.** `listing-create:` / `listing-cancel:` / `listing-expire:` / `match-take:` are all entity-mapped to "listing" via `WalletReferenceParser::parseEntity()`. The View page's wallet-transactions section calls `WalletReferenceParser::allReferencesFor('listing', $id)` + `whereIn('reference_id', $candidates)` (plus FK match on `related_listing_id`) — fast indexed lookup, no LIKE, no parser logic re-implementation.
-
-### Phases
-
-**Phase 1 — Resource scaffold + index page + filters**
-
-- [ ] `App\Enums\ListingStatus` implements `HasColor` + `HasLabel`. Open=success, Taken=warning, Expired=gray, Cancelled=danger.
-- [ ] `app/Filament/Resources/Listings/` folder: `ListingResource` (read-only — `canCreate / canEdit / canDelete = false` on the resource, force-cancel surfaces only as a header action on the View page in P2), `Pages/ListListings`, `Tables/ListingsTable`.
-- [ ] Index columns — id, Creator (link to `filament.admin.resources.users.view`), Game, Platform, Stake (right-aligned, `$X.XX USDT` via `number_format((float) $state, 2)` — `decimal(12,2)` doesn't need BCMath display precision the way the ledger does), Skill range (formatted "1200–1600"), Time controls (joined from the `time_control` jsonb column), Region, Languages (joined from the `language` jsonb column), Status (auto-colored badge), Created at, Expires at.
-- [ ] Filters — status multi-select via `->options(ListingStatus::class)`, platform select, stake range (custom Filter with min/max TextInputs), creator typeahead via `relationship('user', 'username')->searchable()`, region select, has-language text/contains filter against the jsonb column.
-- [ ] Default sort: `created_at` DESC.
-- [ ] Pest tests in `tests/Feature/Admin/ListingResourceTest.php` — admin-only access, non-admin 403, guest redirect, list renders, read-only posture (canCreate/canEdit/canDelete all false), each filter narrows correctly, default sort newest-first.
-
-**Phase 2 — View page + force-cancel action + related entities**
-
-- [ ] `Pages/ViewListing` registered in `getPages()` + table-level `ViewAction` row action.
-- [ ] `Schemas/ListingInfolist` with three sections:
-  - **Listing details** — every column rendered, creator link to `UserResource` view, status / platform / game badges.
-  - **Related match** — visible only when `status === Taken`; link to `route('filament.admin.resources.disputes.view', $match->id)` (the M12 `GameMatchResource`). Hidden otherwise.
-  - **Wallet transactions** — every `wallet_transactions` row tied to this listing. Lookup combines `whereIn('reference_id', WalletReferenceParser::allReferencesFor('listing', $id))` with `orWhere('related_listing_id', $id)` so the FK-bound rows (escrow holds via `match-take:{listingId}`, escrow holds on listing-create, refunds on cancel) all appear. Reuses M31's HTML-summary pattern.
-- [ ] Force-cancel header action — `danger` color, confirm modal showing `Listing #X · $Y stake · @creator` so misclick risk is low. `visible(fn $r => $r->status === ListingStatus::Open)`. Callback: `app(CancelListingAction::class)->handle($record)`. Defense-in-depth re-check `status === Open` inside the callback (stale-cache safety). Filament notification on success.
-- [ ] Pest tests — view page renders, force-cancel action hidden on Taken/Expired/Cancelled, action visible+working on Open, force-cancel flips status to Cancelled AND emits an `escrow_release` ledger row with `listing-cancel:{id}` reference (via `Wallet::release`), creator's balance returns to pre-listing state, action stays hidden after cancel (idempotent at the visibility layer).
-
-### Not in M32
-
-- Manual "create listing on behalf of a user" action. No legitimate support reason; a vector for admin abuse if it existed.
-- Force-expire (separate from force-cancel). The expiry clock is automatic; manual expiry without refund is a money operation that should go through the existing cancellation path. If we ever need "skip the timer," it's the cancellation action with the same refund behavior.
-- Listing dispute moderation (separate from match dispute moderation). Match disputes are covered by `GameMatchResource` (M12). Pre-match listing disputes don't exist as a concept.
-- Editing listing description / title (no fields exist today on listings — listing is just stake + skill + time control + region + languages). If a future listing schema adds free-text fields, moderation routes through M13 chat-anti-abuse patterns, not via direct admin edits.
-
