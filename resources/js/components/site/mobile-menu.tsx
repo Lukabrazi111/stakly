@@ -96,7 +96,7 @@ export function MobileMenu() {
                     {t('Site navigation, search, and account actions.')}
                 </SheetDescription>
 
-                <div className="flex items-center justify-between border-b border-border/50 px-5 py-4">
+                <div className="flex items-center border-b border-border/50 px-5 py-4">
                     <SheetClose asChild>
                         <Link
                             href={home()}
@@ -106,7 +106,6 @@ export function MobileMenu() {
                             stakly
                         </Link>
                     </SheetClose>
-                    <LocaleSwitcher align="end" />
                 </div>
 
                 <div className="px-5 pt-5">
@@ -175,7 +174,19 @@ export function MobileMenu() {
                     </div>
                 )}
 
-                <div className="mt-auto flex flex-col gap-3 p-5">
+                {/* Locale switcher — settings-style utility row, sits above
+                    the auth / user-card section so it's reachable for both
+                    guests and authed users without crowding the sheet's
+                    primary actions or competing with the sheet's built-in
+                    close X button at the top right. */}
+                <div className="mt-auto flex items-center justify-between border-t border-border/40 px-5 py-4">
+                    <span className="text-sm font-medium text-muted-foreground">
+                        {t('Language')}
+                    </span>
+                    <LocaleSwitcher align="end" />
+                </div>
+
+                <div className="flex flex-col gap-3 p-5">
                     {user ? (
                         <div className="flex flex-col overflow-hidden rounded-2xl border border-border/60 bg-card/95 backdrop-blur-md">
                             <div className="flex items-center gap-3 p-4">

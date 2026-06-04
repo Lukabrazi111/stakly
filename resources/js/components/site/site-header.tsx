@@ -72,17 +72,28 @@ export function SiteHeader() {
                         </div>
                     )}
 
+                    {/* Account cluster — separated from the nav/action zone
+                        by a subtle vertical divider so the header reads as
+                        three groups (nav · action · account) at a glance.
+                        The divider only renders for authed users because
+                        guests have no left-side action button competing
+                        for the boundary. */}
                     <div className="ml-3 flex items-center gap-3">
-                        <LocaleSwitcher />
                         {user ? (
                             <>
+                                <span
+                                    aria-hidden
+                                    className="h-6 w-px bg-border/60"
+                                />
                                 {isUnverified && <UnverifiedChip />}
                                 <BalanceChip balance={user.usdt_balance} />
                                 <BellButton />
+                                <LocaleSwitcher compact />
                                 <ProfileMenu user={user} />
                             </>
                         ) : (
                             <>
+                                <LocaleSwitcher compact />
                                 <Button
                                     variant="ghost"
                                     size="default"

@@ -1,5 +1,5 @@
 import { router, usePage } from '@inertiajs/react';
-import { Languages } from 'lucide-react';
+import { Check, Languages } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
     DropdownMenu,
@@ -44,34 +44,56 @@ export function LocaleSwitcher({ align = 'end', compact = false }: Props) {
         <DropdownMenu>
             <DropdownMenuTrigger asChild>
                 <Button
-                    variant="ghost"
-                    size="sm"
+                    variant={compact ? 'ghost' : 'outline'}
+                    size={compact ? 'icon' : 'sm'}
                     aria-label="Language"
                     className={cn(
-                        'inline-flex items-center gap-2 text-muted-foreground hover:text-foreground',
-                        compact && 'px-2',
+                        'cursor-pointer transition-colors duration-150 ease-out',
+                        compact
+                            ? 'size-10 rounded-full text-muted-foreground hover:bg-primary/10 hover:text-primary data-[state=open]:bg-primary/10 data-[state=open]:text-primary'
+                            : 'rounded-full text-foreground data-[state=open]:border-primary/40 data-[state=open]:bg-primary/10 [&_svg]:text-muted-foreground hover:[&_svg]:text-primary data-[state=open]:[&_svg]:text-primary',
                     )}
                 >
-                    <Languages className="size-4" aria-hidden />
+                    <Languages
+                        className={compact ? 'size-5' : 'size-4'}
+                        aria-hidden
+                    />
                     <span className={cn(compact && 'sr-only')}>
                         {current?.native_label ?? locale.toUpperCase()}
                     </span>
                 </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align={align} className="min-w-[10rem]">
-                {availableLocales.map((entry) => (
-                    <DropdownMenuItem
-                        key={entry.code}
-                        onSelect={() => switchTo(entry.code)}
-                        className={cn(
-                            'cursor-pointer',
-                            entry.code === locale &&
-                                'bg-primary/15 text-foreground',
-                        )}
-                    >
-                        {entry.native_label}
-                    </DropdownMenuItem>
-                ))}
+            <DropdownMenuContent
+                align={align}
+                sideOffset={8}
+                className="w-48 overflow-hidden p-0"
+            >
+                {availableLocales.map((entry) => {
+                    const isActive = entry.code === locale;
+
+                    return (
+                        <DropdownMenuItem
+                            key={entry.code}
+                            onSelect={() => switchTo(entry.code)}
+                            className={cn(
+                                'flex cursor-pointer items-center justify-between gap-2 rounded-none px-4 py-2.5 text-sm font-medium transition-colors duration-150 ease-out',
+                                isActive
+                                    ? 'bg-primary/25 text-foreground hover:bg-primary/25 focus:bg-primary/25'
+                                    : 'text-muted-foreground hover:bg-primary/10 hover:text-foreground',
+                            )}
+                        >
+                            <span className="truncate">
+                                {entry.native_label}
+                            </span>
+                            {isActive && (
+                                <Check
+                                    className="size-4 shrink-0 text-primary"
+                                    aria-hidden
+                                />
+                            )}
+                        </DropdownMenuItem>
+                    );
+                })}
             </DropdownMenuContent>
         </DropdownMenu>
     );

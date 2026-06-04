@@ -403,6 +403,21 @@ Smoke test (manual, user-driven):
 - [ ] On `/en/listings/123`, switch to Русский → lands on `/ru/listings/123` (locale segment swapped, path preserved). Switcher highlights the current locale.
 - [ ] Mobile menu sheet → switcher renders, swap works, sheet closes naturally on navigation.
 
+**Follow-up polish (post-ship, 2026-06-04):**
+
+- Header restructured into three visual zones (nav · action · account). LocaleSwitcher moved from inline-between-nav-and-account into the account cluster (between Bell and Avatar). Subtle vertical divider added between the Create-listing CTA and the account cluster (authed users only).
+- Compact LocaleSwitcher trigger now matches `BellButton` shape exactly — `size-10 rounded-full`, `size-5` icon, same hover (`bg-primary/10` + primary icon) + open-state styling. The account cluster reads as evenly spaced 40×40 circles.
+- Dropdown panel refactored to full-width rows: container is `overflow-hidden p-0`, items lose individual `rounded-md`, active row is a `bg-primary/25` edge-to-edge wash + primary check on the right. Hover on inactive rows = `bg-primary/10` wash. Active row's hover/focus locked to its own bg so hovering the current selection doesn't shift colour.
+- Mobile placement moved out of the sheet header (was colliding with shadcn `SheetContent`'s built-in close-X button) into a dedicated settings-style row at the bottom of the sheet, above the auth / user-card section. Label "Language" on the left, the trigger on the right.
+- Mobile (non-compact) trigger switched from `ghost` variant to `outline` — the ghost variant's baked-in `hover:[text-shadow:var(--text-shadow-glow)]` was combining with custom `hover:text-primary` + `hover:bg-primary/10` and rendering as a loud pink-text-with-white-glow blob. Outline variant has a calmer bordered-pill shape with subtle pink-wash hover.
+- First `ka.json` / `ru.json` entries land (`Get started`, `How it works`) — proves the translation loop end-to-end before Slice D+'s bulk extraction.
+
+Lessons folded back:
+
+- **shadcn `DropdownMenuItem` has built-in `hover:bg-primary/10 focus:bg-primary/10`** in its default class. Any custom active state needs an explicit `hover:bg-X focus:bg-X` matching its bg, or the default override fires on hover and shifts the colour.
+- **`ghost` variant + `hover:text-primary` is a bad combo** when text is visible. The variant's text-shadow glow stacks with the colour change and reads as a muddy blur. Use `outline` (border + bg-card + bg-primary/10 hover, no text-shadow) when the button has visible label text. Reserve `ghost` for icon-only triggers where the label is `sr-only`.
+- **`shadcn SheetContent` ships an absolutely-positioned close-X button at `top-4 right-4`.** Anything placed in the sheet's first content row collides with it. Keep that row brand-only; put utility controls in their own row lower down.
+
 **P4 Slices D+ — Page-by-page extraction (one slice per area, each its own commit)**
 
 - [ ] Listings (index + detail + create + mine + filters).
