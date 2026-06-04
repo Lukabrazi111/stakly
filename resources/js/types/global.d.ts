@@ -1,7 +1,7 @@
 import '@inertiajs/core';
 import 'react';
-import type { Auth } from '@/types/auth';
 import type { LocaleMeta, Translations } from '@/lib/i18n';
+import type { Auth } from '@/types/auth';
 import type { FlashToast } from '@/types/ui';
 
 declare module '@inertiajs/core' {

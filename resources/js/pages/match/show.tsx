@@ -190,7 +190,11 @@ export default function MatchShow({ match, messages }: MatchShowProps) {
                 />
 
                 <div className="mb-6">
-                    <BackLink fallback={listingShow({ listing: match.listing.id }).url} />
+                    <BackLink
+                        fallback={
+                            listingShow({ listing: match.listing.id }).url
+                        }
+                    />
                 </div>
 
                 <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_460px] lg:gap-6">

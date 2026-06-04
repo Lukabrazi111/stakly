@@ -193,3 +193,50 @@ test('unknown locale segment does not match the CMS route', function () {
     // before the CMS route ever sees it — no controller check needed.
     $this->get('/fr/about')->assertNotFound();
 });
+
+// ─── M26 P4 Slice B — multi-locale resolver sanity checks ──────────────────
+//
+// The full Filament locale UI was deferred until a translator pipeline
+// exists; these three tests cover what the schema + resolver are
+// already capable of so the routing change (M26 P4 Slice A) doesn't
+// silently regress the M26 P1 fallback behaviour.
+
+test('GET /ka/{slug} renders the Georgian row when one exists', function () {
+    Page::factory()->create([
+        'slug' => 'about',
+        'locale' => 'en',
+        'title' => 'About Stakly',
+        'published_at' => now()->subDay(),
+    ]);
+    Page::factory()->create([
+        'slug' => 'about',
+        'locale' => 'ka',
+        'title' => 'სტეიკლის შესახებ',
+        'published_at' => now()->subDay(),
+    ]);
+
+    $this->get('/ka/about')
+        ->assertOk()
+        ->assertInertia(fn ($p) => $p
+            ->component('cms/page')
+            ->where('title', 'სტეიკლის შესახებ'));
+});
+
+test('GET /ka/{slug} falls back to the English row when no Georgian row exists', function () {
+    Page::factory()->create([
+        'slug' => 'about',
+        'locale' => 'en',
+        'title' => 'About Stakly',
+        'published_at' => now()->subDay(),
+    ]);
+
+    $this->get('/ka/about')
+        ->assertOk()
+        ->assertInertia(fn ($p) => $p
+            ->component('cms/page')
+            ->where('title', 'About Stakly'));
+});
+
+test('GET /ka/{slug} 404s when neither Georgian nor English row exists', function () {
+    $this->get('/ka/about')->assertNotFound();
+});

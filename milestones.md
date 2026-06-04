@@ -12,9 +12,9 @@ Frontend-first build. UI against real DB infrastructure + seeded fake data; back
 - **M31** — Admin wallet ledger (both phases, 2026-06-04). Read-only `WalletTransactionResource` with filters + sum summarizer, ViewWalletTransaction with infolist + reference-ID parser + sibling-entity lookup.
 - **M32** — Admin listing management (both phases, 2026-06-04). Read-only `ListingResource` with status/platform/creator/stake/region/language filters, ViewListing with infolist (details + related match if Taken + wallet transactions via M31 parser) + force-cancel action routed through `CancelListingAction`. **Admin trio now complete — every state on the platform is investigable + actionable from `/admin` without Tinker.**
 
-**Next up:**
+**In-flight:**
 
-- **M26 Phase 4** — Full-site i18n. Closes M26 (P1–3 + follow-ups already shipped). Locale-prefixed routing (`/en/`, `/ka/`, `/ru/`), `SetLocale` + `RedirectUnprefixedLocale` middleware, Laravel-native `lang/*.json` bridge + React `useT()` hook, `LocaleSwitcher` UI, multi-locale CMS rows, page-by-page string extraction across the whole user-facing app. Admin (Filament) stays English-only by design. Realistic scope: 1–2 weeks of engineering (translation content is tracked separately).
+- **M26 Phase 4** — Full-site i18n. Slice A ✓ + Slice B ✓ + Slice C ✓ all shipped 2026-06-04. **Up next: Slice D+** — page-by-page string extraction (Listings → Profile → Match → Wallet → Notifications → Settings → Auth → Banned banner → Validation / errors). Translation labor (`lang/ka.json` / `lang/ru.json` content) tracked separately as a content backlog.
 
 **Active / upcoming** (after M26):
 
@@ -335,7 +335,7 @@ Design decisions taken into this phase:
 
 - **URL: path prefix everywhere.** `/en/listings`, `/ka/listings`, `/ru/listings`. Unprefixed routes (`/listings`) → 301 redirect to `/{defaultLocale}/listings` (cookie-remembered if user has switched before, else `en`). Cleanest for SEO and link sharing. Matches M26 P1's existing `/{locale}/{slug}` CMS pattern — the whole app now uses the same shape.
 - **Tech: Laravel-native bridge, NOT `react-i18next`.** Store strings in standard `lang/en.json`, `lang/ka.json`, `lang/ru.json`. `HandleInertiaRequests::share()` exposes the active locale's bag as a shared Inertia prop. React `useT()` hook reads from it. One source of truth — `__('Create listing')` in PHP and `t('Create listing')` in React both read the same file. Backend strings (validation, future M20 notification emails) work out of the box because Laravel already uses `lang/*.json`. Swap to `react-i18next` later if we ever need ICU plural rules or lazy-loaded locale bundles; call sites change but translation files port cleanly.
-- **`URL::defaults(['locale' => ...])` keeps Wayfinder generators clean.** Middleware sets the URL default at request boundary so `route('listings.index')` and `index().url` auto-prefix without per-call-site changes. No Wayfinder regen needed.
+- **`URL::defaults(['locale' => ...])` keeps server-side `route()` clean; Wayfinder needed `setUrlDefaults` on the client.** Server-side Laravel honours `URL::defaults` natively, so `route('listings.index')` auto-prefixes. Wayfinder generators run client-side though, where they don't see `URL::defaults` — solved by calling `setUrlDefaults(() => ({ locale: currentLocale }))` in `app.tsx`, with `currentLocale` seeded from the initial `data-page` DOM attribute and refreshed via `router.on('success')`. **Caveat:** Wayfinder calls at module-top-level scope run BEFORE this wires up, so nav arrays must be built inside component bodies (Slice A had to fix the settings layout for this). Multi-param routes also stopped accepting positional args once `{locale}` joined the URI — `show(123)` had to become `show({ listing: 123 })` across ~30 callsites.
 - **Filament admin stays unprefixed and English-only.** `/admin/*` is internal, single-language. No locale switcher in admin chrome. Reduces surface area and admin training.
 - **CMS pages translate per-locale.** Schema already supports it (M26 P1 baked in `locale` + UNIQUE `(slug, locale)`). Filament resource gets a locale select + filter so admin writes one row per (slug, locale). `PageController::show` queries current locale with fallback to `en`.
 - **User-generated content (listing notes, bios, chat) NOT translated.** Shown in whatever language the user typed in. Machine translation (DeepL / Google) is a future polish if ever needed.
@@ -344,30 +344,64 @@ Design decisions taken into this phase:
 
 Sub-phases:
 
-**P4 Slice A — Foundation (no UI changes)**
+**P4 Slice A — Foundation (no UI changes) ✓ shipped 2026-06-04**
 
-- [ ] `SetLocale` middleware reads `{locale}` from URL, calls `App::setLocale()`, sets `URL::defaults(['locale' => ...])`.
-- [ ] `RedirectUnprefixedLocale` middleware: any web request without a locale prefix → 301 to `/{defaultLocale}/<path>` (cookie-aware default, fallback `en`).
-- [ ] All web routes wrapped in `Route::prefix('{locale}')->whereIn('locale', ['en','ka','ru'])->group(...)`. Admin (Filament `/admin/*`), Fortify auth POST endpoints (`/login`, `/logout`, etc), and Reverb WS routes stay unprefixed.
-- [ ] `lang/en.json` populated with a starter set; `lang/ka.json` + `lang/ru.json` empty (Laravel falls back to key).
-- [ ] `HandleInertiaRequests::share()` adds `translations` (cached per locale), `locale` (current), `availableLocales` (list with native labels).
-- [ ] React `useT()` hook with `:name` interpolation.
-- [ ] Dynamic `<html lang="{$locale}">` in `app.blade.php` + `og:locale` + `<link rel="alternate" hreflang="...">` per supported locale.
-- [ ] **Wayfinder verification.** `URL::defaults(['locale' => ...])` should auto-prefix every Wayfinder-generated URL (`route('listings.index')`, `index().url`, etc) — but this depends on Wayfinder honouring the URL default at generator runtime, which has changed shape in past minor versions. **Verify with a smoke test**: hit `/en/listings`, log in, navigate to `/listings/{id}` via a `<Link>`-rendered URL → assert the generated href is `/en/listings/{id}`. If Wayfinder skips the default, fall back to either (a) `npm run build` regen with a `?locale=` param convention, or (b) a Wayfinder generator override in `vite.config.ts`. Document whichever path we take.
-- [ ] Tests: middleware behavior, redirect for unprefixed requests, unsupported locale → 404, cookie-remembered default.
+- [x] `SetLocale` middleware reads `{locale}` from URL, calls `App::setLocale()`, sets `URL::defaults(['locale' => ...])`, queues `stakly_locale` cookie, and **strips `{locale}` from the route parameter bag** to defuse a Laravel positional-dispatch bug.
+- [x] `RedirectUnprefixedLocale` middleware: GET/HEAD only, exempts Fortify/admin/broadcasting/static/2–3-letter-locale-like first segments, 301 to `/{cookieLocaleOrDefault}/<path>`. Registered GLOBALLY (not web group) because unmatched routes need to redirect.
+- [x] `routes/web.php` + `routes/settings.php` wrapped in `Route::prefix('{locale}')->whereIn('locale', config('stakly.locales'))->middleware(SetLocale)`. M26 P1's nested `/{locale}/{slug}` CMS route refactored to `/{slug}` inside the group; obsolete `pages.redirect` deleted.
+- [x] `config/stakly.php` — single source of truth for `locales` (`en, ka, ru`), `default_locale`, `locales_meta` (native label + og:locale per code). `Page::SUPPORTED_LOCALES` const → `Page::supportedLocales()` method reading from config.
+- [x] `lang/en.json` populated (~35 starter keys); `lang/ka.json` + `lang/ru.json` empty placeholders.
+- [x] `HandleInertiaRequests::share()` adds `locale` / `availableLocales` / `translations` **as closures** (Inertia computes share before route middleware runs, so eager values would capture the default 'en').
+- [x] React `useT()` / `useLocale()` / `useAvailableLocales()` in `resources/js/lib/i18n.ts`, `SharedData` interface extended.
+- [x] Dynamic `<html lang>` + `og:locale` + `og:locale:alternate` + `<link rel="alternate" hreflang>` per supported locale + `x-default` in `app.blade.php`.
+- [x] Wayfinder `setUrlDefaults` wired in `app.tsx` — module-level `currentLocale` seeded from initial `data-page` DOM attribute, refreshed on every `router.on('success')`. All ~30 multi-param Wayfinder call sites migrated from positional `route(123)` to object form `route({ paramName: 123 })`.
+- [x] Fortify config — `fortify.home` + `fortify.redirects.logout` updated to `/'.config('stakly.default_locale')`; `FortifyServiceProvider` view callbacks redirect to default-locale home.
+- [x] Tests — 19 `tests/Feature/I18n/LocaleRoutingTest.php` (67 assertions): prefixed routes 200, unprefixed 301, cookie-aware target, unsupported locale 404, exempt paths (Fortify/admin/health/favicon), Inertia share payload, cookie queue.
+- [x] `tests/TestCase.php` `call()` / `json()` override — auto-prefixes test URIs with `/en/` (mirrors the middleware exempt list). Opt-out via `$this->withoutLocalePrefix()`. Kept ~184 existing literal-URL test calls working without churn.
 
-**P4 Slice B — CMS multi-locale**
+Non-obvious lessons (worth carrying into Slice B+):
 
-- [ ] Filament `PageResource` gets locale `Select` on form, locale column on table, locale filter.
-- [ ] `PageController::show` already uses `forSlugWithFallback($slug, $locale)` from M26 P1 — verify it picks current locale and falls back to `en` when row missing.
-- [ ] Seeder writes `About` in `en` + stubs `ka` + `ru` versions (or leaves them missing to exercise fallback path).
-- [ ] Tests assert: Georgian request gets Georgian row if present, English fallback if not, 404 only when no locale's row exists.
+- **Never call Wayfinder generators at module-top-level scope.** They run before `setUrlDefaults` and fall back to the literal `'$locale'` placeholder, producing broken hrefs like `/$locale/settings/profile`. Build nav arrays inside the component body. Slice A had to fix `settings/layout.tsx` for this.
+- **Active-state matching needs Wayfinder-generated `matchPrefix`, not literals.** Hardcoded `/wallet` no longer matches `/en/wallet`. Use `walletIndex().url` for both `href` and `matchPrefix`.
+- **Inertia shared props that depend on the request locale must be closures.** Eager values capture the default 'en' because Inertia's middleware fires `share()` before route-level middleware sets the locale.
+- **An unused route param breaks `array_values($parameters)` ordering** in Laravel's controller dispatcher — adding `{locale}` to a route without a matching `$locale` controller param mismatches positional args and surfaces as a `TypeError` on the next model-bound arg. Fix: `forgetParameter('locale')` inside `SetLocale` after reading it, then read `App::getLocale()` in controllers if you ever need it.
+- **`Fortify::redirects('logout', '/')` short-circuits on the non-null default**, so `fortify.home` alone doesn't fix logout. Set `fortify.redirects.logout` explicitly.
+- **`withCookies()` in tests encrypts by default**; for cookies in the EncryptCookies except list (like `stakly_locale`), use `withUnencryptedCookie()`.
 
-**P4 Slice C — Switcher UI + first string extraction**
+**P4 Slice B — CMS fallback verification (scope cut 2026-06-04)**
 
-- [ ] `LocaleSwitcher` dropdown in `SiteHeader` — native labels (English / ქართული / Русский). On change: set `stakly:locale` cookie + `router.visit('/{newLocale}/{currentSlug}', { preserveScroll: true })`.
-- [ ] Extract strings from `SiteHeader`, `SiteFooter`, `MarqueeStrip`, `Hero`, `GameSelector` into translation keys.
-- [ ] Smoke test the full loop: switch to `/ka`, see Georgian where keys are translated, English fallback elsewhere.
+Originally specced as full Filament multi-locale (Select + filter + seeded ka/ru stubs). Trimmed once it became clear no translator pipeline exists yet — without someone to write Georgian / Russian page bodies, the Filament UI would just be dead surface. The DB schema from M26 P1 already supports per-locale rows + the model resolver falls back to English when a row is missing, so the cost of *adding the Filament Select later* is ~1 hour. Deferred until a translator is actually onboard.
+
+Scope kept (~30 min):
+
+- [ ] `GET /ka/{slug}` renders the Georgian row when it exists (sanity-check the locale-prefix routing actually reaches `forSlugWithFallback` with the right locale).
+- [ ] `GET /ka/{slug}` falls back to the English row when no Georgian row exists (the resolver's documented behaviour, re-verified after Slice A's routing change).
+- [ ] `GET /ka/{slug}` 404s only when neither Georgian nor English exists.
+
+What's deferred to "when translators arrive":
+
+- Filament `PageResource` locale Select on form
+- Locale column + filter on the index table
+- Seeder stubs for ka / ru
+- (re-open this section then; the schema is ready)
+
+**P4 Slice C — Switcher UI + first string extraction ✓ shipped 2026-06-04**
+
+- [x] `LocaleSwitcher` dropdown — `Languages` icon trigger + native-label items (English / ქართული / Русский). Swaps the leading `/{locale}/` segment via `router.visit` with `preserveScroll`. Mounted in `SiteHeader` (desktop, between nav and user controls) and `MobileMenu` (sheet header, next to the Stakly logo). The `stakly_locale` cookie persists automatically — `SetLocale` middleware queues it on every locale-prefixed request, so no cookie write on the client.
+- [x] Strings extracted across the chrome — `SiteHeader`, `SiteFooter`, `Hero`, `GameSelector`, `MobileMenu`, and the marquee items (in `site-layout.tsx` — built inside the component so `useT()` resolves against the active locale, not module-load defaults).
+- [x] `lang/en.json` expanded from 35 → 63 keys, alphabetised, includes `:year` interpolation for the footer copyright. Footer slugs (`about` / `support` / `terms` / `privacy`) compose with the page's `locale` prop instead of hardcoded `/en/` literals.
+- [x] Fixed a Slice A miss — `mobile-menu.tsx` had a module-top-level `navLinks` array that called `listingsIndex()` before `setUrlDefaults` was wired. Moved inside the component body alongside the new `useT()` usage.
+
+Lessons folded back from Slice C:
+
+- **The "no module-top-level Wayfinder" rule applies to translated nav arrays too** — anywhere the chrome builds an `{ label, href }` collection, build it inside the component so both `useT()` and `setUrlDefaults` are populated.
+- **Footer / link arrays composed from locale prop**, not hardcoded `/en/` paths. The default-locale URL only stays correct for users in the default locale; everyone else gets a redirect on click.
+
+Smoke test (manual, user-driven):
+
+- [ ] On `/en/`, open header LocaleSwitcher → pick ქართული → URL flips to `/ka/`, `<html lang>` becomes `ka`, copy stays in English (no `ka.json` content yet, expected). Back-arrow returns to `/en/`. Cookie `stakly_locale=ka` set.
+- [ ] On `/en/listings/123`, switch to Русский → lands on `/ru/listings/123` (locale segment swapped, path preserved). Switcher highlights the current locale.
+- [ ] Mobile menu sheet → switcher renders, swap works, sheet closes naturally on navigation.
 
 **P4 Slices D+ — Page-by-page extraction (one slice per area, each its own commit)**
 

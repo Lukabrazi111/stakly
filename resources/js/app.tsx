@@ -40,6 +40,7 @@ function readInitialLocale(): string {
 
     try {
         const page = JSON.parse(raw) as { props?: { locale?: string } };
+
         return page.props?.locale ?? 'en';
     } catch {
         return 'en';

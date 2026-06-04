@@ -1,8 +1,10 @@
 import { Link } from '@inertiajs/react';
 import { useAuthModal } from '@/components/auth/auth-modal-provider';
 import { Button } from '@/components/ui/button';
+import { useT } from '@/lib/i18n';
 
 export function Hero() {
+    const t = useT();
     const { openRegister } = useAuthModal();
 
     return (
@@ -27,21 +29,21 @@ export function Hero() {
             <div className="mx-auto flex max-w-5xl flex-col items-center px-4 pt-24 pb-20 text-center md:pt-32 md:pb-28">
                 <p className="mb-8 inline-flex items-center gap-2 rounded-full border border-border/60 bg-card/60 px-4 py-1.5 text-xs tracking-widest text-muted-foreground uppercase backdrop-blur">
                     <span className="inline-block size-1.5 rounded-full bg-success" />
-                    Live · chess.com & Lichess verified
+                    {t('Live · chess.com & Lichess verified')}
                 </p>
 
                 <h1 className="font-display text-4xl leading-[0.95] font-extrabold tracking-tight text-balance text-foreground sm:text-5xl md:text-7xl lg:text-8xl">
-                    Stake your skill.
+                    {t('Stake your skill.')}
                     <br />
                     <span className="text-gradient-primary">
-                        Find your match.
+                        {t('Find your match.')}
                     </span>
                 </h1>
 
                 <p className="mt-8 max-w-2xl text-base leading-relaxed text-muted-foreground md:text-lg">
-                    Post a listing, escrow your stake, play an opponent, and get
-                    paid. A peer-to-peer arena for competitive players who put
-                    their money where their rating is.
+                    {t(
+                        'Post a listing, escrow your stake, play an opponent, and get paid. A peer-to-peer arena for competitive players who put their money where their rating is.',
+                    )}
                 </p>
 
                 <div className="mt-10 flex flex-wrap items-center justify-center gap-3">
@@ -50,10 +52,10 @@ export function Hero() {
                         size="pill"
                         onClick={openRegister}
                     >
-                        Get started
+                        {t('Get started')}
                     </Button>
                     <Button variant="ghost" size="lg" asChild>
-                        <Link href="#how-it-works">How it works</Link>
+                        <Link href="#how-it-works">{t('How it works')}</Link>
                     </Button>
                 </div>
             </div>
