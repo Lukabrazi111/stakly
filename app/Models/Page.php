@@ -22,16 +22,22 @@ class Page extends Model
     /** @use HasFactory<PageFactory> */
     use HasFactory;
 
-    public const DEFAULT_LOCALE = 'en';
+    public static function defaultLocale(): string
+    {
+        return config('stakly.default_locale', 'en');
+    }
 
     /**
-     * Locales we render publicly. New entries extend the cache-bust loop in
-     * `booted()` — keep this list and the route's `whereIn('locale', ...)`
-     * constraint in sync.
+     * Locales the public site renders. Sourced from `config/stakly.php`,
+     * the same list the locale-prefix routing + Inertia share use. New
+     * entries automatically extend the cache-bust loop in `booted()`.
      *
-     * @var list<string>
+     * @return list<string>
      */
-    public const SUPPORTED_LOCALES = ['en'];
+    public static function supportedLocales(): array
+    {
+        return config('stakly.locales', ['en']);
+    }
 
     protected $fillable = [
         'slug',
@@ -51,7 +57,7 @@ class Page extends Model
     protected static function booted(): void
     {
         $forget = function (Page $page): void {
-            foreach (self::SUPPORTED_LOCALES as $locale) {
+            foreach (self::supportedLocales() as $locale) {
                 Cache::forget(self::cacheKey($page->slug, $locale));
             }
         };
@@ -80,13 +86,13 @@ class Page extends Model
             return $page;
         }
 
-        if ($locale === self::DEFAULT_LOCALE) {
+        if ($locale === self::defaultLocale()) {
             return null;
         }
 
         return self::query()
             ->where('slug', $slug)
-            ->where('locale', self::DEFAULT_LOCALE)
+            ->where('locale', self::defaultLocale())
             ->first();
     }
 

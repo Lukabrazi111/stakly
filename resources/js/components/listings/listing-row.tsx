@@ -42,14 +42,14 @@ export function ListingRow({ listing }: Props) {
         <article className="group relative flex flex-col gap-4 rounded-2xl border border-border/60 bg-card/60 p-4 transition-all duration-200 ease-out hover:-translate-y-0.5 hover:border-primary/30 hover:bg-card hover:shadow-glow-sm md:flex-row md:items-center md:gap-6 md:p-5">
             {/* Overlay: entire row → listing detail */}
             <Link
-                href={showListing(listing.id).url}
+                href={showListing({ listing: listing.id }).url}
                 aria-label={`View listing from ${listing.creator.username}`}
                 className="absolute inset-0 rounded-2xl focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none"
             />
 
             {/* Creator zone — relative, sits above the overlay → user profile */}
             <Link
-                href={userShow(listing.creator.username).url}
+                href={userShow({ user: listing.creator.username }).url}
                 className="relative flex min-w-0 items-center gap-3 rounded-lg focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none md:w-48 md:shrink-0"
             >
                 <Avatar className="size-11 shrink-0 overflow-hidden rounded-full">

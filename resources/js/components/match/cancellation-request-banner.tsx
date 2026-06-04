@@ -102,7 +102,7 @@ function RespondBanner({
     const handleAccept = () => {
         setProcessing('accept');
         router.post(
-            acceptCancellationRoute(matchId).url,
+            acceptCancellationRoute({ match: matchId }).url,
             {},
             {
                 preserveScroll: true,
@@ -114,7 +114,7 @@ function RespondBanner({
     const handleReject = () => {
         setProcessing('reject');
         router.post(
-            rejectCancellationRoute(matchId).url,
+            rejectCancellationRoute({ match: matchId }).url,
             {},
             {
                 preserveScroll: true,

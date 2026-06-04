@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\Users\Pages;
 
+use App\Filament\Resources\Users\Actions\ImpersonateUserAction;
 use App\Filament\Resources\Users\UserResource;
 use App\Models\User;
 use App\Models\UserModerationLog;
@@ -15,9 +16,10 @@ use Illuminate\Support\Facades\DB;
 
 /**
  * Admin user view page. Header actions: View as visitor (public profile in
- * new tab), Manual email verify (no reason), Reset 2FA (no reason), Ban
- * toggle (reason required in both directions, writes a
- * `user_moderation_logs` row). The Impersonate action lands in M30 Phase 4.
+ * new tab), Manual email verify, Reset 2FA, Ban toggle (reason required in
+ * both directions, writes a `user_moderation_logs` row), and Impersonate
+ * (password + reason required, writes an `admin_impersonations` row via the
+ * `EnterImpersonation` listener).
  */
 class ViewUser extends ViewRecord
 {
@@ -30,6 +32,7 @@ class ViewUser extends ViewRecord
             $this->verifyEmailAction(),
             $this->resetTwoFactorAction(),
             $this->banToggleAction(),
+            ImpersonateUserAction::make()->record($this->getRecord()),
         ];
     }
 

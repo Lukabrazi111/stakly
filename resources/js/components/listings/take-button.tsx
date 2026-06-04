@@ -70,7 +70,7 @@ export function TakeButton({ listing, className = '' }: Props) {
 
     return (
         <Button variant="gradient" size="pill" asChild className={className}>
-            <Link href={showListing(listing.id).url}>Take</Link>
+            <Link href={showListing({ listing: listing.id }).url}>Take</Link>
         </Button>
     );
 }

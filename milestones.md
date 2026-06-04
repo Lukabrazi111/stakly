@@ -2,21 +2,27 @@
 
 Frontend-first build. UI against real DB infrastructure + seeded fake data; backend logic (escrow, payouts, on-chain integration) lands per page once the UI is validated. Milestones are work-chunk labels, not version commitments — decisions inside any of them are revisitable.
 
-> **Shipped milestones live in `milestones_archived.md`** (M1, M2, M2.5, M3, M3.5, M4, M5, M6, M7, M8 all phases, M10, M11, M12 all phases, M14 Slice A, M16 all phases, M17, M18, M19, M22, M23, M24, M25, M27 all phases, M29 all phases). **Parked milestones** (work that isn't being picked up right now) also live in the archive — currently M13. This file is for active + upcoming work + the cross-cutting architectural decisions that earlier milestones established.
+> **Shipped milestones live in `milestones_archived.md`** (M1, M2, M2.5, M3, M3.5, M4, M5, M6, M7, M8 all phases, M10, M11, M12 all phases, M14 Slice A, M16 all phases, M17, M18, M19, M22, M23, M24, M25, M27 all phases, M29 all phases, M30 all phases, M31 all phases, M32 all phases). **Parked milestones** (work that isn't being picked up right now) also live in the archive — currently M13. This file is for active + upcoming work + the cross-cutting architectural decisions that earlier milestones established.
 
 ## Phases (map)
 
-**Active / upcoming:**
+**Recently shipped** (this week):
 
-- **M14** — Outcome pipeline hardening (reframed from "automated outcome adapters" — observability + reliability + coverage of the auto-fetch pipeline; Slice A + Phase 1 shipped, Phases 2–4 remain)
-- **M20** — Notifications (email infrastructure + per-event preferences UI; M20 owns the surface end-to-end)
-- **M21** — Blacklist + safety (block users from listings + chat, with anti-evasion considerations)
-- **M15** — Multi-game expansion (FACEIT, OpenDota, Riot adapters)
-- **M26** — Filament-managed CMS pages (Privacy, Terms, About — multilingual schema, SEO-indexable via global Inertia SSR; Phases 1–3 shipped; small follow-up for og: tags + APP_NAME; Phase 4 locale switcher deferred until a second language ships)
-- **M28** — Designed Fees page (transparent commission disclosure, interactive calculator, header nav — hand-coded React, NOT CMS-managed)
-- **M30** — Admin user management (Filament `UserResource` — search, view, manual email verify, reset 2FA, ban toggle with real enforcement, mandatory 2FA on admin role, user-facing ban feedback, custom impersonation flow, 2FA challenge on every admin login; closes the biggest support gap in the admin panel + hardens admin access). **Phases 1 + 2 + 3 + 4 + 6 shipped 2026-06-03. Phase 5 (impersonate) remains.** <- (in process)
-- **M31** — Admin wallet ledger (Filament `WalletTransactionResource`, read-only — filter / sort / drill into every money movement; the money-audit surface for the custodial platform)
-- **M32** — Admin listing management (Filament `ListingResource` — index, filter, force-cancel via the existing `CancelListingAction` so escrow releases cleanly)
+- **M30** — Admin user management (all 6 phases, 2026-06-03 → 2026-06-04). UserResource, ban toggle + four enforcement guards, mandatory 2FA on admin role, on-every-login 2FA challenge via Fortify bridge, user-facing ban feedback (banner + bell + email), impersonation via `stechstudio/filament-impersonate` + Stakly audit/reason/expiry layer.
+- **M31** — Admin wallet ledger (both phases, 2026-06-04). Read-only `WalletTransactionResource` with filters + sum summarizer, ViewWalletTransaction with infolist + reference-ID parser + sibling-entity lookup.
+- **M32** — Admin listing management (both phases, 2026-06-04). Read-only `ListingResource` with status/platform/creator/stake/region/language filters, ViewListing with infolist (details + related match if Taken + wallet transactions via M31 parser) + force-cancel action routed through `CancelListingAction`. **Admin trio now complete — every state on the platform is investigable + actionable from `/admin` without Tinker.**
+
+**In-flight:**
+
+- **M26 Phase 4** — Full-site i18n. Slice A ✓ + Slice B ✓ + Slice C ✓ all shipped 2026-06-04. **Up next: Slice D+** — page-by-page string extraction (Listings → Profile → Match → Wallet → Notifications → Settings → Auth → Banned banner → Validation / errors). Translation labor (`lang/ka.json` / `lang/ru.json` content) tracked separately as a content backlog.
+
+**Active / upcoming** (after M26):
+
+- **M28** — Designed Fees page. Hand-coded marketing surface — transparent 5–10% commission disclosure, interactive calculator, replaces footer Support link in header nav. Highest-leverage pre-launch trust signal; design-driven (`ui-ux-pro-max` skill).
+- **M14** — Outcome pipeline hardening. Slice A + Phase 1 shipped; **Phases 2 (reliability — retries / rate-limit awareness / circuit breaker), 3 (coverage — aborted games / multi-candidate disambiguation / time-control mismatch), 4 (dispute fast-path)** remain. Production-critical for the settlement engine.
+- **M20** — Email notifications. **Spec materially shrunk**: M27 P5 already shipped the in-app preferences UI + `notification_preferences` table + 9 `PlayerNotification` classes; M30 P4 wired the `mail` channel for ban notifications. What's left = branded HTML email templates, flip `'mail'` into `via()` on the remaining PlayerNotification subclasses, un-disable the Email toggle in `/settings/notifications`, production SMTP config. Realistically 2–3 days.
+- **M21** — Blacklist + safety. Block users from listings + chat, with anti-evasion considerations. Has open design questions (block semantics + multi-account evasion) — needs alignment before coding.
+- **M15** — Multi-game expansion (FACEIT, OpenDota, Riot adapters). Large; awaits a concrete game push to motivate scope.
 
 > Active milestone keeps a detailed task list. Future milestones expand when started. Any of this can shift — flag the change, update the doc.
 
@@ -319,13 +325,17 @@ Outstanding (asset-only — not a code task):
 
 **Phase 4 — Full-site i18n (UI strings + locale switcher + multi-locale CMS rows)**
 
-Decision pivot: instead of waiting for a second language before shipping the switcher, build full i18n infrastructure now. The whole Stakly site (UI strings, CMS pages, validation messages) becomes translatable. Initial active locales planned: `en`, `ka` (Georgian), `ru` (Russian). Framework supports adding more as a content task.
+Decision pivot: instead of waiting for a second language before shipping the switcher, build full i18n infrastructure now. The whole Stakly site (UI strings, CMS pages, validation messages) becomes translatable. Initial active locales: `en`, `ka` (Georgian), `ru` (Russian). Framework supports adding more as a content task.
+
+**Scope estimate:** roughly 1–2 weeks of engineering — Slice A (Foundation) is ~1–2 days, Slice B (CMS) is ~half a day, Slice C (Switcher + first extraction) is ~1 day, Slice D+ (page-by-page extraction across ~7 surface areas) is the bulk. Translation labor (writing `lang/ka.json` and `lang/ru.json` content) is a separate content backlog; engineering treats those files as drop-in.
+
+**Admin (Filament) is exempt from translation.** Per the design decision below, `/admin/*` chrome + every admin resource (M12 disputes, M24 games, M26 pages, M30 users, M31 wallet ledger, M32 listings) stays English-only. Don't accidentally extract Filament strings during Slice D+ extraction passes.
 
 Design decisions taken into this phase:
 
 - **URL: path prefix everywhere.** `/en/listings`, `/ka/listings`, `/ru/listings`. Unprefixed routes (`/listings`) → 301 redirect to `/{defaultLocale}/listings` (cookie-remembered if user has switched before, else `en`). Cleanest for SEO and link sharing. Matches M26 P1's existing `/{locale}/{slug}` CMS pattern — the whole app now uses the same shape.
 - **Tech: Laravel-native bridge, NOT `react-i18next`.** Store strings in standard `lang/en.json`, `lang/ka.json`, `lang/ru.json`. `HandleInertiaRequests::share()` exposes the active locale's bag as a shared Inertia prop. React `useT()` hook reads from it. One source of truth — `__('Create listing')` in PHP and `t('Create listing')` in React both read the same file. Backend strings (validation, future M20 notification emails) work out of the box because Laravel already uses `lang/*.json`. Swap to `react-i18next` later if we ever need ICU plural rules or lazy-loaded locale bundles; call sites change but translation files port cleanly.
-- **`URL::defaults(['locale' => ...])` keeps Wayfinder generators clean.** Middleware sets the URL default at request boundary so `route('listings.index')` and `index().url` auto-prefix without per-call-site changes. No Wayfinder regen needed.
+- **`URL::defaults(['locale' => ...])` keeps server-side `route()` clean; Wayfinder needed `setUrlDefaults` on the client.** Server-side Laravel honours `URL::defaults` natively, so `route('listings.index')` auto-prefixes. Wayfinder generators run client-side though, where they don't see `URL::defaults` — solved by calling `setUrlDefaults(() => ({ locale: currentLocale }))` in `app.tsx`, with `currentLocale` seeded from the initial `data-page` DOM attribute and refreshed via `router.on('success')`. **Caveat:** Wayfinder calls at module-top-level scope run BEFORE this wires up, so nav arrays must be built inside component bodies (Slice A had to fix the settings layout for this). Multi-param routes also stopped accepting positional args once `{locale}` joined the URI — `show(123)` had to become `show({ listing: 123 })` across ~30 callsites.
 - **Filament admin stays unprefixed and English-only.** `/admin/*` is internal, single-language. No locale switcher in admin chrome. Reduces surface area and admin training.
 - **CMS pages translate per-locale.** Schema already supports it (M26 P1 baked in `locale` + UNIQUE `(slug, locale)`). Filament resource gets a locale select + filter so admin writes one row per (slug, locale). `PageController::show` queries current locale with fallback to `en`.
 - **User-generated content (listing notes, bios, chat) NOT translated.** Shown in whatever language the user typed in. Machine translation (DeepL / Google) is a future polish if ever needed.
@@ -334,29 +344,79 @@ Design decisions taken into this phase:
 
 Sub-phases:
 
-**P4 Slice A — Foundation (no UI changes)**
+**P4 Slice A — Foundation (no UI changes) ✓ shipped 2026-06-04**
 
-- [ ] `SetLocale` middleware reads `{locale}` from URL, calls `App::setLocale()`, sets `URL::defaults(['locale' => ...])`.
-- [ ] `RedirectUnprefixedLocale` middleware: any web request without a locale prefix → 301 to `/{defaultLocale}/<path>` (cookie-aware default, fallback `en`).
-- [ ] All web routes wrapped in `Route::prefix('{locale}')->whereIn('locale', ['en','ka','ru'])->group(...)`. Admin (Filament), API (if added), and Reverb WS routes stay unprefixed.
-- [ ] `lang/en.json` populated with a starter set; `lang/ka.json` + `lang/ru.json` empty (Laravel falls back to key).
-- [ ] `HandleInertiaRequests::share()` adds `translations` (cached per locale), `locale` (current), `availableLocales` (list with native labels).
-- [ ] React `useT()` hook with `:name` interpolation.
-- [ ] Dynamic `<html lang="{$locale}">` in `app.blade.php` + `og:locale` + `<link rel="alternate" hreflang="...">` per supported locale.
-- [ ] Tests: middleware behavior, redirect for unprefixed requests, unsupported locale → 404, cookie-remembered default.
+- [x] `SetLocale` middleware reads `{locale}` from URL, calls `App::setLocale()`, sets `URL::defaults(['locale' => ...])`, queues `stakly_locale` cookie, and **strips `{locale}` from the route parameter bag** to defuse a Laravel positional-dispatch bug.
+- [x] `RedirectUnprefixedLocale` middleware: GET/HEAD only, exempts Fortify/admin/broadcasting/static/2–3-letter-locale-like first segments, 301 to `/{cookieLocaleOrDefault}/<path>`. Registered GLOBALLY (not web group) because unmatched routes need to redirect.
+- [x] `routes/web.php` + `routes/settings.php` wrapped in `Route::prefix('{locale}')->whereIn('locale', config('stakly.locales'))->middleware(SetLocale)`. M26 P1's nested `/{locale}/{slug}` CMS route refactored to `/{slug}` inside the group; obsolete `pages.redirect` deleted.
+- [x] `config/stakly.php` — single source of truth for `locales` (`en, ka, ru`), `default_locale`, `locales_meta` (native label + og:locale per code). `Page::SUPPORTED_LOCALES` const → `Page::supportedLocales()` method reading from config.
+- [x] `lang/en.json` populated (~35 starter keys); `lang/ka.json` + `lang/ru.json` empty placeholders.
+- [x] `HandleInertiaRequests::share()` adds `locale` / `availableLocales` / `translations` **as closures** (Inertia computes share before route middleware runs, so eager values would capture the default 'en').
+- [x] React `useT()` / `useLocale()` / `useAvailableLocales()` in `resources/js/lib/i18n.ts`, `SharedData` interface extended.
+- [x] Dynamic `<html lang>` + `og:locale` + `og:locale:alternate` + `<link rel="alternate" hreflang>` per supported locale + `x-default` in `app.blade.php`.
+- [x] Wayfinder `setUrlDefaults` wired in `app.tsx` — module-level `currentLocale` seeded from initial `data-page` DOM attribute, refreshed on every `router.on('success')`. All ~30 multi-param Wayfinder call sites migrated from positional `route(123)` to object form `route({ paramName: 123 })`.
+- [x] Fortify config — `fortify.home` + `fortify.redirects.logout` updated to `/'.config('stakly.default_locale')`; `FortifyServiceProvider` view callbacks redirect to default-locale home.
+- [x] Tests — 19 `tests/Feature/I18n/LocaleRoutingTest.php` (67 assertions): prefixed routes 200, unprefixed 301, cookie-aware target, unsupported locale 404, exempt paths (Fortify/admin/health/favicon), Inertia share payload, cookie queue.
+- [x] `tests/TestCase.php` `call()` / `json()` override — auto-prefixes test URIs with `/en/` (mirrors the middleware exempt list). Opt-out via `$this->withoutLocalePrefix()`. Kept ~184 existing literal-URL test calls working without churn.
 
-**P4 Slice B — CMS multi-locale**
+Non-obvious lessons (worth carrying into Slice B+):
 
-- [ ] Filament `PageResource` gets locale `Select` on form, locale column on table, locale filter.
-- [ ] `PageController::show` already uses `forSlugWithFallback($slug, $locale)` from M26 P1 — verify it picks current locale and falls back to `en` when row missing.
-- [ ] Seeder writes `About` in `en` + stubs `ka` + `ru` versions (or leaves them missing to exercise fallback path).
-- [ ] Tests assert: Georgian request gets Georgian row if present, English fallback if not, 404 only when no locale's row exists.
+- **Never call Wayfinder generators at module-top-level scope.** They run before `setUrlDefaults` and fall back to the literal `'$locale'` placeholder, producing broken hrefs like `/$locale/settings/profile`. Build nav arrays inside the component body. Slice A had to fix `settings/layout.tsx` for this.
+- **Active-state matching needs Wayfinder-generated `matchPrefix`, not literals.** Hardcoded `/wallet` no longer matches `/en/wallet`. Use `walletIndex().url` for both `href` and `matchPrefix`.
+- **Inertia shared props that depend on the request locale must be closures.** Eager values capture the default 'en' because Inertia's middleware fires `share()` before route-level middleware sets the locale.
+- **An unused route param breaks `array_values($parameters)` ordering** in Laravel's controller dispatcher — adding `{locale}` to a route without a matching `$locale` controller param mismatches positional args and surfaces as a `TypeError` on the next model-bound arg. Fix: `forgetParameter('locale')` inside `SetLocale` after reading it, then read `App::getLocale()` in controllers if you ever need it.
+- **`Fortify::redirects('logout', '/')` short-circuits on the non-null default**, so `fortify.home` alone doesn't fix logout. Set `fortify.redirects.logout` explicitly.
+- **`withCookies()` in tests encrypts by default**; for cookies in the EncryptCookies except list (like `stakly_locale`), use `withUnencryptedCookie()`.
 
-**P4 Slice C — Switcher UI + first string extraction**
+**P4 Slice B — CMS fallback verification (scope cut 2026-06-04)**
 
-- [ ] `LocaleSwitcher` dropdown in `SiteHeader` — native labels (English / ქართული / Русский). On change: set `stakly:locale` cookie + `router.visit('/{newLocale}/{currentSlug}', { preserveScroll: true })`.
-- [ ] Extract strings from `SiteHeader`, `SiteFooter`, `MarqueeStrip`, `Hero`, `GameSelector` into translation keys.
-- [ ] Smoke test the full loop: switch to `/ka`, see Georgian where keys are translated, English fallback elsewhere.
+Originally specced as full Filament multi-locale (Select + filter + seeded ka/ru stubs). Trimmed once it became clear no translator pipeline exists yet — without someone to write Georgian / Russian page bodies, the Filament UI would just be dead surface. The DB schema from M26 P1 already supports per-locale rows + the model resolver falls back to English when a row is missing, so the cost of *adding the Filament Select later* is ~1 hour. Deferred until a translator is actually onboard.
+
+Scope kept (~30 min):
+
+- [ ] `GET /ka/{slug}` renders the Georgian row when it exists (sanity-check the locale-prefix routing actually reaches `forSlugWithFallback` with the right locale).
+- [ ] `GET /ka/{slug}` falls back to the English row when no Georgian row exists (the resolver's documented behaviour, re-verified after Slice A's routing change).
+- [ ] `GET /ka/{slug}` 404s only when neither Georgian nor English exists.
+
+What's deferred to "when translators arrive":
+
+- Filament `PageResource` locale Select on form
+- Locale column + filter on the index table
+- Seeder stubs for ka / ru
+- (re-open this section then; the schema is ready)
+
+**P4 Slice C — Switcher UI + first string extraction ✓ shipped 2026-06-04**
+
+- [x] `LocaleSwitcher` dropdown — `Languages` icon trigger + native-label items (English / ქართული / Русский). Swaps the leading `/{locale}/` segment via `router.visit` with `preserveScroll`. Mounted in `SiteHeader` (desktop, between nav and user controls) and `MobileMenu` (sheet header, next to the Stakly logo). The `stakly_locale` cookie persists automatically — `SetLocale` middleware queues it on every locale-prefixed request, so no cookie write on the client.
+- [x] Strings extracted across the chrome — `SiteHeader`, `SiteFooter`, `Hero`, `GameSelector`, `MobileMenu`, and the marquee items (in `site-layout.tsx` — built inside the component so `useT()` resolves against the active locale, not module-load defaults).
+- [x] `lang/en.json` expanded from 35 → 63 keys, alphabetised, includes `:year` interpolation for the footer copyright. Footer slugs (`about` / `support` / `terms` / `privacy`) compose with the page's `locale` prop instead of hardcoded `/en/` literals.
+- [x] Fixed a Slice A miss — `mobile-menu.tsx` had a module-top-level `navLinks` array that called `listingsIndex()` before `setUrlDefaults` was wired. Moved inside the component body alongside the new `useT()` usage.
+
+Lessons folded back from Slice C:
+
+- **The "no module-top-level Wayfinder" rule applies to translated nav arrays too** — anywhere the chrome builds an `{ label, href }` collection, build it inside the component so both `useT()` and `setUrlDefaults` are populated.
+- **Footer / link arrays composed from locale prop**, not hardcoded `/en/` paths. The default-locale URL only stays correct for users in the default locale; everyone else gets a redirect on click.
+
+Smoke test (manual, user-driven):
+
+- [ ] On `/en/`, open header LocaleSwitcher → pick ქართული → URL flips to `/ka/`, `<html lang>` becomes `ka`, copy stays in English (no `ka.json` content yet, expected). Back-arrow returns to `/en/`. Cookie `stakly_locale=ka` set.
+- [ ] On `/en/listings/123`, switch to Русский → lands on `/ru/listings/123` (locale segment swapped, path preserved). Switcher highlights the current locale.
+- [ ] Mobile menu sheet → switcher renders, swap works, sheet closes naturally on navigation.
+
+**Follow-up polish (post-ship, 2026-06-04):**
+
+- Header restructured into three visual zones (nav · action · account). LocaleSwitcher moved from inline-between-nav-and-account into the account cluster (between Bell and Avatar). Subtle vertical divider added between the Create-listing CTA and the account cluster (authed users only).
+- Compact LocaleSwitcher trigger now matches `BellButton` shape exactly — `size-10 rounded-full`, `size-5` icon, same hover (`bg-primary/10` + primary icon) + open-state styling. The account cluster reads as evenly spaced 40×40 circles.
+- Dropdown panel refactored to full-width rows: container is `overflow-hidden p-0`, items lose individual `rounded-md`, active row is a `bg-primary/25` edge-to-edge wash + primary check on the right. Hover on inactive rows = `bg-primary/10` wash. Active row's hover/focus locked to its own bg so hovering the current selection doesn't shift colour.
+- Mobile placement moved out of the sheet header (was colliding with shadcn `SheetContent`'s built-in close-X button) into a dedicated settings-style row at the bottom of the sheet, above the auth / user-card section. Label "Language" on the left, the trigger on the right.
+- Mobile (non-compact) trigger switched from `ghost` variant to `outline` — the ghost variant's baked-in `hover:[text-shadow:var(--text-shadow-glow)]` was combining with custom `hover:text-primary` + `hover:bg-primary/10` and rendering as a loud pink-text-with-white-glow blob. Outline variant has a calmer bordered-pill shape with subtle pink-wash hover.
+- First `ka.json` / `ru.json` entries land (`Get started`, `How it works`) — proves the translation loop end-to-end before Slice D+'s bulk extraction.
+
+Lessons folded back:
+
+- **shadcn `DropdownMenuItem` has built-in `hover:bg-primary/10 focus:bg-primary/10`** in its default class. Any custom active state needs an explicit `hover:bg-X focus:bg-X` matching its bg, or the default override fires on hover and shifts the colour.
+- **`ghost` variant + `hover:text-primary` is a bad combo** when text is visible. The variant's text-shadow glow stacks with the colour change and reads as a muddy blur. Use `outline` (border + bg-card + bg-primary/10 hover, no text-shadow) when the button has visible label text. Reserve `ghost` for icon-only triggers where the label is `sr-only`.
+- **`shadcn SheetContent` ships an absolutely-positioned close-X button at `top-4 right-4`.** Anything placed in the sheet's first content row collides with it. Keep that row brand-only; put utility controls in their own row lower down.
 
 **P4 Slices D+ — Page-by-page extraction (one slice per area, each its own commit)**
 
@@ -364,9 +424,11 @@ Sub-phases:
 - [ ] Profile (header + tabs + match history + listings section).
 - [ ] Match (show + chat + banners + waiting card + settled card).
 - [ ] Wallet (index + deposit + withdraw + history).
-- [ ] Settings (profile + security + linked accounts).
-- [ ] Auth flows (login + register + forgot/reset password + 2FA + email verification).
-- [ ] Validation messages + flash toasts + error pages.
+- [ ] Notifications (bell dropdown + `/notifications` history page + `NotificationCard` + `/settings/notifications` preferences UI). M27 surfaces.
+- [ ] Settings (profile + security + linked accounts + notification preferences cards).
+- [ ] Auth modal + auth flows (login + register + forgot-password modal + reset-password + 2FA challenge + email verification + confirm-password). M2 modal-only auth surface + page-only post-login landings.
+- [ ] User-facing M30 surfaces — `BannedBanner` (already in `SiteLayout`), `AccountBanned` / `AccountRestored` notification copy. Admin-side M30 (`UserResource`, impersonation modal, etc) stays English-only.
+- [ ] Validation messages + flash toasts + error pages (404 / 403 / 500 / 419).
 
 Translation labor (writing `lang/ka.json` and `lang/ru.json` content) tracked separately as content backlog; engineering treats those files as drop-in.
 
@@ -426,142 +488,3 @@ Not CMS-managed on purpose. The Filament CMS template (`cms/page.tsx`) is intent
 - Localised currency conversion ("how much is this in EUR?"). USDT is the unit on every Stakly surface; introducing currency conversion UI confuses the platform's denomination.
 
 ---
-
-## M30 — Admin user management
-
-A first-class user moderation + support surface inside Filament. Today the admin panel has zero user UI — moderation, investigation, manual interventions all require Tinker queries. The first time a real user files a support ticket or a chat-abuse report surfaces, the admin needs to investigate without dropping to the shell. M30 closes that gap.
-
-This is the single biggest support gap in the panel today. For a custodial money platform with player-to-player chat, the longer it takes to act on abuse, the worse it gets.
-
-### Design decisions taken into this milestone
-
-- **Always-rendered wallet invariant on the view page.** Compares `users.usdt_balance` to `SUM(wallet_transactions)` and renders a success/danger badge. Should always pass — exists to catch a regression early when investigating a problem user.
-- **Ban toggle requires a reason in both directions.** Initial ban captures *why*; lifting captures *why now*. Months later we want a single trail of "what happened" without cross-referencing.
-- **Ban actually does something day one — four enforcement guards land in M30.** The spec was originally "M30 ships the column, M21 wires the enforcement" but that leaves the toggle informational. Instead, M30 wires the four guards that actually *stop the bleed*: (1) `ListingController::create + store` rejects banned users so no new abuse-vector listings land; (2) `ProfileController::update` rejects banned users so they can't evade by changing name / avatar; (3) `ChangeUsernameAction` gains `banned` as a blocker on top of cooldown + in-flight-match, so rename isn't an evasion path; (4) listing-marketplace scopes filter `where('users.banned_at', null)` so existing listings disappear from the public board. M21 still owns chat-send-block, take-listing-block, polished "you've been suspended" page, blacklist (user-to-user) UI, and multi-account anti-evasion.
-- **No delete action.** Hard-deleting users breaks FK chains across listings, matches, messages, wallet transactions. `banned_at` is the correct mechanism. If a user requests data deletion under privacy law, that is a user-owned legal call, not an engineering action.
-- **Mandatory 2FA on admin role.** New middleware on `/admin/*` gates access on `two_factor_confirmed_at IS NOT NULL` for users with the `admin` Spatie role. Unenrolled admin → redirected to Fortify's existing two-factor-authentication enrollment page with a flash notice. Hardens the admin panel against credential phishing now that admin can impersonate any user. Uses Fortify's existing TOTP infrastructure — no new auth surface, just a route guard.
-- **Decision: admin 2FA challenge on every login bridges to Fortify (Phase 6), not a plugin swap.** P3's middleware enforces 2FA *enrollment* before reaching the panel, but Filament's built-in `->login()` form bypasses Fortify's pipeline, so the on-every-login TOTP prompt doesn't fire. The `stephenjude/filament-two-factor-authentication` plugin was evaluated 2026-06-03 and rejected: (a) its `TwoFactorAuthenticatable` trait collides method-name-wise with Fortify's, so installing it requires removing Fortify's 2FA *app-wide* — not localized to admin; (b) Stakly's `/settings/security` is Inertia/React but the plugin's 2FA setup is Livewire, so adopting it routes every user (not just admins) through Filament/Livewire for 2FA setup; (c) `spatie/laravel-passkeys` is a hard composer dep for an unused feature. DIY bridge instead — custom Filament `Login` subclass detects admins with 2FA, bounces to a Stakly-styled `/admin/two-factor-challenge` Inertia page that validates codes via Fortify's existing `TwoFactorAuthenticationProvider`, plus a defense-in-depth middleware that catches the same condition on direct panel hits. Reuses Fortify's TOTP setup at `/settings/security` unchanged; ~200 LOC + tests.
-- **User-facing ban feedback fires across three channels (P4).** When admin bans a user, the user MUST learn about it through (a) a persistent banner on every Stakly page they touch, (b) an in-app notification through M27's `PlayerNotification` pipeline (bell + `/notifications` page + real-time Reverb push), and (c) email. Production-grade: any single channel can fail (email in spam, user not on site for the bell push, banner missed because user is reading via email) — together the three guarantee the message lands. Same three channels on unban for symmetry.
-- **Ban-feedback banner is non-dismissible.** Banned users shouldn't be able to hide the explanation of why they can't act on the platform. Sticky at top of every page, destructive tone, includes the reason from `user_moderation_logs` + a link to the CMS Support page.
-- **Reason source of truth for ban feedback: `user_moderation_logs.reason`.** The banner reads the latest row where `action = 'ban'` via a new `auth.user.banned_reason` field exposed through `HandleInertiaRequests::share()`. The notification snapshots the reason in its own payload so old notifications keep showing the original reason even if a later ban/unban cycle changes "latest."
-- **Custom impersonation, not a package.** Stakly is custodial money — minimizing third-party auth packages is the call. The full flow (start route + session marker + banner + exit route + audit) is ~200 LOC under our control. Avoids tracking a package's compatibility matrix against Filament 5.x upgrades.
-- **Impersonation requires password confirm before start.** Mirrors GitHub. Route guarded by Fortify's `password.confirm` middleware — admin re-enters their password before the impersonation session starts, even if they're already in `/admin`. Re-confirms every hour (Fortify default).
-- **Impersonation auto-expires after 30 minutes.** `started_at` on the audit row; middleware compares against `now` and force-exits past 30 min. Prevents "admin walked away from the desk" scenarios.
-- **Impersonation banner rendered in `app.blade.php`.** Persists across every page the impersonating admin lands on — Stakly app pages, auth pages, error pages, even `/admin` if they navigate there. Single source of truth, no React provider plumbing. Shows "Viewing as @username · Exit" with the exit button always one click away.
-- **Impersonation reason required at start.** Free-text field on the start modal ("Investigating Alice's wallet-history bug"). The audit row's reason is the answer to "why did admin X impersonate user Y three weeks ago?" — timestamp alone is too thin.
-- **Impersonation exit returns to the user's admin page**, not the admin's previous location. Rationale: the admin came to this user's view page to impersonate; they'll likely want to act on what they saw (ban, take notes, escalate). They can navigate back to `/admin` manually if needed.
-- **Impersonation blocked for `is_platform` users, banned users, and self.** Three guards on the start route.
-
-### Phases
-
-**Phase 1 — Schema + `UserResource` scaffold + index page** ✅ shipped 2026-06-03
-
-Migrations for `users.banned_at` + the append-only `admin_impersonations` audit table; `Filament/Resources/Users/` folder; index page with 3-column search + 4 filters, `is_platform` excluded, `canCreate() = false`. `AdminImpersonation` model landed here too (was originally scoped to P5 — cleaner alongside the migration). Pest tests cover admin-only access + the filters / search / sort + no-create gate.
-
-**Phase 2 — View page + non-impersonate actions + ban enforcement** ✅ shipped 2026-06-03
-
-Schema: append-only `user_moderation_logs` (`action: ban | unban`, `UPDATED_AT = null`). `UserInfolist` with 7 stacked sections including an always-rendered wallet invariant badge that compares `users.usdt_balance` to `SUM(wallet_transactions.amount)`. Header actions: View as visitor / Verify email / Reset 2FA / Ban toggle (reason required both directions; DB transaction wraps `banned_at` flip + audit row write).
-
-`App\Support\BanGuard` helper centralises `isBanned()` / `rejectionMessage()` / `supportUrl()` across the four enforcement surfaces (listing create+store, profile update, username rename blocker, marketplace scope). 14 Pest tests across `UserResourceActionsTest` + `BanEnforcementTest`.
-
-Two calls flagged in the ship report: skipped the parallel `banned-user store-listing` test (the create-form test already proves the controller-level guard); switched flash style from `->with('toast', ...)` to `Inertia::flash('toast', ...)` because the former tripped `assertRedirect`'s session-error inspection.
-
-**Phase 3 — Mandatory 2FA for admin role** ✅ shipped 2026-06-03
-
-`App\Http\Middleware\RequireAdminTwoFactor` registered in `AdminPanelProvider::authMiddleware` — redirects admins without `two_factor_confirmed_at` to `/settings/security` with a toast flash. Non-admins fall through to Filament's `canAccessPanel` 403. `UserFactory::admin()` + `AdminUserSeeder` stamp the column so existing tests + local dev + CI don't trip the gate. Production checklist: operator re-enrolls real 2FA after first login.
-
-Gotcha documented in tests: `/settings/security` is itself behind Fortify's `password.confirm` (`confirmPassword: true` in `config/fortify.php`), so the real flow is `/admin → /settings/security → /user/confirm-password → /settings/security → enrolls 2FA`. 5 Pest tests assert the full chain.
-
-**Phase 4 — User-facing ban feedback (banner + bell + email)** ✅ shipped 2026-06-03
-
-P2 shipped enforcement (banned users can't act) but only a generic flash on guarded actions. P4 closes the explanation loop across three channels so the user can't miss it.
-
-- `BannedBanner` in `SiteLayout` above `SiteHeader`. Reads `auth.user.ban` ({reason, banned_at}) lazy-loaded via `User::latestBanLog` (HasOne with `latestOfMany`) only when `banned_at !== null` — unbanned users skip the join entirely.
-- `AccountBanned` / `AccountRestored` extend `PlayerNotification` but override `via()` to fan out `['database', 'broadcast', 'mail']` unconditionally. Bypasses parent's preference flow because moderation can't be silenced. Mail uses `MailMessage` greeting/line/action with Laravel's default `notifications::email` Blade layout — custom branded templates deferred to a polish pass.
-- Real-time banner refresh: `NotificationProvider` calls `router.reload({ only: ['auth'] })` on the `account_banned` / `account_restored` broadcast.
-- Dispatch sits outside the DB transaction (`ViewUser::banToggleAction`) so a queue/notification failure doesn't roll back the moderation write.
-- 9 Pest tests in `BanNotificationTest` (44 assertions) cover dispatch, channels, mail content, Inertia share, ban→unban→ban chain.
-
-Support CTA is `mailto:support@stakly.com` (dedicated `/support` page deferred to M21).
-
-**Phase 5 — Impersonate action + audit + banner**
-
-- [ ] Routes: `POST /admin/impersonate/{target}` (start), `POST /impersonate/exit` (stop). Both auth-gated; start additionally guarded by `password.confirm` middleware.
-- [ ] `ImpersonationController::start(User $target)` — guards against `is_platform`, `banned`, and self. Writes `admin_impersonations` row with `started_at`, `reason`, `ip_address`, `user_agent`. Sets session marker `impersonated_by` to the admin's id. Calls `Auth::login($target)`. Redirects to `route('home')`.
-- [ ] `ImpersonationController::stop()` — reads `impersonated_by`, force-logs back in as that admin, stamps `ended_at` on the active row, returns to the user's admin page (`route('filament.admin.resources.users.view', $target)`).
-- [ ] Header action on `ViewUser` page: "Impersonate" → opens modal with required reason Textarea → submits to start route.
-- [ ] Middleware `App\Http\Middleware\HandleImpersonation` — for any request with the `impersonated_by` session marker: (a) reject if `now() - started_at > 30 min` (force-exit and flash "Impersonation session expired"); (b) inject a Blade-renderable signal so the banner partial shows.
-- [ ] Blade partial `resources/views/partials/impersonation-banner.blade.php` included unconditionally in `app.blade.php`. Reads the session marker + target's username; renders the persistent banner with the exit `POST` form.
-- [ ] Pest tests: full round trip (start → see banner → exit → audit row has `ended_at`), reason required, password-confirm gate, 30-min auto-expiry, blocked for `is_platform` / `banned` / self, exit lands on the user's admin view page.
-
-**Phase 6 — Admin 2FA challenge on every login (bridge to Fortify)** ✅ shipped 2026-06-03
-
-Build-time research found Filament 5 ships **native multi-factor authentication** in `Filament\Auth\Pages\Login::authenticate()` — it iterates registered `MultiFactorAuthenticationProvider`s, swaps the login form to a challenge form, re-runs validation on submit, and rate-limits at 5 attempts per user. The original spec (custom login subclass + dedicated route + Inertia page + controller + middleware + rate limiter) collapses to a single provider class.
-
-- `App\Filament\MultiFactor\FortifyAppAuthentication` (5 contract methods, ~120 LOC) bridges Filament's MFA hook to Fortify's existing 2FA columns. `isEnabled` reads `two_factor_confirmed_at`. `getChallengeFormComponents` returns `OneTimeCodeInput` + recovery `TextInput` with toggle. Validation rules call into Fortify's `TwoFactorAuthenticationProvider::verify(Fortify::currentEncrypter()->decrypt($user->two_factor_secret), $code)` and `replaceRecoveryCode(...)`. `getManagementSchemaComponents` returns `[]` so the Filament panel doesn't leak its own 2FA setup UI — admins enroll at `/settings/security` (Inertia/React), same as every other user.
-- Registered in `AdminPanelProvider` via `->multiFactorAuthentication([FortifyAppAuthentication::make()])`. No custom login subclass, routes, controller, Inertia page, rate limiter, or middleware.
-- `RequireAdminTwoFactor` middleware (P3) stays — it enforces 2FA *enrollment* before reaching the panel; P6 enforces 2FA *challenge* on every login. Complementary, both run.
-- 8 Pest tests in `AdminTwoFactorChallengeTest` cover the full Livewire MFA flow including recovery code consumption + the admin-without-2FA fallthrough. TOTP codes generated per-test via `(new Google2FA)->getCurrentOtp(...)` — Fortify encrypts the secret via its own encrypter, not a model cast.
-
-No "I lost my TOTP device" cancel button: admins close the tab (no session leak, they're not logged in yet) and contact support, who uses the existing `reset_2fa` action in `ViewUser` (P2) to wipe the columns. Recovery codes remain the in-band escape.
-
-### Not in M30
-
-- Bulk actions (bulk ban, bulk verify). Solo-dev support cadence doesn't need bulk operations.
-- Chat-send-block + take-listing-block enforcement of `banned_at`. Those land in M21 (blacklist + safety) — same column, additional guards inside `SendMessageAction` + `TakeListingAction`.
-- Polished "your account has been suspended" full-page landing (separate from the banner). M30 P4 ships the persistent banner + in-app notification + email — those cover the "user knows they're banned and why" surface area. A dedicated suspension-landing page (the experience when banned users click the banner's CTA or hit a guarded route) is still M21's scope alongside the broader appeals UX.
-- Multi-account / IP-evasion detection for banned users. Lives with M21's anti-evasion scope.
-- User-to-user blacklist UI (Alice blocks Bob). Different mental model — admin ban vs user-driven block. M21 owns the user-driven version.
-- Admin action audit log beyond `admin_impersonations` + `user_moderation_logs`. M30 P2 + P4 cover the two highest-leverage audit surfaces (ban actions, impersonation sessions). Broader action coverage — a generic `admin_actions` table logging every Filament action across every resource — is its own milestone; revisit when a second-admin scenario, internal-audit requirement, or specific compliance need drives the shape.
-- Notification preference / linked account mutating on behalf of the user. View-only on the user page is enough; changes to those values should still go through the user-facing settings flow.
-- Admin session timeout / IP allowlist / email-on-admin-login. Adjacent admin-hardening ideas; mandatory 2FA covers the highest-leverage threat (credential phishing). Layer more on if a concrete incident drives it.
-- Support / read-only admin role with restricted resource access. The `admin` Spatie role is the only privileged role today. When a real support hire happens, add a `support` role + per-resource Filament policies (read-only on UserResource / WalletTransactionResource, no impersonation, no ban, no 2FA reset). Doesn't block M30; revisit when there's a second person in the admin panel.
-- Built-in support ticket system / contact form. The CMS Support page covers the contact channel today (admin writes whatever — email / Discord / form). A dedicated ticket queue is its own milestone if volume justifies.
-
----
-
-## M31 — Admin wallet ledger
-
-Read-only audit visibility into every money movement on the platform. The single most important support tool for a custodial platform — without it, "where did my $12.50 go?" requires reconstructing the ledger by hand in Tinker. M31 makes the answer one filter-click away.
-
-The architectural decisions about money writes (M3.5 — Wallet service is the only path, BCMath strings, append-only ledger) all stay intact. This milestone is purely a read surface on top of the ledger that already exists.
-
-### Design decisions taken into this milestone
-
-- **Read-only resource.** Zero write actions, zero mass-mutation. Every money write must continue to go through `App\Services\Wallet` to preserve the `users.usdt_balance == SUM(wallet_transactions.amount)` invariant asserted in `WalletTest.php`. Filament resources default to allowing edit / create — both explicitly disabled here.
-- **Index columns** — user (link to UserResource view), type badge (Deposit / Hold / Release / Payout / Fee / Withdrawal with semantic colors mirroring the wallet UI), amount (right-aligned, BCMath-string display, NOT cast to float for display precision), `reference_id` (truncated with copy-to-clipboard), `created_at` (humanized + raw on hover).
-- **Filters** — user typeahead (by username), type multi-select, date range, amount range, `reference_id` contains.
-- **View page** — full row data plus contextual links. If `reference_id` matches a known pattern (`match-{id}` / `listing-{id}` / `cancel-{id}`), surface a link to the related match or listing. "Sibling transactions" section lists other rows sharing the same `reference_id` — useful for the deposit-confirm pattern where one event generates several rows.
-- **Footer sum.** Below the table, total of currently-visible rows broken down by type. Lets the admin filter "type = Fee, this month" and see the platform's monthly revenue in one click without exporting. `OpsOverview` widget already gives a top-line number; this is the drill-down.
-- **No "create transaction" action.** If a manual correction is ever genuinely needed, it routes through a future `Wallet::adjust(...)` method that does not exist today. By design — every money write today has a domain reason routed through a specific service method.
-
-### Not in M31
-
-- CSV export. Add when the user has a concrete external workflow that needs it (tax filing, accounting integration, auditor request) — the column / format decisions follow the destination.
-- Charts / time-series of money flow. Visual summary belongs on the dashboard widget, not the resource list. `OpsOverview` already exposes monthly platform earnings.
-- Per-currency filtering. USDT-only today; if M15-era multi-currency happens, this extends.
-- Refund / adjust mutation actions. Genuinely don't belong here — refunds happen via `Wallet::release` triggered by match-state events; manual adjustments don't have a domain reason today.
-- Cross-user transfer / "send money from A to B" action. Same reason — no domain trigger, just a footgun if it existed.
-
----
-
-## M32 — Admin listing management
-
-Operational visibility + force-cancel for the marketplace. The lowest-urgency of the three admin gaps, but enables takedown of abusive listings (sub-penny stakes, off-platform deal solicitation in the title, harassment-style descriptions) without dropping to Tinker. Admin views every listing the same way users see them, plus a single moderation action.
-
-### Design decisions taken into this milestone
-
-- **Index columns** — id, creator (link to UserResource view), state badge (Open / Taken / Cancelled / Expired), platform (chess.com / Lichess), stake_amount (right-aligned), skill range, time controls, region, languages, created_at, expires_at.
-- **Filters** — state multi-select, platform, stake range, creator typeahead, region, has-language.
-- **One action: Force cancel.** Routes through the existing `CancelListingAction` so escrow releases via `Wallet::release` and the ledger stays clean — the admin never writes to `usdt_balance` directly. Confirm dialog names the listing id + stake + creator so a wrong click is hard. Listing must be in `Open` state; Taken / Cancelled / Expired states have no force-cancel action (the corresponding match flow handles those cases through `GameMatchResource`).
-- **View page.** Full listing data, related match (if Taken — link to `GameMatchResource`), related wallet transactions (escrow hold + any release on cancel).
-- **No edit action.** Stake / skill range / platform are immutable on a real listing — changing them mid-flight invalidates expectations for any taker. If a listing needs changes, the right path is force-cancel + the creator re-creates.
-- **No bulk cancel.** One listing at a time; bulk-cancel is a footgun and there's no operational scenario that needs it.
-
-### Not in M32
-
-- Manual "create listing on behalf of a user" action. No legitimate support reason; a vector for admin abuse if it existed.
-- Force-expire (separate from force-cancel). The expiry clock is automatic; manual expiry without refund is a money operation that should go through the existing cancellation path. If we ever need "skip the timer," it's the cancellation action with the same refund behavior.
-- Listing dispute moderation (separate from match dispute moderation). Match disputes are covered by `GameMatchResource` (M12). Pre-match listing disputes don't exist as a concept.
-- Editing listing description / title (no fields exist today on listings — listing is just stake + skill + time control + region + languages). If a future listing schema adds free-text fields, moderation routes through M13 chat-anti-abuse patterns, not via direct admin edits.
-

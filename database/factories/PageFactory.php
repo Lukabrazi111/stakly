@@ -18,7 +18,7 @@ class PageFactory extends Factory
     {
         return [
             'slug' => fake()->unique()->slug(2),
-            'locale' => Page::DEFAULT_LOCALE,
+            'locale' => Page::defaultLocale(),
             'title' => fake()->sentence(3),
             'body' => collect(fake()->paragraphs(4))
                 ->map(fn (string $p) => $p)

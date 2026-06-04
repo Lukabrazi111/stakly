@@ -45,7 +45,7 @@ export function ProfileListingRow({ listing }: Props) {
     return (
         <article className="group relative flex flex-wrap items-center gap-3 rounded-xl border border-border/60 bg-card p-4 transition-all duration-200 ease-out hover:border-primary/30 hover:bg-secondary md:flex-nowrap md:gap-4">
             <Link
-                href={showListing(listing.id).url}
+                href={showListing({ listing: listing.id }).url}
                 className="absolute inset-0 rounded-xl focus-visible:ring-2 focus-visible:ring-primary/25 focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none"
                 aria-label={`View listing #${listing.id}`}
             />

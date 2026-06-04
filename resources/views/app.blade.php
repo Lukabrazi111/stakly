@@ -36,6 +36,20 @@
             $appName = config('app.name', 'Stakly');
             $ogImage = asset('og-image.png');
             $canonical = request()->url();
+
+            // i18n (M26 P4) — strip the {locale} segment off the request
+            // path so we can emit hreflang alternates pointing at every
+            // supported locale's version of the current page.
+            $activeLocale = app()->getLocale();
+            $supportedLocales = (array) config('stakly.locales', ['en']);
+            $defaultLocale = (string) config('stakly.default_locale', 'en');
+            $localesMeta = (array) config('stakly.locales_meta', []);
+            $ogLocale = $localesMeta[$activeLocale]['og_locale'] ?? 'en_US';
+
+            $segments = explode('/', trim(request()->path(), '/'));
+            $pathTail = (isset($segments[0]) && in_array($segments[0], $supportedLocales, true))
+                ? implode('/', array_slice($segments, 1))
+                : implode('/', $segments);
         @endphp
         <link rel="canonical" href="{{ $canonical }}">
         <meta property="og:type" content="website">
@@ -44,6 +58,16 @@
         <meta property="og:image" content="{{ $ogImage }}">
         <meta property="og:image:width" content="1200">
         <meta property="og:image:height" content="630">
+        <meta property="og:locale" content="{{ $ogLocale }}">
+        @foreach ($supportedLocales as $code)
+            @if ($code !== $activeLocale)
+                <meta property="og:locale:alternate" content="{{ $localesMeta[$code]['og_locale'] ?? $code }}">
+            @endif
+        @endforeach
+        @foreach ($supportedLocales as $code)
+            <link rel="alternate" hreflang="{{ $code }}" href="{{ url('/'.$code.($pathTail === '' ? '' : '/'.$pathTail)) }}">
+        @endforeach
+        <link rel="alternate" hreflang="x-default" href="{{ url('/'.$defaultLocale.($pathTail === '' ? '' : '/'.$pathTail)) }}">
         <meta name="twitter:card" content="summary_large_image">
         <meta name="twitter:image" content="{{ $ogImage }}">
         <x-inertia::head>
@@ -58,6 +82,7 @@
         </x-inertia::head>
     </head>
     <body class="font-sans antialiased">
+        @include('partials.impersonation-banner')
         <x-inertia::app />
     </body>
 </html>

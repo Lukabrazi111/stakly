@@ -36,7 +36,7 @@ export function CancelListingDialog({
 
     const handleConfirm = () => {
         setProcessing(true);
-        router.delete(cancelRoute(listing.id).url, {
+        router.delete(cancelRoute({ listing: listing.id }).url, {
             preserveScroll: true,
             onSuccess: () => {
                 onSuccess?.();

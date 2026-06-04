@@ -122,6 +122,28 @@ class User extends Authenticatable implements FilamentUser, HasMedia, MustVerify
     }
 
     /**
+     * Authz hook read by `stechstudio/filament-impersonate` to decide whether
+     * THIS user can start an impersonation. Admin role only; platform user is
+     * excluded as defense-in-depth (it shouldn't carry the admin role, but the
+     * guard is cheap).
+     */
+    public function canImpersonate(): bool
+    {
+        return ! $this->is_platform && $this->hasRole('admin');
+    }
+
+    /**
+     * Authz hook read by `stechstudio/filament-impersonate` to decide whether
+     * THIS user can be impersonated. Platform user, banned users, and any
+     * `is_platform` row are off-limits. Self-impersonation is already blocked
+     * inside the package's own `canImpersonate()` check on the action.
+     */
+    public function canBeImpersonated(): bool
+    {
+        return ! $this->is_platform && ! $this->isBanned();
+    }
+
+    /**
      * Invariant: `SUM(wallet_transactions.amount) == users.usdt_balance` always.
      */
     public function walletTransactions(): HasMany

@@ -41,7 +41,7 @@ export function MatchInfoCard({
             </header>
             <dl className="divide-y divide-border/60">
                 <Link
-                    href={userShow(opponent.username).url}
+                    href={userShow({ user: opponent.username }).url}
                     className="group flex items-center justify-between gap-3 px-6 py-4 transition-colors hover:bg-primary/5 focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none"
                 >
                     <dt className="text-sm text-muted-foreground">Opponent</dt>

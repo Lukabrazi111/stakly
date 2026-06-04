@@ -1,3 +1,4 @@
+import { useT } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import type { GameTile } from '@/types';
 
@@ -10,20 +11,22 @@ interface Props {
 /** Homepage game-tile row. Tiles fall back to a gradient placeholder when
  *  `poster_path` is missing so the row never breaks. */
 export function GameSelector({ games, selectedSlug, onSelect }: Props) {
+    const t = useT();
+
     return (
         <section className="relative">
             <div className="mx-auto max-w-7xl px-4">
                 <div className="mb-5 flex items-end justify-between gap-4">
                     <div>
                         <p className="mb-1 text-xs tracking-widest text-muted-foreground uppercase">
-                            Select game
+                            {t('Select game')}
                         </p>
                         <h2 className="font-display text-2xl font-bold text-foreground md:text-3xl">
-                            Pick your arena
+                            {t('Pick your arena')}
                         </h2>
                     </div>
                     <p className="hidden text-sm text-muted-foreground md:block">
-                        Chess is live. More games are rolling out.
+                        {t('Chess is live. More games are rolling out.')}
                     </p>
                 </div>
 
@@ -32,7 +35,7 @@ export function GameSelector({ games, selectedSlug, onSelect }: Props) {
                     // "scroll right"; desktop: align with the parent column.
                     className="-mx-4 flex snap-x snap-mandatory [scrollbar-width:none] gap-4 overflow-x-auto px-6 py-5 pb-6 md:mx-0 md:px-0 [&::-webkit-scrollbar]:hidden"
                     role="listbox"
-                    aria-label="Game selector"
+                    aria-label={t('Game selector')}
                 >
                     {games.map((game, index) => {
                         const isSelected = game.slug === selectedSlug;
@@ -78,7 +81,7 @@ export function GameSelector({ games, selectedSlug, onSelect }: Props) {
 
                                 {isComingSoon && (
                                     <span className="absolute top-2 right-2 rounded-full bg-background/80 px-2 py-0.5 text-[10px] tracking-wide text-muted-foreground uppercase backdrop-blur">
-                                        Soon
+                                        {t('Soon')}
                                     </span>
                                 )}
                             </button>

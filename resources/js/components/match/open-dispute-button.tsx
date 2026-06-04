@@ -131,7 +131,7 @@ export function OpenDisputeButton({ matchId }: OpenDisputeButtonProps) {
             formData.append('evidence', file);
         }
 
-        router.post(openDisputeRoute(matchId).url, formData, {
+        router.post(openDisputeRoute({ match: matchId }).url, formData, {
             preserveScroll: true,
             forceFormData: true,
             onSuccess: () => {

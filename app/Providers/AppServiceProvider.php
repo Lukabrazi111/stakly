@@ -2,15 +2,20 @@
 
 namespace App\Providers;
 
+use App\Listeners\RecordImpersonationEnd;
+use App\Listeners\RecordImpersonationStart;
 use App\Services\GameApi\ChessGameApi;
 use App\Services\GameApi\GameApi;
 use App\Services\GameApi\MockGameApi;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Validation\Rules\Password;
 use InvalidArgumentException;
+use STS\FilamentImpersonate\Events\EnterImpersonation;
+use STS\FilamentImpersonate\Events\LeaveImpersonation;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -58,6 +63,17 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         $this->configureDefaults();
+        $this->registerImpersonationListeners();
+    }
+
+    /**
+     * Wire `stechstudio/filament-impersonate` events to our audit-row
+     * persistence (M30 Phase 5).
+     */
+    private function registerImpersonationListeners(): void
+    {
+        Event::listen(EnterImpersonation::class, RecordImpersonationStart::class);
+        Event::listen(LeaveImpersonation::class, RecordImpersonationEnd::class);
     }
 
     /**

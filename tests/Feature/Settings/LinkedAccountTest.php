@@ -87,7 +87,7 @@ test('store generates a code and stores pending state', function () {
             'username' => 'alice',
         ])
         ->assertSessionHasNoErrors()
-        ->assertRedirect('/settings/linked-accounts');
+        ->assertRedirect(route('linked-accounts.edit'));
 
     $pending = $user->fresh()->pendingVerification;
     expect($pending)->not->toBeNull();
@@ -153,7 +153,7 @@ test('verify happy path: marks user verified + clears pending', function () {
     $this->actingAs($user)
         ->post('/settings/linked-accounts/verify')
         ->assertSessionHasNoErrors()
-        ->assertRedirect('/settings/linked-accounts');
+        ->assertRedirect(route('linked-accounts.edit'));
 
     $user->refresh();
     expect($user->chess_com_username)->toBe('alice');
@@ -196,7 +196,7 @@ test('unlink clears the verified link for the named provider only', function () 
 
     $this->actingAs($user)
         ->delete('/settings/linked-accounts/chess_com')
-        ->assertRedirect('/settings/linked-accounts');
+        ->assertRedirect(route('linked-accounts.edit'));
 
     $user->refresh()->load('linkedAccounts');
     expect($user->chess_com_username)->toBeNull();
@@ -228,7 +228,7 @@ test('cancel pending deletes the pending row', function () {
 
     $this->actingAs($user)
         ->delete('/settings/linked-accounts/pending')
-        ->assertRedirect('/settings/linked-accounts');
+        ->assertRedirect(route('linked-accounts.edit'));
 
     expect($user->fresh()->pendingVerification)->toBeNull();
 });
@@ -245,7 +245,7 @@ test('cancel pending leaves verified linked accounts untouched', function () {
 
     $this->actingAs($user)
         ->delete('/settings/linked-accounts/pending')
-        ->assertRedirect('/settings/linked-accounts');
+        ->assertRedirect(route('linked-accounts.edit'));
 
     $user->refresh()->load('linkedAccounts');
     // Verified chess.com link survives.
@@ -260,7 +260,7 @@ test('cancel pending is a noop when no pending state exists', function () {
 
     $this->actingAs($user)
         ->delete('/settings/linked-accounts/pending')
-        ->assertRedirect('/settings/linked-accounts');
+        ->assertRedirect(route('linked-accounts.edit'));
 
     // Nothing to assert beyond "didn't crash and redirects cleanly."
     expect($user->fresh()->pendingVerification)->toBeNull();

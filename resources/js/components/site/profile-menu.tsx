@@ -83,7 +83,7 @@ export function ProfileMenu({ user }: Props) {
                 <DropdownMenuGroup className="py-1">
                     <DropdownMenuItem asChild>
                         <Link
-                            href={userShow(user.username).url}
+                            href={userShow({ user: user.username }).url}
                             prefetch
                             className={menuItemClass}
                         >

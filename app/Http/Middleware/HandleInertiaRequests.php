@@ -4,6 +4,7 @@ namespace App\Http\Middleware;
 
 use App\Notifications\PlayerNotification;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\App;
 use Inertia\Middleware;
 
 class HandleInertiaRequests extends Middleware
@@ -53,6 +54,13 @@ class HandleInertiaRequests extends Middleware
         return [
             ...parent::share($request),
             'name' => config('app.name'),
+            // Closures — Inertia evaluates them at response-render time, by
+            // which the route middleware (SetLocale) has fired. A static
+            // value here would capture the default 'en' set before the
+            // middleware chain reaches the route layer.
+            'locale' => fn () => App::getLocale(),
+            'availableLocales' => fn () => $this->availableLocales(),
+            'translations' => fn () => $this->translationsFor(App::getLocale()),
             'auth' => [
                 // Float at the JSON boundary (decimal:6 serializes as
                 // string by default).
@@ -95,5 +103,39 @@ class HandleInertiaRequests extends Middleware
             'status' => fn () => $request->session()->get('status'),
             'sidebarOpen' => ! $request->hasCookie('sidebar_state') || $request->cookie('sidebar_state') === 'true',
         ];
+    }
+
+    /**
+     * @return list<array{code: string, native_label: string}>
+     */
+    private function availableLocales(): array
+    {
+        return collect(config('stakly.locales_meta', []))
+            ->map(fn (array $meta, string $code): array => [
+                'code' => $code,
+                'native_label' => $meta['native_label'] ?? $code,
+            ])
+            ->values()
+            ->all();
+    }
+
+    /**
+     * Inertia ships only the active locale's bag — keeps the shared-props
+     * payload small. Missing files return `[]`, which lets `useT()` fall
+     * back to the key (Laravel's `__()` behavior on the server).
+     *
+     * @return array<string, string>
+     */
+    private function translationsFor(string $locale): array
+    {
+        $path = lang_path("{$locale}.json");
+
+        if (! is_file($path)) {
+            return [];
+        }
+
+        $decoded = json_decode((string) file_get_contents($path), associative: true);
+
+        return is_array($decoded) ? $decoded : [];
     }
 }

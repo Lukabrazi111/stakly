@@ -76,7 +76,7 @@ export default function NotificationsIndex({ notifications, filter }: Props) {
     };
 
     const handleMarkRead = (id: string) => {
-        postJson(notificationsRead(id).url);
+        postJson(notificationsRead({ notification: id }).url);
 
         setItems((prev) => {
             if (filter === 'unread') {

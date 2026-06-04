@@ -73,7 +73,21 @@ return [
     |
     */
 
-    'home' => '/',
+    // M26 P4 — public site lives under `/{locale}/…`, so Fortify's
+    // post-auth redirects need a locale-prefixed home too. Hardcoded
+    // to the default locale because Fortify reads this at boot, before
+    // any per-request locale resolution runs. A locale-aware fork
+    // (redirect to the user's cookie locale) would require a custom
+    // LogoutResponse / LoginResponse binding — out of scope for Slice A.
+    'home' => '/'.env('STAKLY_DEFAULT_LOCALE', 'en'),
+
+    // Per-surface overrides. `Fortify::redirects('logout', '/')` in the
+    // shipped LogoutResponse passes a non-null default that short-
+    // circuits before `fortify.home` is consulted; this key restores
+    // the default-locale prefix for the logout redirect too.
+    'redirects' => [
+        'logout' => '/'.env('STAKLY_DEFAULT_LOCALE', 'en'),
+    ],
 
     /*
     |--------------------------------------------------------------------------

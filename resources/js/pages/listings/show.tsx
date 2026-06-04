@@ -122,7 +122,7 @@ export default function ListingShow({ listing, match }: ListingShowProps) {
     const [takeProcessing, setTakeProcessing] = useState(false);
 
     const handleCancel = () => {
-        router.delete(cancelRoute(listing.id).url, {
+        router.delete(cancelRoute({ listing: listing.id }).url, {
             preserveScroll: true,
             onSuccess: () => setCancelOpen(false),
         });
@@ -131,7 +131,7 @@ export default function ListingShow({ listing, match }: ListingShowProps) {
     const handleTake = () => {
         setTakeProcessing(true);
         router.post(
-            takeRoute(listing.id).url,
+            takeRoute({ listing: listing.id }).url,
             {},
             {
                 preserveScroll: true,
@@ -190,7 +190,9 @@ export default function ListingShow({ listing, match }: ListingShowProps) {
                             <div className="flex items-start gap-4">
                                 <Link
                                     href={
-                                        userShow(listing.creator.username).url
+                                        userShow({
+                                            user: listing.creator.username,
+                                        }).url
                                     }
                                     className="flex min-w-0 flex-1 items-center gap-4 rounded-lg focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none"
                                 >
@@ -401,7 +403,12 @@ export default function ListingShow({ listing, match }: ListingShowProps) {
                                         className="w-full"
                                         asChild
                                     >
-                                        <Link href={matchShow(match.id).url}>
+                                        <Link
+                                            href={
+                                                matchShow({ match: match.id })
+                                                    .url
+                                            }
+                                        >
                                             View match →
                                         </Link>
                                     </Button>

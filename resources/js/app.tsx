@@ -1,4 +1,4 @@
-import { createInertiaApp } from '@inertiajs/react';
+import { createInertiaApp, router } from '@inertiajs/react';
 import { configureEcho } from '@laravel/echo-react';
 import { AuthModalProvider } from '@/components/auth/auth-modal-provider';
 import { Toaster } from '@/components/ui/sonner';
@@ -6,6 +6,46 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 import AuthLayout from '@/layouts/auth-layout';
 import SettingsLayout from '@/layouts/settings/layout';
 import SiteLayout from '@/layouts/site-layout';
+import { setUrlDefaults } from '@/wayfinder';
+
+// Wayfinder mirrors Laravel's URL::defaults via a runtime registry.
+// Keeping `locale` populated here lets every Wayfinder-generated URL
+// auto-prefix with the active locale — no per-call-site changes needed
+// after wrapping web routes in `Route::prefix('{locale}')` (M26 P4).
+// Seeded from the initial `data-page` attribute on the Inertia root, then
+// kept in sync via the router's `success` event on every visit.
+let currentLocale = readInitialLocale();
+
+setUrlDefaults(() => ({ locale: currentLocale }));
+
+router.on('success', (event) => {
+    const next = (event.detail.page.props as { locale?: string }).locale;
+
+    if (typeof next === 'string') {
+        currentLocale = next;
+    }
+});
+
+function readInitialLocale(): string {
+    if (typeof document === 'undefined') {
+        return 'en';
+    }
+
+    const root = document.getElementById('app');
+    const raw = root?.dataset.page;
+
+    if (typeof raw !== 'string' || raw === '') {
+        return 'en';
+    }
+
+    try {
+        const page = JSON.parse(raw) as { props?: { locale?: string } };
+
+        return page.props?.locale ?? 'en';
+    } catch {
+        return 'en';
+    }
+}
 
 const appName = import.meta.env.VITE_APP_NAME || 'Laravel';
 

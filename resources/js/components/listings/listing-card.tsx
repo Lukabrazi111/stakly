@@ -44,7 +44,7 @@ export function ListingCard({ listing }: Props) {
         <article className="group relative flex h-full flex-col gap-4 rounded-2xl border border-border/60 bg-card/60 p-5 transition-all duration-200 ease-out hover:-translate-y-0.5 hover:border-primary/30 hover:bg-card hover:shadow-glow-sm">
             {/* Overlay: entire card → listing detail */}
             <Link
-                href={showListing(listing.id).url}
+                href={showListing({ listing: listing.id }).url}
                 aria-label={`View listing from ${listing.creator.name}`}
                 className="absolute inset-0 rounded-2xl focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none"
             />
@@ -52,7 +52,7 @@ export function ListingCard({ listing }: Props) {
             {/* Header: creator Link (sits above overlay) + time remaining text */}
             <header className="relative flex items-start justify-between gap-3">
                 <Link
-                    href={userShow(listing.creator.username).url}
+                    href={userShow({ user: listing.creator.username }).url}
                     className="flex min-w-0 items-center gap-2.5 rounded-lg focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none"
                 >
                     <Avatar className="size-9 shrink-0 overflow-hidden rounded-full">

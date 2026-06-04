@@ -15,7 +15,7 @@ test('verify-email redirect emits Inertia flash that survives to the next reques
     // Hit the verify endpoint and confirm flash is queued for the next request.
     $this->actingAs($user)
         ->get($verificationUrl)
-        ->assertRedirect('/')
+        ->assertRedirect(route('home'))
         ->assertInertiaFlash('toast', [
             'type' => 'success',
             'message' => 'Email verified.',

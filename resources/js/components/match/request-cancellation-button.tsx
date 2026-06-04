@@ -67,7 +67,7 @@ export function RequestCancellationButton({
 
         setProcessing(true);
         router.post(
-            requestCancellationRoute(matchId).url,
+            requestCancellationRoute({ match: matchId }).url,
             { reason: reasonPayload },
             {
                 preserveScroll: true,

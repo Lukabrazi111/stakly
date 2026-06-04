@@ -15,6 +15,13 @@ use Illuminate\Support\Facades\URL;
  */
 beforeEach(function () {
     Cache::flush();
+
+    // Several tests below drive bare-slug URLs (`/about`, `/unknown-slug`)
+    // to assert the RedirectUnprefixedLocale middleware's 301. Without
+    // opting out of the TestCase's auto-prefix, those URIs would be
+    // silently rewritten to `/en/about` etc. before the middleware ever
+    // sees them.
+    $this->withoutLocalePrefix();
 });
 
 test('GET /en/{slug} renders published page via Inertia', function () {
@@ -113,14 +120,25 @@ test('bare slug redirects to default locale URL with 301', function () {
         ->assertRedirect('/en/about');
 });
 
-test('bare slug returns 404 when no page exists', function () {
-    $this->get('/unknown-slug')->assertNotFound();
+test('bare slug redirects even when no page exists', function () {
+    // The RedirectUnprefixedLocale middleware (M26 P4) redirects every unprefixed
+    // public GET to /{defaultLocale}/<path>; existence is the destination route's
+    // problem. The follow-up `GET /en/{slug} returns 404 for missing pages` test
+    // covers what happens after the 301.
+    $this->get('/unknown-slug')
+        ->assertStatus(301)
+        ->assertRedirect('/en/unknown-slug');
 });
 
-test('bare slug returns 404 when only a draft exists', function () {
+test('bare slug redirects even when only a draft exists', function () {
     Page::factory()->draft()->create(['slug' => 'about', 'locale' => 'en']);
 
-    $this->get('/about')->assertNotFound();
+    // Same as above — the middleware doesn't peek at the destination's
+    // published status. `GET /en/{slug} returns 404 for draft pages`
+    // covers the 404 the prefixed route then emits.
+    $this->get('/about')
+        ->assertStatus(301)
+        ->assertRedirect('/en/about');
 });
 
 test('second public request hits cache (no extra DB query)', function () {
@@ -170,8 +188,55 @@ test('unknown locale segment does not match the CMS route', function () {
         'published_at' => now()->subDay(),
     ]);
 
-    // The route is `->whereIn('locale', Page::SUPPORTED_LOCALES)`, so /fr/about
-    // shouldn't match the CMS route at all (404 from the router, not from
-    // a controller check).
+    // The locale-prefix group constrains `{locale}` to `config('stakly.locales')`
+    // ('en', 'ka', 'ru'). `/fr/about` doesn't satisfy that, so the router 404s
+    // before the CMS route ever sees it — no controller check needed.
     $this->get('/fr/about')->assertNotFound();
+});
+
+// ─── M26 P4 Slice B — multi-locale resolver sanity checks ──────────────────
+//
+// The full Filament locale UI was deferred until a translator pipeline
+// exists; these three tests cover what the schema + resolver are
+// already capable of so the routing change (M26 P4 Slice A) doesn't
+// silently regress the M26 P1 fallback behaviour.
+
+test('GET /ka/{slug} renders the Georgian row when one exists', function () {
+    Page::factory()->create([
+        'slug' => 'about',
+        'locale' => 'en',
+        'title' => 'About Stakly',
+        'published_at' => now()->subDay(),
+    ]);
+    Page::factory()->create([
+        'slug' => 'about',
+        'locale' => 'ka',
+        'title' => 'სტეიკლის შესახებ',
+        'published_at' => now()->subDay(),
+    ]);
+
+    $this->get('/ka/about')
+        ->assertOk()
+        ->assertInertia(fn ($p) => $p
+            ->component('cms/page')
+            ->where('title', 'სტეიკლის შესახებ'));
+});
+
+test('GET /ka/{slug} falls back to the English row when no Georgian row exists', function () {
+    Page::factory()->create([
+        'slug' => 'about',
+        'locale' => 'en',
+        'title' => 'About Stakly',
+        'published_at' => now()->subDay(),
+    ]);
+
+    $this->get('/ka/about')
+        ->assertOk()
+        ->assertInertia(fn ($p) => $p
+            ->component('cms/page')
+            ->where('title', 'About Stakly'));
+});
+
+test('GET /ka/{slug} 404s when neither Georgian nor English row exists', function () {
+    $this->get('/ka/about')->assertNotFound();
 });
