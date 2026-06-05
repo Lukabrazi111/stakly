@@ -7,6 +7,7 @@ import {
     DropdownMenuItem,
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { useT } from '@/lib/i18n';
 import {
     create as listingsCreate,
     mine as listingsMine,
@@ -15,6 +16,7 @@ import { index as matchesIndex } from '@/routes/matches';
 
 /** Page-local "More" dropdown for the /listings header, authed users only. */
 export function ListingsMoreMenu() {
+    const t = useT();
     const { auth } = usePage().props;
 
     if (!auth.user) {
@@ -29,10 +31,10 @@ export function ListingsMoreMenu() {
                     size="pill"
                     // Bordered-ghost matching the Filters button.
                     className="border border-border/60 hover:border-primary/40 hover:bg-primary/10 hover:[text-shadow:none] data-[state=open]:border-primary/40 data-[state=open]:bg-primary/10 max-md:px-4"
-                    aria-label="Open more actions menu"
+                    aria-label={t('Open more actions menu')}
                 >
                     <MoreHorizontal className="size-4" />
-                    <span className="hidden md:inline">More</span>
+                    <span className="hidden md:inline">{t('More')}</span>
                 </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent
@@ -43,19 +45,19 @@ export function ListingsMoreMenu() {
                 <DropdownMenuItem asChild>
                     <Link href={listingsCreate().url} prefetch>
                         <Plus className="size-4" />
-                        Post listing
+                        {t('Post listing')}
                     </Link>
                 </DropdownMenuItem>
                 <DropdownMenuItem asChild>
                     <Link href={listingsMine().url} prefetch>
                         <ListChecks className="size-4" />
-                        My listings
+                        {t('My listings')}
                     </Link>
                 </DropdownMenuItem>
                 <DropdownMenuItem asChild>
                     <Link href={matchesIndex().url} prefetch>
                         <History className="size-4" />
-                        Match history
+                        {t('Match history')}
                     </Link>
                 </DropdownMenuItem>
             </DropdownMenuContent>

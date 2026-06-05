@@ -5,6 +5,7 @@ import { TakeButton } from '@/components/listings/take-button';
 import { VerifiedPlatformChip } from '@/components/listings/verified-platform-chip';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { useInitials } from '@/hooks/use-initials';
+import { useT } from '@/lib/i18n';
 import {
     formatSkillRange,
     formatTimeRemaining,
@@ -27,8 +28,9 @@ interface Props {
  * clicks fall through.
  */
 export function ListingRow({ listing }: Props) {
+    const t = useT();
     const getInitials = useInitials();
-    const timeRemaining = formatTimeRemaining(listing.expires_at);
+    const timeRemaining = formatTimeRemaining(listing.expires_at, t);
     const urgency = getTimeUrgency(listing.expires_at);
 
     const urgencyTone =
@@ -43,7 +45,9 @@ export function ListingRow({ listing }: Props) {
             {/* Overlay: entire row → listing detail */}
             <Link
                 href={showListing({ listing: listing.id }).url}
-                aria-label={`View listing from ${listing.creator.username}`}
+                aria-label={t('View listing from :name', {
+                    name: listing.creator.username,
+                })}
                 className="absolute inset-0 rounded-2xl focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none"
             />
 
@@ -96,7 +100,11 @@ export function ListingRow({ listing }: Props) {
 
                     <span className="inline-flex items-center gap-1.5 rounded-full border border-border/60 bg-background/60 px-3 py-1 text-xs font-medium text-muted-foreground">
                         <Trophy className="size-3" aria-hidden="true" />
-                        {formatSkillRange(listing.skill_min, listing.skill_max)}
+                        {formatSkillRange(
+                            listing.skill_min,
+                            listing.skill_max,
+                            t,
+                        )}
                     </span>
 
                     {listing.time_control.map((tc) => (
@@ -105,7 +113,7 @@ export function ListingRow({ listing }: Props) {
                             className="inline-flex items-center gap-1.5 rounded-full border border-border/60 bg-background/60 px-3 py-1 text-xs font-medium text-muted-foreground"
                         >
                             <Clock className="size-3" />
-                            {timeControlLabels[tc]}
+                            {t(timeControlLabels[tc])}
                         </span>
                     ))}
 

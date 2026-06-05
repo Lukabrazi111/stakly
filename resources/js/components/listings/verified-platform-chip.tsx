@@ -1,3 +1,4 @@
+import { useT } from '@/lib/i18n';
 import type { ListingPlatform } from '@/types';
 
 const PLATFORM_META: Record<ListingPlatform, { label: string; tone: string }> =
@@ -18,12 +19,13 @@ interface Props {
 
 /** Read-only platform chip on the listing row + card. */
 export function VerifiedPlatformChip({ platform }: Props) {
+    const t = useT();
     const meta = PLATFORM_META[platform];
 
     return (
         <span
             className={`inline-flex shrink-0 items-center gap-1 rounded-full border px-2.5 py-0.5 text-[11px] font-medium ${meta.tone}`}
-            aria-label={`Played on ${meta.label}`}
+            aria-label={t('Played on :platform', { platform: meta.label })}
         >
             {meta.label}
         </span>

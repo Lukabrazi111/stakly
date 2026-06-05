@@ -1,6 +1,7 @@
 import { Link, usePage } from '@inertiajs/react';
 import { useAuthModal } from '@/components/auth/auth-modal-provider';
 import { Button } from '@/components/ui/button';
+import { useT } from '@/lib/i18n';
 import { edit as linkedAccountsEdit } from '@/routes/linked-accounts';
 import { mine as listingsMine, show as showListing } from '@/routes/listings';
 import type { Listing, ListingPlatform } from '@/types';
@@ -22,6 +23,7 @@ interface Props {
  * has additional eligibility branches.
  */
 export function TakeButton({ listing, className = '' }: Props) {
+    const t = useT();
     const { auth } = usePage().props;
     const { openLogin } = useAuthModal();
     const user = auth.user;
@@ -35,7 +37,7 @@ export function TakeButton({ listing, className = '' }: Props) {
                 onClick={openLogin}
                 className={className}
             >
-                Sign in to take
+                {t('Sign in to take')}
             </Button>
         );
     }
@@ -48,7 +50,7 @@ export function TakeButton({ listing, className = '' }: Props) {
                 asChild
                 className={`rounded-full ${className}`.trim()}
             >
-                <Link href={listingsMine().url}>Manage</Link>
+                <Link href={listingsMine().url}>{t('Manage')}</Link>
             </Button>
         );
     }
@@ -62,7 +64,9 @@ export function TakeButton({ listing, className = '' }: Props) {
                 className={`rounded-full ${className}`.trim()}
             >
                 <Link href={linkedAccountsEdit().url}>
-                    Link {PLATFORM_LABEL[listing.platform]}
+                    {t('Link :platform', {
+                        platform: PLATFORM_LABEL[listing.platform],
+                    })}
                 </Link>
             </Button>
         );
@@ -70,7 +74,9 @@ export function TakeButton({ listing, className = '' }: Props) {
 
     return (
         <Button variant="gradient" size="pill" asChild className={className}>
-            <Link href={showListing({ listing: listing.id }).url}>Take</Link>
+            <Link href={showListing({ listing: listing.id }).url}>
+                {t('Take')}
+            </Link>
         </Button>
     );
 }

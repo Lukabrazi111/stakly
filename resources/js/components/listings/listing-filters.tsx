@@ -26,6 +26,7 @@ import {
 } from '@/components/ui/sheet';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { useIsMobile } from '@/hooks/use-mobile';
+import { useT } from '@/lib/i18n';
 import { buildListingsQuery } from '@/lib/listings-query';
 import { index as listingsIndex } from '@/routes/listings';
 import type {
@@ -75,6 +76,7 @@ function filtersToDraft(filters: ListingFiltersType): DraftFilters {
 /** Filter trigger + responsive content panel: Popover on desktop, Sheet on
  *  mobile. Form remounts on open to re-seed draft state from server filters. */
 export function ListingFilters({ filters, activeCount }: Props) {
+    const t = useT();
     const isMobile = useIsMobile();
     const [open, setOpen] = useState(false);
 
@@ -87,7 +89,7 @@ export function ListingFilters({ filters, activeCount }: Props) {
             className="border border-border/60 hover:border-primary/40 hover:bg-primary/10 hover:[text-shadow:none] data-[state=open]:border-primary/40 data-[state=open]:bg-primary/10"
         >
             <SlidersHorizontal className="size-4" />
-            Filters
+            {t('Filters')}
             {activeCount > 0 && (
                 <span className="ml-1 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-primary/20 px-1.5 text-xs font-semibold text-primary">
                     {activeCount}
@@ -108,9 +110,11 @@ export function ListingFilters({ filters, activeCount }: Props) {
                     side="right"
                     className="flex w-full flex-col gap-0 border-l border-border/60 bg-card/95 p-0 backdrop-blur-xl sm:max-w-md"
                 >
-                    <SheetTitle className="sr-only">Filters</SheetTitle>
+                    <SheetTitle className="sr-only">{t('Filters')}</SheetTitle>
                     <SheetDescription className="sr-only">
-                        Narrow down listings by stake, skill, format, and more.
+                        {t(
+                            'Narrow down listings by stake, skill, format, and more.',
+                        )}
                     </SheetDescription>
                     {form}
                 </SheetContent>
@@ -138,6 +142,7 @@ interface FormProps {
 }
 
 function FilterForm({ filters, onClose }: FormProps) {
+    const t = useT();
     const [draft, setDraft] = useState<DraftFilters>(() =>
         filtersToDraft(filters),
     );
@@ -178,11 +183,13 @@ function FilterForm({ filters, onClose }: FormProps) {
     return (
         <>
             <header className="border-b border-border/60 px-5 py-3">
-                <h2 className="font-display text-lg font-bold">Filters</h2>
+                <h2 className="font-display text-lg font-bold">
+                    {t('Filters')}
+                </h2>
             </header>
 
             <div className="max-h-[60vh] space-y-5 overflow-y-auto px-5 py-5">
-                <Field label="Stake range (USDT)">
+                <Field label={t('Stake range (USDT)')}>
                     <RangePair
                         minValue={draft.stake_min}
                         maxValue={draft.stake_max}
@@ -197,7 +204,7 @@ function FilterForm({ filters, onClose }: FormProps) {
                     />
                 </Field>
 
-                <Field label="Skill range (Elo)">
+                <Field label={t('Skill range (Elo)')}>
                     <RangePair
                         minValue={draft.skill_min}
                         maxValue={draft.skill_max}
@@ -212,7 +219,7 @@ function FilterForm({ filters, onClose }: FormProps) {
                     />
                 </Field>
 
-                <Field label="Time control">
+                <Field label={t('Time control')}>
                     <ToggleGroup
                         type="multiple"
                         variant="outline"
@@ -229,16 +236,16 @@ function FilterForm({ filters, onClose }: FormProps) {
                             <ToggleGroupItem
                                 key={opt.value}
                                 value={opt.value}
-                                aria-label={opt.label}
+                                aria-label={t(opt.label)}
                                 className="rounded-full px-4 py-2"
                             >
-                                {opt.label}
+                                {t(opt.label)}
                             </ToggleGroupItem>
                         ))}
                     </ToggleGroup>
                 </Field>
 
-                <Field label="Region">
+                <Field label={t('Region')}>
                     <Select
                         value={draft.region ?? ANY_VALUE}
                         onValueChange={(value) =>
@@ -249,11 +256,11 @@ function FilterForm({ filters, onClose }: FormProps) {
                         }
                     >
                         <SelectTrigger className="w-full">
-                            <SelectValue placeholder="Any region" />
+                            <SelectValue placeholder={t('Any region')} />
                         </SelectTrigger>
                         <SelectContent>
                             <SelectItem value={ANY_VALUE}>
-                                Any region
+                                {t('Any region')}
                             </SelectItem>
                             {REGIONS.map((region) => (
                                 <SelectItem key={region} value={region}>
@@ -264,7 +271,7 @@ function FilterForm({ filters, onClose }: FormProps) {
                     </Select>
                 </Field>
 
-                <Field label="Language">
+                <Field label={t('Language')}>
                     <Select
                         value={draft.language ?? ANY_VALUE}
                         onValueChange={(value) =>
@@ -275,11 +282,11 @@ function FilterForm({ filters, onClose }: FormProps) {
                         }
                     >
                         <SelectTrigger className="w-full">
-                            <SelectValue placeholder="Any language" />
+                            <SelectValue placeholder={t('Any language')} />
                         </SelectTrigger>
                         <SelectContent>
                             <SelectItem value={ANY_VALUE}>
-                                Any language
+                                {t('Any language')}
                             </SelectItem>
                             {LANGUAGES.map((lang) => (
                                 <SelectItem key={lang} value={lang}>
@@ -298,7 +305,7 @@ function FilterForm({ filters, onClose }: FormProps) {
                     onClick={reset}
                     className="flex-1"
                 >
-                    Reset
+                    {t('Reset')}
                 </Button>
                 <Button
                     variant="gradient"
@@ -306,7 +313,7 @@ function FilterForm({ filters, onClose }: FormProps) {
                     onClick={apply}
                     className="flex-1"
                 >
-                    Apply
+                    {t('Apply')}
                 </Button>
             </footer>
         </>
@@ -339,6 +346,8 @@ function RangePair({
     max,
     inputMode,
 }: RangePairProps) {
+    const t = useT();
+
     return (
         <div className="flex items-center gap-2">
             <Input
@@ -346,18 +355,18 @@ function RangePair({
                 inputMode={inputMode}
                 min={0}
                 max={max}
-                placeholder="Min"
+                placeholder={t('Min')}
                 value={minValue}
                 onChange={(e) => onMinChange(e.target.value)}
                 className="flex-1"
             />
-            <span className="text-xs text-muted-foreground">to</span>
+            <span className="text-xs text-muted-foreground">{t('to')}</span>
             <Input
                 type="number"
                 inputMode={inputMode}
                 min={0}
                 max={max}
-                placeholder="Max"
+                placeholder={t('Max')}
                 value={maxValue}
                 onChange={(e) => onMaxChange(e.target.value)}
                 className="flex-1"

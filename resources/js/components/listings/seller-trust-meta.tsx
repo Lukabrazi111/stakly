@@ -1,4 +1,5 @@
 import { BadgeCheck } from 'lucide-react';
+import { useT } from '@/lib/i18n';
 import type { ListingPlatform } from '@/types';
 
 interface Props {
@@ -16,21 +17,33 @@ const PROVIDER_LABEL: Record<ListingPlatform, string> = {
 
 /** Inline seller trust meta under the creator name. Hides when settled === 0. */
 export function SellerTrustMeta({ rate, settled, verifiedProviders }: Props) {
+    const t = useT();
+
     if (settled === 0) {
         return null;
     }
 
     const isCrossPlatform = verifiedProviders.length >= 2;
     const rateLabel = rate === null ? '—' : `${rate}%`;
-    const matchLabel = `${settled} ${settled === 1 ? 'match' : 'matches'}`;
+    const matchCount =
+        settled === 1
+            ? t(':count match', { count: settled })
+            : t(':count matches', { count: settled });
 
     const rateClause =
         rate === null
-            ? `${matchLabel} settled lifetime. No engaged matches in the last 30 days.`
-            : `${rateLabel} 30-day completion rate · ${matchLabel} settled lifetime.`;
+            ? `${t(':matches settled lifetime.', { matches: matchCount })} ${t('No engaged matches in the last 30 days.')}`
+            : t(':rate% 30-day completion rate · :matches settled lifetime.', {
+                  rate: rateLabel,
+                  matches: matchCount,
+              });
 
     const tooltip = isCrossPlatform
-        ? `Verified on ${verifiedProviders.map((p) => PROVIDER_LABEL[p]).join(' + ')}. ${rateClause}`
+        ? `${t('Verified on :providers.', {
+              providers: verifiedProviders
+                  .map((p) => PROVIDER_LABEL[p])
+                  .join(' + '),
+          })} ${rateClause}`
         : rateClause;
 
     return (
@@ -49,7 +62,7 @@ export function SellerTrustMeta({ rate, settled, verifiedProviders }: Props) {
             <span aria-hidden="true" className="opacity-60">
                 ·
             </span>
-            <span>{matchLabel}</span>
+            <span>{matchCount}</span>
         </span>
     );
 }
