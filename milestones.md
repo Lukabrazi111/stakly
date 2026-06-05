@@ -417,7 +417,7 @@ Lessons folded back:
 
 **P4 Slices D+ — Page-by-page extraction (one slice per area, each its own commit)**
 
-- [ ] Listings (index + detail + create + mine + filters).
+- [x] Listings (D-1 index ✓ 2026-06-05 · D-2 detail ✓ 2026-06-05 · D-3 create form ✓ 2026-06-05 · D-4 mine + active-mode ✓ 2026-06-05 · D-5 backend flash + validation ✓ 2026-06-05).
 - [ ] Profile (header + tabs + match history + listings section).
 - [ ] Match (show + chat + banners + waiting card + settled card).
 - [ ] Wallet (index + deposit + withdraw + history).
