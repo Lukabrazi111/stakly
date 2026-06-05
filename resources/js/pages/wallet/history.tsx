@@ -5,13 +5,11 @@ import { PageMeta } from '@/components/site/page-meta';
 import { TransactionRow } from '@/components/wallet/transaction-row';
 import { WalletPagination } from '@/components/wallet/wallet-pagination';
 import PlayerHubLayout from '@/layouts/player-hub-layout';
+import { useT } from '@/lib/i18n';
 import { buildWalletHistoryQuery } from '@/lib/wallet-history-query';
 import { history as historyRoute, index as walletIndex } from '@/routes/wallet';
 import type { WalletHistoryProps, WalletTransactionType } from '@/types';
 
-// Labels for filter chips. Kept here rather than imported from the chip
-// component so the chip stays a pure presentational unit. A future i18n pass
-// can converge these on a single translation file.
 const TYPE_LABELS: Record<WalletTransactionType, string> = {
     deposit: 'Deposit',
     withdrawal: 'Withdrawal',
@@ -26,6 +24,8 @@ export default function WalletHistory({
     filters,
     types,
 }: WalletHistoryProps) {
+    const t = useT();
+
     const goToFilter = (type: WalletTransactionType | null) => {
         // `replace: true` — filter chip clicks are view-state changes, not
         // real navigation events. Without this, each chip click pushes a
@@ -45,8 +45,8 @@ export default function WalletHistory({
     return (
         <PlayerHubLayout>
             <PageMeta
-                title="Transaction history — Wallet"
-                description="Your wallet transaction history."
+                title={t('Transaction history — Wallet')}
+                description={t('Your wallet transaction history.')}
                 noindex
             />
 
@@ -55,10 +55,12 @@ export default function WalletHistory({
 
                 <header className="mt-4 mb-6">
                     <h1 className="font-display text-3xl font-bold tracking-tight md:text-4xl">
-                        Transaction history
+                        {t('Transaction history')}
                     </h1>
                     <p className="mt-2 text-sm text-muted-foreground">
-                        Every credit and debit on your account, newest first.
+                        {t(
+                            'Every credit and debit on your account, newest first.',
+                        )}
                     </p>
                 </header>
 
@@ -67,7 +69,7 @@ export default function WalletHistory({
                         active={!filters.type}
                         onClick={() => goToFilter(null)}
                     >
-                        All
+                        {t('All')}
                     </FilterChip>
                     {types.map((type) => (
                         <FilterChip
@@ -75,7 +77,7 @@ export default function WalletHistory({
                             active={filters.type === type}
                             onClick={() => goToFilter(type)}
                         >
-                            {TYPE_LABELS[type]}
+                            {t(TYPE_LABELS[type])}
                         </FilterChip>
                     ))}
                 </div>
@@ -87,13 +89,13 @@ export default function WalletHistory({
                         </div>
                         <p className="mt-3 text-sm font-medium text-foreground">
                             {hasActiveFilter
-                                ? 'No transactions match this filter'
-                                : 'No transactions yet'}
+                                ? t('No transactions match this filter')
+                                : t('No transactions yet')}
                         </p>
                         <p className="mt-1 text-sm text-muted-foreground">
                             {hasActiveFilter
-                                ? 'Try a different type or clear the filter.'
-                                : 'Make a deposit to get started.'}
+                                ? t('Try a different type or clear the filter.')
+                                : t('Make a deposit to get started.')}
                         </p>
                         {hasActiveFilter && (
                             <button
@@ -101,7 +103,7 @@ export default function WalletHistory({
                                 onClick={() => goToFilter(null)}
                                 className="mt-4 inline-block cursor-pointer text-sm font-medium text-primary transition-colors hover:text-primary/80"
                             >
-                                Clear filter
+                                {t('Clear filter')}
                             </button>
                         )}
                     </div>

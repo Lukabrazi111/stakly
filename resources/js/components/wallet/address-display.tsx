@@ -2,6 +2,7 @@ import { Check, Copy } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
+import { useT } from '@/lib/i18n';
 
 interface Props {
     address: string;
@@ -17,16 +18,17 @@ export function AddressDisplay({
     truncate = false,
     className = '',
 }: Props) {
+    const t = useT();
     const [copied, setCopied] = useState(false);
 
     const handleCopy = async () => {
         try {
             await navigator.clipboard.writeText(address);
             setCopied(true);
-            toast.success('Address copied');
+            toast.success(t('Address copied'));
             setTimeout(() => setCopied(false), 2000);
         } catch {
-            toast.error('Could not copy — try selecting it manually.');
+            toast.error(t('Could not copy — try selecting it manually.'));
         }
     };
 
@@ -50,7 +52,7 @@ export function AddressDisplay({
                 variant="ghost"
                 size="icon"
                 onClick={handleCopy}
-                aria-label={copied ? 'Address copied' : 'Copy address'}
+                aria-label={copied ? t('Address copied') : t('Copy address')}
                 className="shrink-0"
             >
                 {copied ? (

@@ -4,6 +4,7 @@ import InputError from '@/components/input-error';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { useT } from '@/lib/i18n';
 import { formatUsdt } from '@/lib/wallet-format';
 import { store as withdrawStore } from '@/routes/wallet/withdraw';
 
@@ -15,6 +16,7 @@ interface Props {
 /** Withdraw form. Backend short-circuits the POST with a flash notice
  *  pending M9; all validation paths still fire. */
 export function WithdrawForm({ balance, minWithdrawal }: Props) {
+    const t = useT();
     const { data, setData, post, processing, errors, transform } = useForm<{
         address: string;
         amount: string;
@@ -51,7 +53,7 @@ export function WithdrawForm({ balance, minWithdrawal }: Props) {
     return (
         <form onSubmit={handleSubmit} className="space-y-6">
             <div className="space-y-2">
-                <Label htmlFor="address">TRC20 USDT address</Label>
+                <Label htmlFor="address">{t('TRC20 USDT address')}</Label>
                 <Input
                     id="address"
                     name="address"
@@ -68,7 +70,7 @@ export function WithdrawForm({ balance, minWithdrawal }: Props) {
             </div>
 
             <div className="space-y-2">
-                <Label htmlFor="amount">Amount</Label>
+                <Label htmlFor="amount">{t('Amount')}</Label>
                 <div className="relative flex items-center gap-2">
                     <div className="relative flex-1">
                         <Input
@@ -100,19 +102,19 @@ export function WithdrawForm({ balance, minWithdrawal }: Props) {
                         onClick={handleMax}
                         className="shrink-0 rounded-full"
                     >
-                        Max
+                        {t('Max')}
                     </Button>
                 </div>
                 <div className="flex items-center justify-between text-xs">
                     <span className="text-muted-foreground">
-                        Min:{' '}
+                        {t('Min:')}{' '}
                         <span className="font-medium text-foreground">
                             {formatUsdt(minWithdrawal)} USDT
                         </span>
                     </span>
                     <span className="inline-flex items-center gap-1 text-muted-foreground">
                         <Wallet className="size-3" />
-                        Available:{' '}
+                        {t('Available:')}{' '}
                         <span
                             className={
                                 exceedsBalance
@@ -126,12 +128,14 @@ export function WithdrawForm({ balance, minWithdrawal }: Props) {
                 </div>
                 {exceedsBalance && (
                     <p className="text-xs text-destructive">
-                        Amount exceeds your available balance.
+                        {t('Amount exceeds your available balance.')}
                     </p>
                 )}
                 {belowMin && (
                     <p className="text-xs text-destructive">
-                        Minimum withdrawal is {formatUsdt(minWithdrawal)} USDT.
+                        {t('Minimum withdrawal is :amount USDT.', {
+                            amount: formatUsdt(minWithdrawal),
+                        })}
                     </p>
                 )}
                 <InputError message={errors.amount} />
@@ -144,7 +148,7 @@ export function WithdrawForm({ balance, minWithdrawal }: Props) {
                 disabled={!canSubmit}
                 className="w-full"
             >
-                {processing ? 'Submitting…' : 'Withdraw'}
+                {processing ? t('Submitting…') : t('Withdraw')}
             </Button>
         </form>
     );

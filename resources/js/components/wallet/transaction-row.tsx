@@ -1,5 +1,6 @@
 import { Link } from '@inertiajs/react';
 import { TransactionTypeChip } from '@/components/wallet/transaction-type-chip';
+import { useT } from '@/lib/i18n';
 import {
     formatSignedAmount,
     formatTransactionDate,
@@ -22,9 +23,10 @@ const MATCH_LINKED_TYPES: ReadonlySet<WalletTransaction['type']> = new Set([
 
 /** One transaction line, used in both `/wallet` and `/wallet/history`. */
 export function TransactionRow({ transaction }: Props) {
+    const t = useT();
     const isCredit = transaction.amount > 0;
     const description =
-        transaction.description ?? defaultDescription(transaction.type);
+        transaction.description ?? t(defaultDescription(transaction.type));
 
     const linksToMatch =
         MATCH_LINKED_TYPES.has(transaction.type) &&
@@ -57,7 +59,9 @@ export function TransactionRow({ transaction }: Props) {
                                 }
                                 className="font-medium text-primary underline-offset-2 transition-colors hover:text-primary/80 hover:underline"
                             >
-                                Match #{transaction.related_match.id}
+                                {t('Match #:id', {
+                                    id: transaction.related_match.id,
+                                })}
                             </Link>
                         </>
                     )}
@@ -72,7 +76,9 @@ export function TransactionRow({ transaction }: Props) {
                                 }
                                 className="font-medium text-primary underline-offset-2 transition-colors hover:text-primary/80 hover:underline"
                             >
-                                Listing #{transaction.related_listing.id}
+                                {t('Listing #:id', {
+                                    id: transaction.related_listing.id,
+                                })}
                             </Link>
                         </>
                     )}
@@ -91,7 +97,9 @@ export function TransactionRow({ transaction }: Props) {
                     {formatSignedAmount(transaction.amount)} USDT
                 </div>
                 <div className="mt-0.5 font-mono text-xs text-muted-foreground">
-                    Balance: {formatUsdt(transaction.balance_after)}
+                    {t('Balance: :amount', {
+                        amount: formatUsdt(transaction.balance_after),
+                    })}
                 </div>
             </div>
 

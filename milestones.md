@@ -14,7 +14,7 @@ Frontend-first build. UI against real DB infrastructure + seeded fake data; back
 
 **In-flight:**
 
-- **M26 Phase 4** — Full-site i18n. Slice A ✓ + Slice B ✓ + Slice C ✓ all shipped 2026-06-04. Follow-up `URL::defaults` global fallback ✓ 2026-06-05. **Slice D-1 through D-5 (Listings tranche) ✓ 2026-06-05** — index, detail, create form, mine + active-mode + cancel dialog, backend flash/validation. **Up next: D-6 Profile** (header + tabs + match history + listings section), then Match → Wallet → Notifications → Settings → Auth → Banned banner → Validation/errors. Translation labor (`lang/ka.json` / `lang/ru.json` content) tracked separately as a content backlog.
+- **M26 Phase 4** — Full-site i18n. Slices A/B/C ✓ 2026-06-04 + global `URL::defaults` fallback ✓ 2026-06-05. **Slices D-1 through D-7 (Listings + Profile + Match) ✓ 2026-06-05** — listings index/detail/create/mine + backend (D-1..D-5), profile (D-6), match list/detail/actions/chat/backend (D-7a..D-7e). **Up next: Wallet**, then Notifications → Settings → Auth → Banned banner → Validation/errors. Translation labor (`lang/ka.json` / `lang/ru.json` content) tracked separately as a content backlog.
 
 **Active / upcoming** (after M26):
 
@@ -420,7 +420,7 @@ Lessons folded back:
 - [x] Listings (D-1 index ✓ 2026-06-05 · D-2 detail ✓ 2026-06-05 · D-3 create form ✓ 2026-06-05 · D-4 mine + active-mode ✓ 2026-06-05 · D-5 backend flash + validation ✓ 2026-06-05).
 - [x] Profile (D-6 ✓ 2026-06-05 — header + tabs + trust strip + stats card + share/owner sections + listing/match rows).
 - [x] Match (D-7a list ✓ 2026-06-05 · D-7b detail chrome ✓ 2026-06-05 · D-7c actions + banners ✓ 2026-06-05 · D-7d chat ✓ 2026-06-05 · D-7e backend strings ✓ 2026-06-05).
-- [ ] Wallet (index + deposit + withdraw + history).
+- [x] Wallet (D-8 ✓ 2026-06-05 — index + deposit + withdraw + history + 6 components + backend strings).
 - [ ] Notifications (bell dropdown + `/notifications` history page + `NotificationCard` + `/settings/notifications` preferences UI). M27 surfaces.
 - [ ] Settings (profile + security + linked accounts + notification preferences cards).
 - [ ] Auth modal + auth flows (login + register + forgot-password modal + reset-password + 2FA challenge + email verification + confirm-password). M2 modal-only auth surface + page-only post-login landings.

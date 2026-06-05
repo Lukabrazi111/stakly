@@ -7,6 +7,7 @@ import {
     Undo2,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
+import { useT } from '@/lib/i18n';
 import type { WalletTransactionType } from '@/types';
 
 interface TypeMeta {
@@ -55,6 +56,7 @@ interface Props {
 }
 
 export function TransactionTypeChip({ type }: Props) {
+    const t = useT();
     const { label, icon: Icon, classes } = TYPE_META[type];
 
     return (
@@ -62,7 +64,7 @@ export function TransactionTypeChip({ type }: Props) {
             className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium ${classes}`}
         >
             <Icon className="size-3" />
-            {label}
+            {t(label)}
         </span>
     );
 }
