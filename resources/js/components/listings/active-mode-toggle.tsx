@@ -9,6 +9,7 @@ import {
     DialogHeader,
     DialogTitle,
 } from '@/components/ui/dialog';
+import { useT } from '@/lib/i18n';
 import { update as activeModeUpdate } from '@/routes/active-mode';
 
 interface Props {
@@ -25,6 +26,7 @@ interface Props {
  * an immediate match within seconds.
  */
 export function ActiveModeToggle({ listingsCount }: Props) {
+    const t = useT();
     const { auth } = usePage().props;
     const active = auth.user?.is_active_mode ?? true;
     const hasNoListings = listingsCount === 0;
@@ -74,16 +76,16 @@ export function ActiveModeToggle({ listingsCount }: Props) {
             <div className="flex items-center justify-between gap-3">
                 <div className="flex flex-col items-start sm:items-end">
                     <span className="text-sm font-medium text-foreground">
-                        {active ? 'Active Mode' : 'Inactive Mode'}
+                        {active ? t('Active Mode') : t('Inactive Mode')}
                     </span>
                     <span
                         className={`text-xs ${active && hasNoListings ? 'text-warning' : 'text-muted-foreground'}`}
                     >
                         {active
                             ? hasNoListings
-                                ? 'Post a listing to appear on the board'
-                                : 'Listings visible to the marketplace'
-                            : 'Listings hidden from the marketplace'}
+                                ? t('Post a listing to appear on the board')
+                                : t('Listings visible to the marketplace')
+                            : t('Listings hidden from the marketplace')}
                     </span>
                 </div>
                 <button
@@ -92,8 +94,8 @@ export function ActiveModeToggle({ listingsCount }: Props) {
                     aria-checked={active}
                     aria-label={
                         active
-                            ? 'Switch to Inactive Mode'
-                            : 'Switch to Active Mode'
+                            ? t('Switch to Inactive Mode')
+                            : t('Switch to Active Mode')
                     }
                     onClick={handleToggleClick}
                     disabled={processing}
@@ -114,11 +116,11 @@ export function ActiveModeToggle({ listingsCount }: Props) {
             <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
                 <DialogContent>
                     <DialogHeader>
-                        <DialogTitle>Go Active?</DialogTitle>
+                        <DialogTitle>{t('Go Active?')}</DialogTitle>
                         <DialogDescription>
-                            Your listings will reappear on the marketplace
-                            immediately. An opponent could take one within
-                            seconds and start a match. Ready to play?
+                            {t(
+                                'Your listings will reappear on the marketplace immediately. An opponent could take one within seconds and start a match. Ready to play?',
+                            )}
                         </DialogDescription>
                     </DialogHeader>
                     <DialogFooter>
@@ -127,14 +129,14 @@ export function ActiveModeToggle({ listingsCount }: Props) {
                             onClick={() => setDialogOpen(false)}
                             disabled={processing}
                         >
-                            Stay inactive
+                            {t('Stay inactive')}
                         </Button>
                         <Button
                             variant="gradient"
                             onClick={handleConfirmActivate}
                             disabled={processing}
                         >
-                            {processing ? 'Activating…' : 'Go active'}
+                            {processing ? t('Activating…') : t('Go active')}
                         </Button>
                     </DialogFooter>
                 </DialogContent>

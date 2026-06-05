@@ -3,6 +3,7 @@ import { Clock, X } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useState } from 'react';
 import { CancelListingDialog } from '@/components/listings/cancel-listing-dialog';
+import { useT } from '@/lib/i18n';
 import {
     formatTimeRemaining,
     isEndingSoon,
@@ -32,6 +33,7 @@ interface Props {
 /** One row inside `/listings/mine`. Whole row → listing detail via an
  *  absolute-overlay Link; Cancel sits in a `relative` cell above it. */
 export function MineListingRow({ listing }: Props) {
+    const t = useT();
     const [cancelOpen, setCancelOpen] = useState(false);
 
     const canCancel = listing.status === 'open';
@@ -50,7 +52,7 @@ export function MineListingRow({ listing }: Props) {
             <Link
                 href={showListing({ listing: listing.id }).url}
                 className="absolute inset-0 rounded-lg focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none"
-                aria-label={`View listing #${listing.id}`}
+                aria-label={t('View listing #:id', { id: listing.id })}
             />
 
             {/* Mobile: two grouped rows. Desktop: wrappers collapse via
@@ -59,7 +61,7 @@ export function MineListingRow({ listing }: Props) {
                 <span
                     className={`pointer-events-none relative inline-flex shrink-0 items-center justify-center rounded-full border px-3 py-1 text-xs font-medium md:w-24 ${STATUS_TONE[listing.status]}`}
                 >
-                    {STATUS_LABEL[listing.status]}
+                    {t(STATUS_LABEL[listing.status])}
                 </span>
 
                 <div className="pointer-events-none relative flex shrink-0 items-baseline gap-1 md:w-28">
@@ -78,7 +80,7 @@ export function MineListingRow({ listing }: Props) {
                             className="inline-flex items-center gap-1 rounded-full border border-border/60 bg-background/60 px-2.5 py-0.5 text-xs font-medium text-muted-foreground"
                         >
                             <Clock className="size-3" />
-                            {timeControlLabels[tc]}
+                            {t(timeControlLabels[tc])}
                         </span>
                     ))}
                 </div>
@@ -87,7 +89,7 @@ export function MineListingRow({ listing }: Props) {
                     className={`pointer-events-none relative inline-flex shrink-0 items-center gap-1.5 text-xs font-medium md:w-24 md:justify-end ${endingSoon ? 'text-warning' : 'text-muted-foreground'}`}
                 >
                     <Clock className="size-3" />
-                    {formatTimeRemaining(listing.expires_at)}
+                    {formatTimeRemaining(listing.expires_at, t)}
                 </div>
 
                 {/* Cell is pointer-events-none so empty space falls through
@@ -96,7 +98,7 @@ export function MineListingRow({ listing }: Props) {
                     <div className="pointer-events-none relative flex shrink-0 items-center gap-1 md:w-24 md:justify-end">
                         <IconButton
                             onClick={openCancelDialog}
-                            label="Cancel listing"
+                            label={t('Cancel listing')}
                             destructive
                             className="pointer-events-auto"
                         >

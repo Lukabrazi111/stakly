@@ -1,8 +1,10 @@
 import { usePage } from '@inertiajs/react';
 import { AlertCircle } from 'lucide-react';
+import { useT } from '@/lib/i18n';
 
 /** Banner shown inside /listings/mine when the user's Active Mode is off. */
 export function InactiveModeBanner() {
+    const t = useT();
     const { auth } = usePage().props;
 
     if (!auth.user || auth.user.is_active_mode) {
@@ -17,11 +19,12 @@ export function InactiveModeBanner() {
             <AlertCircle className="size-5 shrink-0" aria-hidden="true" />
             <div className="flex-1">
                 <p className="text-sm font-medium text-foreground">
-                    You&apos;re in Inactive Mode
+                    {t("You're in Inactive Mode")}
                 </p>
                 <p className="mt-0.5 text-sm text-muted-foreground">
-                    Your listings are hidden from the public marketplace and
-                    your profile. Toggle Active Mode above to bring them back.
+                    {t(
+                        'Your listings are hidden from the public marketplace and your profile. Toggle Active Mode above to bring them back.',
+                    )}
                 </p>
             </div>
         </div>

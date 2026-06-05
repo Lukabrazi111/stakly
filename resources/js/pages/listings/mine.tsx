@@ -10,6 +10,7 @@ import { PageMeta } from '@/components/site/page-meta';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import PlayerHubLayout from '@/layouts/player-hub-layout';
+import { useT } from '@/lib/i18n';
 import { create as listingsCreate, mine as mineRoute } from '@/routes/listings';
 import type { ListingsMineProps } from '@/types';
 
@@ -21,6 +22,7 @@ export default function ListingsMine({
     activeCount,
     maxActive,
 }: ListingsMineProps) {
+    const t = useT();
     const { auth } = usePage().props;
     const isInactive = Boolean(auth.user && !auth.user.is_active_mode);
     const atCap = activeCount >= maxActive;
@@ -61,8 +63,8 @@ export default function ListingsMine({
     return (
         <PlayerHubLayout>
             <PageMeta
-                title="My listings"
-                description="Your listings dashboard."
+                title={t('My listings')}
+                description={t('Your listings dashboard.')}
                 noindex
             />
 
@@ -71,16 +73,19 @@ export default function ListingsMine({
                 <header className="mb-6 flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
                     <div>
                         <h1 className="font-display text-3xl font-bold tracking-tight md:text-4xl">
-                            My listings
+                            {t('My listings')}
                         </h1>
                         <p className="mt-2 text-sm text-muted-foreground">
-                            Manage what&apos;s on the board.{' '}
+                            {t("Manage what's on the board.")}{' '}
                             <span
                                 className={`font-medium ${atCap ? 'text-warning' : 'text-foreground/70'}`}
                             >
-                                {activeCount} of {maxActive}
+                                {t(':active of :max', {
+                                    active: activeCount,
+                                    max: maxActive,
+                                })}
                             </span>{' '}
-                            active
+                            {t('active')}
                         </p>
                     </div>
 
@@ -91,16 +96,19 @@ export default function ListingsMine({
                                 variant="gradient"
                                 size="default"
                                 disabled
-                                title={`You're at the ${maxActive}-listing cap. Cancel or settle one first.`}
+                                title={t(
+                                    "You're at the :max-listing cap. Cancel or settle one first.",
+                                    { max: maxActive },
+                                )}
                             >
                                 <Plus className="size-4" />
-                                Post listing
+                                {t('Post listing')}
                             </Button>
                         ) : (
                             <Button variant="gradient" size="default" asChild>
                                 <Link href={listingsCreate().url}>
                                     <Plus className="size-4" />
-                                    Post listing
+                                    {t('Post listing')}
                                 </Link>
                             </Button>
                         )}
@@ -115,11 +123,17 @@ export default function ListingsMine({
                     <div className="overflow-hidden rounded-2xl border border-border/60 bg-card/40">
                         {/* Column header — desktop only */}
                         <div className="hidden border-b border-border/40 px-5 py-3 text-xs tracking-wide text-muted-foreground uppercase md:flex md:items-center md:gap-4">
-                            <div className="md:w-24 md:text-center">Status</div>
-                            <div className="md:w-28">Stake</div>
-                            <div className="flex-1">Time control</div>
-                            <div className="md:w-24 md:text-right">Expires</div>
-                            <div className="md:w-24 md:text-right">Actions</div>
+                            <div className="md:w-24 md:text-center">
+                                {t('Status')}
+                            </div>
+                            <div className="md:w-28">{t('Stake')}</div>
+                            <div className="flex-1">{t('Time control')}</div>
+                            <div className="md:w-24 md:text-right">
+                                {t('Expires')}
+                            </div>
+                            <div className="md:w-24 md:text-right">
+                                {t('Actions')}
+                            </div>
                         </div>
 
                         {isLoading
@@ -158,19 +172,24 @@ interface EmptyStateProps {
 }
 
 function EmptyState({ tab, atCap, isInactive }: EmptyStateProps) {
+    const t = useT();
     const heading =
         tab === 'all'
-            ? 'No listings yet'
+            ? t('No listings yet')
             : isInactive
-              ? 'Nothing listed while inactive'
-              : 'No listings on the board';
+              ? t('Nothing listed while inactive')
+              : t('No listings on the board');
 
     const body =
         tab === 'all'
-            ? 'Once you post a listing, it shows up here — across every status.'
+            ? t(
+                  'Once you post a listing, it shows up here — across every status.',
+              )
             : isInactive
-              ? 'Your listings are hidden globally. Switch to Active Mode (toggle in the header) or post a new listing.'
-              : 'Post one to find an opponent at your skill level.';
+              ? t(
+                    'Your listings are hidden globally. Switch to Active Mode (toggle in the header) or post a new listing.',
+                )
+              : t('Post one to find an opponent at your skill level.');
 
     return (
         <div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed border-border/60 bg-card/40 px-6 py-16 text-center">
@@ -187,7 +206,7 @@ function EmptyState({ tab, atCap, isInactive }: EmptyStateProps) {
                 >
                     <Link href={listingsCreate().url}>
                         <Plus className="size-4" />
-                        Post listing
+                        {t('Post listing')}
                     </Link>
                 </Button>
             )}

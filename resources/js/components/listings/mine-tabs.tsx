@@ -1,6 +1,7 @@
 import { router } from '@inertiajs/react';
 import { useEffect, useState } from 'react';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { useT } from '@/lib/i18n';
 import { buildMineQuery } from '@/lib/listings-mine-query';
 import { mine as mineRoute } from '@/routes/listings';
 import type { ListingsMineTab } from '@/types';
@@ -15,6 +16,7 @@ interface Props {
  * Inertia round-trip (which would otherwise produce a 200–500ms lag).
  */
 export function MineTabs({ current }: Props) {
+    const t = useT();
     const [activeTab, setActiveTab] = useState<ListingsMineTab>(current);
 
     useEffect(() => {
@@ -39,9 +41,9 @@ export function MineTabs({ current }: Props) {
 
     return (
         <Tabs value={activeTab} onValueChange={handleChange} className="mb-6">
-            <TabsList variant="line" aria-label="Listings view">
-                <TabsTrigger value="listed">Listed</TabsTrigger>
-                <TabsTrigger value="all">All Ads</TabsTrigger>
+            <TabsList variant="line" aria-label={t('Listings view')}>
+                <TabsTrigger value="listed">{t('Listed')}</TabsTrigger>
+                <TabsTrigger value="all">{t('All Ads')}</TabsTrigger>
             </TabsList>
         </Tabs>
     );
