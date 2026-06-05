@@ -11,6 +11,7 @@ use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\URL;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Validation\Rules\Password;
 use InvalidArgumentException;
@@ -96,5 +97,13 @@ class AppServiceProvider extends ServiceProvider
                 ->uncompromised()
             : null,
         );
+
+        // Safety net for `route()` calls outside the locale-prefix group —
+        // Filament admin, queue workers, console commands. `SetLocale`
+        // middleware only fires on web routes wrapped in `Route::prefix('{locale}')`,
+        // so without this every server-side `route('listings.show', ...)` from
+        // admin / a queued notification would 500 with `Missing parameter: {locale}`.
+        // Middleware still overrides per-request for the locale-prefix group.
+        URL::defaults(['locale' => config('stakly.default_locale', 'en')]);
     }
 }

@@ -152,3 +152,23 @@ test('SetLocale queues stakly_locale cookie on response', function () {
     expect($localeCookie)->not->toBeNull()
         ->and($localeCookie->getValue())->toBe('ka');
 });
+
+// ─── URL::defaults fallback (admin / queue / console contexts) ─────────────
+//
+// AppServiceProvider::boot sets `URL::defaults(['locale' => default])` as a
+// safety net for anywhere SetLocale middleware never runs — Filament admin,
+// queued notifications, console commands. Without it, every `route(...)`
+// call outside the locale-prefix group 500s with `Missing parameter: {locale}`.
+
+test('route() generates locale-prefixed URLs without SetLocale middleware', function () {
+    expect(route('listings.show', ['listing' => 42], absolute: false))->toBe('/en/listings/42');
+    expect(route('matches.show', ['match' => 7], absolute: false))->toBe('/en/matches/7');
+    expect(route('listings.index', absolute: false))->toBe('/en/listings');
+});
+
+test('route() positional scalar arg still works because locale fills from defaults', function () {
+    // Filament `WalletTransactionInfolist` calls
+    // `route('listings.show', $record->related_listing_id)` — a single scalar.
+    // Defaults must fill {locale} BEFORE positional binding pulls into {listing}.
+    expect(route('listings.show', 42, absolute: false))->toBe('/en/listings/42');
+});

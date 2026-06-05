@@ -14,7 +14,7 @@ Frontend-first build. UI against real DB infrastructure + seeded fake data; back
 
 **In-flight:**
 
-- **M26 Phase 4** — Full-site i18n. Slice A ✓ + Slice B ✓ + Slice C ✓ all shipped 2026-06-04. **Up next: Slice D+** — page-by-page string extraction (Listings → Profile → Match → Wallet → Notifications → Settings → Auth → Banned banner → Validation / errors). Translation labor (`lang/ka.json` / `lang/ru.json` content) tracked separately as a content backlog.
+- **M26 Phase 4** — Full-site i18n. Slice A ✓ + Slice B ✓ + Slice C ✓ all shipped 2026-06-04. Follow-up: global `URL::defaults` fallback shipped 2026-06-05 (was crashing Filament admin record-view pages with `Missing parameter: {locale}` because SetLocale only runs inside the locale-prefix group). **Up next: Slice D+** — page-by-page string extraction (Listings → Profile → Match → Wallet → Notifications → Settings → Auth → Banned banner → Validation / errors). Translation labor (`lang/ka.json` / `lang/ru.json` content) tracked separately as a content backlog.
 
 **Active / upcoming** (after M26):
 
@@ -367,23 +367,20 @@ Non-obvious lessons (worth carrying into Slice B+):
 - **An unused route param breaks `array_values($parameters)` ordering** in Laravel's controller dispatcher — adding `{locale}` to a route without a matching `$locale` controller param mismatches positional args and surfaces as a `TypeError` on the next model-bound arg. Fix: `forgetParameter('locale')` inside `SetLocale` after reading it, then read `App::getLocale()` in controllers if you ever need it.
 - **`Fortify::redirects('logout', '/')` short-circuits on the non-null default**, so `fortify.home` alone doesn't fix logout. Set `fortify.redirects.logout` explicitly.
 - **`withCookies()` in tests encrypts by default**; for cookies in the EncryptCookies except list (like `stakly_locale`), use `withUnencryptedCookie()`.
+- **`URL::defaults(['locale' => …])` MUST be seeded globally, not only by `SetLocale` middleware.** Middleware only fires on routes inside the locale-prefix group, so Filament admin / queued notifications / console / Octane workers never get the default. The result is a `Missing required parameter for [Route] [Missing parameter: listing]` crash — Laravel positionally binds the scalar arg to `{locale}` because no default fills it first. Fix: `URL::defaults(['locale' => config('stakly.default_locale')])` inside `AppServiceProvider::boot()` as a fallback. SetLocale middleware still overrides per-request via `array_merge`. This also removes the need for the Pest harness band-aid that was previously mirroring the same default in `beforeEach` — once the fallback is global, the test bag works the same as production.
 
-**P4 Slice B — CMS fallback verification (scope cut 2026-06-04)**
+**P4 Slice B — CMS fallback verification ✓ shipped 2026-06-04**
 
-Originally specced as full Filament multi-locale (Select + filter + seeded ka/ru stubs). Trimmed once it became clear no translator pipeline exists yet — without someone to write Georgian / Russian page bodies, the Filament UI would just be dead surface. The DB schema from M26 P1 already supports per-locale rows + the model resolver falls back to English when a row is missing, so the cost of *adding the Filament Select later* is ~1 hour. Deferred until a translator is actually onboard.
+Originally specced as full Filament multi-locale. Trimmed and shipped the minimal verification slice: three Pest tests in `tests/Feature/PageControllerTest.php:204-242` that pin the locale-prefix routing → `forSlugWithFallback` path under the new M26 P4 URL shape. The Filament admin form already has a working locale `Select` (`PageForm.php:43-48`) from M26 P1 so admins can create Georgian / Russian rows today.
 
-Scope kept (~30 min):
+- [x] `GET /ka/{slug}` renders the Georgian row when it exists (sanity-check the locale-prefix routing actually reaches `forSlugWithFallback` with the right locale).
+- [x] `GET /ka/{slug}` falls back to the English row when no Georgian row exists (the resolver's documented behaviour, re-verified after Slice A's routing change).
+- [x] `GET /ka/{slug}` 404s only when neither Georgian nor English exists.
 
-- [ ] `GET /ka/{slug}` renders the Georgian row when it exists (sanity-check the locale-prefix routing actually reaches `forSlugWithFallback` with the right locale).
-- [ ] `GET /ka/{slug}` falls back to the English row when no Georgian row exists (the resolver's documented behaviour, re-verified after Slice A's routing change).
-- [ ] `GET /ka/{slug}` 404s only when neither Georgian nor English exists.
+Still deferred (low-priority polish, not blocking):
 
-What's deferred to "when translators arrive":
-
-- Filament `PageResource` locale Select on form
-- Locale column + filter on the index table
-- Seeder stubs for ka / ru
-- (re-open this section then; the schema is ready)
+- Locale **filter** on the `/admin/pages` index table (column is already shown, just no filter widget yet).
+- Seeder stubs for ka / ru — drop in once translation copy exists.
 
 **P4 Slice C — Switcher UI + first string extraction ✓ shipped 2026-06-04**
 

@@ -6,7 +6,6 @@ use App\Models\User;
 use App\Services\GameApi\MockGameApi;
 use App\Services\Wallet;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\URL;
 use Tests\TestCase;
 
 /*
@@ -28,12 +27,6 @@ pest()->extend(TestCase::class)
         // frontend build to keep the pipeline fast) doesn't 500 every
         // Feature test that renders an Inertia/Blade response.
         $this->withoutVite();
-
-        // M26 P4 locale-prefix routing — tests outside `Feature/I18n/` use
-        // unprefixed literals (`/listings`, `/wallet`) which the TestCase
-        // override auto-prefixes to `/en/...`. Mirror that here so `route()`
-        // calls inside controllers + factories also generate /en URLs.
-        URL::defaults(['locale' => 'en']);
     })
     ->in('Feature');
 
