@@ -1,3 +1,5 @@
+import { useT } from '@/lib/i18n';
+
 interface MatchTimestampsProps {
     startedAt: string | null;
     /** Null for Pending / Disputed / ManualReview — only set once Settled. */
@@ -8,6 +10,8 @@ export function MatchTimestamps({
     startedAt,
     finishedAt,
 }: MatchTimestampsProps) {
+    const t = useT();
+
     if (!startedAt) {
         return null;
     }
@@ -15,13 +19,15 @@ export function MatchTimestamps({
     return (
         <div className="mt-2 flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
             <time dateTime={startedAt}>
-                Started {formatAbsoluteTime(startedAt)}
+                {t('Started :time', { time: formatAbsoluteTime(startedAt) })}
             </time>
             {finishedAt && (
                 <>
                     <span aria-hidden>·</span>
                     <time dateTime={finishedAt}>
-                        Finished {formatAbsoluteTime(finishedAt)}
+                        {t('Finished :time', {
+                            time: formatAbsoluteTime(finishedAt),
+                        })}
                     </time>
                 </>
             )}

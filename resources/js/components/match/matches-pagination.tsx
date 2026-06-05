@@ -1,5 +1,6 @@
 import { router } from '@inertiajs/react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { useT } from '@/lib/i18n';
 import { buildMatchesQuery } from '@/lib/matches-query';
 import { index as matchesIndex } from '@/routes/matches';
 import type { MatchFilters } from '@/types';
@@ -42,6 +43,8 @@ function visiblePages(
 }
 
 export function MatchesPagination({ currentPage, lastPage, filters }: Props) {
+    const t = useT();
+
     if (lastPage <= 1) {
         return null;
     }
@@ -61,11 +64,11 @@ export function MatchesPagination({ currentPage, lastPage, filters }: Props) {
 
     return (
         <nav
-            aria-label="Pagination"
+            aria-label={t('Pagination')}
             className="mt-8 flex flex-wrap items-center justify-center gap-1.5"
         >
             <PageButton
-                aria-label="Previous page"
+                aria-label={t('Previous page')}
                 disabled={currentPage === 1}
                 onClick={() => goToPage(currentPage - 1)}
             >
@@ -84,7 +87,7 @@ export function MatchesPagination({ currentPage, lastPage, filters }: Props) {
                 ) : (
                     <PageButton
                         key={page}
-                        aria-label={`Page ${page}`}
+                        aria-label={t('Page :page', { page })}
                         aria-current={page === currentPage ? 'page' : undefined}
                         active={page === currentPage}
                         onClick={() => goToPage(page)}
@@ -95,7 +98,7 @@ export function MatchesPagination({ currentPage, lastPage, filters }: Props) {
             )}
 
             <PageButton
-                aria-label="Next page"
+                aria-label={t('Next page')}
                 disabled={currentPage === lastPage}
                 onClick={() => goToPage(currentPage + 1)}
             >
