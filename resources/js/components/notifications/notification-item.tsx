@@ -13,6 +13,8 @@ import {
     X,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
+import { useT } from '@/lib/i18n';
+import { formatNotificationTime } from '@/lib/notifications-format';
 import { cn } from '@/lib/utils';
 import type { Notification, NotificationEventType } from '@/types/notification';
 
@@ -35,44 +37,8 @@ const ICONS: Record<NotificationEventType, LucideIcon> = {
     account_restored: BadgeCheck,
 };
 
-function relativeTime(iso: string): string {
-    const seconds = Math.max(
-        0,
-        Math.floor((Date.now() - new Date(iso).getTime()) / 1000),
-    );
-
-    if (seconds < 60) {
-        return 'now';
-    }
-
-    const minutes = Math.floor(seconds / 60);
-
-    if (minutes < 60) {
-        return `${minutes}m ago`;
-    }
-
-    const hours = Math.floor(minutes / 60);
-
-    if (hours < 24) {
-        return `${hours}h ago`;
-    }
-
-    const days = Math.floor(hours / 24);
-
-    if (days < 7) {
-        return `${days}d ago`;
-    }
-
-    const weeks = Math.floor(days / 7);
-
-    if (weeks < 4) {
-        return `${weeks}w ago`;
-    }
-
-    return new Date(iso).toLocaleDateString();
-}
-
 export function NotificationItem({ notification, onClick }: Props) {
+    const t = useT();
     const Icon = notification.event_type
         ? ICONS[notification.event_type]
         : Swords;
@@ -109,7 +75,9 @@ export function NotificationItem({ notification, onClick }: Props) {
                         {notification.title}
                     </p>
                     <span className="shrink-0 text-xs text-muted-foreground">
-                        {relativeTime(notification.created_at)}
+                        {formatNotificationTime(notification.created_at, t, {
+                            showWeeks: true,
+                        })}
                     </span>
                 </div>
                 <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">

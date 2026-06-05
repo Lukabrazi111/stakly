@@ -3,6 +3,7 @@ import { Bell as BellIcon, X } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { NotificationItem } from '@/components/notifications/notification-item';
 import { useNotificationContext } from '@/components/notifications/notification-provider';
+import { useT } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import {
     index as notificationsIndex,
@@ -42,6 +43,7 @@ function postJson(url: string): Promise<Response> {
 }
 
 export function BellDropdown({ onClose, fullHeight = false }: Props) {
+    const t = useT();
     const [notifications, setNotifications] = useState<Notification[]>([]);
     const [loading, setLoading] = useState(true);
     const { lastBroadcast } = useNotificationContext();
@@ -116,7 +118,7 @@ export function BellDropdown({ onClose, fullHeight = false }: Props) {
         <div className={cn('flex flex-col', fullHeight && 'h-full')}>
             <div className="flex items-center justify-between border-b border-border/60 px-4 py-3">
                 <span className="text-sm font-semibold text-foreground">
-                    Notifications
+                    {t('Notifications')}
                 </span>
                 <div className="flex items-center gap-3">
                     {hasUnread && (
@@ -125,14 +127,14 @@ export function BellDropdown({ onClose, fullHeight = false }: Props) {
                             onClick={handleMarkAllRead}
                             className="cursor-pointer text-xs text-primary transition-colors hover:text-primary/80"
                         >
-                            Mark all read
+                            {t('Mark all read')}
                         </button>
                     )}
                     {fullHeight && (
                         <button
                             type="button"
                             onClick={onClose}
-                            aria-label="Close"
+                            aria-label={t('Close')}
                             className="inline-flex size-8 cursor-pointer items-center justify-center rounded-full text-muted-foreground transition-colors duration-150 ease-out hover:bg-primary/10 hover:text-primary"
                         >
                             <X className="size-4" />
@@ -166,10 +168,10 @@ export function BellDropdown({ onClose, fullHeight = false }: Props) {
                     <div className="flex flex-col items-center justify-center px-6 py-12 text-center">
                         <BellIcon className="size-8 text-muted-foreground/50" />
                         <p className="mt-3 text-sm text-muted-foreground">
-                            No notifications yet
+                            {t('No notifications yet')}
                         </p>
                         <p className="mt-1 text-xs text-muted-foreground/60">
-                            When something happens, you'll see it here.
+                            {t("When something happens, you'll see it here.")}
                         </p>
                     </div>
                 ) : (
@@ -192,7 +194,7 @@ export function BellDropdown({ onClose, fullHeight = false }: Props) {
                     onClick={onClose}
                     className="block w-full cursor-pointer px-4 py-3 text-center text-sm text-primary transition-colors hover:bg-primary/10 hover:text-primary/80"
                 >
-                    View all notifications
+                    {t('View all notifications')}
                 </Link>
             </div>
         </div>

@@ -7,6 +7,7 @@ import { useNotificationContext } from '@/components/notifications/notification-
 import { BackLink } from '@/components/site/back-link';
 import { PageMeta } from '@/components/site/page-meta';
 import PlayerHubLayout from '@/layouts/player-hub-layout';
+import { useT } from '@/lib/i18n';
 import {
     index as notificationsIndex,
     read as notificationsRead,
@@ -45,6 +46,7 @@ function postJson(url: string): Promise<Response> {
 }
 
 export default function NotificationsIndex({ notifications, filter }: Props) {
+    const t = useT();
     const { clearUnread } = useNotificationContext();
     const [marking, setMarking] = useState(false);
     const [items, setItems] = useState(notifications.data);
@@ -105,8 +107,8 @@ export default function NotificationsIndex({ notifications, filter }: Props) {
     return (
         <PlayerHubLayout>
             <PageMeta
-                title="Notifications"
-                description="Your notifications history."
+                title={t('Notifications')}
+                description={t('Your notifications history.')}
                 noindex
             />
 
@@ -116,10 +118,10 @@ export default function NotificationsIndex({ notifications, filter }: Props) {
                 <header className="mt-4 mb-6 flex flex-wrap items-baseline justify-between gap-4">
                     <div>
                         <h1 className="font-display text-3xl font-bold tracking-tight md:text-4xl">
-                            Notifications
+                            {t('Notifications')}
                         </h1>
                         <p className="mt-2 text-sm text-muted-foreground">
-                            Everything that's happened, newest first.
+                            {t("Everything that's happened, newest first.")}
                         </p>
                     </div>
                     {hasUnread && (
@@ -130,7 +132,7 @@ export default function NotificationsIndex({ notifications, filter }: Props) {
                             className="inline-flex cursor-pointer items-center gap-2 text-sm text-primary transition-colors hover:text-primary/80 disabled:cursor-not-allowed disabled:opacity-50"
                         >
                             <CheckCheck className="size-4" />
-                            Mark all read
+                            {t('Mark all read')}
                         </button>
                     )}
                 </header>
@@ -140,13 +142,13 @@ export default function NotificationsIndex({ notifications, filter }: Props) {
                         active={filter === 'all'}
                         onClick={() => goToFilter('all')}
                     >
-                        All
+                        {t('All')}
                     </FilterChip>
                     <FilterChip
                         active={filter === 'unread'}
                         onClick={() => goToFilter('unread')}
                     >
-                        Unread
+                        {t('Unread')}
                     </FilterChip>
                 </div>
 
@@ -157,13 +159,15 @@ export default function NotificationsIndex({ notifications, filter }: Props) {
                         </div>
                         <p className="mt-3 text-sm font-medium text-foreground">
                             {filter === 'unread'
-                                ? 'No unread notifications'
-                                : 'No notifications yet'}
+                                ? t('No unread notifications')
+                                : t('No notifications yet')}
                         </p>
                         <p className="mt-1 text-sm text-muted-foreground">
                             {filter === 'unread'
-                                ? "You're all caught up."
-                                : "When something happens — a listing taken, a match settled — you'll see it here."}
+                                ? t("You're all caught up.")
+                                : t(
+                                      "When something happens — a listing taken, a match settled — you'll see it here.",
+                                  )}
                         </p>
                     </div>
                 ) : (

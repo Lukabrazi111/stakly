@@ -1,5 +1,6 @@
 import { router } from '@inertiajs/react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { useT } from '@/lib/i18n';
 import { index as notificationsIndex } from '@/routes/notifications';
 
 interface Props {
@@ -44,6 +45,8 @@ export function NotificationPagination({
     lastPage,
     filter,
 }: Props) {
+    const t = useT();
+
     if (lastPage <= 1) {
         return null;
     }
@@ -70,11 +73,11 @@ export function NotificationPagination({
 
     return (
         <nav
-            aria-label="Pagination"
+            aria-label={t('Pagination')}
             className="mt-8 flex flex-wrap items-center justify-center gap-1.5"
         >
             <PageButton
-                aria-label="Previous page"
+                aria-label={t('Previous page')}
                 disabled={currentPage === 1}
                 onClick={() => goToPage(currentPage - 1)}
             >
@@ -93,7 +96,7 @@ export function NotificationPagination({
                 ) : (
                     <PageButton
                         key={page}
-                        aria-label={`Page ${page}`}
+                        aria-label={t('Page :page', { page })}
                         aria-current={page === currentPage ? 'page' : undefined}
                         active={page === currentPage}
                         onClick={() => goToPage(page)}
@@ -104,7 +107,7 @@ export function NotificationPagination({
             )}
 
             <PageButton
-                aria-label="Next page"
+                aria-label={t('Next page')}
                 disabled={currentPage === lastPage}
                 onClick={() => goToPage(currentPage + 1)}
             >

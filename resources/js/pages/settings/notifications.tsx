@@ -11,6 +11,8 @@ import {
     TooltipContent,
     TooltipTrigger,
 } from '@/components/ui/tooltip';
+import { useT } from '@/lib/i18n';
+import type { TranslationFn } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import { update as updateRoute } from '@/routes/notification-preferences';
 
@@ -113,6 +115,7 @@ export default function NotificationPreferencesPage({
     soundChoices,
     notificationSound,
 }: Props) {
+    const t = useT();
     const form = useForm({
         preferences,
         notification_sound: notificationSound,
@@ -120,9 +123,9 @@ export default function NotificationPreferencesPage({
 
     useEffect(() => {
         if (form.recentlySuccessful) {
-            toast.success('Notification preferences saved');
+            toast.success(t('Notification preferences saved'));
         }
-    }, [form.recentlySuccessful]);
+    }, [form.recentlySuccessful, t]);
 
     const togglePref = (eventType: string, channel: Channel) => {
         form.setData('preferences', {
@@ -180,8 +183,8 @@ export default function NotificationPreferencesPage({
     return (
         <>
             <PageMeta
-                title="Notifications — Settings"
-                description="Notification preferences."
+                title={t('Notifications — Settings')}
+                description={t('Notification preferences.')}
                 noindex
             />
 
@@ -189,19 +192,19 @@ export default function NotificationPreferencesPage({
                 <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
                     <div>
                         <h2 className="font-display text-lg font-semibold text-foreground">
-                            Notifications
+                            {t('Notifications')}
                         </h2>
                         <p className="mt-1 text-sm text-muted-foreground">
-                            Choose how each event reaches you.
+                            {t('Choose how each event reaches you.')}
                         </p>
                     </div>
 
                     <div className="flex shrink-0 items-center gap-2">
                         <BulkActionButton onClick={switchOffAll}>
-                            Switch off all
+                            {t('Switch off all')}
                         </BulkActionButton>
                         <BulkActionButton onClick={emailOnly}>
-                            Email only
+                            {t('Email only')}
                         </BulkActionButton>
                     </div>
                 </div>
@@ -209,8 +212,8 @@ export default function NotificationPreferencesPage({
                 {EVENT_GROUPS.map((group) => (
                     <PreferenceCard
                         key={group.title}
-                        title={group.title}
-                        description={group.description}
+                        title={t(group.title)}
+                        description={t(group.description)}
                     >
                         {group.events.map((eventType) => {
                             const meta = EVENT_META[eventType];
@@ -233,6 +236,7 @@ export default function NotificationPreferencesPage({
                                         togglePref(eventType, channel)
                                     }
                                     soundDisabled={isSoundOff}
+                                    t={t}
                                 />
                             );
                         })}
@@ -240,10 +244,15 @@ export default function NotificationPreferencesPage({
                 ))}
 
                 <PreferenceCard
-                    title="Sound"
-                    description="Pick the chime that plays when an event has Sound on."
+                    title={t('Sound')}
+                    description={t(
+                        'Pick the chime that plays when an event has Sound on.',
+                    )}
                 >
-                    <div role="radiogroup" aria-label="Notification sound">
+                    <div
+                        role="radiogroup"
+                        aria-label={t('Notification sound')}
+                    >
                         {soundChoices.map((choice) => {
                             const meta = SOUND_META[choice];
 
@@ -270,6 +279,7 @@ export default function NotificationPreferencesPage({
                                             ? () => previewSound(choice)
                                             : undefined
                                     }
+                                    t={t}
                                 />
                             );
                         })}
@@ -278,7 +288,9 @@ export default function NotificationPreferencesPage({
 
                 <div className="flex justify-end">
                     <Button type="submit" disabled={form.processing}>
-                        {form.processing ? 'Saving…' : 'Save preferences'}
+                        {form.processing
+                            ? t('Saving…')
+                            : t('Save preferences')}
                     </Button>
                 </div>
             </form>
@@ -332,6 +344,7 @@ interface EventRowProps {
     prefs: Preference;
     onToggle: (channel: Channel) => void;
     soundDisabled: boolean;
+    t: TranslationFn;
 }
 
 function EventRow({
@@ -340,59 +353,63 @@ function EventRow({
     prefs,
     onToggle,
     soundDisabled,
+    t,
 }: EventRowProps) {
     return (
         <div className="flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
             <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
                     <p className="text-sm font-medium text-foreground">
-                        {meta.label}
+                        {t(meta.label)}
                     </p>
                     {isMandatory && (
                         <Tooltip>
                             <TooltipTrigger asChild>
                                 <span
-                                    aria-label="Required"
+                                    aria-label={t('Required')}
                                     className="inline-flex"
                                 >
                                     <Lock className="size-3 text-muted-foreground" />
                                 </span>
                             </TooltipTrigger>
                             <TooltipContent>
-                                Required — affects your money. Can't be
-                                silenced.
+                                {t(
+                                    "Required — affects your money. Can't be silenced.",
+                                )}
                             </TooltipContent>
                         </Tooltip>
                     )}
                 </div>
                 <p className="mt-0.5 text-xs text-muted-foreground">
-                    {meta.description}
+                    {t(meta.description)}
                 </p>
             </div>
 
             <div className="flex items-center gap-4 sm:gap-6">
                 <ChannelCheckbox
-                    label="In-app"
+                    label={t('In-app')}
                     checked={prefs.in_app}
                     onChange={() => onToggle('in_app')}
                     disabled={isMandatory}
                     tooltip={
                         isMandatory
-                            ? "Required event — can't be turned off."
+                            ? t("Required event — can't be turned off.")
                             : undefined
                     }
                 />
                 <ChannelCheckbox
-                    label="Sound"
+                    label={t('Sound')}
                     checked={prefs.sound}
                     onChange={() => onToggle('sound')}
                     disabled={soundDisabled}
                     tooltip={
-                        soundDisabled ? 'Sound is off globally.' : undefined
+                        soundDisabled
+                            ? t('Sound is off globally.')
+                            : undefined
                     }
                 />
                 <ChannelCheckbox
-                    label="Email"
+                    label={t('Email')}
                     checked={prefs.email}
                     onChange={() => onToggle('email')}
                 />
@@ -459,9 +476,10 @@ interface SoundRowProps {
     selected: boolean;
     onSelect: () => void;
     onPreview?: () => void;
+    t: TranslationFn;
 }
 
-function SoundRow({ meta, selected, onSelect, onPreview }: SoundRowProps) {
+function SoundRow({ meta, selected, onSelect, onPreview, t }: SoundRowProps) {
     const Icon = meta.icon;
 
     return (
@@ -492,10 +510,10 @@ function SoundRow({ meta, selected, onSelect, onPreview }: SoundRowProps) {
 
             <div className="min-w-0 flex-1">
                 <p className="text-sm font-medium text-foreground">
-                    {meta.label}
+                    {t(meta.label)}
                 </p>
                 <p className="text-xs text-muted-foreground">
-                    {meta.description}
+                    {t(meta.description)}
                 </p>
             </div>
 
@@ -508,7 +526,7 @@ function SoundRow({ meta, selected, onSelect, onPreview }: SoundRowProps) {
                             e.stopPropagation();
                             onPreview();
                         }}
-                        aria-label={`Preview ${meta.label}`}
+                        aria-label={t('Preview :name', { name: t(meta.label) })}
                         className="inline-flex size-8 cursor-pointer items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-primary/10 hover:text-primary"
                     >
                         <Play className="size-4" />

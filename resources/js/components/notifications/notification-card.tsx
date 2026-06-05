@@ -14,6 +14,8 @@ import {
     X,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
+import { useT } from '@/lib/i18n';
+import { formatNotificationTime } from '@/lib/notifications-format';
 import { cn } from '@/lib/utils';
 import type { Notification, NotificationEventType } from '@/types/notification';
 
@@ -36,43 +38,8 @@ const ICONS: Record<NotificationEventType, LucideIcon> = {
     account_restored: BadgeCheck,
 };
 
-function formatTimestamp(iso: string): string {
-    const date = new Date(iso);
-    const seconds = Math.max(
-        0,
-        Math.floor((Date.now() - date.getTime()) / 1000),
-    );
-
-    if (seconds < 60) {
-        return 'Just now';
-    }
-
-    const minutes = Math.floor(seconds / 60);
-
-    if (minutes < 60) {
-        return `${minutes}m ago`;
-    }
-
-    const hours = Math.floor(minutes / 60);
-
-    if (hours < 24) {
-        return `${hours}h ago`;
-    }
-
-    const days = Math.floor(hours / 24);
-
-    if (days < 7) {
-        return `${days}d ago`;
-    }
-
-    return date.toLocaleDateString(undefined, {
-        month: 'short',
-        day: 'numeric',
-        year: 'numeric',
-    });
-}
-
 export function NotificationCard({ notification, onMarkRead }: Props) {
+    const t = useT();
     const Icon = notification.event_type
         ? ICONS[notification.event_type]
         : Swords;
@@ -108,7 +75,7 @@ export function NotificationCard({ notification, onMarkRead }: Props) {
                     </h3>
                     {!isRead && (
                         <span
-                            aria-label="Unread"
+                            aria-label={t('Unread')}
                             className="mt-2 size-2 shrink-0 rounded-full bg-primary"
                         />
                     )}
@@ -120,7 +87,14 @@ export function NotificationCard({ notification, onMarkRead }: Props) {
 
                 <div className="mt-4 flex items-center justify-between gap-3">
                     <time className="text-xs text-muted-foreground">
-                        {formatTimestamp(notification.created_at)}
+                        {formatNotificationTime(notification.created_at, t, {
+                            capitalizeJustNow: true,
+                            absoluteFormat: {
+                                month: 'short',
+                                day: 'numeric',
+                                year: 'numeric',
+                            },
+                        })}
                     </time>
 
                     <div className="flex items-center gap-4">
@@ -130,7 +104,7 @@ export function NotificationCard({ notification, onMarkRead }: Props) {
                                 onClick={() => onMarkRead(notification.id)}
                                 className="cursor-pointer text-xs text-muted-foreground transition-colors hover:text-foreground"
                             >
-                                Mark read
+                                {t('Mark read')}
                             </button>
                         )}
                         {notification.action_url && (
@@ -139,7 +113,7 @@ export function NotificationCard({ notification, onMarkRead }: Props) {
                                 onClick={() => onMarkRead(notification.id)}
                                 className="inline-flex cursor-pointer items-center gap-1 text-sm text-primary transition-colors hover:text-primary/80"
                             >
-                                View
+                                {t('View')}
                                 <ArrowRight className="size-3.5" />
                             </Link>
                         )}

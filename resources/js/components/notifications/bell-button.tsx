@@ -16,8 +16,10 @@ import {
     SheetTrigger,
 } from '@/components/ui/sheet';
 import { useIsMobile } from '@/hooks/use-mobile';
+import { useT } from '@/lib/i18n';
 
 export function BellButton() {
+    const t = useT();
     const { auth } = usePage().props;
     const user = auth.user;
     const isMobile = useIsMobile();
@@ -45,8 +47,8 @@ export function BellButton() {
             size="icon"
             aria-label={
                 showBadge
-                    ? `Notifications (${unreadCount} unread)`
-                    : 'Notifications'
+                    ? t('Notifications (:count unread)', { count: unreadCount })
+                    : t('Notifications')
             }
             className="relative size-10 cursor-pointer rounded-full text-muted-foreground transition-colors duration-150 ease-out hover:bg-primary/10 hover:text-primary data-[state=open]:bg-primary/10 data-[state=open]:text-primary"
         >
@@ -70,7 +72,9 @@ export function BellButton() {
                     side="right"
                     className="w-full p-0 sm:max-w-md [&>button.absolute]:hidden"
                 >
-                    <SheetTitle className="sr-only">Notifications</SheetTitle>
+                    <SheetTitle className="sr-only">
+                        {t('Notifications')}
+                    </SheetTitle>
                     <BellDropdown onClose={() => setOpen(false)} fullHeight />
                 </SheetContent>
             </Sheet>

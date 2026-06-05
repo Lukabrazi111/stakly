@@ -14,7 +14,7 @@ Frontend-first build. UI against real DB infrastructure + seeded fake data; back
 
 **In-flight:**
 
-- **M26 Phase 4** — Full-site i18n. Slices A/B/C ✓ 2026-06-04 + global `URL::defaults` fallback ✓ 2026-06-05. **Slices D-1 through D-7 (Listings + Profile + Match) ✓ 2026-06-05** — listings index/detail/create/mine + backend (D-1..D-5), profile (D-6), match list/detail/actions/chat/backend (D-7a..D-7e). **Up next: Wallet**, then Notifications → Settings → Auth → Banned banner → Validation/errors. Translation labor (`lang/ka.json` / `lang/ru.json` content) tracked separately as a content backlog.
+- **M26 Phase 4** — Full-site i18n. Slices A/B/C ✓ 2026-06-04 + global `URL::defaults` fallback ✓ 2026-06-05. **Slices D-1 through D-9 (Listings + Profile + Match + Wallet + Notifications) ✓ 2026-06-05** — listings index/detail/create/mine + backend (D-1..D-5), profile (D-6), match list/detail/actions/chat/backend (D-7a..D-7e), wallet pages + components + backend (D-8), notifications bell + dropdown + history page + preferences + backend (D-9). **Up next: D-10 Settings → D-11 Auth → D-12 BannedBanner / M30 user-facing → D-13 Validation/flash/errors**. Translation labor (`lang/ka.json` / `lang/ru.json` content) tracked separately as a content backlog.
 
 **Active / upcoming** (after M26):
 
@@ -421,11 +421,11 @@ Lessons folded back:
 - [x] Profile (D-6 ✓ 2026-06-05 — header + tabs + trust strip + stats card + share/owner sections + listing/match rows).
 - [x] Match (D-7a list ✓ 2026-06-05 · D-7b detail chrome ✓ 2026-06-05 · D-7c actions + banners ✓ 2026-06-05 · D-7d chat ✓ 2026-06-05 · D-7e backend strings ✓ 2026-06-05).
 - [x] Wallet (D-8 ✓ 2026-06-05 — index + deposit + withdraw + history + 6 components + backend strings).
-- [ ] Notifications (bell dropdown + `/notifications` history page + `NotificationCard` + `/settings/notifications` preferences UI). M27 surfaces.
-- [ ] Settings (profile + security + linked accounts + notification preferences cards).
-- [ ] Auth modal + auth flows (login + register + forgot-password modal + reset-password + 2FA challenge + email verification + confirm-password). M2 modal-only auth surface + page-only post-login landings.
-- [ ] User-facing M30 surfaces — `BannedBanner` (already in `SiteLayout`), `AccountBanned` / `AccountRestored` notification copy. Admin-side M30 (`UserResource`, impersonation modal, etc) stays English-only.
-- [ ] Validation messages + flash toasts + error pages (404 / 403 / 500 / 419).
+- [x] **D-9 Notifications ✓ 2026-06-05** — `BellButton` + `BellDropdown` + `NotificationItem` + `NotificationCard` + `NotificationPagination` strings extracted, `/notifications` history page extracted, `/settings/notifications` preferences UI extracted (EVENT_META + EVENT_GROUPS + SOUND_META kept module-level, `t()` resolves at render). Shared `lib/notifications-format.ts` helper for relative-time across bell-dropdown and history-card. All 11 backend notification classes already `__()`-wrapped — their keys (titles, bodies, and email mailable copy) registered in `lang/en.json`. ~96 new keys.
+- [ ] **D-10 Settings** — profile card, security card (password + 2FA setup), linked accounts (chess.com / Lichess), notification preferences (already covered in D-9 but the wrapping layout / labels live here). Pages under `pages/settings/*` + `layouts/settings/layout.tsx`.
+- [ ] **D-11 Auth flows** — modal copy (login + register + forgot-password) + page-only landings (reset-password, two-factor-challenge, verify-email, confirm-password). Also Fortify validation strings if any leak through.
+- [ ] **D-12 M30 user-facing surfaces** — `BannedBanner` (already in `SiteLayout`), `AccountBanned` / `AccountRestored` notification copy. Admin-side M30 (`UserResource`, impersonation modal, etc) stays English-only.
+- [ ] **D-13 Validation + flash + errors** — `lang/en/validation.php` custom messages, flash-toast strings emitted from controllers, error pages (404 / 403 / 500 / 419) under `resources/js/pages/errors/*`.
 
 Translation labor (writing `lang/ka.json` and `lang/ru.json` content) tracked separately as content backlog; engineering treats those files as drop-in.
 
