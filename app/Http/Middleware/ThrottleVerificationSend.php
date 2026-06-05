@@ -25,7 +25,7 @@ class ThrottleVerificationSend
             $key = 'stakly-verify-send:'.($request->user()?->id ?: $request->ip());
 
             if (RateLimiter::tooManyAttempts($key, 1)) {
-                abort(429, 'Please wait before requesting another verification email.');
+                abort(429, __('Please wait before requesting another verification email.'));
             }
 
             RateLimiter::hit($key, 60);

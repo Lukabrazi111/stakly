@@ -1,4 +1,5 @@
 import { Link } from '@inertiajs/react';
+import { useT } from '@/lib/i18n';
 import { home } from '@/routes';
 import type { AuthLayoutProps } from '@/types';
 
@@ -7,6 +8,8 @@ export default function AuthSimpleLayout({
     title,
     description,
 }: AuthLayoutProps) {
+    const t = useT();
+
     return (
         <div className="relative flex min-h-svh flex-col items-center justify-center overflow-hidden bg-background p-6 text-foreground md:p-10">
             <div
@@ -20,7 +23,7 @@ export default function AuthSimpleLayout({
 
             <Link
                 href={home()}
-                aria-label="Stakly home"
+                aria-label={t('Stakly home')}
                 className="mb-8 rounded-md text-gradient-primary font-display text-3xl font-bold tracking-tight focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none"
             >
                 stakly
@@ -32,12 +35,12 @@ export default function AuthSimpleLayout({
                         <div className="flex flex-col gap-2 text-center">
                             {title && (
                                 <h1 className="font-display text-2xl font-bold tracking-tight text-foreground">
-                                    {title}
+                                    {t(title)}
                                 </h1>
                             )}
                             {description && (
                                 <p className="text-sm text-muted-foreground">
-                                    {description}
+                                    {t(description)}
                                 </p>
                             )}
                         </div>
@@ -50,7 +53,7 @@ export default function AuthSimpleLayout({
                 href={home()}
                 className="mt-6 text-sm text-muted-foreground transition-colors hover:text-foreground"
             >
-                ← Back to home
+                {t('← Back to home')}
             </Link>
         </div>
     );

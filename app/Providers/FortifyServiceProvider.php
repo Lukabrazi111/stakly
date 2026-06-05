@@ -82,7 +82,7 @@ class FortifyServiceProvider extends ServiceProvider
             if (! $user || ! Password::tokenExists($user, $token)) {
                 Inertia::flash('toast', [
                     'type' => 'error',
-                    'message' => 'This password reset link is invalid or has expired.',
+                    'message' => __('This password reset link is invalid or has expired.'),
                 ]);
 
                 return redirect($defaultHome);

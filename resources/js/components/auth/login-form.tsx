@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { NeonCheckbox } from '@/components/ui/neon-checkbox';
 import { Spinner } from '@/components/ui/spinner';
+import { useT } from '@/lib/i18n';
 import { store } from '@/routes/login';
 
 interface LoginFormProps {
@@ -20,6 +21,8 @@ export function LoginForm({
     onSwitchToRegister,
     onSwitchToForgotPassword,
 }: LoginFormProps) {
+    const t = useT();
+
     return (
         <Form
             {...store.form()}
@@ -40,7 +43,7 @@ export function LoginForm({
                     <div className="flex flex-col gap-4">
                         <div className="flex flex-col gap-2">
                             <Label htmlFor="email" className="text-sm">
-                                Email
+                                {t('Email')}
                             </Label>
                             <Input
                                 id="email"
@@ -58,14 +61,14 @@ export function LoginForm({
                         <div className="flex flex-col gap-2">
                             <div className="flex items-center justify-between">
                                 <Label htmlFor="password" className="text-sm">
-                                    Password
+                                    {t('Password')}
                                 </Label>
                                 <button
                                     type="button"
                                     onClick={onSwitchToForgotPassword}
                                     className="cursor-pointer text-xs text-muted-foreground transition-colors hover:text-primary"
                                 >
-                                    Forgot password?
+                                    {t('Forgot password?')}
                                 </button>
                             </div>
                             <PasswordInput
@@ -84,7 +87,7 @@ export function LoginForm({
                             className="flex cursor-pointer items-center gap-2 text-sm text-muted-foreground"
                         >
                             <NeonCheckbox id="remember" name="remember" />
-                            <span>Remember me on this device</span>
+                            <span>{t('Remember me on this device')}</span>
                         </label>
                     </div>
 
@@ -97,17 +100,17 @@ export function LoginForm({
                         data-test="login-button"
                     >
                         {processing && <Spinner />}
-                        Sign in
+                        {t('Sign in')}
                     </Button>
 
                     <p className="text-center text-sm text-muted-foreground">
-                        Don't have an account?{' '}
+                        {t("Don't have an account?")}{' '}
                         <button
                             type="button"
                             onClick={onSwitchToRegister}
                             className="cursor-pointer font-medium text-foreground transition-colors hover:text-primary"
                         >
-                            Sign up
+                            {t('Sign up')}
                         </button>
                     </p>
                 </>
