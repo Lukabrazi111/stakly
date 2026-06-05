@@ -9,6 +9,11 @@ import type { Listing, ListingPlatform } from '@/types';
 const PLATFORM_LABEL: Record<ListingPlatform, string> = {
     chess_com: 'chess.com',
     lichess: 'Lichess',
+    // M15 placeholders — CS2/Dota listings are dev-seed only today; the
+    // Link-X-to-take CTA they render isn't actionable (no FACEIT/Steam
+    // verification flow exists), but it shouldn't crash the chip either.
+    faceit: 'FACEIT',
+    steam: 'Steam',
 };
 
 interface Props {
@@ -55,7 +60,17 @@ export function TakeButton({ listing, className = '' }: Props) {
         );
     }
 
-    if (!user.linked_platforms.includes(listing.platform)) {
+    // `linked_platforms` is chess-only by design (FACEIT/Steam linking is
+    // M15 work). For CS2/Dota listings the `.includes()` always returns
+    // false → the chip renders the (non-actionable) "Link FACEIT to take"
+    // CTA, which is correct: these listings aren't takeable today. The
+    // widening cast is purely to satisfy TS — runtime semantics are
+    // identical (a chess-only array can't contain `faceit`/`steam`).
+    if (
+        !(user.linked_platforms as readonly ListingPlatform[]).includes(
+            listing.platform,
+        )
+    ) {
         return (
             <Button
                 variant="outline"

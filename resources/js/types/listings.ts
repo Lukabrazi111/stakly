@@ -4,6 +4,7 @@
 // - resources/js/config/games.ts (game registry)
 
 import type { GameId } from '@/config/games';
+import type { GameTile } from '@/types/home';
 
 export type ListingStatus = 'open' | 'taken' | 'expired' | 'cancelled';
 
@@ -40,7 +41,7 @@ export interface ListingCreator {
     // the cross-platform earned badge in `SellerTrustMeta`: the green
     // `BadgeCheck` icon appears in the meta line ONLY when the creator has
     // verified on 2+ providers ("went the extra mile" credential).
-    verified_providers: ListingPlatform[];
+    verified_providers: ChessProvider[];
     // M23 Phase 1 — detail-page creator card uplift. `bio` and `member_since`
     // mirror the profile-page hero. `linked_accounts` carries the
     // (provider, username) pairs the detail-page chip strip needs to click
@@ -48,13 +49,21 @@ export interface ListingCreator {
     // above (which only carries the provider id, sufficient for the badge).
     bio: string | null;
     member_since: string | null;
-    linked_accounts: Array<{ provider: ListingPlatform; username: string }>;
+    linked_accounts: Array<{ provider: ChessProvider; username: string }>;
 }
+
+// Chess-only linked-account providers. Distinct from `ListingPlatform` below
+// because a user can only "link" chess accounts today — FACEIT/Steam linking
+// is M15 work. The two types overlap on `chess_com | lichess`.
+export type ChessProvider = 'chess_com' | 'lichess';
 
 // The external provider the match must be played on (M8 Phase 5 Slice B).
 // Matches `App\Enums\LinkedAccountProvider` values. Taker must have THIS
 // platform verified to take the listing.
-export type ListingPlatform = 'chess_com' | 'lichess';
+// `faceit` + `steam` are M15 placeholders — they appear on dev-seeded CS2
+// (FACEIT) and Dota 2 (Steam) listings, never via the Create flow today.
+// See backend `App\Enums\LinkedAccountProvider` for the matching cases.
+export type ListingPlatform = ChessProvider | 'faceit' | 'steam';
 
 export interface Listing {
     id: number;
@@ -121,6 +130,7 @@ export interface ListingsIndexProps {
     listings: Paginator<Listing>;
     filters: ListingFilters;
     sorts: ListingSort[];
+    games: { data: GameTile[] };
 }
 
 // Phase 1 (M4) — props for the listing detail page. `listing` is the resource
@@ -155,7 +165,7 @@ export interface ListingCreateProps {
     // Empty array = no link; create form swaps to the link-CTA notice card.
     // One = picker hidden, platform auto-selected.
     // Two = picker shown so the user picks per listing.
-    linkedPlatforms: ListingPlatform[];
+    linkedPlatforms: ChessProvider[];
 }
 
 // Tab values for the /listings/mine page (M6 Phase 6.5).

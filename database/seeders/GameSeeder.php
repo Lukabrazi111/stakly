@@ -27,8 +27,14 @@ class GameSeeder extends Seeder
     {
         $tiles = [
             ['chess', 'Chess', '/images/games/chess.png', GameStatus::Active],
-            ['cs2', 'CS2', '/images/games/cs2.jpg', GameStatus::ComingSoon],
-            ['dota2', 'Dota 2', '/images/games/dota2.jpg', GameStatus::ComingSoon],
+            // CS2 + Dota 2 carry `App\Enums\Game` cases as M15 placeholders so
+            // the dev marketplace shows multi-game listings + per-game filter
+            // behaviour is visually testable. The Create flow is still
+            // chess-only (no FACEIT/Steam profile clients yet) — M15 wires
+            // those. Flip these back to ComingSoon once real M15 wiring lands
+            // OR if you want to test the production "Coming Soon" UX.
+            ['cs2', 'CS2', '/images/games/cs2.jpg', GameStatus::Active],
+            ['dota2', 'Dota 2', '/images/games/dota2.jpg', GameStatus::Active],
             ['valorant', 'Valorant', '/images/games/valorant.jpg', GameStatus::ComingSoon],
             ['lol', 'League of Legends', '/images/games/league-of-legends.jpeg', GameStatus::ComingSoon],
             ['pubg', 'PUBG', '/images/games/pubg.jpg', GameStatus::ComingSoon],

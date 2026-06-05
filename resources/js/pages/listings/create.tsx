@@ -22,9 +22,12 @@ import {
     mine as listingsMine,
     store as storeListing,
 } from '@/routes/listings';
-import type { ListingCreateProps, ListingPlatform, TimeControl } from '@/types';
+import type { ChessProvider, ListingCreateProps, TimeControl } from '@/types';
 
-const PLATFORM_LABEL: Record<ListingPlatform, string> = {
+// Create-listing is chess-only today (no FACEIT/Steam profile clients exist —
+// that's M15). The form's platform field uses the narrow `ChessProvider`
+// rather than the wider `ListingPlatform` to keep the picker honest.
+const PLATFORM_LABEL: Record<ChessProvider, string> = {
     chess_com: 'chess.com',
     lichess: 'Lichess',
 };
@@ -51,12 +54,12 @@ export default function ListingsCreate({
     // Default the picker to the user's first verified platform (chess.com
     // comes first because it's alphabetically lower; either is fine when
     // only one is linked). When both providers are linked, render the picker.
-    const defaultPlatform: ListingPlatform = linkedPlatforms[0] ?? 'chess_com';
+    const defaultPlatform: ChessProvider = linkedPlatforms[0] ?? 'chess_com';
     const showPlatformPicker = linkedPlatforms.length > 1;
 
     const { data, setData, post, processing, errors } = useForm<{
         game: string;
-        platform: ListingPlatform;
+        platform: ChessProvider;
         stake_amount: string;
         skill_min: string;
         skill_max: string;

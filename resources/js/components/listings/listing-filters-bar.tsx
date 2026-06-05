@@ -161,6 +161,10 @@ export function ListingFiltersBar({ filters, sorts }: Props) {
                     <>
                         <StakeAmountInput filters={filters} />
 
+                        {/* Chess-specific. When a second game adapter ships
+                            (M15), branch here per `filters.game` with a
+                            sibling component (`Cs2FormatChips`, etc.). See
+                            the matching gate in `listing-filters.tsx`. */}
                         {showTimeControlChips && (
                             <ToggleGroup
                                 type="multiple"

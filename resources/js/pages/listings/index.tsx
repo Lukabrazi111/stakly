@@ -4,10 +4,13 @@ import { ListingFiltersBar } from '@/components/listings/listing-filters-bar';
 import { ListingPagination } from '@/components/listings/listing-pagination';
 import { ListingRow } from '@/components/listings/listing-row';
 import { ListingRowSkeleton } from '@/components/listings/listing-row-skeleton';
+import { ListingsGameTabs } from '@/components/listings/listings-game-tabs';
 import { PageMeta } from '@/components/site/page-meta';
 import { BGPattern } from '@/components/ui/bg-pattern';
 import SiteLayout from '@/layouts/site-layout';
+import type { GameId } from '@/config/games';
 import { useT } from '@/lib/i18n';
+import { buildListingsQuery } from '@/lib/listings-query';
 import { index as listingsIndex } from '@/routes/listings';
 import type { ListingsIndexProps } from '@/types';
 
@@ -17,9 +20,39 @@ export default function ListingsIndex({
     listings,
     filters,
     sorts,
+    games,
 }: ListingsIndexProps) {
     const t = useT();
     const [isLoading, setIsLoading] = useState(false);
+
+    const selectedGame = games.data.find((g) => g.slug === filters.game);
+    const isComingSoonGame = selectedGame?.status === 'coming_soon';
+
+    const switchGame = (slug: string) => {
+        if (slug === filters.game) {
+            return;
+        }
+
+        // Drop game-specific filter selections — chess's `time_control` set
+        // is meaningless on CS2/Dota/etc. Universal filters (stake, region,
+        // language, sort) carry over because they apply across all games.
+        // Skill range is held over for now: only Chess is Active, so
+        // cross-game skill-metric semantics (Elo vs MMR vs Faceit ELO) are
+        // theoretical until the second adapter lands in M15.
+        router.get(
+            listingsIndex().url,
+            buildListingsQuery({
+                ...filters,
+                game: slug as GameId,
+                time_control: [],
+            }),
+            {
+                preserveState: false,
+                preserveScroll: false,
+                replace: false,
+            },
+        );
+    };
 
     useEffect(() => {
         const listingsPath = listingsIndex().url;
@@ -84,6 +117,14 @@ export default function ListingsIndex({
                         </p>
                     </header>
 
+                    <div className="mb-5">
+                        <ListingsGameTabs
+                            games={games.data}
+                            selectedSlug={filters.game}
+                            onSelect={switchGame}
+                        />
+                    </div>
+
                     <div className="mb-6">
                         <ListingFiltersBar filters={filters} sorts={sorts} />
                     </div>
@@ -98,7 +139,12 @@ export default function ListingsIndex({
                         </div>
                     ) : listings.data.length === 0 ? (
                         <p className="py-16 text-center text-sm text-muted-foreground">
-                            {t('No listings match your filters yet.')}
+                            {isComingSoonGame && selectedGame
+                                ? t(
+                                      ':game launches with our next platform release.',
+                                      { game: selectedGame.display_name },
+                                  )
+                                : t('No listings match your filters yet.')}
                         </p>
                     ) : (
                         <div className="flex flex-col gap-3">

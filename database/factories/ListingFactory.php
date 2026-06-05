@@ -125,4 +125,34 @@ class ListingFactory extends Factory
     {
         return $this->state(fn () => ['platform' => LinkedAccountProvider::ChessCom]);
     }
+
+    /**
+     * Adjusts platform + time_control to match the target game. CS2 routes
+     * to FACEIT, Dota 2 routes to Steam (per the planned M15 catalog).
+     * Non-chess games clear `time_control` since the concept doesn't apply
+     * — `gameSupports()` hides the filter UI for them, and an empty
+     * jsonb array is valid storage.
+     */
+    public function forGame(Game $game): static
+    {
+        $platform = match ($game) {
+            Game::Chess => $this->faker->randomElement([
+                LinkedAccountProvider::ChessCom,
+                LinkedAccountProvider::Lichess,
+            ]),
+            Game::Cs2 => LinkedAccountProvider::Faceit,
+            Game::Dota2 => LinkedAccountProvider::Steam,
+        };
+
+        return $this->state(fn () => [
+            'game' => $game,
+            'platform' => $platform,
+            'time_control' => $game === Game::Chess
+                ? $this->faker->randomElements(
+                    array_map(fn (TimeControl $tc) => $tc->value, TimeControl::cases()),
+                    $this->faker->numberBetween(1, 3),
+                )
+                : [],
+        ]);
+    }
 }

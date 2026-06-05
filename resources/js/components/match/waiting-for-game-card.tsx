@@ -16,11 +16,18 @@ interface WaitingForGameCardProps {
 const PLATFORM_LABEL: Record<ListingPlatform, string> = {
     lichess: 'Lichess',
     chess_com: 'chess.com',
+    // M15 placeholders.
+    faceit: 'FACEIT',
+    steam: 'Steam',
 };
 
 const PLATFORM_PROFILE_URL: Record<ListingPlatform, (u: string) => string> = {
     lichess: (u) => `https://lichess.org/@/${encodeURIComponent(u)}`,
     chess_com: (u) => `https://www.chess.com/member/${encodeURIComponent(u)}`,
+    // M15 placeholders — best-effort profile URLs; not used on real CS2/Dota
+    // listings today since none exist in production.
+    faceit: (u) => `https://www.faceit.com/en/players/${encodeURIComponent(u)}`,
+    steam: (u) => `https://steamcommunity.com/id/${encodeURIComponent(u)}`,
 };
 
 /** Pending-state action card. Two states: Looking (default), Found (brief

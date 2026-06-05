@@ -25,6 +25,7 @@ import {
     SheetTrigger,
 } from '@/components/ui/sheet';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
+import { gameSupports } from '@/config/games';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { useT } from '@/lib/i18n';
 import { buildListingsQuery } from '@/lib/listings-query';
@@ -146,6 +147,7 @@ function FilterForm({ filters, onClose }: FormProps) {
     const [draft, setDraft] = useState<DraftFilters>(() =>
         filtersToDraft(filters),
     );
+    const showTimeControl = gameSupports(filters.game, 'time_control');
 
     const apply = () => {
         const next: ListingFiltersType = {
@@ -219,31 +221,38 @@ function FilterForm({ filters, onClose }: FormProps) {
                     />
                 </Field>
 
-                <Field label={t('Time control')}>
-                    <ToggleGroup
-                        type="multiple"
-                        variant="outline"
-                        value={draft.time_control}
-                        onValueChange={(value: string[]) =>
-                            setDraft({
-                                ...draft,
-                                time_control: value as TimeControl[],
-                            })
-                        }
-                        className="flex w-full flex-wrap justify-start"
-                    >
-                        {TIME_CONTROL_OPTIONS.map((opt) => (
-                            <ToggleGroupItem
-                                key={opt.value}
-                                value={opt.value}
-                                aria-label={t(opt.label)}
-                                className="rounded-full px-4 py-2"
-                            >
-                                {t(opt.label)}
-                            </ToggleGroupItem>
-                        ))}
-                    </ToggleGroup>
-                </Field>
+                {/* Chess-specific. When a second game adapter ships (M15),
+                    branch here per `filters.game` with a sibling component
+                    (`Cs2FormatFilter`, etc.). Don't extract a generic
+                    interface yet — the shape of "what's variable" emerges
+                    from the second game, not the first. */}
+                {showTimeControl && (
+                    <Field label={t('Time control')}>
+                        <ToggleGroup
+                            type="multiple"
+                            variant="outline"
+                            value={draft.time_control}
+                            onValueChange={(value: string[]) =>
+                                setDraft({
+                                    ...draft,
+                                    time_control: value as TimeControl[],
+                                })
+                            }
+                            className="flex w-full flex-wrap justify-start"
+                        >
+                            {TIME_CONTROL_OPTIONS.map((opt) => (
+                                <ToggleGroupItem
+                                    key={opt.value}
+                                    value={opt.value}
+                                    aria-label={t(opt.label)}
+                                    className="rounded-full px-4 py-2"
+                                >
+                                    {t(opt.label)}
+                                </ToggleGroupItem>
+                            ))}
+                        </ToggleGroup>
+                    </Field>
+                )}
 
                 <Field label={t('Region')}>
                     <Select

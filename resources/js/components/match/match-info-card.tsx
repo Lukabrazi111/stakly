@@ -21,6 +21,9 @@ interface MatchInfoCardProps {
 const PLATFORM_LABEL: Record<ListingPlatform, string> = {
     lichess: 'Lichess',
     chess_com: 'chess.com',
+    // M15 placeholders — only visible on dev-seeded CS2/Dota matches.
+    faceit: 'FACEIT',
+    steam: 'Steam',
 };
 
 /** Compact match-parameters card with key:value rows. */

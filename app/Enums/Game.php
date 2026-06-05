@@ -9,4 +9,6 @@ namespace App\Enums;
 enum Game: string
 {
     case Chess = 'chess';
+    case Cs2 = 'cs2';
+    case Dota2 = 'dota2';
 }

@@ -2,6 +2,7 @@
 
 namespace Database\Seeders;
 
+use App\Enums\Game;
 use App\Models\Listing;
 use App\Models\User;
 use App\Services\Wallet;
@@ -16,6 +17,12 @@ class ListingSeeder extends Seeder
      * Distribution: 40 open / 5 taken / 3 expired / 2 ending-soon. Status
      * variety lets us verify `scopeOpen` filters correctly and "ending soon"
      * sort surfaces the right rows.
+     *
+     * The 40 open listings are split across the three Active games (Chess
+     * via chess.com/Lichess; CS2 via FACEIT; Dota 2 via Steam) so the
+     * per-game tabs strip + filter gating on `/listings` is testable
+     * end-to-end. CS2 + Dota 2 stand in as M15 placeholders — see
+     * `App\Enums\Game` and `App\Enums\LinkedAccountProvider` notes.
      */
     public function run(): void
     {
@@ -46,11 +53,28 @@ class ListingSeeder extends Seeder
             Wallet::deposit($user, '10000', reference: "seed:dev-deposit:{$user->id}");
         }
 
-        $open = Listing::factory()
-            ->count(40)
+        $openChess = Listing::factory()
+            ->count(25)
             ->open()
+            ->forGame(Game::Chess)
             ->recycle($users)
             ->create();
+
+        $openCs2 = Listing::factory()
+            ->count(8)
+            ->open()
+            ->forGame(Game::Cs2)
+            ->recycle($users)
+            ->create();
+
+        $openDota = Listing::factory()
+            ->count(7)
+            ->open()
+            ->forGame(Game::Dota2)
+            ->recycle($users)
+            ->create();
+
+        $open = $openChess->concat($openCs2)->concat($openDota);
 
         $taken = Listing::factory()
             ->count(5)

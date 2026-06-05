@@ -10,7 +10,9 @@ use App\Enums\ListingStatus;
 use App\Exceptions\InsufficientBalanceException;
 use App\Http\Requests\Listings\IndexListingsRequest;
 use App\Http\Requests\Listings\StoreListingRequest;
+use App\Http\Resources\GameResource;
 use App\Http\Resources\ListingResource;
+use App\Models\Game as GameModel;
 use App\Models\Listing;
 use App\Services\SellerTrust;
 use App\Services\Wallet;
@@ -18,6 +20,7 @@ use App\Support\BanGuard;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
@@ -75,10 +78,19 @@ class ListingController extends Controller
         // `seller_trust` attribute that `ListingResource` reads.
         SellerTrust::attachTo($listings);
 
+        // Reuse the homepage's resolved-array cache — `Game::booted` already
+        // invalidates it on save/delete, so admin tile edits land here too.
+        $games = Cache::remember(
+            GameModel::HOMEPAGE_CACHE_KEY,
+            now()->addHour(),
+            fn () => GameResource::collection(GameModel::forHomepage()->get())->resolve()
+        );
+
         return Inertia::render('listings/index', [
             'listings' => ListingResource::collection($listings),
             'filters' => $request->filters(),
             'sorts' => IndexListingsRequest::SORTS,
+            'games' => ['data' => $games],
         ]);
     }
 

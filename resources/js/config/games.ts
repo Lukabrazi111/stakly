@@ -8,7 +8,7 @@
 // The `available` flag lets us list a game as "Coming soon" before the
 // backend is ready. Mirrors the home-page GameSelector pattern.
 
-export type GameId = 'chess';
+export type GameId = 'chess' | 'cs2' | 'dota2';
 
 export interface GameConfig {
     id: GameId;
@@ -19,12 +19,29 @@ export interface GameConfig {
     filters: ReadonlyArray<'time_control' | 'skill_range'>;
 }
 
+// CS2 + Dota 2 are M15 placeholders (see backend `App\Enums\Game`) — they're
+// `available: true` so the per-game tabs strip drives the marketplace, but
+// the Create-listing flow is still chess-only (no FACEIT/Steam profile
+// clients yet). `filters: ['skill_range']` skips `time_control` so the
+// chess-specific filter UI hides when these are selected.
 export const GAMES: readonly GameConfig[] = [
     {
         id: 'chess',
         name: 'Chess',
         available: true,
         filters: ['time_control', 'skill_range'],
+    },
+    {
+        id: 'cs2',
+        name: 'CS2',
+        available: true,
+        filters: ['skill_range'],
+    },
+    {
+        id: 'dota2',
+        name: 'Dota 2',
+        available: true,
+        filters: ['skill_range'],
     },
 ] as const;
 
@@ -40,9 +57,18 @@ export function findGame(id: GameId): GameConfig {
     return game;
 }
 
+/**
+ * Permissive — returns `false` for unknown game slugs instead of throwing.
+ * Lets the listings game-tabs (DB-driven catalog) pass any slug the admin
+ * has added in `/admin/games`, including coming-soon ones not yet in
+ * `GAMES`. The dropdown then just hides game-specific filters for the
+ * unknown game, which is the correct behaviour.
+ */
 export function gameSupports(
-    id: GameId,
+    id: string,
     filter: GameConfig['filters'][number],
 ): boolean {
-    return findGame(id).filters.includes(filter);
+    const game = GAMES.find((g) => g.id === id);
+
+    return game?.filters.includes(filter) ?? false;
 }

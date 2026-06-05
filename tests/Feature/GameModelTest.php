@@ -28,10 +28,12 @@ test('ordered scope sorts by position ascending, id tiebreaker', function () {
 });
 
 test('hasBackendIntegration true only for Active games whose slug matches an enum case', function () {
-    // chess is the one `App\Enums\Game` case today.
+    // `App\Enums\Game` carries `chess`, `cs2`, `dota2` today — cs2 + dota2
+    // are M15 placeholders. `valorant` is in the catalog but NOT in the
+    // enum, which is what makes it the right "non-enum slug" example here.
     $chess = Game::factory()->active()->create(['slug' => 'chess']);
-    $cs2Active = Game::factory()->active()->create(['slug' => 'cs2']);
-    $cs2ComingSoon = Game::factory()->comingSoon()->create(['slug' => 'dota2']);
+    $valorantActive = Game::factory()->active()->create(['slug' => 'valorant']);
+    $valorantComingSoon = Game::factory()->comingSoon()->create(['slug' => 'lol']);
 
     expect($chess->hasBackendIntegration())->toBeTrue();
 
@@ -39,10 +41,10 @@ test('hasBackendIntegration true only for Active games whose slug matches an enu
     // hasBackendIntegration stays false. The Filament resource validation
     // should prevent this state from happening in practice — this assertion
     // verifies the model-level safety net.
-    expect($cs2Active->hasBackendIntegration())->toBeFalse();
+    expect($valorantActive->hasBackendIntegration())->toBeFalse();
 
     // ComingSoon never counts as backend-integrated regardless of slug.
-    expect($cs2ComingSoon->hasBackendIntegration())->toBeFalse();
+    expect($valorantComingSoon->hasBackendIntegration())->toBeFalse();
 });
 
 test('homepage cache is invalidated when a Game is saved', function () {

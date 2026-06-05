@@ -48,6 +48,9 @@ const STATUS_LABEL: Record<ListingStatus, string> = {
 const PLATFORM_LABEL: Record<ListingPlatform, string> = {
     chess_com: 'chess.com',
     lichess: 'Lichess',
+    // M15 placeholders.
+    faceit: 'FACEIT',
+    steam: 'Steam',
 };
 
 const STATUS_TONE: Record<ListingStatus, string> = {
@@ -110,8 +113,16 @@ export default function ListingShow({ listing, match }: ListingShowProps) {
     // verified the LISTING'S platform, not just "any chess provider." A user
     // with only chess.com linked can't take a Lichess listing because they
     // literally couldn't play the match. Server re-checks via TakeListingAction.
+    // CS2 (FACEIT) and Dota 2 (Steam) listings are dev-seed only today —
+    // nobody has those platforms linked, so the check correctly falls to false.
+    // Widening cast satisfies TS — `linked_platforms` is narrowed to chess-
+    // only, but runtime `.includes()` is identical: a chess-only array can
+    // never contain `faceit`/`steam`, so CS2/Dota listings correctly
+    // resolve to `hasMatchingPlatform = false`.
     const hasMatchingPlatform = Boolean(
-        auth.user?.linked_platforms?.includes(listing.platform),
+        (
+            auth.user?.linked_platforms as readonly typeof listing.platform[]
+        )?.includes(listing.platform),
     );
     // Owner-inactive frontend gate (M6 Phase 6.5). Mirrors the server-side
     // check in `GameMatchController::take` — defense in depth, plus better

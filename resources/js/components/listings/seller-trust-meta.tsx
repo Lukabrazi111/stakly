@@ -1,16 +1,16 @@
 import { BadgeCheck } from 'lucide-react';
 import { useT } from '@/lib/i18n';
-import type { ListingPlatform } from '@/types';
+import type { ChessProvider } from '@/types';
 
 interface Props {
     rate: number | null;
     settled: number;
     /** Providers the creator is verified on. The green BadgeCheck icon
      *  appears ONLY when this list has 2+ entries (cross-platform credential). */
-    verifiedProviders: ListingPlatform[];
+    verifiedProviders: ChessProvider[];
 }
 
-const PROVIDER_LABEL: Record<ListingPlatform, string> = {
+const PROVIDER_LABEL: Record<ChessProvider, string> = {
     chess_com: 'chess.com',
     lichess: 'Lichess',
 };
