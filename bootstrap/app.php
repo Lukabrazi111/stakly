@@ -9,6 +9,9 @@ use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Http\Middleware\AddLinkHeadersForPreloadedAssets;
+use Illuminate\Http\Request;
+use Inertia\Inertia;
+use Symfony\Component\HttpFoundation\Response;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -39,5 +42,29 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
-        //
+        // Render 403 / 404 / 500 / 503 as Inertia pages so they keep the
+        // Stakly chrome (header, footer, dark theme, locale switcher). 419
+        // (CSRF) stays on Inertia's default "session expired" toast — a
+        // full page would be the wrong UX for an in-flight form expiry.
+        // Validation (422) is left untouched: Inertia renders field errors
+        // inline. Debug mode also bypasses this so Whoops still works.
+        $exceptions->respond(function (Response $response, \Throwable $exception, Request $request) {
+            if (app()->environment('local') && config('app.debug')) {
+                return $response;
+            }
+
+            if (! $request->header('X-Inertia') && ! $request->wantsJson()) {
+                return $response;
+            }
+
+            $status = $response->getStatusCode();
+
+            if (in_array($status, [403, 404, 500, 503], true)) {
+                return Inertia::render('errors/error', ['status' => $status])
+                    ->toResponse($request)
+                    ->setStatusCode($status);
+            }
+
+            return $response;
+        });
     })->create();

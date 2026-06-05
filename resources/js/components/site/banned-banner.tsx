@@ -1,4 +1,5 @@
 import { Ban } from 'lucide-react';
+import { useT } from '@/lib/i18n';
 
 interface Props {
     reason: string;
@@ -7,6 +8,8 @@ interface Props {
 const SUPPORT_EMAIL = 'support@stakly.com';
 
 export function BannedBanner({ reason }: Props) {
+    const t = useT();
+
     return (
         <div
             role="alert"
@@ -20,10 +23,12 @@ export function BannedBanner({ reason }: Props) {
                     </span>
                     <div className="min-w-0 flex-1">
                         <p className="font-display text-sm font-semibold text-destructive sm:text-base">
-                            Your account has been suspended
+                            {t('Your account has been suspended')}
                         </p>
                         <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground sm:text-sm">
-                            <span className="text-foreground/80">Reason:</span>{' '}
+                            <span className="text-foreground/80">
+                                {t('Reason:')}
+                            </span>{' '}
                             {reason}
                         </p>
                     </div>
@@ -33,7 +38,7 @@ export function BannedBanner({ reason }: Props) {
                     href={`mailto:${SUPPORT_EMAIL}?subject=Account%20suspension%20appeal`}
                     className="inline-flex shrink-0 cursor-pointer items-center justify-center self-start rounded-full border border-destructive/40 bg-destructive/15 px-4 py-2 text-xs font-medium text-destructive transition-colors duration-200 hover:bg-destructive/25 hover:text-destructive focus-visible:ring-2 focus-visible:ring-destructive/40 focus-visible:outline-none sm:self-auto sm:text-sm"
                 >
-                    Contact support
+                    {t('Contact support')}
                 </a>
             </div>
         </div>
