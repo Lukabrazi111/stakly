@@ -2,6 +2,7 @@ import * as React from 'react';
 import { ListingsSection } from '@/components/profile/listings-section';
 import { MatchHistorySection } from '@/components/profile/match-history-section';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { useT } from '@/lib/i18n';
 import type { Listing, Match } from '@/types';
 
 type ProfileTab = 'matches' | 'listings' | 'reviews';
@@ -38,6 +39,7 @@ export function ProfileTabs({
     profileUserId,
     isOwnProfile,
 }: Props) {
+    const t = useT();
     // Default during SSR + first paint, sync after mount — reading the URL
     // synchronously would cause a hydration mismatch when `?tab=*` is set.
     const [tab, setTab] = React.useState<ProfileTab>(DEFAULT_TAB);
@@ -73,10 +75,13 @@ export function ProfileTabs({
 
     return (
         <Tabs value={tab} onValueChange={handleChange} className="w-full">
-            <TabsList variant="line" aria-label="Profile activity sections">
-                <TabsTrigger value="matches">Match History</TabsTrigger>
-                <TabsTrigger value="listings">Open Listings</TabsTrigger>
-                <TabsTrigger value="reviews">Reviews</TabsTrigger>
+            <TabsList
+                variant="line"
+                aria-label={t('Profile activity sections')}
+            >
+                <TabsTrigger value="matches">{t('Match History')}</TabsTrigger>
+                <TabsTrigger value="listings">{t('Open Listings')}</TabsTrigger>
+                <TabsTrigger value="reviews">{t('Reviews')}</TabsTrigger>
             </TabsList>
 
             <TabsContent value="matches" className="mt-5">
@@ -102,14 +107,17 @@ export function ProfileTabs({
 }
 
 function ReviewsPlaceholder() {
+    const t = useT();
+
     return (
         <div className="rounded-xl border border-dashed border-border/60 bg-card/40 p-8 text-center">
             <p className="text-sm font-medium text-foreground">
-                Reviews coming soon
+                {t('Reviews coming soon')}
             </p>
             <p className="mx-auto mt-2 max-w-prose text-sm text-muted-foreground">
-                Stakly is designing a coercion-resistant review system. Until
-                then, reputation is shown via completion rate + match history.
+                {t(
+                    'Stakly is designing a coercion-resistant review system. Until then, reputation is shown via completion rate + match history.',
+                )}
             </p>
         </div>
     );

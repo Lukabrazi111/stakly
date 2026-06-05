@@ -1,4 +1,5 @@
 import { ShareProfileButton } from '@/components/profile/share-profile-button';
+import { useT } from '@/lib/i18n';
 
 interface Props {
     profileUrl: string;
@@ -7,6 +8,8 @@ interface Props {
 
 /** Owner-only "Your account" block. Parent gates on auth.user.id === user.id. */
 export function OwnerAccountSection({ profileUrl, username }: Props) {
+    const t = useT();
+
     return (
         <section
             aria-labelledby="owner-account-heading"
@@ -17,10 +20,10 @@ export function OwnerAccountSection({ profileUrl, username }: Props) {
                     id="owner-account-heading"
                     className="font-display text-lg font-semibold text-foreground"
                 >
-                    Your account
+                    {t('Your account')}
                 </h2>
                 <p className="mt-1 text-sm text-muted-foreground">
-                    Only you can see this section.
+                    {t('Only you can see this section.')}
                 </p>
             </header>
 

@@ -2,6 +2,7 @@ import { Link } from '@inertiajs/react';
 import { Clock, Handshake, Trophy, X } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { useInitials } from '@/hooks/use-initials';
+import { useT } from '@/lib/i18n';
 import { timeControlLabels } from '@/lib/listings-format';
 import { formatMatchDate } from '@/lib/matches-format';
 import { show as userShow } from '@/routes/users';
@@ -17,6 +18,7 @@ interface Props {
  *  match detail (participant-only). Result chip is from the profile user's
  *  perspective, not the viewer's. */
 export function ProfileMatchRow({ match, profileUserId }: Props) {
+    const t = useT();
     const getInitials = useInitials();
 
     const isCreator = match.creator.id === profileUserId;
@@ -41,7 +43,7 @@ export function ProfileMatchRow({ match, profileUserId }: Props) {
                 ) : (
                     <X className="size-3" aria-hidden="true" />
                 )}
-                {profileUserWon ? 'Won' : isDraw ? 'Draw' : 'Lost'}
+                {profileUserWon ? t('Won') : isDraw ? t('Draw') : t('Lost')}
             </span>
 
             <Link
@@ -59,7 +61,7 @@ export function ProfileMatchRow({ match, profileUserId }: Props) {
                 </Avatar>
                 <div className="flex min-w-0 flex-col">
                     <span className="truncate text-sm font-medium text-foreground transition-colors hover:text-primary">
-                        vs {opponent.name}
+                        {t('vs :name', { name: opponent.name })}
                     </span>
                     <span className="truncate text-xs text-muted-foreground">
                         @{opponent.username}
@@ -71,7 +73,7 @@ export function ProfileMatchRow({ match, profileUserId }: Props) {
                 <span className="inline-flex items-center gap-1">
                     <Clock className="size-3" aria-hidden="true" />
                     {match.listing.time_control
-                        .map((tc) => timeControlLabels[tc])
+                        .map((tc) => t(timeControlLabels[tc]))
                         .join(', ')}
                 </span>
                 <span className="font-semibold text-foreground">

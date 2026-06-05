@@ -1,4 +1,5 @@
 import { Link } from '@inertiajs/react';
+import { useT } from '@/lib/i18n';
 import { index as listingsIndex } from '@/routes/listings';
 import type { ProfileStats } from '@/types';
 
@@ -16,6 +17,7 @@ const currencyFormatter = new Intl.NumberFormat('en-US', {
 const numberFormatter = new Intl.NumberFormat('en-US');
 
 export function StatsCard({ stats, isOwnProfile }: Props) {
+    const t = useT();
     const hasMatches = stats.total_matches > 0;
     const showWinRate = stats.win_rate !== null;
 
@@ -23,25 +25,29 @@ export function StatsCard({ stats, isOwnProfile }: Props) {
         return (
             <section>
                 <h2 className="mb-3 font-display text-lg font-semibold text-foreground">
-                    Stats
+                    {t('Stats')}
                 </h2>
                 <div className="rounded-xl border border-dashed border-border/60 bg-card/40 p-6 text-center">
                     <p className="text-sm font-medium text-foreground">
                         {isOwnProfile
-                            ? 'No matches yet'
-                            : 'No matches played yet'}
+                            ? t('No matches yet')
+                            : t('No matches played yet')}
                     </p>
                     <p className="mx-auto mt-1 max-w-prose text-xs text-muted-foreground">
                         {isOwnProfile
-                            ? 'Your match count, volume staked, and win rate appear here once you play.'
-                            : 'Match count, volume staked, and win rate appear here once they play.'}
+                            ? t(
+                                  'Your match count, volume staked, and win rate appear here once you play.',
+                              )
+                            : t(
+                                  'Match count, volume staked, and win rate appear here once they play.',
+                              )}
                     </p>
                     {isOwnProfile && (
                         <Link
                             href={listingsIndex().url}
                             className="mt-4 inline-flex text-sm font-medium text-primary transition-colors hover:text-primary/80"
                         >
-                            Browse the marketplace{' '}
+                            {t('Browse the marketplace')}{' '}
                             <span aria-hidden="true">→</span>
                         </Link>
                     )}
@@ -57,15 +63,15 @@ export function StatsCard({ stats, isOwnProfile }: Props) {
     return (
         <section>
             <h2 className="mb-3 font-display text-lg font-semibold text-foreground">
-                Stats
+                {t('Stats')}
             </h2>
             <div className={`grid gap-3 ${gridCols}`}>
                 <StatTile
-                    label="Total matches"
+                    label={t('Total matches')}
                     value={numberFormatter.format(stats.total_matches)}
                 />
                 <StatTile
-                    label="Total volume staked"
+                    label={t('Total volume staked')}
                     value={currencyFormatter.format(stats.total_volume)}
                 />
                 {showWinRate && <WinRateTile winRate={stats.win_rate!} />}
@@ -99,13 +105,14 @@ interface WinRateTileProps {
 /** Percentage falls back to "—" when every settled match was a draw
  *  (decided denominator is 0). */
 function WinRateTile({ winRate }: WinRateTileProps) {
+    const t = useT();
     const { wins, draws, losses, percentage } = winRate;
     const display = percentage === null ? '—' : `${percentage}%`;
 
     return (
         <div className="rounded-xl border border-border/60 bg-card p-4">
             <div className="text-xs tracking-wide text-muted-foreground uppercase">
-                Win rate
+                {t('Win rate')}
             </div>
             <div className="mt-2 text-2xl font-semibold text-foreground tabular-nums">
                 {display}

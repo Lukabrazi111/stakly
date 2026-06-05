@@ -14,7 +14,7 @@ Frontend-first build. UI against real DB infrastructure + seeded fake data; back
 
 **In-flight:**
 
-- **M26 Phase 4** — Full-site i18n. Slice A ✓ + Slice B ✓ + Slice C ✓ all shipped 2026-06-04. Follow-up: global `URL::defaults` fallback shipped 2026-06-05 (was crashing Filament admin record-view pages with `Missing parameter: {locale}` because SetLocale only runs inside the locale-prefix group). **Up next: Slice D+** — page-by-page string extraction (Listings → Profile → Match → Wallet → Notifications → Settings → Auth → Banned banner → Validation / errors). Translation labor (`lang/ka.json` / `lang/ru.json` content) tracked separately as a content backlog.
+- **M26 Phase 4** — Full-site i18n. Slice A ✓ + Slice B ✓ + Slice C ✓ all shipped 2026-06-04. Follow-up `URL::defaults` global fallback ✓ 2026-06-05. **Slice D-1 through D-5 (Listings tranche) ✓ 2026-06-05** — index, detail, create form, mine + active-mode + cancel dialog, backend flash/validation. **Up next: D-6 Profile** (header + tabs + match history + listings section), then Match → Wallet → Notifications → Settings → Auth → Banned banner → Validation/errors. Translation labor (`lang/ka.json` / `lang/ru.json` content) tracked separately as a content backlog.
 
 **Active / upcoming** (after M26):
 
@@ -418,7 +418,7 @@ Lessons folded back:
 **P4 Slices D+ — Page-by-page extraction (one slice per area, each its own commit)**
 
 - [x] Listings (D-1 index ✓ 2026-06-05 · D-2 detail ✓ 2026-06-05 · D-3 create form ✓ 2026-06-05 · D-4 mine + active-mode ✓ 2026-06-05 · D-5 backend flash + validation ✓ 2026-06-05).
-- [ ] Profile (header + tabs + match history + listings section).
+- [x] Profile (D-6 ✓ 2026-06-05 — header + tabs + trust strip + stats card + share/owner sections + listing/match rows).
 - [ ] Match (show + chat + banners + waiting card + settled card).
 - [ ] Wallet (index + deposit + withdraw + history).
 - [ ] Notifications (bell dropdown + `/notifications` history page + `NotificationCard` + `/settings/notifications` preferences UI). M27 surfaces.

@@ -8,6 +8,7 @@ import {
     PopoverContent,
     PopoverTrigger,
 } from '@/components/ui/popover';
+import { useT } from '@/lib/i18n';
 
 interface Props {
     profileUrl: string;
@@ -16,16 +17,17 @@ interface Props {
 
 /** Owner-only share button — popover with copyable URL + QR. */
 export function ShareProfileButton({ profileUrl, username }: Props) {
+    const t = useT();
     const [copied, setCopied] = useState(false);
 
     const handleCopy = async () => {
         try {
             await navigator.clipboard.writeText(profileUrl);
             setCopied(true);
-            toast.success('Profile link copied');
+            toast.success(t('Profile link copied'));
             setTimeout(() => setCopied(false), 2000);
         } catch {
-            toast.error('Could not copy — try selecting it manually.');
+            toast.error(t('Could not copy — try selecting it manually.'));
         }
     };
 
@@ -34,16 +36,18 @@ export function ShareProfileButton({ profileUrl, username }: Props) {
             <PopoverTrigger asChild>
                 <Button type="button" variant="outline" size="sm">
                     <Share2 className="size-4" aria-hidden="true" />
-                    Share profile
+                    {t('Share profile')}
                 </Button>
             </PopoverTrigger>
             <PopoverContent className="w-80 space-y-4" align="start">
                 <div>
                     <h3 className="font-display text-sm font-semibold text-foreground">
-                        Share @{username}
+                        {t('Share @:username', { username })}
                     </h3>
                     <p className="mt-1 text-xs text-muted-foreground">
-                        Anyone with this link can view your public profile.
+                        {t(
+                            'Anyone with this link can view your public profile.',
+                        )}
                     </p>
                 </div>
 
@@ -71,7 +75,7 @@ export function ShareProfileButton({ profileUrl, username }: Props) {
                         variant="ghost"
                         size="icon"
                         onClick={handleCopy}
-                        aria-label={copied ? 'Link copied' : 'Copy link'}
+                        aria-label={copied ? t('Link copied') : t('Copy link')}
                         className="size-8 shrink-0"
                     >
                         {copied ? (

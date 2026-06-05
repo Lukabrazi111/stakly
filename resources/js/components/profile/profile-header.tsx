@@ -3,6 +3,7 @@ import { VerificationChip } from '@/components/profile/verification-chip';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { useInitials } from '@/hooks/use-initials';
+import { useT } from '@/lib/i18n';
 import { edit as editProfile } from '@/routes/profile';
 import type { UserProfile } from '@/types';
 
@@ -11,6 +12,7 @@ interface Props {
 }
 
 export function ProfileHeader({ user }: Props) {
+    const t = useT();
     const { auth } = usePage().props;
     const getInitials = useInitials();
     const isOwnProfile = auth.user?.id === user.id;
@@ -46,7 +48,9 @@ export function ProfileHeader({ user }: Props) {
 
                 {isOwnProfile && (
                     <Button variant="ghost" size="sm" asChild>
-                        <Link href={editProfile().url}>Edit profile</Link>
+                        <Link href={editProfile().url}>
+                            {t('Edit profile')}
+                        </Link>
                     </Button>
                 )}
             </div>
@@ -65,7 +69,7 @@ export function ProfileHeader({ user }: Props) {
                     />
                 )}
                 <span className="inline-flex shrink-0 items-center rounded-full border border-border/60 bg-card px-3 py-1 text-xs font-medium text-muted-foreground">
-                    Joined {joinedDate}
+                    {t('Joined :date', { date: joinedDate })}
                 </span>
             </div>
 
