@@ -112,7 +112,7 @@ export default function NotificationsIndex({ notifications, filter }: Props) {
                 noindex
             />
 
-            <div className="mx-auto max-w-3xl px-4 py-10 md:px-6 md:py-14">
+            <div className="mx-auto max-w-5xl px-4 py-10 md:px-6 md:py-14">
                 <BackLink fallback="/" />
 
                 <header className="mt-4 mb-6 flex flex-wrap items-baseline justify-between gap-4">
