@@ -15,6 +15,7 @@ import {
 } from '@/components/ui/select';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import SiteLayout from '@/layouts/site-layout';
+import { useT } from '@/lib/i18n';
 import { edit as linkedAccountsEdit } from '@/routes/linked-accounts';
 import {
     index as listingsIndex,
@@ -43,6 +44,7 @@ export default function ListingsCreate({
     maxActiveListings,
     linkedPlatforms,
 }: ListingCreateProps) {
+    const t = useT();
     const { auth } = usePage().props;
     const hasChessLink = Boolean(auth.user?.has_chess_link);
     const atCap = activeListingsCount >= maxActiveListings;
@@ -94,19 +96,20 @@ export default function ListingsCreate({
         return (
             <SiteLayout>
                 <PageMeta
-                    title="Create a listing"
-                    description="Post a new chess staking listing."
+                    title={t('Create a listing')}
+                    description={t('Post a new chess staking listing.')}
                     noindex
                 />
 
                 <div className="mx-auto max-w-2xl px-4 py-10 md:py-14">
                     <header className="mb-8">
                         <h1 className="font-display text-3xl font-bold tracking-tight md:text-4xl">
-                            Create a listing
+                            {t('Create a listing')}
                         </h1>
                         <p className="mt-2 text-sm text-muted-foreground">
-                            One more step before you can post on the
-                            marketplace.
+                            {t(
+                                'One more step before you can post on the marketplace.',
+                            )}
                         </p>
                     </header>
 
@@ -116,18 +119,17 @@ export default function ListingsCreate({
                         </div>
                         <div className="flex flex-col gap-1">
                             <h2 className="font-display text-xl font-bold tracking-tight">
-                                Link a chess account first
+                                {t('Link a chess account first')}
                             </h2>
                             <p className="text-sm leading-relaxed text-muted-foreground">
-                                Stakly verifies match outcomes against your
-                                chess.com or Lichess account. Link one to post
-                                listings and take matches — it takes about a
-                                minute.
+                                {t(
+                                    'Stakly verifies match outcomes against your chess.com or Lichess account. Link one to post listings and take matches — it takes about a minute.',
+                                )}
                             </p>
                         </div>
                         <Button variant="gradient" size="pill" asChild>
                             <Link href={linkedAccountsEdit().url}>
-                                Link chess.com or Lichess
+                                {t('Link chess.com or Lichess')}
                             </Link>
                         </Button>
                     </div>
@@ -139,19 +141,20 @@ export default function ListingsCreate({
     return (
         <SiteLayout>
             <PageMeta
-                title="Create a listing"
-                description="Post a new chess staking listing."
+                title={t('Create a listing')}
+                description={t('Post a new chess staking listing.')}
                 noindex
             />
 
             <div className="mx-auto max-w-2xl px-4 py-10 md:py-14">
                 <header className="mb-8">
                     <h1 className="font-display text-3xl font-bold tracking-tight md:text-4xl">
-                        Create a listing
+                        {t('Create a listing')}
                     </h1>
                     <p className="mt-2 text-sm text-muted-foreground">
-                        Set your terms — opponents will pick yours from the
-                        marketplace.
+                        {t(
+                            'Set your terms — opponents will pick yours from the marketplace.',
+                        )}
                     </p>
                 </header>
 
@@ -166,18 +169,19 @@ export default function ListingsCreate({
                         />
                         <div className="flex-1">
                             <p className="text-sm font-medium text-foreground">
-                                You&apos;re at the {maxActiveListings}-listing
-                                cap
+                                {t("You're at the :max-listing cap", {
+                                    max: maxActiveListings,
+                                })}
                             </p>
                             <p className="mt-0.5 text-sm text-muted-foreground">
-                                Cancel one of your active listings (Open or
-                                Paused) before creating another, or wait for one
-                                to settle.{' '}
+                                {t(
+                                    'Cancel one of your active listings (Open or Paused) before creating another, or wait for one to settle.',
+                                )}{' '}
                                 <Link
                                     href={listingsMine().url}
                                     className="font-medium text-primary underline-offset-2 transition-colors hover:text-primary/80 hover:underline"
                                 >
-                                    Go to My listings →
+                                    {t('Go to My listings →')}
                                 </Link>
                             </p>
                         </div>
@@ -192,17 +196,17 @@ export default function ListingsCreate({
                     className="space-y-8"
                 >
                     {/* Game (chess only in v1) */}
-                    <FormSection title="Game">
+                    <FormSection title={t('Game')}>
                         <div className="flex items-center gap-3 rounded-xl border border-glow p-4">
                             <div className="inline-flex size-10 items-center justify-center rounded-lg bg-gradient-primary">
                                 <Crown className="size-5 text-primary-foreground" />
                             </div>
                             <div>
                                 <div className="font-semibold text-foreground">
-                                    Chess
+                                    {t('Chess')}
                                 </div>
                                 <div className="text-xs text-muted-foreground">
-                                    More games coming soon.
+                                    {t('More games coming soon.')}
                                 </div>
                             </div>
                         </div>
@@ -212,7 +216,7 @@ export default function ListingsCreate({
                         verified. Auto-selected to the only-linked one
                         otherwise (silent). */}
                     {showPlatformPicker && (
-                        <FormSection title="Platform">
+                        <FormSection title={t('Platform')}>
                             <ToggleGroup
                                 type="single"
                                 value={data.platform}
@@ -237,17 +241,21 @@ export default function ListingsCreate({
                                 ))}
                             </ToggleGroup>
                             <p className="mt-2 text-xs text-muted-foreground">
-                                Match outcome will be verified against{' '}
-                                {PLATFORM_LABEL[data.platform]}.
+                                {t(
+                                    'Match outcome will be verified against :platform.',
+                                    { platform: PLATFORM_LABEL[data.platform] },
+                                )}
                             </p>
                             <InputError message={errors.platform} />
                         </FormSection>
                     )}
 
                     {/* Stake */}
-                    <FormSection title="Stake">
+                    <FormSection title={t('Stake')}>
                         <div className="space-y-2">
-                            <Label htmlFor="stake_amount">Amount in USDT</Label>
+                            <Label htmlFor="stake_amount">
+                                {t('Amount in USDT')}
+                            </Label>
                             <div className="relative">
                                 <Input
                                     id="stake_amount"
@@ -269,7 +277,7 @@ export default function ListingsCreate({
                                 </span>
                             </div>
                             <div className="text-xs text-muted-foreground">
-                                Available:{' '}
+                                {t('Available:')}{' '}
                                 <span
                                     className={
                                         exceedsBalance
@@ -282,7 +290,7 @@ export default function ListingsCreate({
                             </div>
                             {exceedsBalance && (
                                 <p className="text-xs text-destructive">
-                                    Stake exceeds your available balance.
+                                    {t('Stake exceeds your available balance.')}
                                 </p>
                             )}
                             <InputError message={errors.stake_amount} />
@@ -290,10 +298,10 @@ export default function ListingsCreate({
                     </FormSection>
 
                     {/* Match preferences */}
-                    <FormSection title="Match preferences">
+                    <FormSection title={t('Match preferences')}>
                         <div className="space-y-5">
                             <div className="space-y-2">
-                                <Label>Time control</Label>
+                                <Label>{t('Time control')}</Label>
                                 <ToggleGroup
                                     type="multiple"
                                     variant="outline"
@@ -313,51 +321,52 @@ export default function ListingsCreate({
                                                 value={value}
                                                 className="rounded-full px-5 py-2"
                                             >
-                                                {label}
+                                                {t(label)}
                                             </ToggleGroupItem>
                                         ),
                                     )}
                                 </ToggleGroup>
                                 <p className="text-xs text-muted-foreground">
-                                    Pick at least one — the opponent picks which
-                                    to play.
+                                    {t(
+                                        'Pick at least one — the opponent picks which to play.',
+                                    )}
                                 </p>
                                 <InputError message={errors.time_control} />
                             </div>
 
                             <div className="space-y-2">
-                                <Label>Skill range (Elo)</Label>
+                                <Label>{t('Skill range (Elo)')}</Label>
                                 <div className="flex items-center gap-3">
                                     <Input
                                         type="number"
                                         min={0}
                                         max={3500}
-                                        placeholder="Any min"
+                                        placeholder={t('Any min')}
                                         value={data.skill_min}
                                         onChange={(e) =>
                                             setData('skill_min', e.target.value)
                                         }
                                         className="flex-1"
-                                        aria-label="Minimum Elo"
+                                        aria-label={t('Minimum Elo')}
                                     />
                                     <span className="text-xs text-muted-foreground">
-                                        to
+                                        {t('to')}
                                     </span>
                                     <Input
                                         type="number"
                                         min={0}
                                         max={3500}
-                                        placeholder="Any max"
+                                        placeholder={t('Any max')}
                                         value={data.skill_max}
                                         onChange={(e) =>
                                             setData('skill_max', e.target.value)
                                         }
                                         className="flex-1"
-                                        aria-label="Maximum Elo"
+                                        aria-label={t('Maximum Elo')}
                                     />
                                 </div>
                                 <p className="text-xs text-muted-foreground">
-                                    Leave blank to match any skill.
+                                    {t('Leave blank to match any skill.')}
                                 </p>
                                 <InputError message={errors.skill_min} />
                                 <InputError message={errors.skill_max} />
@@ -366,10 +375,10 @@ export default function ListingsCreate({
                     </FormSection>
 
                     {/* Audience */}
-                    <FormSection title="Audience">
+                    <FormSection title={t('Audience')}>
                         <div className="space-y-5">
                             <div className="space-y-2">
-                                <Label htmlFor="region">Region</Label>
+                                <Label htmlFor="region">{t('Region')}</Label>
                                 <Select
                                     value={data.region}
                                     onValueChange={(value) =>
@@ -396,7 +405,7 @@ export default function ListingsCreate({
                                 <InputError message={errors.region} />
                             </div>
                             <div className="space-y-2">
-                                <Label>Languages</Label>
+                                <Label>{t('Languages')}</Label>
                                 <ToggleGroup
                                     type="multiple"
                                     variant="outline"
@@ -417,8 +426,9 @@ export default function ListingsCreate({
                                     ))}
                                 </ToggleGroup>
                                 <p className="text-xs text-muted-foreground">
-                                    Pick one or more, or leave empty for any
-                                    language.
+                                    {t(
+                                        'Pick one or more, or leave empty for any language.',
+                                    )}
                                 </p>
                                 <InputError message={errors.language} />
                             </div>
@@ -426,7 +436,7 @@ export default function ListingsCreate({
                     </FormSection>
 
                     {/* Duration */}
-                    <FormSection title="Listing expires after">
+                    <FormSection title={t('Listing expires after')}>
                         <div className="space-y-2">
                             <Select
                                 value={String(data.duration_hours)}
@@ -444,15 +454,16 @@ export default function ListingsCreate({
                                             value={String(hours)}
                                         >
                                             {hours === 1
-                                                ? '1 hour'
-                                                : `${hours} hours`}
+                                                ? t('1 hour')
+                                                : t(':hours hours', { hours })}
                                         </SelectItem>
                                     ))}
                                 </SelectContent>
                             </Select>
                             <p className="text-xs text-muted-foreground">
-                                The listing auto-expires if nobody takes it.
-                                Your stake is refunded automatically.
+                                {t(
+                                    'The listing auto-expires if nobody takes it. Your stake is refunded automatically.',
+                                )}
                             </p>
                             <InputError message={errors.duration_hours} />
                         </div>
@@ -460,7 +471,9 @@ export default function ListingsCreate({
 
                     <div className="flex items-center justify-between gap-3 pt-2">
                         <Button type="button" variant="ghost" asChild>
-                            <Link href={listingsIndex().url}>Cancel</Link>
+                            <Link href={listingsIndex().url}>
+                                {t('Cancel')}
+                            </Link>
                         </Button>
                         <Button
                             type="submit"
@@ -468,7 +481,7 @@ export default function ListingsCreate({
                             size="pill"
                             disabled={!canSubmit}
                         >
-                            {processing ? 'Creating…' : 'Create listing'}
+                            {processing ? t('Creating…') : t('Create listing')}
                         </Button>
                     </div>
                 </form>
