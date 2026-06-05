@@ -1,4 +1,5 @@
 import { ExternalLink } from 'lucide-react';
+import { useT } from '@/lib/i18n';
 
 type Provider = 'chess_com' | 'lichess';
 
@@ -29,6 +30,7 @@ interface Props {
 }
 
 export function VerificationChip({ provider, username }: Props) {
+    const t = useT();
     const meta = PROVIDER_META[provider];
 
     return (
@@ -36,7 +38,10 @@ export function VerificationChip({ provider, username }: Props) {
             href={meta.href(username)}
             target="_blank"
             rel="noopener noreferrer"
-            aria-label={`View verified ${meta.label} profile ${username} (opens in new tab)`}
+            aria-label={t(
+                'View verified :platform profile :username (opens in new tab)',
+                { platform: meta.label, username },
+            )}
             className={`group inline-flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors duration-150 ease-out focus-visible:ring-2 focus-visible:ring-primary/25 focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none ${meta.tone}`}
         >
             <span>{meta.label}</span>

@@ -20,6 +20,7 @@ import {
 } from '@/components/ui/dialog';
 import { useInitials } from '@/hooks/use-initials';
 import SiteLayout from '@/layouts/site-layout';
+import { useT } from '@/lib/i18n';
 import {
     formatSkillRange,
     formatTimeControls,
@@ -57,6 +58,7 @@ const STATUS_TONE: Record<ListingStatus, string> = {
 };
 
 export default function ListingShow({ listing, match }: ListingShowProps) {
+    const t = useT();
     const getInitials = useInitials();
     const { auth } = usePage().props;
     const [cancelOpen, setCancelOpen] = useState(false);
@@ -143,19 +145,39 @@ export default function ListingShow({ listing, match }: ListingShowProps) {
         );
     };
 
-    const timeControlLabel = formatTimeControls(listing.time_control);
+    const timeControlLabel = formatTimeControls(listing.time_control, t);
     const platformLabel = PLATFORM_LABEL[listing.platform];
-    const metaTitle = `${listing.creator.name} · $${listing.stake_amount} ${timeControlLabel} chess`;
+    const metaTitle = t(":creator's $:stake match — chess on :platform", {
+        creator: listing.creator.name,
+        stake: listing.stake_amount,
+        platform: platformLabel,
+    });
     const skillFragment =
         listing.skill_min !== null && listing.skill_max !== null
-            ? ` Skill ${listing.skill_min}–${listing.skill_max}.`
+            ? ' ' +
+              t(':min–:max Elo.', {
+                  min: listing.skill_min,
+                  max: listing.skill_max,
+              })
             : '';
     const completionFragment =
         listing.creator.completion_rate_30d !== null &&
         listing.creator.settled_lifetime > 0
-            ? ` ${listing.creator.completion_rate_30d}% completion over ${listing.creator.settled_lifetime} matches.`
+            ? ' ' +
+              t(':rate% completion over :count matches.', {
+                  rate: listing.creator.completion_rate_30d,
+                  count: listing.creator.settled_lifetime,
+              })
             : '';
-    const metaDescription = `Take @${listing.creator.username}'s $${listing.stake_amount} USDT ${timeControlLabel.toLowerCase()} chess match on ${platformLabel}.${skillFragment}${completionFragment} Both stakes escrowed.`;
+    const metaDescription = `${t(
+        "Take @:username's $:stake USDT :timeControl chess match on :platform.",
+        {
+            username: listing.creator.username,
+            stake: listing.stake_amount,
+            timeControl: timeControlLabel.toLowerCase(),
+            platform: platformLabel,
+        },
+    )}${skillFragment}${completionFragment} ${t('Both stakes escrowed.')}`;
 
     return (
         <SiteLayout>
@@ -237,7 +259,7 @@ export default function ListingShow({ listing, match }: ListingShowProps) {
                                     <span
                                         className={`inline-flex shrink-0 items-center rounded-full border px-3 py-1 text-xs font-medium ${STATUS_TONE[listing.status]}`}
                                     >
-                                        {STATUS_LABEL[listing.status]}
+                                        {t(STATUS_LABEL[listing.status])}
                                     </span>
                                 )}
                             </div>
@@ -267,7 +289,9 @@ export default function ListingShow({ listing, match }: ListingShowProps) {
                                 )}
                                 {joinedDate && (
                                     <span className="inline-flex shrink-0 items-center rounded-full border border-border/60 bg-card px-3 py-1 text-xs font-medium text-muted-foreground">
-                                        Joined {joinedDate}
+                                        {t('Joined :date', {
+                                            date: joinedDate,
+                                        })}
                                     </span>
                                 )}
                             </div>
@@ -282,35 +306,38 @@ export default function ListingShow({ listing, match }: ListingShowProps) {
                         {/* Listing details card */}
                         <section className="rounded-2xl border border-border/60 bg-card p-6">
                             <h2 className="mb-5 font-display text-lg font-semibold text-foreground">
-                                Match details
+                                {t('Match details')}
                             </h2>
                             <dl className="grid gap-5 sm:grid-cols-2">
                                 <Detail
-                                    label="Skill range"
+                                    label={t('Skill range')}
                                     icon={<Trophy className="size-4" />}
                                     value={formatSkillRange(
                                         listing.skill_min,
                                         listing.skill_max,
+                                        t,
                                     )}
                                 />
                                 <Detail
-                                    label="Time control"
+                                    label={t('Time control')}
                                     icon={<Clock className="size-4" />}
                                     value={formatTimeControls(
                                         listing.time_control,
+                                        t,
                                     )}
                                 />
                                 <Detail
-                                    label="Expires"
+                                    label={t('Expires')}
                                     icon={<Clock className="size-4" />}
                                     value={formatTimeRemaining(
                                         listing.expires_at,
+                                        t,
                                     )}
                                     valueClass={expiresTone}
                                 />
                                 {listing.region && (
                                     <Detail
-                                        label="Region"
+                                        label={t('Region')}
                                         icon={<Globe className="size-4" />}
                                         value={listing.region}
                                     />
@@ -318,7 +345,7 @@ export default function ListingShow({ listing, match }: ListingShowProps) {
                                 {listing.language &&
                                     listing.language.length > 0 && (
                                         <Detail
-                                            label="Language"
+                                            label={t('Language')}
                                             icon={
                                                 <Languages className="size-4" />
                                             }
@@ -329,7 +356,7 @@ export default function ListingShow({ listing, match }: ListingShowProps) {
 
                             {postedDate && (
                                 <p className="mt-6 text-xs text-muted-foreground">
-                                    Posted {postedDate}
+                                    {t('Posted :date', { date: postedDate })}
                                 </p>
                             )}
                         </section>
@@ -342,7 +369,7 @@ export default function ListingShow({ listing, match }: ListingShowProps) {
                         <div className="rounded-2xl border border-border/60 bg-card p-6 md:sticky md:top-24">
                             <div className="text-center">
                                 <div className="text-[11px] tracking-widest text-muted-foreground uppercase">
-                                    Stake
+                                    {t('Stake')}
                                 </div>
                                 <div className="mt-2 text-gradient-primary font-display text-5xl leading-none font-bold">
                                     ${listing.stake_amount}
@@ -363,25 +390,25 @@ export default function ListingShow({ listing, match }: ListingShowProps) {
                                 <>
                                     <dl className="mt-6 space-y-2.5">
                                         <StakeRow
-                                            label="Your stake"
+                                            label={t('Your stake')}
                                             value={`$${listing.stake_amount}`}
                                         />
                                         <StakeRow
-                                            label="Opponent stake"
+                                            label={t('Opponent stake')}
                                             value={`$${listing.stake_amount}`}
                                         />
                                         <StakeRow
-                                            label="Pot total"
+                                            label={t('Pot total')}
                                             value={`$${pot}`}
                                             bold
                                         />
                                         <StakeRow
-                                            label="Platform fee"
+                                            label={t('Platform fee')}
                                             value={`−$${fee.toFixed(2)}`}
                                             muted
                                         />
                                         <StakeRow
-                                            label="Winner payout"
+                                            label={t('Winner payout')}
                                             value={`$${winnerPayout.toFixed(2)}`}
                                             accent
                                         />
@@ -409,7 +436,7 @@ export default function ListingShow({ listing, match }: ListingShowProps) {
                                                     .url
                                             }
                                         >
-                                            View match →
+                                            {t('View match →')}
                                         </Link>
                                     </Button>
                                 </div>
@@ -438,13 +465,13 @@ export default function ListingShow({ listing, match }: ListingShowProps) {
                                                 disabled
                                                 className="w-full"
                                             >
-                                                Player currently inactive
+                                                {t('Player currently inactive')}
                                             </Button>
                                             <Link
                                                 href={listingsIndex().url}
                                                 className="text-center text-xs text-muted-foreground transition-colors hover:text-foreground"
                                             >
-                                                Browse other listings →
+                                                {t('Browse other listings →')}
                                             </Link>
                                         </>
                                     )}
@@ -471,13 +498,16 @@ export default function ListingShow({ listing, match }: ListingShowProps) {
                                                         linkedAccountsEdit().url
                                                     }
                                                 >
-                                                    Link{' '}
-                                                    {
-                                                        PLATFORM_LABEL[
-                                                            listing.platform
-                                                        ]
-                                                    }{' '}
-                                                    to take
+                                                    {t(
+                                                        'Link :platform to take',
+                                                        {
+                                                            platform:
+                                                                PLATFORM_LABEL[
+                                                                    listing
+                                                                        .platform
+                                                                ],
+                                                        },
+                                                    )}
                                                 </Link>
                                             </Button>
                                         )}
@@ -497,33 +527,23 @@ export default function ListingShow({ listing, match }: ListingShowProps) {
                                                         size="pill"
                                                         className="w-full"
                                                     >
-                                                        Take
+                                                        {t('Take')}
                                                     </Button>
                                                 </DialogTrigger>
                                                 <DialogContent>
                                                     <DialogHeader>
                                                         <DialogTitle>
-                                                            Take this match?
+                                                            {t(
+                                                                'Take this match?',
+                                                            )}
                                                         </DialogTitle>
                                                         <DialogDescription>
-                                                            You&apos;re about to
-                                                            stake{' '}
-                                                            <span className="font-semibold text-foreground">
-                                                                $
+                                                            {t(
+                                                                "You're about to stake :amount on this match. Once it starts, your stake is locked until the match settles, you and your opponent open a dispute, or the 4-hour confirmation window expires.",
                                                                 {
-                                                                    listing.stake_amount
-                                                                }{' '}
-                                                                USDT
-                                                            </span>{' '}
-                                                            on this match. Once
-                                                            it starts, your
-                                                            stake is locked
-                                                            until the match
-                                                            settles, you and
-                                                            your opponent open a
-                                                            dispute, or the
-                                                            4-hour confirmation
-                                                            window expires.
+                                                                    amount: `$${listing.stake_amount} USDT`,
+                                                                },
+                                                            )}
                                                         </DialogDescription>
                                                     </DialogHeader>
                                                     <DialogFooter>
@@ -535,7 +555,7 @@ export default function ListingShow({ listing, match }: ListingShowProps) {
                                                                 )
                                                             }
                                                         >
-                                                            Cancel
+                                                            {t('Cancel')}
                                                         </Button>
                                                         <Button
                                                             variant="gradient"
@@ -545,8 +565,12 @@ export default function ListingShow({ listing, match }: ListingShowProps) {
                                                             }
                                                         >
                                                             {takeProcessing
-                                                                ? 'Processing…'
-                                                                : 'Confirm & take'}
+                                                                ? t(
+                                                                      'Processing…',
+                                                                  )
+                                                                : t(
+                                                                      'Confirm & take',
+                                                                  )}
                                                         </Button>
                                                     </DialogFooter>
                                                 </DialogContent>
@@ -565,14 +589,15 @@ export default function ListingShow({ listing, match }: ListingShowProps) {
                                                     disabled
                                                     className="w-full"
                                                 >
-                                                    Insufficient balance
+                                                    {t('Insufficient balance')}
                                                 </Button>
                                                 <Link
                                                     href={walletDeposit().url}
                                                     className="text-center text-xs text-muted-foreground transition-colors hover:text-foreground"
                                                 >
-                                                    Deposit USDT to take this
-                                                    match →
+                                                    {t(
+                                                        'Deposit USDT to take this match →',
+                                                    )}
                                                 </Link>
                                             </>
                                         )}
@@ -587,7 +612,7 @@ export default function ListingShow({ listing, match }: ListingShowProps) {
                                                 asChild
                                             >
                                                 <Link href="/?auth=login">
-                                                    Log in to take
+                                                    {t('Log in to take')}
                                                 </Link>
                                             </Button>
                                         )}
@@ -599,7 +624,7 @@ export default function ListingShow({ listing, match }: ListingShowProps) {
                                             disabled
                                             className="w-full"
                                         >
-                                            {STATUS_LABEL[listing.status]}
+                                            {t(STATUS_LABEL[listing.status])}
                                         </Button>
                                     )}
                                 </div>
@@ -618,23 +643,21 @@ export default function ListingShow({ listing, match }: ListingShowProps) {
                                                 size="default"
                                                 className="w-full rounded-full border-destructive/30 bg-transparent text-destructive shadow-none hover:border-destructive/50 hover:bg-destructive/10 hover:text-destructive"
                                             >
-                                                Cancel listing
+                                                {t('Cancel listing')}
                                             </Button>
                                         </DialogTrigger>
                                         <DialogContent>
                                             <DialogHeader>
                                                 <DialogTitle>
-                                                    Cancel this listing?
+                                                    {t('Cancel this listing?')}
                                                 </DialogTitle>
                                                 <DialogDescription>
-                                                    Your{' '}
-                                                    <span className="font-semibold text-foreground">
-                                                        ${listing.stake_amount}{' '}
-                                                        USDT
-                                                    </span>{' '}
-                                                    stake will be refunded
-                                                    immediately. This can&apos;t
-                                                    be undone.
+                                                    {t(
+                                                        "Your :amount stake will be refunded immediately. This can't be undone.",
+                                                        {
+                                                            amount: `$${listing.stake_amount} USDT`,
+                                                        },
+                                                    )}
                                                 </DialogDescription>
                                             </DialogHeader>
                                             <DialogFooter>
@@ -644,13 +667,13 @@ export default function ListingShow({ listing, match }: ListingShowProps) {
                                                         setCancelOpen(false)
                                                     }
                                                 >
-                                                    Keep listing
+                                                    {t('Keep listing')}
                                                 </Button>
                                                 <Button
                                                     variant="destructive"
                                                     onClick={handleCancel}
                                                 >
-                                                    Cancel &amp; refund
+                                                    {t('Cancel & refund')}
                                                 </Button>
                                             </DialogFooter>
                                         </DialogContent>

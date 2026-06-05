@@ -1,6 +1,7 @@
 import { Link } from '@inertiajs/react';
 import { ChevronLeft } from 'lucide-react';
 import type { MouseEvent } from 'react';
+import { useT } from '@/lib/i18n';
 
 interface Props {
     /** URL when there's no history (direct landing / shared link / fresh tab). */
@@ -14,7 +15,9 @@ interface Props {
  * falls through to Inertia navigation to `fallback`. Renders as a real
  * `<a>` so modifier-clicks (cmd+click, middle-click) work normally.
  */
-export function BackLink({ fallback, label = 'Back', className }: Props) {
+export function BackLink({ fallback, label, className }: Props) {
+    const t = useT();
+    const linkLabel = label ?? t('Back');
     const handleClick = (event: MouseEvent<Element>) => {
         // Modifier-clicks open in new tabs where `history.back()` doesn't apply.
         if (
@@ -42,7 +45,7 @@ export function BackLink({ fallback, label = 'Back', className }: Props) {
             }
         >
             <ChevronLeft className="size-4" />
-            {label}
+            {linkLabel}
         </Link>
     );
 }

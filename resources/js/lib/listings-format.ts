@@ -95,7 +95,5 @@ export function formatSkillRange(
 
     const maxValue = max as number;
 
-    return t
-        ? t('up to :max Elo', { max: maxValue })
-        : `up to ${maxValue} Elo`;
+    return t ? t('up to :max Elo', { max: maxValue }) : `up to ${maxValue} Elo`;
 }
