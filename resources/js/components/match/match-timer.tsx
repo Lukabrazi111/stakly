@@ -1,5 +1,6 @@
 import { Clock } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { useT } from '@/lib/i18n';
 
 interface MatchTimerProps {
     /** Deadline by which the game API must verify a result before the match flips to ManualReview. */
@@ -12,6 +13,7 @@ const MS_1_HOUR = 60 * 60 * 1000;
 /** Countdown chip for the 4-hour API-resolution deadline. Tiers shift
  *  color (>1h pink, 30m–1h amber, <30m red+pulse, expired gray). */
 export function MatchTimer({ deadline }: MatchTimerProps) {
+    const t = useT();
     // null until mount — initializing to Date.now() would cause a hydration mismatch.
     const [now, setNow] = useState<number | null>(null);
 
@@ -27,7 +29,7 @@ export function MatchTimer({ deadline }: MatchTimerProps) {
             <time
                 dateTime={deadline.toISOString()}
                 role="timer"
-                aria-label="Loading time remaining"
+                aria-label={t('Loading time remaining')}
                 className="inline-flex w-fit shrink-0 items-center gap-1.5 rounded-full border border-primary/40 bg-primary/10 px-3 py-1.5 text-xs font-medium text-primary"
             >
                 <Clock className="size-3.5 shrink-0" aria-hidden="true" />
@@ -55,12 +57,20 @@ export function MatchTimer({ deadline }: MatchTimerProps) {
             : 'border-primary/40 bg-primary/10 text-primary';
 
     const display = isExpired
-        ? 'Expired'
-        : `${hours}h ${minutes.toString().padStart(2, '0')}m ${seconds.toString().padStart(2, '0')}s`;
+        ? t('Expired')
+        : t(':hours h :minutes m :seconds s', {
+              hours,
+              minutes: minutes.toString().padStart(2, '0'),
+              seconds: seconds.toString().padStart(2, '0'),
+          });
 
     const ariaLabel = isExpired
-        ? 'Match deadline expired'
-        : `Time remaining: ${hours} hours ${minutes} minutes ${seconds} seconds`;
+        ? t('Match deadline expired')
+        : t('Time remaining: :hours hours :minutes minutes :seconds seconds', {
+              hours,
+              minutes,
+              seconds,
+          });
 
     return (
         <time

@@ -18,6 +18,7 @@ import { BackLink } from '@/components/site/back-link';
 import { PageMeta } from '@/components/site/page-meta';
 import { useMatchChat } from '@/hooks/use-match-chat';
 import SiteLayout from '@/layouts/site-layout';
+import { useT } from '@/lib/i18n';
 import { show as listingShow } from '@/routes/listings';
 import type { Match, MatchShowProps, MatchStatus } from '@/types';
 
@@ -70,6 +71,7 @@ const STATUS_TONE: Record<MatchStatus, string> = {
 };
 
 export default function MatchShow({ match, messages }: MatchShowProps) {
+    const t = useT();
     const { auth } = usePage().props;
 
     // Chat state lives in one hook so a single Echo subscription serves both
@@ -86,7 +88,7 @@ export default function MatchShow({ match, messages }: MatchShowProps) {
 
     const isCreator = auth.user?.id === match.creator.id;
     const opponent = isCreator ? match.taker : match.creator;
-    const youAre = isCreator ? 'Listing creator' : 'Taker';
+    const youAreLabel = isCreator ? t('Listing creator') : t('Taker');
 
     // M16 — has an auto-fetched card landed in chat yet? Drives the
     // Pending action card's "found, settling…" hand-off state. The next
@@ -159,8 +161,10 @@ export default function MatchShow({ match, messages }: MatchShowProps) {
             <MatchLiveUpdater matchId={match.id} />
 
             <PageMeta
-                title={`Match #${match.id}`}
-                description="Match details and chat. Private to participants."
+                title={t('Match #:id', { id: match.id })}
+                description={t(
+                    'Match details and chat. Private to participants.',
+                )}
                 noindex
             />
 
@@ -203,10 +207,12 @@ export default function MatchShow({ match, messages }: MatchShowProps) {
                         <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                             <div>
                                 <h1 className="font-display text-3xl font-bold tracking-tight text-foreground">
-                                    Match #{match.id}
+                                    {t('Match #:id', { id: match.id })}
                                 </h1>
                                 <p className="mt-1 text-sm text-muted-foreground">
-                                    You are the {youAre.toLowerCase()}.
+                                    {t('You are the :role.', {
+                                        role: youAreLabel.toLowerCase(),
+                                    })}
                                 </p>
                                 <MatchTimestamps
                                     startedAt={match.created_at}
@@ -220,7 +226,7 @@ export default function MatchShow({ match, messages }: MatchShowProps) {
                                 <span
                                     className={`inline-flex w-fit shrink-0 items-center rounded-full border px-3 py-1.5 text-xs font-medium ${STATUS_TONE[match.status]}`}
                                 >
-                                    {STATUS_LABEL[match.status]}
+                                    {t(STATUS_LABEL[match.status])}
                                 </span>
                                 {match.status === 'pending' &&
                                     matchDeadline && (

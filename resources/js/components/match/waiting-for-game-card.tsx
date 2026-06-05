@@ -2,6 +2,7 @@ import { router } from '@inertiajs/react';
 import { CheckCircle2, Loader2 } from 'lucide-react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { useEffect, useState } from 'react';
+import { useT } from '@/lib/i18n';
 import type { ListingPlatform, MatchSnapshots } from '@/types';
 
 interface WaitingForGameCardProps {
@@ -75,6 +76,7 @@ function LookingState({
     snapshots: MatchSnapshots;
     reduceMotion: boolean;
 }) {
+    const t = useT();
     const secondsAgo = useSecondsSinceLastVisit();
 
     const platformLabel = PLATFORM_LABEL[platform];
@@ -98,19 +100,23 @@ function LookingState({
 
             <div className="min-w-0 flex-1">
                 <h2 className="font-display text-lg font-semibold text-foreground">
-                    Play your match on {platformLabel}
+                    {t('Play your match on :platform', {
+                        platform: platformLabel,
+                    })}
                 </h2>
 
                 <p className="mt-1 text-sm text-muted-foreground">
-                    Stakly settles automatically as soon as your game on{' '}
-                    {platformLabel} finishes — no buttons to press.
+                    {t(
+                        'Stakly settles automatically as soon as your game on :platform finishes — no buttons to press.',
+                        { platform: platformLabel },
+                    )}
                 </p>
 
                 {snapshots.creator_username !== null &&
                     snapshots.taker_username !== null && (
                         <div className="mt-4 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border border-border/60 bg-background/40 px-3 py-2.5 text-sm">
                             <span className="text-xs tracking-wide text-muted-foreground uppercase">
-                                Watching for
+                                {t('Watching for')}
                             </span>
                             <a
                                 href={buildProfileUrl(
@@ -139,10 +145,12 @@ function LookingState({
                     aria-live="polite"
                 >
                     <span className="size-1.5 rounded-full bg-warning" />
-                    <span>Looking for your game…</span>
+                    <span>{t('Looking for your game…')}</span>
                     <span aria-hidden="true">•</span>
                     <span className="tabular-nums">
-                        Last checked {secondsAgo}s ago
+                        {t('Last checked :seconds s ago', {
+                            seconds: secondsAgo,
+                        })}
                     </span>
                 </div>
             </div>
@@ -151,6 +159,8 @@ function LookingState({
 }
 
 function FoundState({ platform }: { platform: ListingPlatform }) {
+    const t = useT();
+
     return (
         <div className="flex items-start gap-4">
             <div className="shrink-0 rounded-full bg-success/10 p-2.5 ring-1 ring-success/20">
@@ -162,11 +172,13 @@ function FoundState({ platform }: { platform: ListingPlatform }) {
 
             <div className="min-w-0 flex-1">
                 <h2 className="font-display text-lg font-semibold text-foreground">
-                    Game found — settling now…
+                    {t('Game found — settling now…')}
                 </h2>
                 <p className="mt-1 text-sm text-muted-foreground">
-                    We found your game on {PLATFORM_LABEL[platform]}. Payout and
-                    platform fee post to the ledger in a moment.
+                    {t(
+                        'We found your game on :platform. Payout and platform fee post to the ledger in a moment.',
+                        { platform: PLATFORM_LABEL[platform] },
+                    )}
                 </p>
             </div>
         </div>

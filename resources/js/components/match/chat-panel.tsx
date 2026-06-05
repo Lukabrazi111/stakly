@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { ChatInput } from '@/components/match/chat-input';
 import { ChatMessageBubble } from '@/components/match/chat-message-bubble';
+import { useT } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import type { ChatMessage, MatchPlayer } from '@/types';
 
@@ -49,6 +50,7 @@ export function ChatPanel({
     uploadProgress,
     bare = false,
 }: ChatPanelProps) {
+    const t = useT();
     const scrollRef = useRef<HTMLDivElement>(null);
     const [pendingFile, setPendingFile] = useState<File | null>(null);
     const [isDragOver, setIsDragOver] = useState(false);
@@ -112,14 +114,14 @@ export function ChatPanel({
 
         if (!ACCEPTED_MIMES.includes(file.type)) {
             toast.error(
-                'Only JPG, PNG, WebP, or PDF files can be sent in chat.',
+                t('Only JPG, PNG, WebP, or PDF files can be sent in chat.'),
             );
 
             return;
         }
 
         if (file.size > MAX_FILE_SIZE_BYTES) {
-            toast.error('File is larger than 5 MB.');
+            toast.error(t('File is larger than 5 MB.'));
 
             return;
         }
@@ -142,7 +144,7 @@ export function ChatPanel({
                 <header className="flex items-center gap-2 border-b border-border/60 px-4 py-3">
                     <MessageSquare className="size-4 text-muted-foreground" />
                     <h2 className="text-sm font-semibold text-foreground">
-                        Match chat
+                        {t('Match chat')}
                     </h2>
                 </header>
             )}
@@ -152,7 +154,7 @@ export function ChatPanel({
                 className="flex-1 space-y-3 overflow-y-auto px-3 py-4"
                 role="log"
                 aria-live="polite"
-                aria-label="Match chat messages"
+                aria-label={t('Match chat messages')}
             >
                 {empty ? (
                     <EmptyState />
@@ -188,10 +190,10 @@ export function ChatPanel({
                 <div className="pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-primary/60 bg-primary/10 backdrop-blur-sm">
                     <ImagePlus className="size-8 text-primary" />
                     <p className="text-sm font-medium text-foreground">
-                        Drop file to attach
+                        {t('Drop file to attach')}
                     </p>
                     <p className="text-xs text-muted-foreground">
-                        JPG, PNG, WebP, or PDF up to 5 MB
+                        {t('JPG, PNG, WebP, or PDF up to 5 MB')}
                     </p>
                 </div>
             )}
@@ -200,22 +202,27 @@ export function ChatPanel({
 }
 
 function EmptyState() {
+    const t = useT();
+
     return (
         <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center text-xs text-muted-foreground">
             <MessageSquare className="size-6 opacity-40" />
             <p>
-                No messages yet. Share your chess.com / Lichess game URL when
-                the match ends.
+                {t(
+                    'No messages yet. Share your chess.com / Lichess game URL when the match ends.',
+                )}
             </p>
         </div>
     );
 }
 
 function ReadOnlyFooter() {
+    const t = useT();
+
     return (
         <div className="flex items-center gap-2 border-t border-border/60 px-4 py-3 text-xs text-muted-foreground">
             <Lock className="size-3.5" />
-            <span>This match is settled — chat is read-only.</span>
+            <span>{t('This match is settled — chat is read-only.')}</span>
         </div>
     );
 }

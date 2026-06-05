@@ -10,6 +10,7 @@ import {
     SheetTitle,
 } from '@/components/ui/sheet';
 import { useIsMobile } from '@/hooks/use-mobile';
+import { useT } from '@/lib/i18n';
 import type { ChatMessage, MatchPlayer } from '@/types';
 
 interface MobileChatTriggerProps {
@@ -39,6 +40,7 @@ export function MobileChatTrigger({
     onDismiss,
     uploadProgress,
 }: MobileChatTriggerProps) {
+    const t = useT();
     const [open, setOpen] = useState(false);
     const [seenCount, setSeenCount] = useState(messages.length);
     const isMobile = useIsMobile();
@@ -86,13 +88,15 @@ export function MobileChatTrigger({
                     onClick={() => handleOpenChange(true)}
                     aria-label={
                         unreadCount > 0
-                            ? `Open match chat — ${unreadCount} unread`
-                            : 'Open match chat'
+                            ? t('Open match chat — :count unread', {
+                                  count: unreadCount,
+                              })
+                            : t('Open match chat')
                     }
                     className="fixed right-4 bottom-4 z-40 shadow-lg"
                 >
                     <MessageSquare className="size-4" />
-                    <span>Chat</span>
+                    <span>{t('Chat')}</span>
                     {unreadCount > 0 && (
                         <span
                             aria-hidden
@@ -107,10 +111,11 @@ export function MobileChatTrigger({
                     className="flex h-[88vh] flex-col p-0"
                 >
                     <SheetHeader className="border-b border-border/60">
-                        <SheetTitle>Match chat</SheetTitle>
+                        <SheetTitle>{t('Match chat')}</SheetTitle>
                         <SheetDescription className="sr-only">
-                            Chat with your opponent. Messages are part of the
-                            dispute record.
+                            {t(
+                                'Chat with your opponent. Messages are part of the dispute record.',
+                            )}
                         </SheetDescription>
                     </SheetHeader>
                     <div className="min-h-0 flex-1">

@@ -12,6 +12,7 @@ import {
     DialogTitle,
 } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
+import { useT } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import { openDispute as openDisputeRoute } from '@/routes/matches';
 
@@ -30,6 +31,7 @@ const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024;
 
 /** Report-a-problem escape hatch — flips the match to Disputed for admin review. */
 export function OpenDisputeButton({ matchId }: OpenDisputeButtonProps) {
+    const t = useT();
     const [open, setOpen] = useState(false);
     const [reason, setReason] = useState('');
     const [file, setFile] = useState<File | null>(null);
@@ -93,13 +95,13 @@ export function OpenDisputeButton({ matchId }: OpenDisputeButtonProps) {
         }
 
         if (!ACCEPTED_MIMES.includes(picked.type)) {
-            setFileError('JPG, PNG, WebP, or PDF only.');
+            setFileError(t('JPG, PNG, WebP, or PDF only.'));
 
             return;
         }
 
         if (picked.size > MAX_FILE_SIZE_BYTES) {
-            setFileError('File too large. Max 5 MB.');
+            setFileError(t('File too large. Max 5 MB.'));
 
             return;
         }
@@ -156,18 +158,17 @@ export function OpenDisputeButton({ matchId }: OpenDisputeButtonProps) {
                 className="inline-flex cursor-pointer items-center gap-1.5 rounded-sm text-xs text-muted-foreground underline-offset-4 transition-colors hover:text-warning hover:underline focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none"
             >
                 <AlertTriangle className="size-3.5" aria-hidden="true" />
-                Report a problem
+                {t('Report a problem')}
             </button>
 
             <Dialog open={open} onOpenChange={handleOpenChange}>
                 <DialogContent>
                     <DialogHeader>
-                        <DialogTitle>Report a problem?</DialogTitle>
+                        <DialogTitle>{t('Report a problem?')}</DialogTitle>
                         <DialogDescription>
-                            Tell us what happened and (optionally) attach a
-                            screenshot. Your stake stays in escrow while a
-                            Stakly admin reviews. Your opponent sees this reason
-                            as soon as you submit.
+                            {t(
+                                'Tell us what happened and (optionally) attach a screenshot. Your stake stays in escrow while a Stakly admin reviews. Your opponent sees this reason as soon as you submit.',
+                            )}
                         </DialogDescription>
                     </DialogHeader>
 
@@ -176,9 +177,11 @@ export function OpenDisputeButton({ matchId }: OpenDisputeButtonProps) {
                             <Textarea
                                 value={reason}
                                 onChange={(e) => setReason(e.target.value)}
-                                placeholder="e.g., opponent claims they won but the game shows me winning, or opponent is suspected of using a chess engine"
+                                placeholder={t(
+                                    'e.g., opponent claims they won but the game shows me winning, or opponent is suspected of using a chess engine',
+                                )}
                                 rows={8}
-                                aria-label="Reason for dispute"
+                                aria-label={t('Reason for dispute')}
                                 aria-invalid={overCap || undefined}
                                 disabled={processing}
                                 className={cn(
@@ -239,7 +242,7 @@ export function OpenDisputeButton({ matchId }: OpenDisputeButtonProps) {
                                         size="icon"
                                         variant="ghost"
                                         onClick={clearFile}
-                                        aria-label="Remove attachment"
+                                        aria-label={t('Remove attachment')}
                                         disabled={processing}
                                         className="shrink-0"
                                     >
@@ -257,7 +260,7 @@ export function OpenDisputeButton({ matchId }: OpenDisputeButtonProps) {
                                     disabled={processing}
                                 >
                                     <ImagePlus className="size-4" />
-                                    Attach screenshot or PDF
+                                    {t('Attach screenshot or PDF')}
                                 </Button>
                             )}
                             {(fileError || errors.evidence) && (
@@ -274,14 +277,14 @@ export function OpenDisputeButton({ matchId }: OpenDisputeButtonProps) {
                             onClick={() => handleOpenChange(false)}
                             disabled={processing}
                         >
-                            Cancel
+                            {t('Cancel')}
                         </Button>
                         <Button
                             variant="destructive"
                             onClick={handleSubmit}
                             disabled={!canSubmit}
                         >
-                            {processing ? 'Reporting…' : 'Report match'}
+                            {processing ? t('Reporting…') : t('Report match')}
                         </Button>
                     </DialogFooter>
                 </DialogContent>

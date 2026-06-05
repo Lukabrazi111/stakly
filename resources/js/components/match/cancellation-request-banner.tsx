@@ -2,6 +2,7 @@ import { router } from '@inertiajs/react';
 import { Clock, Handshake } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
+import { useT } from '@/lib/i18n';
 import {
     accept as acceptCancellationRoute,
     reject as rejectCancellationRoute,
@@ -64,6 +65,8 @@ function RequesterWaitingBanner({
     opponent: MatchPlayer;
     reason: string | null;
 }) {
+    const t = useT();
+
     return (
         <section className="mb-6 rounded-2xl border border-warning/40 bg-warning/5 p-5">
             <div className="flex items-start gap-3">
@@ -72,13 +75,15 @@ function RequesterWaitingBanner({
                 </span>
                 <div className="min-w-0 flex-1">
                     <h3 className="text-sm font-semibold text-foreground">
-                        Cancellation request sent
+                        {t('Cancellation request sent')}
                     </h3>
                     <p className="mt-1 text-sm text-muted-foreground">
-                        Waiting for {opponent.name} to accept or decline.
+                        {t('Waiting for :name to accept or decline.', {
+                            name: opponent.name,
+                        })}
                     </p>
                     {reason !== null && (
-                        <ReasonBlock label="Your reason" reason={reason} />
+                        <ReasonBlock label={t('Your reason')} reason={reason} />
                     )}
                 </div>
             </div>
@@ -95,6 +100,7 @@ function RespondBanner({
     requester: MatchPlayer;
     reason: string | null;
 }) {
+    const t = useT();
     const [processing, setProcessing] = useState<'accept' | 'reject' | null>(
         null,
     );
@@ -131,17 +137,22 @@ function RespondBanner({
                 </span>
                 <div className="min-w-0 flex-1">
                     <h3 className="text-sm font-semibold text-foreground">
-                        {requester.name} wants to cancel this match
+                        {t(':name wants to cancel this match', {
+                            name: requester.name,
+                        })}
                     </h3>
                     <p className="mt-1 text-sm text-muted-foreground">
-                        If you accept, both stakes are refunded and the match
-                        ends with no winner. If you decline, the match continues
-                        and {requester.name} can't request again for 30 minutes.
+                        {t(
+                            "If you accept, both stakes are refunded and the match ends with no winner. If you decline, the match continues and :name can't request again for 30 minutes.",
+                            { name: requester.name },
+                        )}
                     </p>
 
                     {reason !== null && (
                         <ReasonBlock
-                            label={`${requester.name}'s reason`}
+                            label={t(":name's reason", {
+                                name: requester.name,
+                            })}
                             reason={reason}
                         />
                     )}
@@ -152,7 +163,9 @@ function RespondBanner({
                             onClick={handleReject}
                             disabled={processing !== null}
                         >
-                            {processing === 'reject' ? 'Declining…' : 'Decline'}
+                            {processing === 'reject'
+                                ? t('Declining…')
+                                : t('Decline')}
                         </Button>
                         <Button
                             variant="default"
@@ -160,8 +173,8 @@ function RespondBanner({
                             disabled={processing !== null}
                         >
                             {processing === 'accept'
-                                ? 'Accepting…'
-                                : 'Accept and refund'}
+                                ? t('Accepting…')
+                                : t('Accept and refund')}
                         </Button>
                     </div>
                 </div>

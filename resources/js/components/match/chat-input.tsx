@@ -9,6 +9,7 @@ import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
+import { useT } from '@/lib/i18n';
 
 interface ChatInputProps {
     onSend: (content: string, file: File | null) => void;
@@ -43,6 +44,7 @@ export function ChatInput({
     onFileChange,
     uploadProgress,
 }: ChatInputProps) {
+    const t = useT();
     const [content, setContent] = useState('');
     const [previewUrl, setPreviewUrl] = useState<string | null>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -130,7 +132,7 @@ export function ChatInput({
             if (item.kind === 'file' && item.type.startsWith('image/')) {
                 const pasted = item.getAsFile();
 
-                if (pasted && validateFile(pasted)) {
+                if (pasted && validateFile(pasted, t)) {
                     e.preventDefault();
                     onFileChange(pasted);
                 }
@@ -143,7 +145,7 @@ export function ChatInput({
     const handleFileInputChange = (e: ChangeEvent<HTMLInputElement>) => {
         const next = e.target.files?.[0] ?? null;
 
-        if (next && !validateFile(next)) {
+        if (next && !validateFile(next, t)) {
             // Clear so re-selecting the same bad file still fires onChange.
             e.target.value = '';
 
@@ -200,7 +202,7 @@ export function ChatInput({
                         size="icon"
                         variant="ghost"
                         onClick={clearFile}
-                        aria-label="Remove attachment"
+                        aria-label={t('Remove attachment')}
                         disabled={disabled}
                         className="shrink-0"
                     >
@@ -224,7 +226,7 @@ export function ChatInput({
                     variant="ghost"
                     onClick={() => fileInputRef.current?.click()}
                     disabled={disabled || hasFile}
-                    aria-label="Attach file"
+                    aria-label={t('Attach file')}
                     className="shrink-0"
                 >
                     <Paperclip className="size-4" />
@@ -238,19 +240,20 @@ export function ChatInput({
                         onPaste={handlePaste}
                         placeholder={
                             hasFile
-                                ? 'Add a caption (optional)…'
-                                : 'Type a message…'
+                                ? t('Add a caption (optional)…')
+                                : t('Type a message…')
                         }
                         rows={1}
-                        aria-label="Chat message"
+                        aria-label={t('Chat message')}
                         aria-invalid={overLimit || undefined}
                         className="max-h-32 min-h-9 resize-none py-2 text-sm"
                     />
                     {overLimit && (
                         <p className="text-[11px] text-destructive">
-                            {trimmed.length.toLocaleString()} /{' '}
-                            {MAX_CONTENT_LENGTH.toLocaleString()} — message too
-                            long.
+                            {t(':count / :max — message too long.', {
+                                count: trimmed.length.toLocaleString(),
+                                max: MAX_CONTENT_LENGTH.toLocaleString(),
+                            })}
                         </p>
                     )}
                 </div>
@@ -259,7 +262,7 @@ export function ChatInput({
                     size="icon"
                     variant="gradient"
                     disabled={!canSend}
-                    aria-label="Send message"
+                    aria-label={t('Send message')}
                 >
                     <Send className="size-4" />
                 </Button>
@@ -269,15 +272,20 @@ export function ChatInput({
 }
 
 /** Client-side preflight; server validates again as source of truth. */
-function validateFile(file: File): boolean {
+function validateFile(
+    file: File,
+    t: (key: string, replacements?: Record<string, string | number>) => string,
+): boolean {
     if (!ACCEPTED_MIMES.includes(file.type)) {
-        toast.error('Only JPG, PNG, WebP, or PDF files can be sent in chat.');
+        toast.error(
+            t('Only JPG, PNG, WebP, or PDF files can be sent in chat.'),
+        );
 
         return false;
     }
 
     if (file.size > MAX_FILE_SIZE_BYTES) {
-        toast.error('File is larger than 5 MB.');
+        toast.error(t('File is larger than 5 MB.'));
 
         return false;
     }

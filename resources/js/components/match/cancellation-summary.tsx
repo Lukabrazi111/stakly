@@ -1,4 +1,5 @@
 import { Handshake } from 'lucide-react';
+import { useT } from '@/lib/i18n';
 import type { Match } from '@/types';
 
 interface CancellationSummaryProps {
@@ -8,6 +9,7 @@ interface CancellationSummaryProps {
 /** Terminal banner when `status === 'cancelled'`. Sibling to
  *  `SettlementSummary` but muted — no winner, no payout math. */
 export function CancellationSummary({ match }: CancellationSummaryProps) {
+    const t = useT();
     const { cancellation, creator, taker, listing } = match;
 
     const requesterId = cancellation.requested_by_id;
@@ -26,19 +28,23 @@ export function CancellationSummary({ match }: CancellationSummaryProps) {
                 </span>
                 <div className="min-w-0 flex-1">
                     <h2 className="font-display text-lg font-semibold text-foreground">
-                        Match cancelled
+                        {t('Match cancelled')}
                     </h2>
                     <p className="mt-1 text-sm text-muted-foreground">
-                        By mutual agreement. Both stakes refunded — $
-                        {listing.stake_amount} returned to each player.
+                        {t(
+                            'By mutual agreement. Both stakes refunded — $:amount returned to each player.',
+                            { amount: listing.stake_amount },
+                        )}
                     </p>
                     <p className="mt-2 text-xs text-muted-foreground/80">
-                        Cancellations don't count toward your match record.
+                        {t(
+                            "Cancellations don't count toward your match record.",
+                        )}
                     </p>
                     {requester !== null && cancellation.reason !== null && (
                         <div className="mt-4 rounded-lg border border-border/60 bg-background/40 p-3">
                             <p className="text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
-                                {requester.name}'s reason
+                                {t(":name's reason", { name: requester.name })}
                             </p>
                             <p className="mt-1 text-sm whitespace-pre-wrap text-foreground">
                                 {cancellation.reason}

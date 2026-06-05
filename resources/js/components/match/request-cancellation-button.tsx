@@ -11,6 +11,7 @@ import {
     DialogTitle,
 } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
+import { useT } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import { request as requestCancellationRoute } from '@/routes/matches/cancellation';
 
@@ -40,6 +41,7 @@ export function RequestCancellationButton({
     matchId,
     cooldownMinutesRemaining,
 }: RequestCancellationButtonProps) {
+    const t = useT();
     const [open, setOpen] = useState(false);
     const [selected, setSelected] = useState<string | null>(null);
     const [otherText, setOtherText] = useState('');
@@ -89,11 +91,19 @@ export function RequestCancellationButton({
     };
 
     const triggerLabel = isCooldown
-        ? `Request cancellation (${cooldownMinutesRemaining}m cooldown)`
-        : 'Request cancellation';
+        ? t('Request cancellation (:minutes m cooldown)', {
+              minutes: cooldownMinutesRemaining ?? 0,
+          })
+        : t('Request cancellation');
 
     const cooldownTitle = isCooldown
-        ? `You can request again in ${cooldownMinutesRemaining} minute${cooldownMinutesRemaining === 1 ? '' : 's'}.`
+        ? cooldownMinutesRemaining === 1
+            ? t('You can request again in :minutes minute.', {
+                  minutes: cooldownMinutesRemaining,
+              })
+            : t('You can request again in :minutes minutes.', {
+                  minutes: cooldownMinutesRemaining ?? 0,
+              })
         : undefined;
 
     return (
@@ -112,11 +122,13 @@ export function RequestCancellationButton({
             <Dialog open={open} onOpenChange={handleOpenChange}>
                 <DialogContent>
                     <DialogHeader>
-                        <DialogTitle>Request to cancel match</DialogTitle>
+                        <DialogTitle>
+                            {t('Request to cancel match')}
+                        </DialogTitle>
                         <DialogDescription>
-                            Both stakes will be refunded if your opponent
-                            accepts. If they decline, the match continues and
-                            you'll wait 30 minutes before you can request again.
+                            {t(
+                                "Both stakes will be refunded if your opponent accepts. If they decline, the match continues and you'll wait 30 minutes before you can request again.",
+                            )}
                         </DialogDescription>
                     </DialogHeader>
 
@@ -125,12 +137,12 @@ export function RequestCancellationButton({
                         disabled={processing}
                     >
                         <legend className="mb-1 text-sm font-medium text-foreground">
-                            Reason
+                            {t('Reason')}
                         </legend>
                         {PRESET_REASONS.map((reason) => (
                             <ReasonOption
                                 key={reason}
-                                label={reason}
+                                label={t(reason)}
                                 checked={selected === reason}
                                 onSelect={() => setSelected(reason)}
                             />
@@ -140,14 +152,16 @@ export function RequestCancellationButton({
                             <div className="mt-1 grid gap-2 pl-1">
                                 <Textarea
                                     id="cancellation-other-reason"
-                                    aria-label="Other reason"
+                                    aria-label={t('Other reason')}
                                     value={otherText}
                                     onChange={(e) =>
                                         setOtherText(
                                             e.target.value.slice(0, REASON_MAX),
                                         )
                                     }
-                                    placeholder="Optional — add a short note for your opponent."
+                                    placeholder={t(
+                                        'Optional — add a short note for your opponent.',
+                                    )}
                                     maxLength={REASON_MAX}
                                     rows={3}
                                     className="border-0"
@@ -165,14 +179,14 @@ export function RequestCancellationButton({
                             onClick={() => setOpen(false)}
                             disabled={processing}
                         >
-                            Cancel
+                            {t('Cancel')}
                         </Button>
                         <Button
                             variant="default"
                             onClick={handleSubmit}
                             disabled={!canSubmit}
                         >
-                            {processing ? 'Sending…' : 'Send request'}
+                            {processing ? t('Sending…') : t('Send request')}
                         </Button>
                     </DialogFooter>
                 </DialogContent>

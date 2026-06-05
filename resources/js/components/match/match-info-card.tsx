@@ -2,6 +2,8 @@ import { Link } from '@inertiajs/react';
 import { ChevronRight, ShieldCheck } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { useInitials } from '@/hooks/use-initials';
+import { useT } from '@/lib/i18n';
+import { formatTimeControls } from '@/lib/listings-format';
 import { show as userShow } from '@/routes/users';
 import type { ListingPlatform, MatchPlayer, TimeControl } from '@/types';
 
@@ -30,13 +32,14 @@ export function MatchInfoCard({
     platform,
     winnerPayout,
 }: MatchInfoCardProps) {
+    const t = useT();
     const getInitials = useInitials();
 
     return (
         <section className="rounded-2xl border border-border/60 bg-card/60">
             <header className="border-b border-border/60 px-6 py-4">
                 <h2 className="text-sm font-semibold text-foreground">
-                    Match info
+                    {t('Match info')}
                 </h2>
             </header>
             <dl className="divide-y divide-border/60">
@@ -44,7 +47,9 @@ export function MatchInfoCard({
                     href={userShow({ user: opponent.username }).url}
                     className="group flex items-center justify-between gap-3 px-6 py-4 transition-colors hover:bg-primary/5 focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none"
                 >
-                    <dt className="text-sm text-muted-foreground">Opponent</dt>
+                    <dt className="text-sm text-muted-foreground">
+                        {t('Opponent')}
+                    </dt>
                     <dd className="flex items-center gap-2.5">
                         <Avatar className="size-7">
                             <AvatarImage
@@ -62,20 +67,23 @@ export function MatchInfoCard({
                     </dd>
                 </Link>
 
-                <Row label="Stake (each)" value={`$${stakeEach}`} />
-                <Row label="Pot" value={`$${pot}`} />
+                <Row label={t('Stake (each)')} value={`$${stakeEach}`} />
+                <Row label={t('Pot')} value={`$${pot}`} />
                 {winnerPayout !== undefined && (
                     <Row
-                        label="Winner payout"
+                        label={t('Winner payout')}
                         value={`$${winnerPayout.toFixed(2)}`}
                         accent
                     />
                 )}
-                <Row label="Time control" value={timeControl.join(', ')} />
+                <Row
+                    label={t('Time control')}
+                    value={formatTimeControls(timeControl, t)}
+                />
 
                 <div className="flex items-center justify-between gap-3 px-6 py-4">
                     <dt className="text-sm text-muted-foreground">
-                        Verification
+                        {t('Verification')}
                     </dt>
                     <dd className="inline-flex items-center gap-1.5 text-sm font-medium text-foreground">
                         <ShieldCheck
@@ -83,7 +91,9 @@ export function MatchInfoCard({
                             strokeWidth={2}
                             aria-hidden="true"
                         />
-                        Auto via {PLATFORM_LABEL[platform]}
+                        {t('Auto via :platform', {
+                            platform: PLATFORM_LABEL[platform],
+                        })}
                     </dd>
                 </div>
             </dl>

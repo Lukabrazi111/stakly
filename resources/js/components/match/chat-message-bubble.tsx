@@ -16,6 +16,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { useInitials } from '@/hooks/use-initials';
+import { useT, type TranslationFn } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import type {
     ChatDisputeOpeningAttachment,
@@ -46,6 +47,7 @@ export function ChatMessageBubble({
     onRetry,
     onDismiss,
 }: ChatMessageBubbleProps) {
+    const t = useT();
     const gameCards = message.attachments.filter(
         (attachment): attachment is ChatGameCardAttachment =>
             attachment.type === 'game_card',
@@ -114,7 +116,7 @@ export function ChatMessageBubble({
                 {isDisputeOpening && (
                     <span className="inline-flex items-center gap-1.5 rounded-full border border-warning/40 bg-warning/10 px-2.5 py-1 text-[11px] font-medium text-warning">
                         <AlertTriangle className="size-3" aria-hidden />
-                        Reason for dispute
+                        {t('Reason for dispute')}
                     </span>
                 )}
 
@@ -201,6 +203,7 @@ interface ImageAttachmentProps {
 /** Inline thumbnail; click opens the full-resolution original in a dialog.
  *  width/height reserve the box so chat scroll doesn't shift on load. */
 function ImageAttachment({ image, isOwn }: ImageAttachmentProps) {
+    const t = useT();
     const [open, setOpen] = useState(false);
 
     return (
@@ -212,7 +215,7 @@ function ImageAttachment({ image, isOwn }: ImageAttachmentProps) {
                     'group overflow-hidden rounded-2xl border border-border/60 bg-card transition-shadow hover:shadow-glow-sm focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none',
                     isOwn ? 'rounded-br-md' : 'rounded-bl-md',
                 )}
-                aria-label={`Open image: ${image.name}`}
+                aria-label={t('Open image: :name', { name: image.name })}
             >
                 <img
                     src={image.thumb_url}
@@ -410,10 +413,12 @@ function OptimisticAttachment({
 }
 
 function PendingFooter() {
+    const t = useT();
+
     return (
         <span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground">
             <Loader2 className="size-2.5 animate-spin" />
-            Sending…
+            {t('Sending…')}
         </span>
     );
 }
@@ -424,10 +429,12 @@ interface FailedFooterProps {
 }
 
 function FailedFooter({ onRetry, onDismiss }: FailedFooterProps) {
+    const t = useT();
+
     return (
         <div className="inline-flex items-center gap-2 text-[11px] text-destructive">
             <TriangleAlert className="size-3" />
-            <span>Failed to send</span>
+            <span>{t('Failed to send')}</span>
             <Button
                 type="button"
                 variant="ghost"
@@ -436,14 +443,14 @@ function FailedFooter({ onRetry, onDismiss }: FailedFooterProps) {
                 className="h-6 gap-1 px-2 text-[11px] text-destructive hover:bg-destructive/10 hover:text-destructive hover:[text-shadow:none]"
             >
                 <RotateCw className="size-3" />
-                Retry
+                {t('Retry')}
             </Button>
             <Button
                 type="button"
                 variant="ghost"
                 size="sm"
                 onClick={onDismiss}
-                aria-label="Dismiss"
+                aria-label={t('Dismiss')}
                 className="h-6 px-1.5 text-muted-foreground hover:text-foreground hover:[text-shadow:none]"
             >
                 <X className="size-3" />
@@ -522,7 +529,8 @@ interface GameCardAttachmentProps {
 /** Verified-game evidence card. Verified badge uses color + icon so
  *  color-blind users still see the BadgeCheck affordance. */
 function GameCardAttachment({ card, isOwn }: GameCardAttachmentProps) {
-    const winnerLabel = describeWinner(card);
+    const t = useT();
+    const winnerLabel = describeWinner(card, t);
     const speedLabel = card.speed ? capitalize(card.speed) : null;
 
     return (
@@ -530,7 +538,7 @@ function GameCardAttachment({ card, isOwn }: GameCardAttachmentProps) {
             href={card.url}
             target="_blank"
             rel="noopener noreferrer"
-            aria-label={`Open Lichess game ${card.game_id}`}
+            aria-label={t('Open Lichess game :id', { id: card.game_id })}
             className={cn(
                 'group flex w-full max-w-[320px] cursor-pointer flex-col gap-2 overflow-hidden rounded-2xl border border-border/60 bg-card/80 p-3 transition-all duration-200 hover:border-primary/40 hover:shadow-glow-sm focus-visible:border-primary/60 focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none',
                 isOwn ? 'rounded-br-md' : 'rounded-bl-md',
@@ -543,10 +551,10 @@ function GameCardAttachment({ card, isOwn }: GameCardAttachmentProps) {
                     </span>
                     <div className="flex min-w-0 flex-col">
                         <span className="text-xs font-semibold tracking-tight text-foreground">
-                            Lichess game
+                            {t('Lichess game')}
                         </span>
                         <span className="truncate text-[10px] tracking-wide text-muted-foreground/80 uppercase">
-                            {[speedLabel, card.rated ? 'Rated' : 'Casual']
+                            {[speedLabel, card.rated ? t('Rated') : t('Casual')]
                                 .filter(Boolean)
                                 .join(' · ')}
                         </span>
@@ -555,11 +563,11 @@ function GameCardAttachment({ card, isOwn }: GameCardAttachmentProps) {
                 {card.verified ? (
                     <span className="inline-flex items-center gap-1 rounded-full bg-success/15 px-2 py-0.5 text-[10px] font-semibold tracking-wide text-success uppercase">
                         <BadgeCheck className="size-3" strokeWidth={2} />
-                        Verified
+                        {t('Verified')}
                     </span>
                 ) : (
                     <span className="inline-flex items-center gap-1 rounded-full border border-border/60 px-2 py-0.5 text-[10px] font-semibold tracking-wide text-muted-foreground uppercase">
-                        Unverified
+                        {t('Unverified')}
                     </span>
                 )}
             </div>
@@ -631,33 +639,36 @@ function PlayerBadge({ username, color, isWinner }: PlayerBadgeProps) {
  * (mate/resign/outoftime/...) and chess.com (checkmated/resigned/... — the
  * loser's `result` string from `ChessComGameClient::parseGame`).
  */
-function describeWinner(card: ChatGameCardAttachment): string | null {
+function describeWinner(
+    card: ChatGameCardAttachment,
+    t: TranslationFn,
+): string | null {
     const status = card.status;
     const winner = card.winner_username;
 
     if (winner && status) {
-        const reason: Record<string, string> = {
-            mate: 'by checkmate',
-            resign: 'by resignation',
-            outoftime: 'on time',
-            timeout: 'on time',
-            cheat: 'by cheat report',
-            checkmated: 'by checkmate',
-            resigned: 'by resignation',
-            abandoned: 'by abandonment',
-            lose: '',
+        const winnerKey: Record<string, string> = {
+            mate: ':winner won by checkmate.',
+            resign: ':winner won by resignation.',
+            outoftime: ':winner won on time.',
+            timeout: ':winner won on time.',
+            cheat: ':winner won by cheat report.',
+            checkmated: ':winner won by checkmate.',
+            resigned: ':winner won by resignation.',
+            abandoned: ':winner won by abandonment.',
+            lose: ':winner won.',
         };
 
-        const text = reason[status];
+        const key = winnerKey[status];
 
-        if (text !== undefined) {
-            return text === '' ? `${winner} won.` : `${winner} won ${text}.`;
+        if (key !== undefined) {
+            return t(key, { winner });
         }
 
-        return `${winner} won.`;
+        return t(':winner won.', { winner });
     }
 
-    const drawStatuses: Record<string, string> = {
+    const drawKeys: Record<string, string> = {
         draw: 'Drawn.',
         stalemate: 'Drawn by stalemate.',
         agreed: 'Drawn by agreement.',
@@ -667,12 +678,12 @@ function describeWinner(card: ChatGameCardAttachment): string | null {
         timevsinsufficient: 'Drawn — time vs insufficient material.',
     };
 
-    if (status && status in drawStatuses) {
-        return drawStatuses[status];
+    if (status && status in drawKeys) {
+        return t(drawKeys[status]);
     }
 
     if (status === 'aborted') {
-        return 'Game aborted.';
+        return t('Game aborted.');
     }
 
     return null;

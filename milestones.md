@@ -419,7 +419,7 @@ Lessons folded back:
 
 - [x] Listings (D-1 index ✓ 2026-06-05 · D-2 detail ✓ 2026-06-05 · D-3 create form ✓ 2026-06-05 · D-4 mine + active-mode ✓ 2026-06-05 · D-5 backend flash + validation ✓ 2026-06-05).
 - [x] Profile (D-6 ✓ 2026-06-05 — header + tabs + trust strip + stats card + share/owner sections + listing/match rows).
-- [ ] Match (show + chat + banners + waiting card + settled card).
+- [x] Match (D-7a list ✓ 2026-06-05 · D-7b detail chrome ✓ 2026-06-05 · D-7c actions + banners ✓ 2026-06-05 · D-7d chat ✓ 2026-06-05 · D-7e backend strings ✓ 2026-06-05).
 - [ ] Wallet (index + deposit + withdraw + history).
 - [ ] Notifications (bell dropdown + `/notifications` history page + `NotificationCard` + `/settings/notifications` preferences UI). M27 surfaces.
 - [ ] Settings (profile + security + linked accounts + notification preferences cards).

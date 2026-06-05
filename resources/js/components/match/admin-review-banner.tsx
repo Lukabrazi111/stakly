@@ -1,5 +1,6 @@
 import { MessageSquare, ShieldAlert } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { useT, type TranslationFn } from '@/lib/i18n';
 import type { Match, MatchPlayer } from '@/types';
 
 interface AdminReviewBannerProps {
@@ -13,11 +14,13 @@ interface BannerCopy {
 }
 
 export function AdminReviewBanner({ match, viewerId }: AdminReviewBannerProps) {
+    const t = useT();
+
     if (match.status !== 'disputed' && match.status !== 'manual_review') {
         return null;
     }
 
-    const copy = resolveCopy(match, viewerId);
+    const copy = resolveCopy(match, viewerId, t);
 
     const handleJumpToChat = () => {
         window.dispatchEvent(new CustomEvent('stakly:focus-chat'));
@@ -44,7 +47,7 @@ export function AdminReviewBanner({ match, viewerId }: AdminReviewBannerProps) {
                             onClick={handleJumpToChat}
                         >
                             <MessageSquare className="size-4" />
-                            Post evidence in chat
+                            {t('Post evidence in chat')}
                         </Button>
                     </div>
                 </div>
@@ -53,11 +56,21 @@ export function AdminReviewBanner({ match, viewerId }: AdminReviewBannerProps) {
     );
 }
 
-function resolveCopy(match: Match, viewerId: number | null): BannerCopy {
+function resolveCopy(
+    match: Match,
+    viewerId: number | null,
+    t: TranslationFn,
+): BannerCopy {
+    const sharedBody = t(
+        'A Stakly admin will review the chat and resolve this match. Post any evidence (screenshots, game URLs, PGN) below so the reviewer has the full picture. Your stake stays in escrow until resolved.',
+    );
+
     if (match.status === 'manual_review') {
         return {
-            title: 'Match flagged for admin review',
-            body: 'This match was auto-flagged after the confirmation window expired without a verified game record. A Stakly admin will review the chat and resolve. Your stake stays in escrow until then.',
+            title: t('Match flagged for admin review'),
+            body: t(
+                'This match was auto-flagged after the confirmation window expired without a verified game record. A Stakly admin will review the chat and resolve. Your stake stays in escrow until then.',
+            ),
         };
     }
 
@@ -66,16 +79,16 @@ function resolveCopy(match: Match, viewerId: number | null): BannerCopy {
 
     if (viewerIsOpener) {
         return {
-            title: 'You reported a problem',
-            body: 'A Stakly admin will review the chat and resolve this match. Post any evidence (screenshots, game URLs, PGN) below so the reviewer has the full picture. Your stake stays in escrow until resolved.',
+            title: t('You reported a problem'),
+            body: sharedBody,
         };
     }
 
-    const openerName = opener?.name ?? 'Your opponent';
+    const openerName = opener?.name ?? t('Your opponent');
 
     return {
-        title: `${openerName} reported a problem`,
-        body: 'A Stakly admin will review the chat and resolve this match. Post any evidence (screenshots, game URLs, PGN) below so the reviewer has the full picture. Your stake stays in escrow until resolved.',
+        title: t(':name reported a problem', { name: openerName }),
+        body: sharedBody,
     };
 }
 

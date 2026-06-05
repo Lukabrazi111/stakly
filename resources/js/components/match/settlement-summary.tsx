@@ -1,6 +1,7 @@
 import { Handshake, Trophy } from 'lucide-react';
 import { motion, useReducedMotion } from 'motion/react';
 import type { ReactNode } from 'react';
+import { useT } from '@/lib/i18n';
 import type { MatchPlayer } from '@/types';
 
 interface SettlementSummaryProps {
@@ -29,6 +30,7 @@ export function SettlementSummary({
     iAmWinner,
     animateEntrance = true,
 }: SettlementSummaryProps) {
+    const t = useT();
     const reduceMotion = useReducedMotion();
 
     const entrance =
@@ -52,18 +54,18 @@ export function SettlementSummary({
                     </div>
                     <div>
                         <h2 className="font-display text-lg font-semibold text-foreground">
-                            Match drawn
+                            {t('Match drawn')}
                         </h2>
                         <p className="text-sm text-muted-foreground">
-                            Both stakes refunded. No platform fee.
+                            {t('Both stakes refunded. No platform fee.')}
                         </p>
                     </div>
                 </div>
 
                 <dl className="grid gap-5 sm:grid-cols-2">
-                    <Stat label="Pot" value={`$${pot}`} />
+                    <Stat label={t('Pot')} value={`$${pot}`} />
                     <Stat
-                        label="Refund (each)"
+                        label={t('Refund (each)')}
                         value={`$${payout.toFixed(2)}`}
                         accent
                     />
@@ -95,32 +97,28 @@ export function SettlementSummary({
                 </div>
                 <div>
                     <h2 className="font-display text-lg font-semibold text-foreground">
-                        Match settled
+                        {t('Match settled')}
                     </h2>
                     <p className="text-sm text-muted-foreground">
-                        {iAmWinner ? (
-                            'You won.'
-                        ) : (
-                            <>
-                                <span className="font-medium text-foreground">
-                                    {winner.name}
-                                </span>{' '}
-                                <span>(@{winner.username})</span> won.
-                            </>
-                        )}
+                        {iAmWinner
+                            ? t('You won.')
+                            : t(':name (@:username) won.', {
+                                  name: winner.name,
+                                  username: winner.username,
+                              })}
                     </p>
                 </div>
             </div>
 
             <dl className="grid gap-5 sm:grid-cols-3">
-                <Stat label="Pot" value={`$${pot}`} />
+                <Stat label={t('Pot')} value={`$${pot}`} />
                 <Stat
-                    label="Platform fee"
+                    label={t('Platform fee')}
                     value={`−$${fee.toFixed(2)}`}
                     muted
                 />
                 <Stat
-                    label={iAmWinner ? 'Your payout' : 'Winner payout'}
+                    label={iAmWinner ? t('Your payout') : t('Winner payout')}
                     value={`$${payout.toFixed(2)}`}
                     accent={iAmWinner}
                 />
