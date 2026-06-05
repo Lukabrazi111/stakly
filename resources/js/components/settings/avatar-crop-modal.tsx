@@ -11,6 +11,7 @@ import {
     DialogHeader,
     DialogTitle,
 } from '@/components/ui/dialog';
+import { useT } from '@/lib/i18n';
 
 interface Props {
     file: File | null;
@@ -27,6 +28,7 @@ const MIN_CROP_PX = 100;
 const OUTPUT_SIZE = 512;
 
 export function AvatarCropModal({ file, open, onClose, onConfirm }: Props) {
+    const t = useT();
     const [imageSrc, setImageSrc] = useState<string | null>(null);
     const [crop, setCrop] = useState<Crop | undefined>(undefined);
     const [completedCrop, setCompletedCrop] = useState<PixelCrop | undefined>(
@@ -95,10 +97,11 @@ export function AvatarCropModal({ file, open, onClose, onConfirm }: Props) {
         >
             <DialogContent className="sm:max-w-md">
                 <DialogHeader>
-                    <DialogTitle>Crop your avatar</DialogTitle>
+                    <DialogTitle>{t('Crop your avatar')}</DialogTitle>
                     <DialogDescription>
-                        Drag the corners to adjust. Your avatar is always
-                        square.
+                        {t(
+                            'Drag the corners to adjust. Your avatar is always square.',
+                        )}
                     </DialogDescription>
                 </DialogHeader>
 
@@ -120,7 +123,7 @@ export function AvatarCropModal({ file, open, onClose, onConfirm }: Props) {
                             <img
                                 ref={imgRef}
                                 src={imageSrc}
-                                alt="Crop preview"
+                                alt={t('Crop preview')}
                                 onLoad={handleImageLoad}
                                 className="max-h-[60vh] object-contain"
                             />
@@ -135,7 +138,7 @@ export function AvatarCropModal({ file, open, onClose, onConfirm }: Props) {
                         onClick={onClose}
                         disabled={isProcessing}
                     >
-                        Cancel
+                        {t('Cancel')}
                     </Button>
                     <Button
                         variant="gradient"
@@ -143,7 +146,7 @@ export function AvatarCropModal({ file, open, onClose, onConfirm }: Props) {
                         onClick={handleConfirm}
                         disabled={!completedCrop || isProcessing}
                     >
-                        {isProcessing ? 'Saving…' : 'Use this crop'}
+                        {isProcessing ? t('Saving…') : t('Use this crop')}
                     </Button>
                 </DialogFooter>
             </DialogContent>

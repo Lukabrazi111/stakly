@@ -19,6 +19,7 @@ import {
 } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { useTwoFactorAuth } from '@/hooks/use-two-factor-auth';
+import { useT } from '@/lib/i18n';
 import { disable, enable } from '@/routes/two-factor';
 
 type Props = {
@@ -32,6 +33,7 @@ export default function Security({
     requiresConfirmation = false,
     twoFactorEnabled = false,
 }: Props) {
+    const t = useT();
     const passwordInput = useRef<HTMLInputElement>(null);
     const currentPasswordInput = useRef<HTMLInputElement>(null);
 
@@ -61,12 +63,14 @@ export default function Security({
     return (
         <>
             <PageMeta
-                title="Security settings"
-                description="Manage password and two-factor authentication."
+                title={t('Security settings')}
+                description={t(
+                    'Manage password and two-factor authentication.',
+                )}
                 noindex
             />
 
-            <h1 className="sr-only">Security settings</h1>
+            <h1 className="sr-only">{t('Security settings')}</h1>
 
             <div className="space-y-6">
                 {/* Section: Update password — same bg-card visual rhythm as
@@ -74,11 +78,12 @@ export default function Security({
                 <section className="space-y-6 rounded-2xl border border-border/60 bg-card p-6">
                     <header>
                         <h2 className="font-display text-base font-semibold text-foreground">
-                            Update password
+                            {t('Update password')}
                         </h2>
                         <p className="mt-0.5 text-xs text-muted-foreground">
-                            Use a long, unique password — at least 12 characters
-                            with a mix of letters, numbers, and symbols.
+                            {t(
+                                'Use a long, unique password — at least 12 characters with a mix of letters, numbers, and symbols.',
+                            )}
                         </p>
                     </header>
 
@@ -108,7 +113,7 @@ export default function Security({
                             <>
                                 <div className="grid gap-2">
                                     <Label htmlFor="current_password">
-                                        Current password
+                                        {t('Current password')}
                                     </Label>
 
                                     <PasswordInput
@@ -117,7 +122,7 @@ export default function Security({
                                         name="current_password"
                                         className="block w-full"
                                         autoComplete="current-password"
-                                        placeholder="Current password"
+                                        placeholder={t('Current password')}
                                     />
 
                                     <InputError
@@ -127,7 +132,7 @@ export default function Security({
 
                                 <div className="grid gap-2">
                                     <Label htmlFor="password">
-                                        New password
+                                        {t('New password')}
                                     </Label>
 
                                     <PasswordInput
@@ -136,7 +141,7 @@ export default function Security({
                                         name="password"
                                         className="block w-full"
                                         autoComplete="new-password"
-                                        placeholder="New password"
+                                        placeholder={t('New password')}
                                     />
 
                                     <InputError message={errors.password} />
@@ -144,7 +149,7 @@ export default function Security({
 
                                 <div className="grid gap-2">
                                     <Label htmlFor="password_confirmation">
-                                        Confirm password
+                                        {t('Confirm password')}
                                     </Label>
 
                                     <PasswordInput
@@ -152,7 +157,7 @@ export default function Security({
                                         name="password_confirmation"
                                         className="block w-full"
                                         autoComplete="new-password"
-                                        placeholder="Confirm password"
+                                        placeholder={t('Confirm password')}
                                     />
 
                                     <InputError
@@ -168,8 +173,8 @@ export default function Security({
                                         data-test="update-password-button"
                                     >
                                         {processing
-                                            ? 'Saving…'
-                                            : 'Save password'}
+                                            ? t('Saving…')
+                                            : t('Save password')}
                                     </Button>
                                 </div>
                             </>
@@ -182,12 +187,12 @@ export default function Security({
                         <header className="flex items-start justify-between gap-3">
                             <div>
                                 <h2 className="font-display text-base font-semibold text-foreground">
-                                    Two-factor authentication
+                                    {t('Two-factor authentication')}
                                 </h2>
                                 <p className="mt-0.5 text-xs text-muted-foreground">
-                                    Adds a one-time code from your phone on
-                                    every sign-in. Strongly recommended on a
-                                    money account.
+                                    {t(
+                                        'Adds a one-time code from your phone on every sign-in. Strongly recommended on a money account.',
+                                    )}
                                 </p>
                             </div>
                             {twoFactorEnabled ? (
@@ -196,7 +201,7 @@ export default function Security({
                                         className="size-3"
                                         aria-hidden="true"
                                     />
-                                    Enabled
+                                    {t('Enabled')}
                                 </span>
                             ) : (
                                 <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-border/60 bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
@@ -204,7 +209,7 @@ export default function Security({
                                         className="size-3"
                                         aria-hidden="true"
                                     />
-                                    Disabled
+                                    {t('Disabled')}
                                 </span>
                             )}
                         </header>
@@ -222,23 +227,20 @@ export default function Security({
                                             size="sm"
                                             className="rounded-full border-destructive/30 text-destructive hover:border-destructive/50 hover:bg-destructive/10 hover:text-destructive hover:[text-shadow:none]"
                                         >
-                                            Disable 2FA
+                                            {t('Disable 2FA')}
                                         </Button>
                                     </DialogTrigger>
                                     <DialogContent>
                                         <DialogHeader>
                                             <DialogTitle>
-                                                Disable two-factor
-                                                authentication?
+                                                {t(
+                                                    'Disable two-factor authentication?',
+                                                )}
                                             </DialogTitle>
                                             <DialogDescription>
-                                                After disabling, signing in will
-                                                only require your password —
-                                                anyone with your password gets
-                                                in. On a custodial money account
-                                                this is a real downgrade in
-                                                safety. Keep it on unless you
-                                                have a good reason.
+                                                {t(
+                                                    'After disabling, signing in will only require your password — anyone with your password gets in. On a custodial money account this is a real downgrade in safety. Keep it on unless you have a good reason.',
+                                                )}
                                             </DialogDescription>
                                         </DialogHeader>
                                         <Form
@@ -258,7 +260,7 @@ export default function Security({
                                                             )
                                                         }
                                                     >
-                                                        Keep 2FA on
+                                                        {t('Keep 2FA on')}
                                                     </Button>
                                                     <Button
                                                         type="submit"
@@ -266,8 +268,8 @@ export default function Security({
                                                         disabled={processing}
                                                     >
                                                         {processing
-                                                            ? 'Disabling…'
-                                                            : 'Disable 2FA'}
+                                                            ? t('Disabling…')
+                                                            : t('Disable 2FA')}
                                                     </Button>
                                                 </DialogFooter>
                                             )}
@@ -290,7 +292,7 @@ export default function Security({
                                         onClick={() => setShowSetupModal(true)}
                                     >
                                         <ShieldCheck />
-                                        Continue setup
+                                        {t('Continue setup')}
                                     </Button>
                                 ) : (
                                     <Form
@@ -307,7 +309,7 @@ export default function Security({
                                                 disabled={processing}
                                             >
                                                 <ShieldCheck />
-                                                Enable 2FA
+                                                {t('Enable 2FA')}
                                             </Button>
                                         )}
                                     </Form>

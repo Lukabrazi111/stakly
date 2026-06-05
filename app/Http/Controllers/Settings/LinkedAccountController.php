@@ -65,7 +65,7 @@ class LinkedAccountController extends Controller
 
         Inertia::flash('toast', [
             'type' => 'info',
-            'message' => 'Verification code generated. Paste it on your profile, then verify.',
+            'message' => __('Verification code generated. Paste it on your profile, then verify.'),
         ]);
 
         return to_route('linked-accounts.edit');
@@ -80,7 +80,7 @@ class LinkedAccountController extends Controller
         } catch (ProviderUnavailableException) {
             Inertia::flash('toast', [
                 'type' => 'error',
-                'message' => "We couldn't reach the provider right now. Please try again in a moment.",
+                'message' => __("We couldn't reach the provider right now. Please try again in a moment."),
             ]);
 
             return to_route('linked-accounts.edit');
@@ -100,7 +100,7 @@ class LinkedAccountController extends Controller
 
         Inertia::flash('toast', [
             'type' => 'success',
-            'message' => "{$provider->displayName()} account unlinked.",
+            'message' => __(':provider account unlinked.', ['provider' => $provider->displayName()]),
         ]);
 
         return to_route('linked-accounts.edit');
@@ -125,23 +125,23 @@ class LinkedAccountController extends Controller
         return match ($sentinel) {
             'verified' => [
                 'type' => 'success',
-                'message' => 'Account linked! You can safely remove the code from your profile now — we only check it once.',
+                'message' => __('Account linked! You can safely remove the code from your profile now — we only check it once.'),
             ],
             'expired' => [
                 'type' => 'error',
-                'message' => 'Verification code expired. Generate a new one.',
+                'message' => __('Verification code expired. Generate a new one.'),
             ],
             'profile-not-found' => [
                 'type' => 'error',
-                'message' => "We couldn't find that username on the provider. Double-check it and try again.",
+                'message' => __("We couldn't find that username on the provider. Double-check it and try again."),
             ],
             'code-not-found' => [
                 'type' => 'error',
-                'message' => "We didn't find your code in the target field. Make sure you saved your changes on the provider site.",
+                'message' => __("We didn't find your code in the target field. Make sure you saved your changes on the provider site."),
             ],
             'username-claimed' => [
                 'type' => 'error',
-                'message' => 'This account was just linked by another Stakly user.',
+                'message' => __('This account was just linked by another Stakly user.'),
             ],
         };
     }

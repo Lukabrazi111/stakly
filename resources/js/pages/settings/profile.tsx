@@ -23,6 +23,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { useInitials } from '@/hooks/use-initials';
+import { useT } from '@/lib/i18n';
+import type { TranslationFn } from '@/lib/i18n';
 import { show as userShow } from '@/routes/users';
 import { send } from '@/routes/verification';
 
@@ -41,6 +43,7 @@ export default function Profile({
     mustVerifyEmail: boolean;
     status?: string;
 }) {
+    const t = useT();
     const { auth } = usePage().props;
     const user = auth.user!;
     const getInitials = useInitials();
@@ -99,7 +102,9 @@ export default function Profile({
 
         if (picked.size > RAW_FILE_MAX_BYTES) {
             setRawFileError(
-                'That image is too large to process. Pick a file under 20 MB.',
+                t(
+                    'That image is too large to process. Pick a file under 20 MB.',
+                ),
             );
 
             return;
@@ -179,12 +184,12 @@ export default function Profile({
     return (
         <>
             <PageMeta
-                title="Profile settings"
-                description="Edit your profile details."
+                title={t('Profile settings')}
+                description={t('Edit your profile details.')}
                 noindex
             />
 
-            <h1 className="sr-only">Profile settings</h1>
+            <h1 className="sr-only">{t('Profile settings')}</h1>
 
             <div className="space-y-6">
                 <ProfilePreview
@@ -205,11 +210,12 @@ export default function Profile({
                     <section className="space-y-6 rounded-2xl border border-border/60 bg-card p-6">
                         <header>
                             <h2 className="font-display text-base font-semibold text-foreground">
-                                Public profile
+                                {t('Public profile')}
                             </h2>
                             <p className="mt-0.5 text-xs text-muted-foreground">
-                                What other players see on your profile page +
-                                listings.
+                                {t(
+                                    'What other players see on your profile page + listings.',
+                                )}
                             </p>
                         </header>
 
@@ -218,7 +224,7 @@ export default function Profile({
                             crop modal, and the cropped blob lives in
                             `data.avatar`. */}
                         <div className="grid gap-3">
-                            <Label>Avatar</Label>
+                            <Label>{t('Avatar')}</Label>
                             <div className="flex items-center gap-5">
                                 <button
                                     type="button"
@@ -226,7 +232,7 @@ export default function Profile({
                                         fileInputRef.current?.click()
                                     }
                                     className="group relative cursor-pointer rounded-full transition-shadow duration-200 ease-out hover:shadow-glow focus-visible:shadow-glow focus-visible:outline-none"
-                                    aria-label="Change avatar"
+                                    aria-label={t('Change avatar')}
                                 >
                                     <Avatar className="size-20 overflow-hidden rounded-full ring-2 ring-border/60 transition-colors duration-200 ease-out group-hover:ring-primary/50 group-focus-visible:ring-primary/60">
                                         <AvatarImage
@@ -251,7 +257,7 @@ export default function Profile({
                                                 fileInputRef.current?.click()
                                             }
                                         >
-                                            Change avatar
+                                            {t('Change avatar')}
                                         </Button>
                                         {user.avatar_url && !previewUrl && (
                                             <Dialog
@@ -267,20 +273,18 @@ export default function Profile({
                                                         size="sm"
                                                         className="text-destructive [text-shadow:none] hover:text-destructive hover:[text-shadow:none]"
                                                     >
-                                                        Remove
+                                                        {t('Remove')}
                                                     </Button>
                                                 </DialogTrigger>
                                                 <DialogContent>
                                                     <DialogHeader>
                                                         <DialogTitle>
-                                                            Remove avatar?
+                                                            {t('Remove avatar?')}
                                                         </DialogTitle>
                                                         <DialogDescription>
-                                                            Your profile will go
-                                                            back to showing your
-                                                            initials. You can
-                                                            upload a new avatar
-                                                            any time.
+                                                            {t(
+                                                                'Your profile will go back to showing your initials. You can upload a new avatar any time.',
+                                                            )}
                                                         </DialogDescription>
                                                     </DialogHeader>
                                                     <DialogFooter>
@@ -292,7 +296,7 @@ export default function Profile({
                                                                     isRemovingAvatar
                                                                 }
                                                             >
-                                                                Cancel
+                                                                {t('Cancel')}
                                                             </Button>
                                                         </DialogClose>
                                                         <Button
@@ -306,8 +310,8 @@ export default function Profile({
                                                             }
                                                         >
                                                             {isRemovingAvatar
-                                                                ? 'Removing…'
-                                                                : 'Remove'}
+                                                                ? t('Removing…')
+                                                                : t('Remove')}
                                                         </Button>
                                                     </DialogFooter>
                                                 </DialogContent>
@@ -315,7 +319,9 @@ export default function Profile({
                                         )}
                                     </div>
                                     <p className="mt-1 text-xs text-muted-foreground">
-                                        JPG, PNG, or WebP. Max 2 MB after crop.
+                                        {t(
+                                            'JPG, PNG, or WebP. Max 2 MB after crop.',
+                                        )}
                                     </p>
                                 </div>
                             </div>
@@ -332,7 +338,7 @@ export default function Profile({
                         </div>
 
                         <div className="grid gap-2">
-                            <Label htmlFor="username">Username</Label>
+                            <Label htmlFor="username">{t('Username')}</Label>
                             <Input
                                 id="username"
                                 className="block w-full"
@@ -348,17 +354,18 @@ export default function Profile({
                                 autoComplete="off"
                                 spellCheck={false}
                                 disabled={!usernameEdit.can_change}
-                                placeholder="your-handle"
+                                placeholder={t('your-handle')}
                             />
                             <UsernameHelper
                                 blocker={usernameBlocker}
                                 availableAt={usernameEdit.available_at}
+                                t={t}
                             />
                             <InputError message={errors.username} />
                         </div>
 
                         <div className="grid gap-2">
-                            <Label htmlFor="name">Name</Label>
+                            <Label htmlFor="name">{t('Name')}</Label>
                             <Input
                                 id="name"
                                 className="block w-full"
@@ -369,14 +376,14 @@ export default function Profile({
                                 name="name"
                                 required
                                 autoComplete="name"
-                                placeholder="Full name"
+                                placeholder={t('Full name')}
                             />
                             <InputError message={errors.name} />
                         </div>
 
                         <div className="grid gap-2">
                             <div className="flex items-baseline justify-between">
-                                <Label htmlFor="bio">Bio</Label>
+                                <Label htmlFor="bio">{t('Bio')}</Label>
                                 <span
                                     className={
                                         bioOverCap
@@ -393,7 +400,9 @@ export default function Profile({
                                 name="bio"
                                 value={data.bio}
                                 onChange={(e) => setData('bio', e.target.value)}
-                                placeholder="Tell other players a bit about yourself…"
+                                placeholder={t(
+                                    'Tell other players a bit about yourself…',
+                                )}
                                 maxLength={BIO_MAX}
                                 rows={4}
                             />
@@ -406,23 +415,27 @@ export default function Profile({
                     <section className="space-y-6 rounded-2xl border border-border/60 bg-card p-6">
                         <header>
                             <h2 className="font-display text-base font-semibold text-foreground">
-                                Account
+                                {t('Account')}
                             </h2>
                             <p className="mt-0.5 text-xs text-muted-foreground">
-                                Private — used for sign-in and notifications.
+                                {t(
+                                    'Private — used for sign-in and notifications.',
+                                )}
                             </p>
                         </header>
 
                         <div className="grid gap-2">
                             <div className="flex items-center justify-between gap-3">
-                                <Label htmlFor="email">Email address</Label>
+                                <Label htmlFor="email">
+                                    {t('Email address')}
+                                </Label>
                                 {isEmailVerified ? (
                                     <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-success/30 bg-success/10 px-2 py-0.5 text-[11px] font-medium text-success">
                                         <CheckCircle2
                                             className="size-3"
                                             aria-hidden="true"
                                         />
-                                        Verified
+                                        {t('Verified')}
                                     </span>
                                 ) : (
                                     <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-warning/40 bg-warning/10 px-2 py-0.5 text-[11px] font-medium text-warning">
@@ -430,7 +443,7 @@ export default function Profile({
                                             className="size-3"
                                             aria-hidden="true"
                                         />
-                                        Unverified
+                                        {t('Unverified')}
                                     </span>
                                 )}
                             </div>
@@ -445,7 +458,7 @@ export default function Profile({
                                 name="email"
                                 required
                                 autoComplete="username"
-                                placeholder="Email address"
+                                placeholder={t('Email address')}
                             />
                             <InputError message={errors.email} />
 
@@ -456,11 +469,11 @@ export default function Profile({
                                         as="button"
                                         className="text-foreground underline decoration-neutral-300 underline-offset-4 transition-colors duration-300 ease-out hover:decoration-current dark:decoration-neutral-500"
                                     >
-                                        Resend verification email
+                                        {t('Resend verification email')}
                                     </Link>
                                     {status === 'verification-link-sent' && (
                                         <span className="ml-2 text-success">
-                                            Sent — check your inbox.
+                                            {t('Sent — check your inbox.')}
                                         </span>
                                     )}
                                 </p>
@@ -476,7 +489,7 @@ export default function Profile({
                             disabled={processing}
                             data-test="update-profile-button"
                         >
-                            {processing ? 'Saving…' : 'Save changes'}
+                            {processing ? t('Saving…') : t('Save changes')}
                         </Button>
                         <Button
                             type="button"
@@ -486,7 +499,7 @@ export default function Profile({
                             className="rounded-full"
                         >
                             <Link href={publicProfileUrl}>
-                                View public profile
+                                {t('View public profile')}
                             </Link>
                         </Button>
                     </div>
@@ -510,18 +523,19 @@ export default function Profile({
             >
                 <DialogContent>
                     <DialogHeader>
-                        <DialogTitle>Change your username?</DialogTitle>
+                        <DialogTitle>{t('Change your username?')}</DialogTitle>
                         <DialogDescription>
-                            Renaming{' '}
+                            {t('Renaming')}{' '}
                             <span className="font-medium text-foreground">
                                 {user.username}
                             </span>{' '}
-                            to{' '}
+                            {t('to')}{' '}
                             <span className="font-medium text-foreground">
                                 {data.username}
                             </span>{' '}
-                            also updates your profile URL. You won't be able to
-                            change it again for 30 days.
+                            {t(
+                                "also updates your profile URL. You won't be able to change it again for 30 days.",
+                            )}
                         </DialogDescription>
                     </DialogHeader>
                     <DialogFooter>
@@ -531,7 +545,7 @@ export default function Profile({
                             onClick={() => setUsernameConfirmOpen(false)}
                             disabled={processing}
                         >
-                            Cancel
+                            {t('Cancel')}
                         </Button>
                         <Button
                             type="button"
@@ -540,7 +554,7 @@ export default function Profile({
                             onClick={submitForm}
                             disabled={processing}
                         >
-                            {processing ? 'Saving…' : 'Confirm change'}
+                            {processing ? t('Saving…') : t('Confirm change')}
                         </Button>
                     </DialogFooter>
                 </DialogContent>
@@ -552,16 +566,18 @@ export default function Profile({
 function UsernameHelper({
     blocker,
     availableAt,
+    t,
 }: {
     blocker: 'banned' | 'cooldown' | 'in_flight_match' | null;
     availableAt: string | null;
+    t: TranslationFn;
 }) {
     if (blocker === 'banned') {
         return null;
     }
 
     if (blocker === 'cooldown' && availableAt) {
-        const date = new Date(availableAt).toLocaleDateString('en-US', {
+        const date = new Date(availableAt).toLocaleDateString(undefined, {
             month: 'short',
             day: 'numeric',
             year: 'numeric',
@@ -569,7 +585,7 @@ function UsernameHelper({
 
         return (
             <p className="text-xs text-muted-foreground">
-                You can change it again on {date}.
+                {t('You can change it again on :date.', { date })}
             </p>
         );
     }
@@ -577,16 +593,18 @@ function UsernameHelper({
     if (blocker === 'in_flight_match') {
         return (
             <p className="text-xs text-muted-foreground">
-                You can't change your username while you have a match in
-                progress or an open dispute.
+                {t(
+                    "You can't change your username while you have a match in progress or an open dispute.",
+                )}
             </p>
         );
     }
 
     return (
         <p className="text-xs text-muted-foreground">
-            Lowercase letters, numbers, and hyphens. 3–30 characters. Changing
-            it locks the field for 30 days.
+            {t(
+                'Lowercase letters, numbers, and hyphens. 3–30 characters. Changing it locks the field for 30 days.',
+            )}
         </p>
     );
 }
