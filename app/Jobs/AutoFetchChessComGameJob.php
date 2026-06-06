@@ -186,11 +186,7 @@ class AutoFetchChessComGameJob implements ShouldBeUnique, ShouldQueueAfterCommit
         $breaker->recordSuccess(LinkedAccountProvider::ChessCom);
 
         $latencyMs = $this->elapsedMs($start);
-        $completed = array_values(array_filter(
-            $games,
-            // Decisive or draw — aborted / half-played excluded (not a real result to settle).
-            fn (ChessComGameResult $g) => $g->isDecisive() || $g->isDraw(),
-        ));
+        $completed = $this->filterCompleted($games);
         $count = count($completed);
 
         if ($count === 0) {
@@ -233,6 +229,33 @@ class AutoFetchChessComGameJob implements ShouldBeUnique, ShouldQueueAfterCommit
     private function elapsedMs(float $start): int
     {
         return (int) round((microtime(true) - $start) * 1000);
+    }
+
+    /**
+     * Settle-eligible candidates. Two-pass: decisive / draw games are the
+     * primary candidates (a real played-out game beats an abandoned one
+     * when both exist in the same window). Fall back to abandoned games
+     * only when there's no primary candidate (M14 Slice 3b — cooperative-
+     * exit refund, settled as draw).
+     *
+     * @param  list<ChessComGameResult>  $games
+     * @return list<ChessComGameResult>
+     */
+    private function filterCompleted(array $games): array
+    {
+        $primary = array_values(array_filter(
+            $games,
+            fn (ChessComGameResult $g) => $g->isDecisive() || $g->isDraw(),
+        ));
+
+        if ($primary !== []) {
+            return $primary;
+        }
+
+        return array_values(array_filter(
+            $games,
+            fn (ChessComGameResult $g) => $g->isAborted(),
+        ));
     }
 
     /**

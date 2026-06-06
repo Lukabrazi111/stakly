@@ -153,6 +153,50 @@ test('drawn chess.com game posts a card AND settles as draw', function () {
         ->and($match->winner_user_id)->toBeNull();
 });
 
+test('abandoned chess.com game posts a card AND settles as draw (M14 Slice 3b — cooperative-exit refund)', function () {
+    $match = chessComAutoFetchMatch();
+
+    // chess.com abandoned shape: both sides have `result === 'abandoned'`.
+    Http::fake([
+        'api.chess.com/pub/player/*/games/*' => Http::response(
+            chessComArchiveFixture([
+                chessComGameFixture([
+                    'end_time' => CarbonImmutable::now()->subMinutes(5)->timestamp,
+                    'white' => [
+                        'username' => 'alice-chesscom',
+                        'rating' => 1500,
+                        'result' => 'abandoned',
+                    ],
+                    'black' => [
+                        'username' => 'bob-chesscom',
+                        'rating' => 1495,
+                        'result' => 'abandoned',
+                    ],
+                ]),
+            ]),
+            200,
+        ),
+    ]);
+
+    runChessComAutoFetch($match);
+
+    $system = Message::query()
+        ->where('match_id', $match->id)
+        ->where('type', MessageType::System)
+        ->where('content', 'Verified chess.com game record.')
+        ->first();
+
+    expect($system)->not->toBeNull()
+        ->and($system->attachments_json[0]['status'])->toBe('abandoned')
+        ->and($system->attachments_json[0]['winner_color'])->toBeNull()
+        ->and($system->attachments_json[0]['winner_username'])->toBeNull();
+
+    // Settled as draw — both stakes refunded, no winner.
+    $match->refresh();
+    expect($match->status)->toBe(MatchStatus::Settled)
+        ->and($match->winner_user_id)->toBeNull();
+});
+
 // ─── Retry-on-empty (chess.com eventual consistency) ───────────────────────
 
 test('empty archive does not post a system message (would retry in real queue)', function () {

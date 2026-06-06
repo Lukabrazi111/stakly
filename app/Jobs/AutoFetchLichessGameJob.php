@@ -229,16 +229,29 @@ class AutoFetchLichessGameJob implements ShouldBeUnique, ShouldQueueAfterCommit
     }
 
     /**
-     * Decisive or draw only — aborted / half-played skipped (not a real result to settle).
+     * Settle-eligible candidates. Two-pass: decisive / draw games are the
+     * primary candidates (a real played-out game beats an aborted one when
+     * both exist in the same window). Fall back to aborted games only
+     * when there's no primary candidate (M14 Slice 3b — aborted settles
+     * as cooperative-exit refund). `unknown` falls through to silent skip.
      *
      * @param  list<LichessGameResult>  $games
      * @return list<LichessGameResult>
      */
     private function filterCompleted(array $games): array
     {
-        return array_values(array_filter(
+        $primary = array_values(array_filter(
             $games,
             fn (LichessGameResult $g) => $g->isDecisive() || $g->isDraw(),
+        ));
+
+        if ($primary !== []) {
+            return $primary;
+        }
+
+        return array_values(array_filter(
+            $games,
+            fn (LichessGameResult $g) => $g->isAborted(),
         ));
     }
 

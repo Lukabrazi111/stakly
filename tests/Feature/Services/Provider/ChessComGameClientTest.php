@@ -147,6 +147,31 @@ test('fetchGame parses a draw result correctly', function () {
         ->and($game->status)->toBe('agreed');
 });
 
+test('fetchGame classifies abandoned games via isAborted (M14 Slice 3b)', function () {
+    Http::fake([
+        'api.chess.com/pub/player/*/games/*' => Http::response(
+            chessComArchiveFixture([
+                chessComGameFixture([
+                    'white' => ['username' => 'alice-chesscom', 'result' => 'abandoned'],
+                    'black' => ['username' => 'bob-chesscom', 'result' => 'abandoned'],
+                ]),
+            ]),
+            200,
+        ),
+    ]);
+
+    $game = chessComClient()->fetchGame(
+        'https://www.chess.com/game/live/12345678901',
+        'alice-chesscom',
+    );
+
+    expect($game->winnerColor)->toBeNull()
+        ->and($game->isDecisive())->toBeFalse()
+        ->and($game->isDraw())->toBeFalse()
+        ->and($game->isAborted())->toBeTrue()
+        ->and($game->status)->toBe('abandoned');
+});
+
 // ─── searchGamesBetween ─────────────────────────────────────────────────────
 
 test('searchGamesBetween filters by opponent + since', function () {

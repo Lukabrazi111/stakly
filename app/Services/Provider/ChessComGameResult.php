@@ -25,6 +25,14 @@ final readonly class ChessComGameResult
         'timevsinsufficient',
     ];
 
+    /**
+     * M14 Slice 3b — chess.com's `abandoned` result is the analog to
+     * Lichess's `aborted`. Both sides record `result: 'abandoned'` when
+     * neither player engaged the game (the parser then sets `status` to
+     * the white side's result string). Treated as cooperative-exit refund.
+     */
+    private const ABORTED_RESULTS = ['abandoned'];
+
     public function __construct(
         public string $id,
         public string $url,
@@ -48,6 +56,12 @@ final readonly class ChessComGameResult
     {
         return $this->winnerColor === null
             && in_array($this->status, self::DRAW_RESULTS, true);
+    }
+
+    public function isAborted(): bool
+    {
+        return $this->winnerColor === null
+            && in_array($this->status, self::ABORTED_RESULTS, true);
     }
 
     public function winnerUsername(): ?string

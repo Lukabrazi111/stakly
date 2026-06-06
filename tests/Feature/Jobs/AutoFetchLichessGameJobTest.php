@@ -152,6 +152,36 @@ test('drawn game posts a card AND settles as draw (M16 — draws are valid compl
         ->and($match->winner_user_id)->toBeNull();
 });
 
+test('aborted game posts a card AND settles as draw (M14 Slice 3b — cooperative-exit refund)', function () {
+    $match = autoFetchMatch();
+
+    $aborted = lichessGameFixture(['id' => 'abortedX', 'status' => 'aborted']);
+    unset($aborted['winner']);
+
+    Http::fake([
+        'lichess.org/api/games/user/*' => Http::response(json_encode($aborted), 200),
+    ]);
+
+    runAutoFetch($match);
+
+    $system = Message::query()
+        ->where('match_id', $match->id)
+        ->where('type', MessageType::System)
+        ->where('content', 'Verified Lichess game record.')
+        ->first();
+
+    expect($system)->not->toBeNull()
+        ->and($system->attachments_json[0]['game_id'])->toBe('abortedX')
+        ->and($system->attachments_json[0]['status'])->toBe('aborted')
+        ->and($system->attachments_json[0]['winner_color'])->toBeNull()
+        ->and($system->attachments_json[0]['winner_username'])->toBeNull();
+
+    // Settled as draw — both stakes refunded, no winner.
+    $match->refresh();
+    expect($match->status)->toBe(MatchStatus::Settled)
+        ->and($match->winner_user_id)->toBeNull();
+});
+
 // ─── Single-candidate-or-skip heuristic ─────────────────────────────────────
 
 test('no games found → no system message posted, match stays Pending', function () {
@@ -205,24 +235,7 @@ test('multiple completions (decisive + drawn) → ambiguous, no post', function 
     expect($match->fresh()->status)->toBe(MatchStatus::Pending);
 });
 
-test('aborted-only games → filtered out, no post', function () {
-    $match = autoFetchMatch();
-
-    $aborted = lichessGameFixture(['status' => 'aborted']);
-    unset($aborted['winner']);
-
-    Http::fake([
-        'lichess.org/api/games/user/*' => Http::response(json_encode($aborted), 200),
-    ]);
-
-    runAutoFetch($match);
-
-    expect(Message::query()->where('match_id', $match->id)->where('type', MessageType::System)->count())
-        ->toBe(0);
-    expect($match->fresh()->status)->toBe(MatchStatus::Pending);
-});
-
-test('one decisive + one aborted → posts the decisive one + settles', function () {
+test('one decisive + one aborted → posts the decisive one + settles (decisive wins primary pass)', function () {
     $match = autoFetchMatch();
 
     $decisive = lichessGameFixture(['id' => 'winnergg']);

@@ -115,7 +115,7 @@ test('fetchGame parses a draw correctly (winner key omitted)', function () {
         ->and($game->winnerUsername())->toBeNull();
 });
 
-test('fetchGame treats aborted games as neither decisive nor draw', function () {
+test('fetchGame classifies aborted games via isAborted (M14 Slice 3b)', function () {
     $payload = lichessGameFixture(['status' => 'aborted']);
     unset($payload['winner']);
 
@@ -128,7 +128,38 @@ test('fetchGame treats aborted games as neither decisive nor draw', function () 
     expect($game->status)->toBe('aborted')
         ->and($game->isDecisive())->toBeFalse()
         ->and($game->isDraw())->toBeFalse()
+        ->and($game->isAborted())->toBeTrue()
         ->and($game->winnerUsername())->toBeNull();
+});
+
+test('fetchGame classifies noStart games as aborted too', function () {
+    $payload = lichessGameFixture(['status' => 'noStart']);
+    unset($payload['winner']);
+
+    Http::fake([
+        'lichess.org/game/export/*' => Http::response($payload, 200),
+    ]);
+
+    $game = client()->fetchGame('a1b2c3d4');
+
+    expect($game->isAborted())->toBeTrue()
+        ->and($game->isDecisive())->toBeFalse()
+        ->and($game->isDraw())->toBeFalse();
+});
+
+test('fetchGame does NOT classify unknown status as aborted (silent skip)', function () {
+    $payload = lichessGameFixture(['status' => 'unknown']);
+    unset($payload['winner']);
+
+    Http::fake([
+        'lichess.org/game/export/*' => Http::response($payload, 200),
+    ]);
+
+    $game = client()->fetchGame('a1b2c3d4');
+
+    expect($game->isAborted())->toBeFalse()
+        ->and($game->isDecisive())->toBeFalse()
+        ->and($game->isDraw())->toBeFalse();
 });
 
 test('fetchGame handles AI/bot opponents (no user.name) gracefully', function () {
