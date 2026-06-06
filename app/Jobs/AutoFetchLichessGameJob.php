@@ -194,14 +194,13 @@ class AutoFetchLichessGameJob implements ShouldBeUnique, ShouldQueueAfterCommit
             return;
         }
 
-        $game = $count === 1
-            ? $completed[0]
-            : $this->pickFromMultipleCandidates($completed);
+        // M14 Slice 3d — picker filters by time-control even for the
+        // single-candidate case. A blitz-listing matched on a bullet game
+        // doesn't auto-settle; the match stays Pending until a matching
+        // game lands or the M16 timeout routes it to ManualReview.
+        $game = $this->pickSettleableCandidate($completed);
 
         if ($game === null) {
-            // M14 Slice 3c — multi-candidate window where no game matches
-            // the listing's time-control. Stay Pending; manual paste path
-            // covers the recovery.
             $this->record($recordAttempt, AutoFetchOutcome::Ambiguous, [
                 'candidates_count' => $count,
                 'latency_ms' => $latencyMs,
@@ -238,19 +237,21 @@ class AutoFetchLichessGameJob implements ShouldBeUnique, ShouldQueueAfterCommit
     }
 
     /**
-     * M14 Slice 3c — disambiguation for multi-candidate windows. Filter
-     * candidates to those whose speed matches the listing's `time_control`
-     * array, then pick the one whose `lastMoveAt` is closest to the
-     * match's `created_at` (= the first game played for this match). Tie-
-     * break on lexicographic game id for determinism.
+     * Pick the candidate this job should settle on. M14 Slice 3d — applies
+     * to any candidate count: filter to those whose speed matches the
+     * listing's `time_control` array; if multiple survive (Slice 3c),
+     * pick the one whose `lastMoveAt` is closest to the match's
+     * `created_at` (= the first game played for this match), tie-breaking
+     * on lexicographic game id for determinism.
      *
      * Returns null when no candidate matches the listing's time-control —
-     * the multi-candidate window is unresolvable, caller records ambiguous
-     * with reason `time_control_mismatch`.
+     * caller records `outcome=ambiguous` with `outcome_reason=time_control_mismatch`
+     * and the match stays Pending until either a matching game lands or
+     * the M16 timeout flips it to ManualReview.
      *
      * @param  list<LichessGameResult>  $candidates
      */
-    private function pickFromMultipleCandidates(array $candidates): ?LichessGameResult
+    private function pickSettleableCandidate(array $candidates): ?LichessGameResult
     {
         $listingControls = $this->match->listing->time_control
             ->map(fn (TimeControl $tc) => $tc->value)

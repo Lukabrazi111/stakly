@@ -40,8 +40,10 @@ function lichessAuditMatch(?array $snapshots = null): GameMatch
     Wallet::deposit($creator, '500', reference: "test:deposit:c:{$creator->id}");
     Wallet::deposit($taker, '500', reference: "test:deposit:t:{$taker->id}");
 
+    // M14 Slice 3d — TC catch-all so happy-path tests pass deterministically.
     $listing = Listing::factory()->taken()->forLichess()->for($creator)
-        ->state(['stake_amount' => '100'])->create();
+        ->state(['stake_amount' => '100', 'time_control' => ['blitz', 'rapid', 'classical']])
+        ->create();
     Wallet::hold(user: $creator, amount: '100', listing: $listing, reference: "listing-create:{$listing->id}");
     Wallet::hold(user: $taker, amount: '100', listing: $listing, reference: "match-take:{$listing->id}");
 
@@ -100,6 +102,23 @@ test('no_match: writes a row with candidates_count = 0', function () {
     expect($attempt->outcome)->toBe(AutoFetchOutcome::NoMatch)
         ->and($attempt->candidates_count)->toBe(0)
         ->and($attempt->winner_username)->toBeNull();
+});
+
+test('single TC-mismatch candidate: writes outcome=ambiguous + outcome_reason=time_control_mismatch (M14 Slice 3d)', function () {
+    $match = lichessAuditMatch();
+    $match->listing->update(['time_control' => ['classical']]);
+
+    $bullet = json_encode(lichessGameFixture(['id' => 'bulletgg', 'speed' => 'bullet']));
+    Http::fake([
+        'lichess.org/api/games/user/*' => Http::response($bullet, 200),
+    ]);
+
+    runLichessAudit($match);
+
+    $attempt = MatchAutoFetchAttempt::query()->where('match_id', $match->id)->first();
+    expect($attempt->outcome)->toBe(AutoFetchOutcome::Ambiguous)
+        ->and($attempt->candidates_count)->toBe(1)
+        ->and($attempt->outcome_reason)->toBe('time_control_mismatch');
 });
 
 test('ambiguous: writes a row with candidates_count + outcome_reason=time_control_mismatch (M14 Slice 3c)', function () {

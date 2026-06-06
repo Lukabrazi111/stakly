@@ -44,7 +44,11 @@ function autoFetchMatch(?array $snapshots = null): GameMatch
     Wallet::deposit($creator, '500', reference: "test:deposit:c:{$creator->id}");
     Wallet::deposit($taker, '500', reference: "test:deposit:t:{$taker->id}");
 
-    $listing = Listing::factory()->taken()->forLichess()->for($creator)->state(['stake_amount' => '100'])->create();
+    // M14 Slice 3d — TC catch-all so happy-path tests pass deterministically;
+    // tests that exercise TC mismatch override this back to a single value.
+    $listing = Listing::factory()->taken()->forLichess()->for($creator)
+        ->state(['stake_amount' => '100', 'time_control' => ['blitz', 'rapid', 'classical']])
+        ->create();
     Wallet::hold(user: $creator, amount: '100', listing: $listing, reference: "listing-create:{$listing->id}");
     Wallet::hold(user: $taker, amount: '100', listing: $listing, reference: "match-take:{$listing->id}");
 
@@ -196,6 +200,47 @@ test('no games found → no system message posted, match stays Pending', functio
     expect(Message::query()->where('match_id', $match->id)->where('type', MessageType::System)->count())
         ->toBe(0);
     expect($match->fresh()->status)->toBe(MatchStatus::Pending);
+});
+
+test('single game with time-control mismatch → ambiguous, no post (M14 Slice 3d)', function () {
+    $match = autoFetchMatch();
+    // Listing is blitz-only; the matched game is bullet → no auto-settle.
+    $match->listing->update(['time_control' => ['blitz']]);
+
+    $bullet = lichessGameFixture(['id' => 'bulletgg', 'speed' => 'bullet']);
+
+    Http::fake([
+        'lichess.org/api/games/user/*' => Http::response(json_encode($bullet), 200),
+    ]);
+
+    runAutoFetch($match);
+
+    expect(Message::query()->where('match_id', $match->id)->where('type', MessageType::System)->count())
+        ->toBe(0);
+    expect($match->fresh()->status)->toBe(MatchStatus::Pending);
+});
+
+test('single game with time-control match → posts a card AND settles (M14 Slice 3d sanity check)', function () {
+    $match = autoFetchMatch();
+    $match->listing->update(['time_control' => ['blitz']]);
+
+    // Default fixture speed is blitz — matches the listing.
+    $blitz = lichessGameFixture(['id' => 'blitzgg0']);
+
+    Http::fake([
+        'lichess.org/api/games/user/*' => Http::response(json_encode($blitz), 200),
+    ]);
+
+    runAutoFetch($match);
+
+    $system = Message::query()
+        ->where('match_id', $match->id)
+        ->where('type', MessageType::System)
+        ->first();
+
+    expect($system)->not->toBeNull()
+        ->and($system->attachments_json[0]['game_id'])->toBe('blitzgg0');
+    expect($match->fresh()->status)->toBe(MatchStatus::Settled);
 });
 
 test('multiple decisive games with time-control mismatch → ambiguous, no post (M14 Slice 3c)', function () {

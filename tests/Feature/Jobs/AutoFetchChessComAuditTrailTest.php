@@ -43,8 +43,10 @@ function chessComAuditMatch(?array $snapshots = null): GameMatch
     Wallet::deposit($creator, '500', reference: "test:deposit:c:{$creator->id}");
     Wallet::deposit($taker, '500', reference: "test:deposit:t:{$taker->id}");
 
+    // M14 Slice 3d — TC catch-all so happy-path tests pass deterministically.
     $listing = Listing::factory()->taken()->forChessCom()->for($creator)
-        ->state(['stake_amount' => '100'])->create();
+        ->state(['stake_amount' => '100', 'time_control' => ['blitz', 'rapid', 'classical']])
+        ->create();
     Wallet::hold(user: $creator, amount: '100', listing: $listing, reference: "listing-create:{$listing->id}");
     Wallet::hold(user: $taker, amount: '100', listing: $listing, reference: "match-take:{$listing->id}");
 
@@ -282,6 +284,31 @@ test('error on final attempt: writes outcome_reason=retry_exhausted', function (
     $attempt = MatchAutoFetchAttempt::query()->where('match_id', $match->id)->first();
     expect($attempt->outcome)->toBe(AutoFetchOutcome::Error)
         ->and($attempt->outcome_reason)->toBe('retry_exhausted');
+});
+
+test('single TC-mismatch candidate: writes outcome=ambiguous + outcome_reason=time_control_mismatch (M14 Slice 3d)', function () {
+    $match = chessComAuditMatch();
+    $match->listing->update(['time_control' => ['classical']]);
+
+    Http::fake([
+        'api.chess.com/pub/player/*/games/*' => Http::response(
+            chessComArchiveFixture([
+                chessComGameFixture([
+                    'url' => 'https://www.chess.com/game/live/bullet001',
+                    'end_time' => CarbonImmutable::now()->subMinutes(5)->timestamp,
+                    'time_class' => 'bullet',
+                ]),
+            ]),
+            200,
+        ),
+    ]);
+
+    runChessComAudit($match);
+
+    $attempt = MatchAutoFetchAttempt::query()->where('match_id', $match->id)->first();
+    expect($attempt->outcome)->toBe(AutoFetchOutcome::Ambiguous)
+        ->and($attempt->candidates_count)->toBe(1)
+        ->and($attempt->outcome_reason)->toBe('time_control_mismatch');
 });
 
 test('ambiguous: writes a row with candidates_count + outcome_reason=time_control_mismatch (M14 Slice 3c)', function () {

@@ -204,13 +204,12 @@ class AutoFetchChessComGameJob implements ShouldBeUnique, ShouldQueueAfterCommit
             return;
         }
 
-        $game = $count === 1
-            ? $completed[0]
-            : $this->pickFromMultipleCandidates($completed);
+        // M14 Slice 3d — picker filters by time-control even for the
+        // single-candidate case. Match stays Pending if the game's speed
+        // doesn't match the listing's time_control.
+        $game = $this->pickSettleableCandidate($completed);
 
         if ($game === null) {
-            // M14 Slice 3c — multi-candidate window where no game matches
-            // the listing's time-control. Stay Pending.
             $this->record($recordAttempt, AutoFetchOutcome::Ambiguous, [
                 'candidates_count' => $count,
                 'latency_ms' => $latencyMs,
@@ -241,17 +240,18 @@ class AutoFetchChessComGameJob implements ShouldBeUnique, ShouldQueueAfterCommit
     }
 
     /**
-     * M14 Slice 3c — disambiguation for multi-candidate windows. Filter
-     * candidates to those whose speed matches the listing's `time_control`
-     * array, then pick the one whose `endedAt` is closest to the match's
-     * `created_at` (= the first game played for this match). Tie-break on
-     * lexicographic game id for determinism.
+     * Pick the candidate this job should settle on. M14 Slice 3d — applies
+     * to any candidate count: filter to those whose speed matches the
+     * listing's `time_control` array; if multiple survive (Slice 3c),
+     * pick the one whose `endedAt` is closest to the match's `created_at`,
+     * tie-breaking on lexicographic game id.
      *
-     * Returns null when no candidate matches the listing's time-control.
+     * Returns null when no candidate matches the listing's time-control —
+     * caller records ambiguous, match stays Pending.
      *
      * @param  list<ChessComGameResult>  $candidates
      */
-    private function pickFromMultipleCandidates(array $candidates): ?ChessComGameResult
+    private function pickSettleableCandidate(array $candidates): ?ChessComGameResult
     {
         $listingControls = $this->match->listing->time_control
             ->map(fn (TimeControl $tc) => $tc->value)
