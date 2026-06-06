@@ -15,15 +15,14 @@ Frontend-first build. UI against real DB infrastructure + seeded fake data; back
 
 **In-flight:**
 
-_None — pick the next milestone from "Active / upcoming" below._
+- **M14** — Outcome pipeline hardening. Slice A (chess card arbitration) shipped 2026-05-22; Phases 1–4 expanded into shipping-sized slices below. Production-critical pre-launch for the settlement engine: observability first (Phase 1), then reliability (Phase 2), coverage edge cases (Phase 3), dispute fast-path (Phase 4).
 
 **Active / upcoming:**
 
-- **M28** — Designed Fees page. Hand-coded marketing surface — transparent 5–10% commission disclosure, interactive calculator, replaces footer Support link in header nav. Highest-leverage pre-launch trust signal; design-driven (`ui-ux-pro-max` skill).
-- **M14** — Outcome pipeline hardening. Slice A + Phase 1 shipped; **Phases 2 (reliability — retries / rate-limit awareness / circuit breaker), 3 (coverage — aborted games / multi-candidate disambiguation / time-control mismatch), 4 (dispute fast-path)** remain. Production-critical for the settlement engine.
-- **M20** — Email notifications. **Spec materially shrunk**: M27 P5 already shipped the in-app preferences UI + `notification_preferences` table + 9 `PlayerNotification` classes; M30 P4 wired the `mail` channel for ban notifications. What's left = branded HTML email templates, flip `'mail'` into `via()` on the remaining PlayerNotification subclasses, un-disable the Email toggle in `/settings/notifications`, production SMTP config. Realistically 2–3 days.
+- **M15** — Multi-game expansion (FACEIT, OpenDota, Riot adapters). Promoted next-up post-M14 — phases will expand alongside an API-research pass (Lichess / chess.com depth read first, then FACEIT / OpenDota / Riot) before any code lands. Per-game catalog + provider table already laid out below.
+- **M28** — Designed Fees page. Hand-coded marketing surface — transparent 5–10% commission disclosure, interactive calculator, replaces footer Support link in header nav. Pre-launch trust signal; design-driven (`ui-ux-pro-max` skill).
+- **M20** — Email notifications. **Spec materially shrunk**: M27 P5 already shipped the in-app preferences UI + `notification_preferences` table + 9 `PlayerNotification` classes; M30 P4 wired the `mail` channel for ban notifications. What's left = branded HTML email templates, flip `'mail'` into `via()` on the remaining PlayerNotification subclasses, production SMTP config. Realistically 2–3 days.
 - **M21** — Blacklist + safety. Block users from listings + chat, with anti-evasion considerations. Has open design questions (block semantics + multi-account evasion) — needs alignment before coding.
-- **M15** — Multi-game expansion (FACEIT, OpenDota, Riot adapters). Large; awaits a concrete game push to motivate scope.
 
 > Active milestone keeps a detailed task list. Future milestones expand when started. Any of this can shift — flag the change, update the doc.
 
@@ -62,38 +61,37 @@ The FACEIT / OpenDota / Riot adapter work and the "no-admin-fallback policy" pie
 
 **Phase 1 — Per-match audit trail + admin visibility**
 
-Today nobody can answer "why is this match in ManualReview?" without grepping logs. Every dispute investigation starts blind. Phase 1 captures the auto-fetch pipeline's reasoning as queryable data inside the app.
+Today nobody can answer "why is this match in ManualReview?" without grepping logs. Every dispute investigation starts blind. Phase 1 captures the auto-fetch pipeline's reasoning as queryable data inside the app — every dispatch, fetch, skip, and outcome lands as a row, and admins read the trail straight from the match's Filament page. This is the highest-leverage piece of M14 because nothing downstream can be tuned without the visibility.
 
-- New `match_auto_fetch_attempts` table (append-only, indexed on `match_id`). Columns: `match_id`, `provider` (lichess / chess_com), `outcome` (matched / no_match / ambiguous / error / skipped), `winner_username` nullable, `candidates_count`, `error_message` nullable, `latency_ms`, `created_at`.
-- `DispatchAutoFetchAction` + both `AutoFetch*GameJob`s write one row per attempt — including the "we didn't even try" skips (snapshot missing, status not Pending, etc.) since those are equally important signals.
-- `Log::info` / `Log::warning` mirrors of the same data so any future production log forwarding sees the same events.
-- New Filament Infolist section on `GameMatchResource` View page: per-match audit timeline. Admin opens a disputed match → sees the full history of what the system tried, when, and what it found.
-- New `PipelineHealth` Filament dashboard widget alongside `OpsOverview`: auto-fetch success rate (7d / 30d), avg time-to-settle, top "no_match" reasons.
+- [ ] **Slice 1a — Schema + Model + Factory.** New `match_auto_fetch_attempts` table (append-only, indexed on `match_id`). Columns: `match_id`, `provider` (`lichess` / `chess_com`), `outcome` (`matched` / `no_match` / `ambiguous` / `error` / `skipped`), `winner_username` nullable, `candidates_count`, `error_message` nullable, `latency_ms`, `created_at`. `MatchAutoFetchAttempt` model with `BelongsTo $match` + `enum` casts on `provider` and `outcome`. Factory for tests. `GameMatch::autoFetchAttempts(): HasMany`. Migration schema test (column types, indexes) + relationship round-trip test.
+- [ ] **Slice 1b — Wire writes from the pipeline.** Every code path in `DispatchAutoFetchAction` + `AutoFetchLichessGameJob` + `AutoFetchChessComGameJob` writes exactly one row per attempt — including the "we didn't even try" skips (snapshot missing, status not Pending, provider not linked, circuit open). `latency_ms` measured around the HTTP call. `Log::info` / `Log::warning` mirrors of the same shape so any future production log forwarding picks up the same events without a second instrumentation pass. Tests cover each `outcome` enum value (matched, no_match, ambiguous, error, skipped).
+- [ ] **Slice 1c — Filament audit-trail timeline.** New Infolist section on `GameMatchResource` View page: per-match audit timeline. Admin opens a disputed match → sees the full history of what the system tried, when, and what it found. Outcome badge colors (matched=success, no_match=warning, error=destructive, skipped=muted, ambiguous=warning). Latency shown as ms. Tests via `Livewire::test()` on the Filament page asserting timeline rows render.
+- [ ] **Slice 1d — `PipelineHealth` dashboard widget.** New widget alongside `OpsOverview` on the Filament dashboard: auto-fetch success rate (7d / 30d), avg time-to-settle (Pending → Settled), top "no_match" reasons (grouped by provider). Tests verify widget renders + queries respect the time windows.
 
 **Phase 2 — Reliability**
 
-The jobs currently catch provider errors and log a warning. Fine at one-match scale, dangerous at volume.
+The jobs currently catch provider errors and log a warning. Fine at one-match scale, dangerous at volume — every silent error is a match the user paid for and the system didn't settle. Phase 2 turns provider failures into retried-then-classified outcomes the pipeline can reason about.
 
-- Real retry policy on `AutoFetch*GameJob`s: exponential backoff for transient errors (5xx, timeouts, network), no retry for permanent errors (4xx other than rate-limit).
-- Rate-limit awareness: read `Retry-After` / `X-RateLimit-Reset` headers from both Lichess and chess.com, back off accordingly.
-- Circuit breaker per provider — if Lichess errors > N% for the last M minutes, pause auto-fetch for Lichess matches and surface in the admin widget. Resumes automatically when the error rate drops below threshold.
-- Structured `ProviderError` exception hierarchy distinguishing transient vs permanent vs ambiguous.
+- [ ] **Slice 2a — Structured `ProviderError` hierarchy.** New `App\Services\GameApi\Errors\ProviderError` abstract → `TransientProviderError` (5xx, timeout, network) + `RateLimitedError` (429 with retry-after) + `PermanentProviderError` (4xx other than 429, malformed responses). `LichessGameClient` + `ChessComGameClient` map raw `RequestException`s into the right subclass. Tests for each branch. _(Diverges from the original spec's "transient / permanent / ambiguous" — rate-limited is split out because its retry strategy is provider-driven via `Retry-After`, and "ambiguous" is better modeled as an audit-row `outcome` than an exception class.)_
+- [ ] **Slice 2b — Job retry policy.** `AutoFetch*GameJob`s define `tries()`, `backoff()` (exponential), and a bounded `retryUntil()` so we don't retry past the M16 confirmation timeout. Job middleware catches `TransientProviderError` → release with computed backoff; `PermanentProviderError` → fail terminally + write `error` attempt row + land in `failed_jobs`. Tests via `Bus::fake()` asserting release / fail behaviour per exception class.
+- [ ] **Slice 2c — Rate-limit header awareness.** Both clients read `Retry-After` and `X-RateLimit-Reset` from response headers, build a `RateLimitedError` carrying the right `retryAt`. Job middleware honours the per-attempt backoff for that error class specifically (overrides the default `backoff()`). Tests with mocked HTTP responses for both providers.
+- [ ] **Slice 2d — Circuit breaker per provider.** Track per-provider error rate in cache (sliding 10-minute window). If error rate > 50% over the last 5 attempts, pause auto-fetch for that provider for 5 minutes (`DispatchAutoFetchAction` skips with `outcome=skipped` and a `circuit_open` reason in the audit row). Resume automatically when health recovers. Surface open state in the `PipelineHealth` widget + a dashboard banner while open. Tests cover open / closed / half-open transitions. Thresholds (50% / 5 attempts / 5 min) are starting defaults — re-tune after the first month of real telemetry.
 
 **Phase 3 — Coverage**
 
-The edge cases the pipeline currently silently skips. Each is a class of "match got stuck in Pending" that needs an explicit policy.
+The edge cases the pipeline currently silently skips. Each is a class of "match got stuck in Pending" that needs an explicit policy. Each slice pairs a research/decision step with the implementation; the decision gets written into this section before the implementation slice starts.
 
-- Aborted games (currently filtered out by `AutoFetchLichessGameJob::filterCompleted`): decide policy — auto-refund both as a draw-like outcome, or stay in Pending until a real game lands? Probably depends on how often players abort intentionally vs accidentally.
-- Multiple candidate games between the same pair (currently silently skipped — "wrong game is worse than no game"): smarter disambiguation. Closest to match creation time? Matches the listing's `time_control`? Lowest-rated game (typical "first game" heuristic)?
-- Time-control mismatch: listing says blitz, players played bullet. Should the API result count? Today it does. Probably shouldn't.
+- [ ] **Slice 3a — Aborted-game policy (decision).** Today `AutoFetchLichessGameJob::filterCompleted` drops aborted games silently. Decide whether aborts should auto-refund as a draw (cooperative early-exit, both stakes back) or stay Pending until a real game lands. Research: how often Lichess games end in `aborted`, does chess.com expose the same signal, what the user-facing banner copy reads. Doc the decision in this section before Slice 3b.
+- [ ] **Slice 3b — Aborted-game implementation.** Apply the Slice 3a decision in both jobs. Either lift the filter and settle aborted-as-draw, or surface the aborted candidate in the audit trail and keep the match Pending. Tests cover the chosen policy end-to-end including the notification path.
+- [ ] **Slice 3c — Multi-candidate disambiguation.** Currently silently skipped — "wrong game is worse than no game." Replace with a deterministic heuristic: the candidate whose `played_at` is closest to `match.created_at` AND whose time control matches the listing's `time_control` array. Tie-break on game id. If no candidate matches the time control, write `outcome=ambiguous` + stay Pending. Tests with synthetic multi-game windows.
+- [ ] **Slice 3d — Time-control mismatch.** If the matched game's speed/format differs from the listing's `time_control` array, do not auto-settle. Write `outcome=ambiguous` with reason `time_control_mismatch`. Match stays Pending until either a matching game lands or the timeout flips it to ManualReview. Tests cover blitz-listing + bullet-game (skip) and blitz-listing + blitz-game (settle).
 
 **Phase 4 — Dispute fast-path**
 
 The original M14 intent, slimmed down to chess only.
 
-- When `OpenDisputeAction` fires on a Pending chess match, query the API immediately via `ResolveDisputeAction` instead of waiting for the next 5-min auto-fetch cron tick.
-- `ChessGameApi` already supports this; wiring is `OpenDisputeAction` → `ResolveDisputeAction` (gated by a config flag, default off until Phase 1 metrics show it'd be safe).
-- FACEIT / OpenDota / Riot piece stays in M15.
+- [ ] **Slice 4a — Wire `OpenDisputeAction` → `ResolveDisputeAction` (chess, flag-gated).** When `OpenDisputeAction` fires on a Pending chess match, dispatch `ResolveDisputeAction` immediately instead of waiting for the next 5-min auto-fetch cron tick. `ChessGameApi` already supports this. Gate behind `config('stakly.dispute_fast_path_enabled')`, default `false`. Tests for both flag states. FACEIT / OpenDota / Riot piece stays in M15.
+- [ ] **Slice 4b — Flag flip after Phase 1 metrics.** No code — calendar checkpoint. Once Phase 1's `PipelineHealth` widget shows ~2 weeks of stable auto-fetch (>95% success, no provider-side outages), flip the flag on in dev → observe → flip in prod.
 
 ### Not in M14
 
