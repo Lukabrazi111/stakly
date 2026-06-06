@@ -56,6 +56,7 @@ export function formatNotificationTime(
 
     if (showWeeks && days < 28) {
         const weeks = Math.floor(days / 7);
+
         return t ? t(':weeks w ago', { weeks }) : `${weeks}w ago`;
     }
 

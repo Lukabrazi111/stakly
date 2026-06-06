@@ -8,18 +8,22 @@ use App\Actions\Message\PostSystemMessageAction;
 use App\Enums\AutoFetchOutcome;
 use App\Enums\LinkedAccountProvider;
 use App\Enums\MessageType;
+use App\Enums\TimeControl;
 use App\Models\GameMatch;
 use App\Models\Message;
-use App\Services\Provider\Exceptions\ProviderUnavailableException;
+use App\Services\Provider\Exceptions\PermanentProviderError;
+use App\Services\Provider\Exceptions\ProviderError;
+use App\Services\Provider\Exceptions\RateLimitedError;
 use App\Services\Provider\LichessGameClient;
 use App\Services\Provider\LichessGameResult;
+use App\Services\Provider\ProviderCircuitBreaker;
+use DateTimeInterface;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueueAfterCommit;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
-use Throwable;
 
 /**
  * Posts an auto-fetched Lichess game card for a Pending match, then settles via
@@ -30,14 +34,29 @@ use Throwable;
  * Snapshot-cross-checked (not live-looked-up) so a mid-match unlink can't strip the anchor.
  * Idempotent via attachments_json scan (`alreadyPosted()`) — re-dispatch / queue-retry won't
  * double-post or double-settle.
+ *
+ * Retry policy (M14 Slice 2b):
+ *   - `TransientProviderError` / `RateLimitedError` → audit row + re-throw; Laravel
+ *     retries per `backoff()` up to `$tries`.
+ *   - `PermanentProviderError` → audit row (`outcome_reason='permanent'`) + `$this->fail($e)`;
+ *     no retry, lands in `failed_jobs`.
+ *   - `retryUntil()` caps the whole chain at `match.created_at + M16 confirmation timeout`
+ *     so we never retry past the point where `ResolveMatchTimeoutAction` flips the match
+ *     to ManualReview.
  */
 class AutoFetchLichessGameJob implements ShouldBeUnique, ShouldQueueAfterCommit
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
-    public int $tries = 1;
+    public int $tries = 4;
 
     public int $timeout = 30;
+
+    /**
+     * Caps unique-lock lifetime past the worst-case retry chain so the lock
+     * doesn't strand if the queue worker dies mid-retry.
+     */
+    public int $uniqueFor = 240;
 
     public function __construct(
         public GameMatch $match,
@@ -52,11 +71,32 @@ class AutoFetchLichessGameJob implements ShouldBeUnique, ShouldQueueAfterCommit
         return (string) $this->match->id;
     }
 
+    /**
+     * @return list<int>
+     */
+    public function backoff(): array
+    {
+        return [5, 15, 30];
+    }
+
+    /**
+     * Bound the retry chain so it can't outlive the match's M16 confirmation
+     * window. Once the timeout fires, `ResolveMatchTimeoutAction` flips the
+     * match to ManualReview and further auto-fetch is pointless.
+     */
+    public function retryUntil(): DateTimeInterface
+    {
+        return $this->match->created_at
+            ->copy()
+            ->addHours((int) config('stakly.match_confirmation_timeout_hours'));
+    }
+
     public function handle(
         LichessGameClient $client,
         PostSystemMessageAction $postSystem,
         SettleFromCardAction $settleFromCard,
         RecordAutoFetchAttemptAction $recordAttempt,
+        ProviderCircuitBreaker $breaker,
     ): void {
         if ($this->alreadyPosted()) {
             $this->record($recordAttempt, AutoFetchOutcome::Skipped, [
@@ -86,21 +126,62 @@ class AutoFetchLichessGameJob implements ShouldBeUnique, ShouldQueueAfterCommit
             return;
         }
 
-        [$games, $errorMessage, $latencyMs] = $this->searchWithMetrics(
-            $client,
-            $creatorUsername,
-            $takerUsername,
-        );
+        $start = microtime(true);
 
-        if ($games === null) {
+        try {
+            $games = $client->searchGamesBetween(
+                $creatorUsername,
+                $takerUsername,
+                $this->match->created_at,
+            );
+        } catch (PermanentProviderError $e) {
             $this->record($recordAttempt, AutoFetchOutcome::Error, [
-                'error_message' => $errorMessage,
-                'latency_ms' => $latencyMs,
+                'error_message' => $e->getMessage(),
+                'latency_ms' => $this->elapsedMs($start),
+                'outcome_reason' => 'permanent',
             ]);
+            $breaker->recordFailure(LinkedAccountProvider::Lichess);
+            $this->fail($e);
 
             return;
+        } catch (RateLimitedError $e) {
+            $this->record($recordAttempt, AutoFetchOutcome::Error, [
+                'error_message' => $e->getMessage(),
+                'latency_ms' => $this->elapsedMs($start),
+                'outcome_reason' => $this->errorRetriesExhausted() ? 'retry_exhausted' : null,
+            ]);
+            $breaker->recordFailure(LinkedAccountProvider::Lichess);
+
+            $retryAt = $e->retryAt();
+            // `now()->getTimestamp()` (not PHP's `time()`) so Carbon's
+            // `setTestNow` mocking carries through to tests.
+            $nowTs = now()->getTimestamp();
+            if ($retryAt !== null
+                && $retryAt->getTimestamp() > $nowTs
+                && ! $this->errorRetriesExhausted()
+            ) {
+                // Honor the provider-supplied delay over the job's default `backoff()`.
+                $this->release(max(1, $retryAt->getTimestamp() - $nowTs));
+
+                return;
+            }
+
+            throw $e;
+        } catch (ProviderError $e) {
+            $this->record($recordAttempt, AutoFetchOutcome::Error, [
+                'error_message' => $e->getMessage(),
+                'latency_ms' => $this->elapsedMs($start),
+                'outcome_reason' => $this->errorRetriesExhausted() ? 'retry_exhausted' : null,
+            ]);
+            $breaker->recordFailure(LinkedAccountProvider::Lichess);
+            throw $e;
         }
 
+        // HTTP call succeeded (regardless of candidate count) — circuit health
+        // tracks provider availability, not whether games were found.
+        $breaker->recordSuccess(LinkedAccountProvider::Lichess);
+
+        $latencyMs = $this->elapsedMs($start);
         $completed = $this->filterCompleted($games);
         $count = count($completed);
 
@@ -113,23 +194,30 @@ class AutoFetchLichessGameJob implements ShouldBeUnique, ShouldQueueAfterCommit
             return;
         }
 
-        if ($count > 1) {
-            // Manual paste covers the ambiguous case.
+        // M14 Slice 3d — picker filters by time-control even for the
+        // single-candidate case. A blitz-listing matched on a bullet game
+        // doesn't auto-settle; the match stays Pending until a matching
+        // game lands or the M16 timeout routes it to ManualReview.
+        $game = $this->pickSettleableCandidate($completed);
+
+        if ($game === null) {
             $this->record($recordAttempt, AutoFetchOutcome::Ambiguous, [
                 'candidates_count' => $count,
                 'latency_ms' => $latencyMs,
+                'outcome_reason' => 'time_control_mismatch',
             ]);
 
             return;
         }
 
-        $game = $completed[0];
         $card = $this->postCard($postSystem, $game);
 
         // Audit row lands before settlement so the pipeline decision is recorded even if settle throws.
+        // `candidates_count` is the pre-disambiguation count — reader sees
+        // "we found N, picked 1" rather than "we found 1".
         $this->record($recordAttempt, AutoFetchOutcome::Matched, [
             'winner_username' => $game->winnerUsername(),
-            'candidates_count' => 1,
+            'candidates_count' => $count,
             'latency_ms' => $latencyMs,
         ]);
 
@@ -138,31 +226,9 @@ class AutoFetchLichessGameJob implements ShouldBeUnique, ShouldQueueAfterCommit
         $settleFromCard->handle($this->match, $card);
     }
 
-    /**
-     * Returns `[games, errorMessage, latencyMs]` — exactly one of `games` / `errorMessage` is non-null.
-     *
-     * @return array{0: list<LichessGameResult>|null, 1: string|null, 2: int}
-     */
-    private function searchWithMetrics(
-        LichessGameClient $client,
-        string $creatorUsername,
-        string $takerUsername,
-    ): array {
-        $start = microtime(true);
-
-        try {
-            $games = $client->searchGamesBetween(
-                $creatorUsername,
-                $takerUsername,
-                $this->match->created_at,
-            );
-
-            return [$games, null, $this->elapsedMs($start)];
-        } catch (ProviderUnavailableException $e) {
-            return [null, $e->getMessage(), $this->elapsedMs($start)];
-        } catch (Throwable $e) {
-            return [null, $e->getMessage(), $this->elapsedMs($start)];
-        }
+    private function errorRetriesExhausted(): bool
+    {
+        return $this->attempts() >= $this->tries;
     }
 
     private function elapsedMs(float $start): int
@@ -171,16 +237,78 @@ class AutoFetchLichessGameJob implements ShouldBeUnique, ShouldQueueAfterCommit
     }
 
     /**
-     * Decisive or draw only — aborted / half-played skipped (not a real result to settle).
+     * Pick the candidate this job should settle on. M14 Slice 3d — applies
+     * to any candidate count: filter to those whose speed matches the
+     * listing's `time_control` array; if multiple survive (Slice 3c),
+     * pick the one whose `lastMoveAt` is closest to the match's
+     * `created_at` (= the first game played for this match), tie-breaking
+     * on lexicographic game id for determinism.
+     *
+     * Returns null when no candidate matches the listing's time-control —
+     * caller records `outcome=ambiguous` with `outcome_reason=time_control_mismatch`
+     * and the match stays Pending until either a matching game lands or
+     * the M16 timeout flips it to ManualReview.
+     *
+     * @param  list<LichessGameResult>  $candidates
+     */
+    private function pickSettleableCandidate(array $candidates): ?LichessGameResult
+    {
+        $listingControls = $this->match->listing->time_control
+            ->map(fn (TimeControl $tc) => $tc->value)
+            ->all();
+
+        $tcMatches = array_values(array_filter(
+            $candidates,
+            fn (LichessGameResult $g) => in_array($g->speed, $listingControls, true),
+        ));
+
+        if ($tcMatches === []) {
+            return null;
+        }
+
+        if (count($tcMatches) === 1) {
+            return $tcMatches[0];
+        }
+
+        $matchCreatedTs = $this->match->created_at->getTimestamp();
+        usort($tcMatches, function (LichessGameResult $a, LichessGameResult $b) use ($matchCreatedTs) {
+            $aDelta = abs($a->lastMoveAt->getTimestamp() - $matchCreatedTs);
+            $bDelta = abs($b->lastMoveAt->getTimestamp() - $matchCreatedTs);
+
+            if ($aDelta !== $bDelta) {
+                return $aDelta <=> $bDelta;
+            }
+
+            return strcmp($a->id, $b->id);
+        });
+
+        return $tcMatches[0];
+    }
+
+    /**
+     * Settle-eligible candidates. Two-pass: decisive / draw games are the
+     * primary candidates (a real played-out game beats an aborted one when
+     * both exist in the same window). Fall back to aborted games only
+     * when there's no primary candidate (M14 Slice 3b — aborted settles
+     * as cooperative-exit refund). `unknown` falls through to silent skip.
      *
      * @param  list<LichessGameResult>  $games
      * @return list<LichessGameResult>
      */
     private function filterCompleted(array $games): array
     {
-        return array_values(array_filter(
+        $primary = array_values(array_filter(
             $games,
             fn (LichessGameResult $g) => $g->isDecisive() || $g->isDraw(),
+        ));
+
+        if ($primary !== []) {
+            return $primary;
+        }
+
+        return array_values(array_filter(
+            $games,
+            fn (LichessGameResult $g) => $g->isAborted(),
         ));
     }
 

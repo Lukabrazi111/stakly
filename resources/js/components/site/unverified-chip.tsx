@@ -114,10 +114,9 @@ export function UnverifiedChip({ className }: Props) {
             className={`inline-flex items-center gap-2 rounded-full border border-warning/30 bg-warning/10 px-3 py-1.5 text-xs font-medium text-warning transition-colors duration-200 ease-out hover:border-warning/50 hover:bg-warning/20 focus-visible:ring-2 focus-visible:ring-warning focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:border-warning/30 disabled:hover:bg-warning/10 ${className ?? ''}`}
             title={
                 cooldown > 0
-                    ? t(
-                          'Wait :seconds s before requesting another email',
-                          { seconds: cooldown },
-                      )
+                    ? t('Wait :seconds s before requesting another email', {
+                          seconds: cooldown,
+                      })
                     : t(
                           'Verify your email to create listings — click to resend',
                       )

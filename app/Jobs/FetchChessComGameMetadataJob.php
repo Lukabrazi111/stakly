@@ -8,7 +8,7 @@ use App\Models\GameMatch;
 use App\Models\Message;
 use App\Services\Provider\ChessComGameClient;
 use App\Services\Provider\ChessComGameResult;
-use App\Services\Provider\Exceptions\ProviderUnavailableException;
+use App\Services\Provider\Exceptions\ProviderError;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueueAfterCommit;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -64,7 +64,7 @@ class FetchChessComGameMetadataJob implements ShouldQueueAfterCommit
 
         try {
             $game = $client->fetchGame($this->gameUrl, $candidateUsername);
-        } catch (ProviderUnavailableException $e) {
+        } catch (ProviderError $e) {
             Log::info('chess.com game fetch failed (provider unavailable)', [
                 'message_id' => $this->message->id,
                 'game_url' => $this->gameUrl,

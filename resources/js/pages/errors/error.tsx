@@ -46,10 +46,14 @@ export default function ErrorPage({ status }: Props) {
 
     return (
         <SiteLayout>
-            <PageMeta title={t(copy.title)} description={t(copy.body)} noindex />
+            <PageMeta
+                title={t(copy.title)}
+                description={t(copy.body)}
+                noindex
+            />
 
             <div className="mx-auto flex min-h-[60vh] max-w-2xl flex-col items-center justify-center px-4 py-16 text-center md:py-24">
-                <p className="font-display text-7xl font-black tracking-tight text-gradient-primary md:text-8xl">
+                <p className="text-gradient-primary font-display text-7xl font-black tracking-tight md:text-8xl">
                     {status}
                 </p>
                 <h1 className="mt-4 font-display text-2xl font-bold tracking-tight text-foreground md:text-3xl">

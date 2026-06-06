@@ -13,7 +13,9 @@ use App\Models\Listing;
 use App\Models\MatchProviderSnapshot;
 use App\Models\Message;
 use App\Models\User;
+use App\Services\Provider\Exceptions\TransientProviderError;
 use App\Services\Provider\LichessGameClient;
+use App\Services\Provider\ProviderCircuitBreaker;
 use App\Services\Wallet;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Http;
@@ -42,7 +44,11 @@ function autoFetchMatch(?array $snapshots = null): GameMatch
     Wallet::deposit($creator, '500', reference: "test:deposit:c:{$creator->id}");
     Wallet::deposit($taker, '500', reference: "test:deposit:t:{$taker->id}");
 
-    $listing = Listing::factory()->taken()->forLichess()->for($creator)->state(['stake_amount' => '100'])->create();
+    // M14 Slice 3d — TC catch-all so happy-path tests pass deterministically;
+    // tests that exercise TC mismatch override this back to a single value.
+    $listing = Listing::factory()->taken()->forLichess()->for($creator)
+        ->state(['stake_amount' => '100', 'time_control' => ['blitz', 'rapid', 'classical']])
+        ->create();
     Wallet::hold(user: $creator, amount: '100', listing: $listing, reference: "listing-create:{$listing->id}");
     Wallet::hold(user: $taker, amount: '100', listing: $listing, reference: "match-take:{$listing->id}");
 
@@ -75,6 +81,7 @@ function runAutoFetch(GameMatch $match): void
             app(PostSystemMessageAction::class),
             app(SettleFromCardAction::class),
             app(RecordAutoFetchAttemptAction::class),
+            app(ProviderCircuitBreaker::class),
         );
 }
 
@@ -149,6 +156,36 @@ test('drawn game posts a card AND settles as draw (M16 — draws are valid compl
         ->and($match->winner_user_id)->toBeNull();
 });
 
+test('aborted game posts a card AND settles as draw (M14 Slice 3b — cooperative-exit refund)', function () {
+    $match = autoFetchMatch();
+
+    $aborted = lichessGameFixture(['id' => 'abortedX', 'status' => 'aborted']);
+    unset($aborted['winner']);
+
+    Http::fake([
+        'lichess.org/api/games/user/*' => Http::response(json_encode($aborted), 200),
+    ]);
+
+    runAutoFetch($match);
+
+    $system = Message::query()
+        ->where('match_id', $match->id)
+        ->where('type', MessageType::System)
+        ->where('content', 'Verified Lichess game record.')
+        ->first();
+
+    expect($system)->not->toBeNull()
+        ->and($system->attachments_json[0]['game_id'])->toBe('abortedX')
+        ->and($system->attachments_json[0]['status'])->toBe('aborted')
+        ->and($system->attachments_json[0]['winner_color'])->toBeNull()
+        ->and($system->attachments_json[0]['winner_username'])->toBeNull();
+
+    // Settled as draw — both stakes refunded, no winner.
+    $match->refresh();
+    expect($match->status)->toBe(MatchStatus::Settled)
+        ->and($match->winner_user_id)->toBeNull();
+});
+
 // ─── Single-candidate-or-skip heuristic ─────────────────────────────────────
 
 test('no games found → no system message posted, match stays Pending', function () {
@@ -165,8 +202,53 @@ test('no games found → no system message posted, match stays Pending', functio
     expect($match->fresh()->status)->toBe(MatchStatus::Pending);
 });
 
-test('multiple decisive games → ambiguous, no post', function () {
+test('single game with time-control mismatch → ambiguous, no post (M14 Slice 3d)', function () {
     $match = autoFetchMatch();
+    // Listing is blitz-only; the matched game is bullet → no auto-settle.
+    $match->listing->update(['time_control' => ['blitz']]);
+
+    $bullet = lichessGameFixture(['id' => 'bulletgg', 'speed' => 'bullet']);
+
+    Http::fake([
+        'lichess.org/api/games/user/*' => Http::response(json_encode($bullet), 200),
+    ]);
+
+    runAutoFetch($match);
+
+    expect(Message::query()->where('match_id', $match->id)->where('type', MessageType::System)->count())
+        ->toBe(0);
+    expect($match->fresh()->status)->toBe(MatchStatus::Pending);
+});
+
+test('single game with time-control match → posts a card AND settles (M14 Slice 3d sanity check)', function () {
+    $match = autoFetchMatch();
+    $match->listing->update(['time_control' => ['blitz']]);
+
+    // Default fixture speed is blitz — matches the listing.
+    $blitz = lichessGameFixture(['id' => 'blitzgg0']);
+
+    Http::fake([
+        'lichess.org/api/games/user/*' => Http::response(json_encode($blitz), 200),
+    ]);
+
+    runAutoFetch($match);
+
+    $system = Message::query()
+        ->where('match_id', $match->id)
+        ->where('type', MessageType::System)
+        ->first();
+
+    expect($system)->not->toBeNull()
+        ->and($system->attachments_json[0]['game_id'])->toBe('blitzgg0');
+    expect($match->fresh()->status)->toBe(MatchStatus::Settled);
+});
+
+test('multiple decisive games with time-control mismatch → ambiguous, no post (M14 Slice 3c)', function () {
+    $match = autoFetchMatch();
+    // Force listing time-control away from the fixture default (blitz)
+    // so the picker's TC filter eliminates both candidates.
+    $match->listing->update(['time_control' => ['classical']]);
+
     $g1 = json_encode(lichessGameFixture(['id' => 'game0001']));
     $g2 = json_encode(lichessGameFixture(['id' => 'game0002', 'winner' => 'black']));
 
@@ -181,8 +263,9 @@ test('multiple decisive games → ambiguous, no post', function () {
     expect($match->fresh()->status)->toBe(MatchStatus::Pending);
 });
 
-test('multiple completions (decisive + drawn) → ambiguous, no post', function () {
+test('multiple completions (decisive + drawn) with time-control mismatch → ambiguous, no post', function () {
     $match = autoFetchMatch();
+    $match->listing->update(['time_control' => ['classical']]);
 
     $decisive = lichessGameFixture(['id' => 'winnergg']);
     $drawn = lichessGameFixture(['id' => 'drawnone', 'status' => 'draw']);
@@ -202,24 +285,83 @@ test('multiple completions (decisive + drawn) → ambiguous, no post', function 
     expect($match->fresh()->status)->toBe(MatchStatus::Pending);
 });
 
-test('aborted-only games → filtered out, no post', function () {
+test('multiple decisive games with time-control match → picker picks game closest to match.created_at (M14 Slice 3c)', function () {
     $match = autoFetchMatch();
+    $match->listing->update(['time_control' => ['blitz']]);
 
-    $aborted = lichessGameFixture(['status' => 'aborted']);
-    unset($aborted['winner']);
+    // match.created_at is approximately "now". Build two games:
+    //   - first played soon after match creation
+    //   - second played much later
+    // Picker should pick the first (closer to match.created_at).
+    $earlyTs = $match->created_at->copy()->addMinutes(2)->getTimestampMs();
+    $lateTs = $match->created_at->copy()->addMinutes(30)->getTimestampMs();
+
+    $early = lichessGameFixture([
+        'id' => 'earlygame',
+        'createdAt' => $earlyTs,
+        'lastMoveAt' => $earlyTs,
+    ]);
+    $late = lichessGameFixture([
+        'id' => 'lategame0',
+        'createdAt' => $lateTs,
+        'lastMoveAt' => $lateTs,
+    ]);
 
     Http::fake([
-        'lichess.org/api/games/user/*' => Http::response(json_encode($aborted), 200),
+        'lichess.org/api/games/user/*' => Http::response(
+            json_encode($early)."\n".json_encode($late),
+            200,
+        ),
     ]);
 
     runAutoFetch($match);
 
-    expect(Message::query()->where('match_id', $match->id)->where('type', MessageType::System)->count())
-        ->toBe(0);
-    expect($match->fresh()->status)->toBe(MatchStatus::Pending);
+    $system = Message::query()
+        ->where('match_id', $match->id)
+        ->where('type', MessageType::System)
+        ->first();
+
+    expect($system)->not->toBeNull()
+        ->and($system->attachments_json[0]['game_id'])->toBe('earlygame');
+    expect($match->fresh()->status)->toBe(MatchStatus::Settled);
 });
 
-test('one decisive + one aborted → posts the decisive one + settles', function () {
+test('picker tie-breaks on game id when delta is equal (M14 Slice 3c)', function () {
+    $match = autoFetchMatch();
+    $match->listing->update(['time_control' => ['blitz']]);
+
+    // Both games at the same lastMoveAt — picker falls back to id sort.
+    // 'aaaagame' < 'zzzzgame' lexically → 'aaaagame' wins.
+    $ts = $match->created_at->copy()->addMinutes(5)->getTimestampMs();
+
+    $first = lichessGameFixture([
+        'id' => 'aaaagame',
+        'lastMoveAt' => $ts,
+    ]);
+    $second = lichessGameFixture([
+        'id' => 'zzzzgame',
+        'winner' => 'black',
+        'lastMoveAt' => $ts,
+    ]);
+
+    Http::fake([
+        'lichess.org/api/games/user/*' => Http::response(
+            json_encode($second)."\n".json_encode($first), // late in ndjson, but earlier id
+            200,
+        ),
+    ]);
+
+    runAutoFetch($match);
+
+    $system = Message::query()
+        ->where('match_id', $match->id)
+        ->where('type', MessageType::System)
+        ->first();
+
+    expect($system->attachments_json[0]['game_id'])->toBe('aaaagame');
+});
+
+test('one decisive + one aborted → posts the decisive one + settles (decisive wins primary pass)', function () {
     $match = autoFetchMatch();
 
     $decisive = lichessGameFixture(['id' => 'winnergg']);
@@ -248,14 +390,15 @@ test('one decisive + one aborted → posts the decisive one + settles', function
 
 // ─── Failure modes ──────────────────────────────────────────────────────────
 
-test('provider 5xx → silent log + no post', function () {
+test('provider 5xx → no post, no settle (re-throws for queue retry)', function () {
     $match = autoFetchMatch();
 
     Http::fake([
         'lichess.org/api/games/user/*' => Http::response('', 503),
     ]);
 
-    runAutoFetch($match);
+    expect(fn () => runAutoFetch($match))
+        ->toThrow(TransientProviderError::class);
 
     expect(Message::query()->where('match_id', $match->id)->where('type', MessageType::System)->count())
         ->toBe(0);

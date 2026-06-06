@@ -13,6 +13,7 @@ use App\Models\MatchProviderSnapshot;
 use App\Models\Message;
 use App\Models\User;
 use App\Services\Provider\ChessComGameClient;
+use App\Services\Provider\ProviderCircuitBreaker;
 use App\Services\Wallet;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Http;
@@ -26,7 +27,11 @@ function chessComAutoFetchMatch(?array $snapshots = null): GameMatch
     Wallet::deposit($creator, '500', reference: "test:deposit:c:{$creator->id}");
     Wallet::deposit($taker, '500', reference: "test:deposit:t:{$taker->id}");
 
-    $listing = Listing::factory()->taken()->forChessCom()->for($creator)->state(['stake_amount' => '100'])->create();
+    // M14 Slice 3d — TC catch-all so happy-path tests pass deterministically;
+    // tests that exercise TC mismatch override this back to a single value.
+    $listing = Listing::factory()->taken()->forChessCom()->for($creator)
+        ->state(['stake_amount' => '100', 'time_control' => ['blitz', 'rapid', 'classical']])
+        ->create();
     Wallet::hold(user: $creator, amount: '100', listing: $listing, reference: "listing-create:{$listing->id}");
     Wallet::hold(user: $taker, amount: '100', listing: $listing, reference: "match-take:{$listing->id}");
 
@@ -63,6 +68,7 @@ function runChessComAutoFetch(GameMatch $match): void
             app(PostSystemMessageAction::class),
             app(SettleFromCardAction::class),
             app(RecordAutoFetchAttemptAction::class),
+            app(ProviderCircuitBreaker::class),
         );
 }
 
@@ -149,6 +155,75 @@ test('drawn chess.com game posts a card AND settles as draw', function () {
     $match->refresh();
     expect($match->status)->toBe(MatchStatus::Settled)
         ->and($match->winner_user_id)->toBeNull();
+});
+
+test('abandoned chess.com game posts a card AND settles as draw (M14 Slice 3b — cooperative-exit refund)', function () {
+    $match = chessComAutoFetchMatch();
+
+    // chess.com abandoned shape: both sides have `result === 'abandoned'`.
+    Http::fake([
+        'api.chess.com/pub/player/*/games/*' => Http::response(
+            chessComArchiveFixture([
+                chessComGameFixture([
+                    'end_time' => CarbonImmutable::now()->subMinutes(5)->timestamp,
+                    'white' => [
+                        'username' => 'alice-chesscom',
+                        'rating' => 1500,
+                        'result' => 'abandoned',
+                    ],
+                    'black' => [
+                        'username' => 'bob-chesscom',
+                        'rating' => 1495,
+                        'result' => 'abandoned',
+                    ],
+                ]),
+            ]),
+            200,
+        ),
+    ]);
+
+    runChessComAutoFetch($match);
+
+    $system = Message::query()
+        ->where('match_id', $match->id)
+        ->where('type', MessageType::System)
+        ->where('content', 'Verified chess.com game record.')
+        ->first();
+
+    expect($system)->not->toBeNull()
+        ->and($system->attachments_json[0]['status'])->toBe('abandoned')
+        ->and($system->attachments_json[0]['winner_color'])->toBeNull()
+        ->and($system->attachments_json[0]['winner_username'])->toBeNull();
+
+    // Settled as draw — both stakes refunded, no winner.
+    $match->refresh();
+    expect($match->status)->toBe(MatchStatus::Settled)
+        ->and($match->winner_user_id)->toBeNull();
+});
+
+test('single game with time-control mismatch → ambiguous, no post (M14 Slice 3d)', function () {
+    $match = chessComAutoFetchMatch();
+    $match->listing->update(['time_control' => ['blitz']]);
+
+    // Listing blitz-only; matched game is bullet → no auto-settle.
+    Http::fake([
+        'api.chess.com/pub/player/*/games/*' => Http::response(
+            chessComArchiveFixture([
+                chessComGameFixture([
+                    'url' => 'https://www.chess.com/game/live/bullet111',
+                    'end_time' => CarbonImmutable::now()->subMinutes(5)->timestamp,
+                    'time_class' => 'bullet',
+                ]),
+            ]),
+            200,
+        ),
+    ]);
+
+    runChessComAutoFetch($match);
+
+    expect(Message::query()->where('match_id', $match->id)->where('type', MessageType::System)->count())
+        ->toBe(0);
+    expect($match->fresh()->status)->toBe(MatchStatus::Pending);
 });
 
 // ─── Retry-on-empty (chess.com eventual consistency) ───────────────────────

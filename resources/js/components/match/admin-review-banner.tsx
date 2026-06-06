@@ -1,6 +1,7 @@
 import { MessageSquare, ShieldAlert } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { useT, type TranslationFn } from '@/lib/i18n';
+import { useT } from '@/lib/i18n';
+import type { TranslationFn } from '@/lib/i18n';
 import type { Match, MatchPlayer } from '@/types';
 
 interface AdminReviewBannerProps {

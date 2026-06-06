@@ -5,6 +5,7 @@ namespace App\Actions\GameMatch;
 use App\Actions\Admin\NotifyAdminsAction;
 use App\Actions\Message\PostSystemMessageAction;
 use App\Actions\Message\SendMessageAction;
+use App\Enums\Game;
 use App\Enums\MatchStatus;
 use App\Enums\MessageType;
 use App\Events\MessageSent;
@@ -18,8 +19,12 @@ use Illuminate\Support\Facades\DB;
 
 /**
  * Player-triggered escalation during the Pending window. Match flips to `Disputed`
- * and lands in the admin review queue. Resolution is admin-driven (auto-arbitration
- * via `ResolveDisputeAction` is kept for tests + future use).
+ * and lands in the admin review queue.
+ *
+ * M14 Slice 4a — when `config('stakly.dispute_fast_path_enabled')` is true AND
+ * the match is chess, `ResolveDisputeAction` runs synchronously right after
+ * the status flip. Skips the wait for the next 5-min cron tick. Default off
+ * until Slice 4b's Phase-1-metrics checkpoint.
  *
  * Returns true if opened, false on race (lock acquired after status moved off Pending).
  */
@@ -28,6 +33,7 @@ class OpenDisputeAction
     public function __construct(
         private readonly PostSystemMessageAction $postSystem,
         private readonly NotifyAdminsAction $notifyAdmins,
+        private readonly ResolveDisputeAction $resolveDispute,
     ) {}
 
     public function handle(
@@ -64,9 +70,30 @@ class OpenDisputeAction
             $fresh = $match->fresh(['listing.user', 'taker']);
             $this->notifyAdminsOfDispute($fresh);
             $this->notifyOpponent($fresh, $user);
+
+            $this->runFastPathIfEnabled($fresh);
         }
 
         return $opened;
+    }
+
+    /**
+     * M14 Slice 4a — flag-gated synchronous arbitration. Chess only today;
+     * `ResolveDisputeAction` short-circuits on terminal statuses, so a race
+     * where admin resolves the same match while we're querying is safe.
+     */
+    private function runFastPathIfEnabled(GameMatch $match): void
+    {
+        if (! config('stakly.dispute_fast_path_enabled')) {
+            return;
+        }
+
+        $game = $match->listing?->game;
+        if ($game !== Game::Chess) {
+            return;
+        }
+
+        $this->resolveDispute->handle($match);
     }
 
     /**

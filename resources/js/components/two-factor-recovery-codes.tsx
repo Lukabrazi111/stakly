@@ -132,7 +132,9 @@ export default function TwoFactorRecoveryCodes({
                                     ) : (
                                         <div
                                             className="space-y-2"
-                                            aria-label={t('Loading recovery codes')}
+                                            aria-label={t(
+                                                'Loading recovery codes',
+                                            )}
                                         >
                                             {Array.from(
                                                 { length: 8 },

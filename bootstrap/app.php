@@ -48,7 +48,7 @@ return Application::configure(basePath: dirname(__DIR__))
         // full page would be the wrong UX for an in-flight form expiry.
         // Validation (422) is left untouched: Inertia renders field errors
         // inline. Debug mode also bypasses this so Whoops still works.
-        $exceptions->respond(function (Response $response, \Throwable $exception, Request $request) {
+        $exceptions->respond(function (Response $response, Throwable $exception, Request $request) {
             if (app()->environment('local') && config('app.debug')) {
                 return $response;
             }

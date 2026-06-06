@@ -11,10 +11,13 @@ use App\Models\Listing;
 use App\Models\MatchAutoFetchAttempt;
 use App\Models\MatchProviderSnapshot;
 use App\Models\User;
+use App\Services\Provider\ProviderCircuitBreaker;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Queue;
 
 beforeEach(function () {
     Queue::fake();
+    Cache::flush();
 });
 
 /**
@@ -112,6 +115,42 @@ test('records snapshot_missing when only one side has a snapshot', function () {
 
     Queue::assertNothingPushed();
     expect(MatchAutoFetchAttempt::where('outcome_reason', 'snapshot_missing')->count())->toBe(1);
+});
+
+test('skips with circuit_open reason when the provider breaker has tripped', function () {
+    [, , , $match] = pendingMatchWithSnapshots(LinkedAccountProvider::Lichess);
+
+    // Trip the breaker by recording 5 failures.
+    $breaker = app(ProviderCircuitBreaker::class);
+    foreach (range(1, 5) as $_) {
+        $breaker->recordFailure(LinkedAccountProvider::Lichess);
+    }
+    expect($breaker->isOpen(LinkedAccountProvider::Lichess))->toBeTrue();
+
+    app(DispatchAutoFetchAction::class)->handle($match);
+
+    Queue::assertNothingPushed();
+
+    $attempt = MatchAutoFetchAttempt::query()
+        ->where('match_id', $match->id)
+        ->first();
+    expect($attempt)->not->toBeNull()
+        ->and($attempt->outcome)->toBe(AutoFetchOutcome::Skipped)
+        ->and($attempt->outcome_reason)->toBe('circuit_open')
+        ->and($attempt->provider)->toBe(LinkedAccountProvider::Lichess);
+});
+
+test('circuit_open is checked per-provider — chess.com dispatches while Lichess is open', function () {
+    [, , , $match] = pendingMatchWithSnapshots(LinkedAccountProvider::ChessCom);
+
+    $breaker = app(ProviderCircuitBreaker::class);
+    foreach (range(1, 5) as $_) {
+        $breaker->recordFailure(LinkedAccountProvider::Lichess);
+    }
+
+    app(DispatchAutoFetchAction::class)->handle($match);
+
+    Queue::assertPushed(AutoFetchChessComGameJob::class);
 });
 
 test('not_pending skip records the provider from the listing', function () {

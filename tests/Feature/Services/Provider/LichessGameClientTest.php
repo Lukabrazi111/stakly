@@ -1,6 +1,8 @@
 <?php
 
-use App\Services\Provider\Exceptions\ProviderUnavailableException;
+use App\Services\Provider\Exceptions\PermanentProviderError;
+use App\Services\Provider\Exceptions\RateLimitedError;
+use App\Services\Provider\Exceptions\TransientProviderError;
 use App\Services\Provider\LichessGameClient;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Http;
@@ -41,31 +43,58 @@ test('fetchGame returns null on 404', function () {
     expect(client()->fetchGame('missing01'))->toBeNull();
 });
 
-test('fetchGame throws ProviderUnavailable on 5xx', function () {
+test('fetchGame throws TransientProviderError on 5xx', function () {
     Http::fake([
         'lichess.org/game/export/*' => Http::response('', 503),
     ]);
 
     expect(fn () => client()->fetchGame('a1b2c3d4'))
-        ->toThrow(ProviderUnavailableException::class);
+        ->toThrow(TransientProviderError::class);
 });
 
-test('fetchGame throws ProviderUnavailable on 429 rate limit', function () {
+test('fetchGame throws RateLimitedError on 429', function () {
     Http::fake([
         'lichess.org/game/export/*' => Http::response('', 429),
     ]);
 
     expect(fn () => client()->fetchGame('a1b2c3d4'))
-        ->toThrow(ProviderUnavailableException::class);
+        ->toThrow(RateLimitedError::class);
 });
 
-test('fetchGame throws ProviderUnavailable on malformed JSON', function () {
+test('fetchGame populates retryAt from Retry-After header on 429', function () {
+    CarbonImmutable::setTestNow('2026-06-06T12:00:00Z');
+    Http::fake([
+        'lichess.org/game/export/*' => Http::response('', 429, ['Retry-After' => '120']),
+    ]);
+
+    $error = null;
+    try {
+        client()->fetchGame('a1b2c3d4');
+    } catch (RateLimitedError $e) {
+        $error = $e;
+    }
+
+    expect($error)->not->toBeNull();
+    expect($error->retryAt()->getTimestamp())
+        ->toBe(CarbonImmutable::parse('2026-06-06T12:02:00Z')->getTimestamp());
+});
+
+test('fetchGame throws PermanentProviderError on 4xx other than 429', function () {
+    Http::fake([
+        'lichess.org/game/export/*' => Http::response('', 401),
+    ]);
+
+    expect(fn () => client()->fetchGame('a1b2c3d4'))
+        ->toThrow(PermanentProviderError::class);
+});
+
+test('fetchGame throws PermanentProviderError on malformed JSON', function () {
     Http::fake([
         'lichess.org/game/export/*' => Http::response(['oops' => 'no id field'], 200),
     ]);
 
     expect(fn () => client()->fetchGame('a1b2c3d4'))
-        ->toThrow(ProviderUnavailableException::class);
+        ->toThrow(PermanentProviderError::class);
 });
 
 test('fetchGame parses a draw correctly (winner key omitted)', function () {
@@ -86,7 +115,7 @@ test('fetchGame parses a draw correctly (winner key omitted)', function () {
         ->and($game->winnerUsername())->toBeNull();
 });
 
-test('fetchGame treats aborted games as neither decisive nor draw', function () {
+test('fetchGame classifies aborted games via isAborted (M14 Slice 3b)', function () {
     $payload = lichessGameFixture(['status' => 'aborted']);
     unset($payload['winner']);
 
@@ -99,7 +128,38 @@ test('fetchGame treats aborted games as neither decisive nor draw', function () 
     expect($game->status)->toBe('aborted')
         ->and($game->isDecisive())->toBeFalse()
         ->and($game->isDraw())->toBeFalse()
+        ->and($game->isAborted())->toBeTrue()
         ->and($game->winnerUsername())->toBeNull();
+});
+
+test('fetchGame classifies noStart games as aborted too', function () {
+    $payload = lichessGameFixture(['status' => 'noStart']);
+    unset($payload['winner']);
+
+    Http::fake([
+        'lichess.org/game/export/*' => Http::response($payload, 200),
+    ]);
+
+    $game = client()->fetchGame('a1b2c3d4');
+
+    expect($game->isAborted())->toBeTrue()
+        ->and($game->isDecisive())->toBeFalse()
+        ->and($game->isDraw())->toBeFalse();
+});
+
+test('fetchGame does NOT classify unknown status as aborted (silent skip)', function () {
+    $payload = lichessGameFixture(['status' => 'unknown']);
+    unset($payload['winner']);
+
+    Http::fake([
+        'lichess.org/game/export/*' => Http::response($payload, 200),
+    ]);
+
+    $game = client()->fetchGame('a1b2c3d4');
+
+    expect($game->isAborted())->toBeFalse()
+        ->and($game->isDecisive())->toBeFalse()
+        ->and($game->isDraw())->toBeFalse();
 });
 
 test('fetchGame handles AI/bot opponents (no user.name) gracefully', function () {
@@ -169,7 +229,7 @@ test('searchGamesBetween returns empty array on 404 (user deactivated)', functio
     expect($games)->toBe([]);
 });
 
-test('searchGamesBetween throws ProviderUnavailable on 5xx', function () {
+test('searchGamesBetween throws TransientProviderError on 5xx', function () {
     Http::fake([
         'lichess.org/api/games/user/*' => Http::response('', 503),
     ]);
@@ -178,7 +238,31 @@ test('searchGamesBetween throws ProviderUnavailable on 5xx', function () {
         'alice-lichess',
         'bob-lichess',
         CarbonImmutable::now()->subHour(),
-    ))->toThrow(ProviderUnavailableException::class);
+    ))->toThrow(TransientProviderError::class);
+});
+
+test('searchGamesBetween throws RateLimitedError on 429', function () {
+    Http::fake([
+        'lichess.org/api/games/user/*' => Http::response('', 429),
+    ]);
+
+    expect(fn () => client()->searchGamesBetween(
+        'alice-lichess',
+        'bob-lichess',
+        CarbonImmutable::now()->subHour(),
+    ))->toThrow(RateLimitedError::class);
+});
+
+test('searchGamesBetween throws PermanentProviderError on 4xx other than 429', function () {
+    Http::fake([
+        'lichess.org/api/games/user/*' => Http::response('', 400),
+    ]);
+
+    expect(fn () => client()->searchGamesBetween(
+        'alice-lichess',
+        'bob-lichess',
+        CarbonImmutable::now()->subHour(),
+    ))->toThrow(PermanentProviderError::class);
 });
 
 test('searchGamesBetween skips malformed ndjson lines and keeps valid ones', function () {

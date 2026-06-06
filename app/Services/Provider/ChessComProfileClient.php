@@ -3,7 +3,7 @@
 namespace App\Services\Provider;
 
 use App\Services\Provider\Exceptions\ProfileNotFoundException;
-use App\Services\Provider\Exceptions\ProviderUnavailableException;
+use App\Services\Provider\Exceptions\TransientProviderError;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Http;
 
@@ -36,7 +36,7 @@ class ChessComProfileClient implements ProfileClient
                 ->timeout(10)
                 ->get($url);
         } catch (ConnectionException $e) {
-            throw new ProviderUnavailableException(
+            throw new TransientProviderError(
                 "chess.com unreachable for username '{$username}': {$e->getMessage()}",
                 previous: $e,
             );
@@ -47,7 +47,7 @@ class ChessComProfileClient implements ProfileClient
         }
 
         if (! $response->successful()) {
-            throw new ProviderUnavailableException(
+            throw new TransientProviderError(
                 "chess.com returned status {$response->status()} for username '{$username}'.",
             );
         }
