@@ -1,5 +1,5 @@
-import { Link } from '@inertiajs/react';
 import { useAuthModal } from '@/components/auth/auth-modal-provider';
+import { HowItWorksLink } from '@/components/site/how-it-works-link';
 import { Button } from '@/components/ui/button';
 import { useT } from '@/lib/i18n';
 
@@ -55,7 +55,7 @@ export function Hero() {
                         {t('Get started')}
                     </Button>
                     <Button variant="ghost" size="lg" asChild>
-                        <Link href="#how-it-works">{t('How it works')}</Link>
+                        <HowItWorksLink>{t('How it works')}</HowItWorksLink>
                     </Button>
                 </div>
             </div>

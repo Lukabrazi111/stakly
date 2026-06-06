@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\GameStatus;
 use App\Http\Resources\GameResource;
 use App\Http\Resources\ListingResource;
 use App\Models\Game;
@@ -17,13 +18,25 @@ class HomeController extends Controller
 
     public function index(): Response
     {
-        $featured = Listing::query()
-            ->onPublicMarketplace()
-            ->with(['user:id,name,username,is_active_mode', 'user.linkedAccounts'])
-            ->orderBy('expires_at')
-            ->orderByDesc('id')
-            ->limit(self::FEATURED_COUNT)
-            ->get();
+        // Top N per Active game so each arena tile has its own ending-soon
+        // pool. A single global LIMIT would let one busy game starve the others
+        // — the welcome page filters by selected game client-side and would
+        // show 0–1 cards for the loser.
+        $activeGameSlugs = Game::query()
+            ->where('status', GameStatus::Active)
+            ->ordered()
+            ->pluck('slug');
+
+        $featured = $activeGameSlugs
+            ->flatMap(fn (string $slug) => Listing::query()
+                ->onPublicMarketplace()
+                ->with(['user:id,name,username,is_active_mode', 'user.linkedAccounts'])
+                ->where('game', $slug)
+                ->orderBy('expires_at')
+                ->orderByDesc('id')
+                ->limit(self::FEATURED_COUNT)
+                ->get())
+            ->values();
 
         SellerTrust::attachTo($featured);
 
