@@ -15,6 +15,7 @@ use App\Services\Provider\Exceptions\ProviderError;
 use App\Services\Provider\Exceptions\RateLimitedError;
 use App\Services\Provider\LichessGameClient;
 use App\Services\Provider\LichessGameResult;
+use App\Services\Provider\ProviderCircuitBreaker;
 use DateTimeInterface;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
@@ -94,6 +95,7 @@ class AutoFetchLichessGameJob implements ShouldBeUnique, ShouldQueueAfterCommit
         PostSystemMessageAction $postSystem,
         SettleFromCardAction $settleFromCard,
         RecordAutoFetchAttemptAction $recordAttempt,
+        ProviderCircuitBreaker $breaker,
     ): void {
         if ($this->alreadyPosted()) {
             $this->record($recordAttempt, AutoFetchOutcome::Skipped, [
@@ -137,6 +139,7 @@ class AutoFetchLichessGameJob implements ShouldBeUnique, ShouldQueueAfterCommit
                 'latency_ms' => $this->elapsedMs($start),
                 'outcome_reason' => 'permanent',
             ]);
+            $breaker->recordFailure(LinkedAccountProvider::Lichess);
             $this->fail($e);
 
             return;
@@ -146,6 +149,7 @@ class AutoFetchLichessGameJob implements ShouldBeUnique, ShouldQueueAfterCommit
                 'latency_ms' => $this->elapsedMs($start),
                 'outcome_reason' => $this->errorRetriesExhausted() ? 'retry_exhausted' : null,
             ]);
+            $breaker->recordFailure(LinkedAccountProvider::Lichess);
 
             $retryAt = $e->retryAt();
             // `now()->getTimestamp()` (not PHP's `time()`) so Carbon's
@@ -168,8 +172,13 @@ class AutoFetchLichessGameJob implements ShouldBeUnique, ShouldQueueAfterCommit
                 'latency_ms' => $this->elapsedMs($start),
                 'outcome_reason' => $this->errorRetriesExhausted() ? 'retry_exhausted' : null,
             ]);
+            $breaker->recordFailure(LinkedAccountProvider::Lichess);
             throw $e;
         }
+
+        // HTTP call succeeded (regardless of candidate count) — circuit health
+        // tracks provider availability, not whether games were found.
+        $breaker->recordSuccess(LinkedAccountProvider::Lichess);
 
         $latencyMs = $this->elapsedMs($start);
         $completed = $this->filterCompleted($games);

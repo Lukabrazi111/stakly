@@ -13,6 +13,7 @@ use App\Models\MatchProviderSnapshot;
 use App\Models\Message;
 use App\Models\User;
 use App\Services\Provider\ChessComGameClient;
+use App\Services\Provider\ProviderCircuitBreaker;
 use App\Services\Wallet;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Http;
@@ -63,6 +64,7 @@ function runChessComAutoFetch(GameMatch $match): void
             app(PostSystemMessageAction::class),
             app(SettleFromCardAction::class),
             app(RecordAutoFetchAttemptAction::class),
+            app(ProviderCircuitBreaker::class),
         );
 }
 

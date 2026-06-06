@@ -15,6 +15,7 @@ use App\Models\Message;
 use App\Models\User;
 use App\Services\Provider\Exceptions\TransientProviderError;
 use App\Services\Provider\LichessGameClient;
+use App\Services\Provider\ProviderCircuitBreaker;
 use App\Services\Wallet;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Http;
@@ -76,6 +77,7 @@ function runAutoFetch(GameMatch $match): void
             app(PostSystemMessageAction::class),
             app(SettleFromCardAction::class),
             app(RecordAutoFetchAttemptAction::class),
+            app(ProviderCircuitBreaker::class),
         );
 }
 

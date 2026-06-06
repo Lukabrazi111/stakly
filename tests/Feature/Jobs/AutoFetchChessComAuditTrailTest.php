@@ -17,6 +17,7 @@ use App\Services\Provider\ChessComGameClient;
 use App\Services\Provider\Exceptions\PermanentProviderError;
 use App\Services\Provider\Exceptions\RateLimitedError;
 use App\Services\Provider\Exceptions\TransientProviderError;
+use App\Services\Provider\ProviderCircuitBreaker;
 use App\Services\Wallet;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Http;
@@ -77,6 +78,7 @@ function runChessComAudit(GameMatch $match): void
             app(PostSystemMessageAction::class),
             app(SettleFromCardAction::class),
             app(RecordAutoFetchAttemptAction::class),
+            app(ProviderCircuitBreaker::class),
         );
 }
 
@@ -140,6 +142,7 @@ test('no_match on final attempt: writes outcome_reason = retry_exhausted', funct
         app(PostSystemMessageAction::class),
         app(SettleFromCardAction::class),
         app(RecordAutoFetchAttemptAction::class),
+        app(ProviderCircuitBreaker::class),
     );
 
     $attempt = MatchAutoFetchAttempt::query()->where('match_id', $match->id)->first();
@@ -214,6 +217,7 @@ test('rate limited with Retry-After: release() called with provider-supplied del
         app(PostSystemMessageAction::class),
         app(SettleFromCardAction::class),
         app(RecordAutoFetchAttemptAction::class),
+        app(ProviderCircuitBreaker::class),
     ))->not->toThrow(RateLimitedError::class);
 
     expect($job->releasedDelay)->toBe(120);
@@ -243,6 +247,7 @@ test('rate limited on final attempt: throws instead of release (budget exhausted
         app(PostSystemMessageAction::class),
         app(SettleFromCardAction::class),
         app(RecordAutoFetchAttemptAction::class),
+        app(ProviderCircuitBreaker::class),
     ))->toThrow(RateLimitedError::class);
 
     $attempt = MatchAutoFetchAttempt::query()->where('match_id', $match->id)->first();
@@ -271,6 +276,7 @@ test('error on final attempt: writes outcome_reason=retry_exhausted', function (
         app(PostSystemMessageAction::class),
         app(SettleFromCardAction::class),
         app(RecordAutoFetchAttemptAction::class),
+        app(ProviderCircuitBreaker::class),
     ))->toThrow(TransientProviderError::class);
 
     $attempt = MatchAutoFetchAttempt::query()->where('match_id', $match->id)->first();
