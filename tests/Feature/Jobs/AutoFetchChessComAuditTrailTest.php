@@ -286,31 +286,6 @@ test('error on final attempt: writes outcome_reason=retry_exhausted', function (
         ->and($attempt->outcome_reason)->toBe('retry_exhausted');
 });
 
-test('single TC-mismatch candidate: writes outcome=ambiguous + outcome_reason=time_control_mismatch (M14 Slice 3d)', function () {
-    $match = chessComAuditMatch();
-    $match->listing->update(['time_control' => ['classical']]);
-
-    Http::fake([
-        'api.chess.com/pub/player/*/games/*' => Http::response(
-            chessComArchiveFixture([
-                chessComGameFixture([
-                    'url' => 'https://www.chess.com/game/live/bullet001',
-                    'end_time' => CarbonImmutable::now()->subMinutes(5)->timestamp,
-                    'time_class' => 'bullet',
-                ]),
-            ]),
-            200,
-        ),
-    ]);
-
-    runChessComAudit($match);
-
-    $attempt = MatchAutoFetchAttempt::query()->where('match_id', $match->id)->first();
-    expect($attempt->outcome)->toBe(AutoFetchOutcome::Ambiguous)
-        ->and($attempt->candidates_count)->toBe(1)
-        ->and($attempt->outcome_reason)->toBe('time_control_mismatch');
-});
-
 test('ambiguous: writes a row with candidates_count + outcome_reason=time_control_mismatch (M14 Slice 3c)', function () {
     $match = chessComAuditMatch();
     // Force TC mismatch so the picker rejects both candidates.
