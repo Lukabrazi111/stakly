@@ -284,8 +284,11 @@ test('error on final attempt: writes outcome_reason=retry_exhausted', function (
         ->and($attempt->outcome_reason)->toBe('retry_exhausted');
 });
 
-test('ambiguous: writes a row with candidates_count = N', function () {
+test('ambiguous: writes a row with candidates_count + outcome_reason=time_control_mismatch (M14 Slice 3c)', function () {
     $match = chessComAuditMatch();
+    // Force TC mismatch so the picker rejects both candidates.
+    $match->listing->update(['time_control' => ['classical']]);
+
     Http::fake([
         'api.chess.com/pub/player/*/games/*' => Http::response(
             chessComArchiveFixture([
@@ -300,6 +303,41 @@ test('ambiguous: writes a row with candidates_count = N', function () {
 
     $attempt = MatchAutoFetchAttempt::query()->where('match_id', $match->id)->first();
     expect($attempt->outcome)->toBe(AutoFetchOutcome::Ambiguous)
+        ->and($attempt->candidates_count)->toBe(2)
+        ->and($attempt->outcome_reason)->toBe('time_control_mismatch');
+});
+
+test('multiple candidates with TC match: picker picks closest → outcome=matched, candidates_count=N (M14 Slice 3c)', function () {
+    $match = chessComAuditMatch();
+    $match->listing->update(['time_control' => ['blitz']]);
+
+    // chessComAuditMatch backdates created_at to 1h ago. early = -50min, late = -10min from now.
+    // |early - created| = 10min; |late - created| = 50min → picker picks early.
+    $earlyTs = CarbonImmutable::now()->subMinutes(50)->timestamp;
+    $lateTs = CarbonImmutable::now()->subMinutes(10)->timestamp;
+
+    Http::fake([
+        'api.chess.com/pub/player/*/games/*' => Http::response(
+            chessComArchiveFixture([
+                chessComGameFixture([
+                    'url' => 'https://www.chess.com/game/live/early1',
+                    'end_time' => $earlyTs,
+                ]),
+                chessComGameFixture([
+                    'url' => 'https://www.chess.com/game/live/late01',
+                    'end_time' => $lateTs,
+                    'white' => ['username' => 'alice-chesscom', 'result' => 'win'],
+                    'black' => ['username' => 'bob-chesscom', 'result' => 'checkmated'],
+                ]),
+            ]),
+            200,
+        ),
+    ]);
+
+    runChessComAudit($match);
+
+    $attempt = MatchAutoFetchAttempt::query()->where('match_id', $match->id)->first();
+    expect($attempt->outcome)->toBe(AutoFetchOutcome::Matched)
         ->and($attempt->candidates_count)->toBe(2);
 });
 

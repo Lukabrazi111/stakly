@@ -8,6 +8,7 @@ use App\Actions\Message\PostSystemMessageAction;
 use App\Enums\AutoFetchOutcome;
 use App\Enums\LinkedAccountProvider;
 use App\Enums\MessageType;
+use App\Enums\TimeControl;
 use App\Models\GameMatch;
 use App\Models\Message;
 use App\Services\Provider\ChessComGameClient;
@@ -203,21 +204,29 @@ class AutoFetchChessComGameJob implements ShouldBeUnique, ShouldQueueAfterCommit
             return;
         }
 
-        if ($count > 1) {
+        $game = $count === 1
+            ? $completed[0]
+            : $this->pickFromMultipleCandidates($completed);
+
+        if ($game === null) {
+            // M14 Slice 3c — multi-candidate window where no game matches
+            // the listing's time-control. Stay Pending.
             $this->record($recordAttempt, AutoFetchOutcome::Ambiguous, [
                 'candidates_count' => $count,
                 'latency_ms' => $latencyMs,
+                'outcome_reason' => 'time_control_mismatch',
             ]);
 
             return;
         }
 
-        $game = $completed[0];
         $card = $this->postCard($postSystem, $game);
 
+        // `candidates_count` is the pre-disambiguation count — reader sees
+        // "we found N, picked 1" rather than "we found 1".
         $this->record($recordAttempt, AutoFetchOutcome::Matched, [
             'winner_username' => $game->winnerUsername(),
-            'candidates_count' => 1,
+            'candidates_count' => $count,
             'latency_ms' => $latencyMs,
         ]);
 
@@ -229,6 +238,51 @@ class AutoFetchChessComGameJob implements ShouldBeUnique, ShouldQueueAfterCommit
     private function elapsedMs(float $start): int
     {
         return (int) round((microtime(true) - $start) * 1000);
+    }
+
+    /**
+     * M14 Slice 3c — disambiguation for multi-candidate windows. Filter
+     * candidates to those whose speed matches the listing's `time_control`
+     * array, then pick the one whose `endedAt` is closest to the match's
+     * `created_at` (= the first game played for this match). Tie-break on
+     * lexicographic game id for determinism.
+     *
+     * Returns null when no candidate matches the listing's time-control.
+     *
+     * @param  list<ChessComGameResult>  $candidates
+     */
+    private function pickFromMultipleCandidates(array $candidates): ?ChessComGameResult
+    {
+        $listingControls = $this->match->listing->time_control
+            ->map(fn (TimeControl $tc) => $tc->value)
+            ->all();
+
+        $tcMatches = array_values(array_filter(
+            $candidates,
+            fn (ChessComGameResult $g) => in_array($g->speed, $listingControls, true),
+        ));
+
+        if ($tcMatches === []) {
+            return null;
+        }
+
+        if (count($tcMatches) === 1) {
+            return $tcMatches[0];
+        }
+
+        $matchCreatedTs = $this->match->created_at->getTimestamp();
+        usort($tcMatches, function (ChessComGameResult $a, ChessComGameResult $b) use ($matchCreatedTs) {
+            $aDelta = abs($a->endedAt->getTimestamp() - $matchCreatedTs);
+            $bDelta = abs($b->endedAt->getTimestamp() - $matchCreatedTs);
+
+            if ($aDelta !== $bDelta) {
+                return $aDelta <=> $bDelta;
+            }
+
+            return strcmp($a->id, $b->id);
+        });
+
+        return $tcMatches[0];
     }
 
     /**

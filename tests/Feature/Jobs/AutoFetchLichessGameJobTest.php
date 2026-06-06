@@ -198,8 +198,12 @@ test('no games found → no system message posted, match stays Pending', functio
     expect($match->fresh()->status)->toBe(MatchStatus::Pending);
 });
 
-test('multiple decisive games → ambiguous, no post', function () {
+test('multiple decisive games with time-control mismatch → ambiguous, no post (M14 Slice 3c)', function () {
     $match = autoFetchMatch();
+    // Force listing time-control away from the fixture default (blitz)
+    // so the picker's TC filter eliminates both candidates.
+    $match->listing->update(['time_control' => ['classical']]);
+
     $g1 = json_encode(lichessGameFixture(['id' => 'game0001']));
     $g2 = json_encode(lichessGameFixture(['id' => 'game0002', 'winner' => 'black']));
 
@@ -214,8 +218,9 @@ test('multiple decisive games → ambiguous, no post', function () {
     expect($match->fresh()->status)->toBe(MatchStatus::Pending);
 });
 
-test('multiple completions (decisive + drawn) → ambiguous, no post', function () {
+test('multiple completions (decisive + drawn) with time-control mismatch → ambiguous, no post', function () {
     $match = autoFetchMatch();
+    $match->listing->update(['time_control' => ['classical']]);
 
     $decisive = lichessGameFixture(['id' => 'winnergg']);
     $drawn = lichessGameFixture(['id' => 'drawnone', 'status' => 'draw']);
@@ -233,6 +238,82 @@ test('multiple completions (decisive + drawn) → ambiguous, no post', function 
     expect(Message::query()->where('match_id', $match->id)->where('type', MessageType::System)->count())
         ->toBe(0);
     expect($match->fresh()->status)->toBe(MatchStatus::Pending);
+});
+
+test('multiple decisive games with time-control match → picker picks game closest to match.created_at (M14 Slice 3c)', function () {
+    $match = autoFetchMatch();
+    $match->listing->update(['time_control' => ['blitz']]);
+
+    // match.created_at is approximately "now". Build two games:
+    //   - first played soon after match creation
+    //   - second played much later
+    // Picker should pick the first (closer to match.created_at).
+    $earlyTs = $match->created_at->copy()->addMinutes(2)->getTimestampMs();
+    $lateTs = $match->created_at->copy()->addMinutes(30)->getTimestampMs();
+
+    $early = lichessGameFixture([
+        'id' => 'earlygame',
+        'createdAt' => $earlyTs,
+        'lastMoveAt' => $earlyTs,
+    ]);
+    $late = lichessGameFixture([
+        'id' => 'lategame0',
+        'createdAt' => $lateTs,
+        'lastMoveAt' => $lateTs,
+    ]);
+
+    Http::fake([
+        'lichess.org/api/games/user/*' => Http::response(
+            json_encode($early)."\n".json_encode($late),
+            200,
+        ),
+    ]);
+
+    runAutoFetch($match);
+
+    $system = Message::query()
+        ->where('match_id', $match->id)
+        ->where('type', MessageType::System)
+        ->first();
+
+    expect($system)->not->toBeNull()
+        ->and($system->attachments_json[0]['game_id'])->toBe('earlygame');
+    expect($match->fresh()->status)->toBe(MatchStatus::Settled);
+});
+
+test('picker tie-breaks on game id when delta is equal (M14 Slice 3c)', function () {
+    $match = autoFetchMatch();
+    $match->listing->update(['time_control' => ['blitz']]);
+
+    // Both games at the same lastMoveAt — picker falls back to id sort.
+    // 'aaaagame' < 'zzzzgame' lexically → 'aaaagame' wins.
+    $ts = $match->created_at->copy()->addMinutes(5)->getTimestampMs();
+
+    $first = lichessGameFixture([
+        'id' => 'aaaagame',
+        'lastMoveAt' => $ts,
+    ]);
+    $second = lichessGameFixture([
+        'id' => 'zzzzgame',
+        'winner' => 'black',
+        'lastMoveAt' => $ts,
+    ]);
+
+    Http::fake([
+        'lichess.org/api/games/user/*' => Http::response(
+            json_encode($second)."\n".json_encode($first), // late in ndjson, but earlier id
+            200,
+        ),
+    ]);
+
+    runAutoFetch($match);
+
+    $system = Message::query()
+        ->where('match_id', $match->id)
+        ->where('type', MessageType::System)
+        ->first();
+
+    expect($system->attachments_json[0]['game_id'])->toBe('aaaagame');
 });
 
 test('one decisive + one aborted → posts the decisive one + settles (decisive wins primary pass)', function () {

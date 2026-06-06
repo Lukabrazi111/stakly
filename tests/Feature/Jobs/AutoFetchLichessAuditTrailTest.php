@@ -102,8 +102,11 @@ test('no_match: writes a row with candidates_count = 0', function () {
         ->and($attempt->winner_username)->toBeNull();
 });
 
-test('ambiguous: writes a row with candidates_count = N', function () {
+test('ambiguous: writes a row with candidates_count + outcome_reason=time_control_mismatch (M14 Slice 3c)', function () {
     $match = lichessAuditMatch();
+    // Force TC mismatch so the picker rejects both candidates.
+    $match->listing->update(['time_control' => ['classical']]);
+
     $g1 = json_encode(lichessGameFixture(['id' => 'game0001']));
     $g2 = json_encode(lichessGameFixture(['id' => 'game0002', 'winner' => 'black']));
     Http::fake([
@@ -114,7 +117,30 @@ test('ambiguous: writes a row with candidates_count = N', function () {
 
     $attempt = MatchAutoFetchAttempt::query()->where('match_id', $match->id)->first();
     expect($attempt->outcome)->toBe(AutoFetchOutcome::Ambiguous)
-        ->and($attempt->candidates_count)->toBe(2);
+        ->and($attempt->candidates_count)->toBe(2)
+        ->and($attempt->outcome_reason)->toBe('time_control_mismatch');
+});
+
+test('multiple candidates with TC match: picker picks closest → outcome=matched, candidates_count=N (M14 Slice 3c)', function () {
+    $match = lichessAuditMatch();
+    $match->listing->update(['time_control' => ['blitz']]);
+
+    $earlyTs = $match->created_at->copy()->addMinutes(2)->getTimestampMs();
+    $lateTs = $match->created_at->copy()->addMinutes(30)->getTimestampMs();
+
+    $early = json_encode(lichessGameFixture(['id' => 'earlygame', 'createdAt' => $earlyTs, 'lastMoveAt' => $earlyTs]));
+    $late = json_encode(lichessGameFixture(['id' => 'lategame0', 'createdAt' => $lateTs, 'lastMoveAt' => $lateTs]));
+
+    Http::fake([
+        'lichess.org/api/games/user/*' => Http::response($early."\n".$late, 200),
+    ]);
+
+    runLichessAudit($match);
+
+    $attempt = MatchAutoFetchAttempt::query()->where('match_id', $match->id)->first();
+    expect($attempt->outcome)->toBe(AutoFetchOutcome::Matched)
+        ->and($attempt->candidates_count)->toBe(2)
+        ->and($attempt->winner_username)->toBe('alice-lichess');
 });
 
 test('error (5xx): writes a row + re-throws TransientProviderError for retry', function () {
