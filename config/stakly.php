@@ -46,6 +46,26 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Dispute fast-path (M14 Slice 4a)
+    |--------------------------------------------------------------------------
+    |
+    | When true, `OpenDisputeAction` invokes `ResolveDisputeAction` synchronously
+    | right after flipping the match to Disputed. Skips the wait for the next
+    | auto-fetch cron tick and lets the API arbitrate immediately on a player
+    | "Report a problem" click.
+    |
+    | Gated to chess matches (`game === Game::Chess`) — FACEIT / OpenDota / Riot
+    | adapters land in M15 and will widen the gate then.
+    |
+    | Default off until M14 Phase 1's `PipelineHealth` widget shows ~2 weeks of
+    | stable auto-fetch (Slice 4b checkpoint).
+    |
+    */
+
+    'dispute_fast_path_enabled' => (bool) env('STAKLY_DISPUTE_FAST_PATH_ENABLED', false),
+
+    /*
+    |--------------------------------------------------------------------------
     | Match confirmation timeout (hours)
     |--------------------------------------------------------------------------
     |

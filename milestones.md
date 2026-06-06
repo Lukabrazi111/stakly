@@ -2,12 +2,13 @@
 
 Frontend-first build. UI against real DB infrastructure + seeded fake data; backend logic (escrow, payouts, on-chain integration) lands per page once the UI is validated. Milestones are work-chunk labels, not version commitments — decisions inside any of them are revisitable.
 
-> **Shipped milestones live in `milestones_archived.md`** (M1, M2, M2.5, M3, M3.5, M4, M5, M6, M7, M8 all phases, M10, M11, M12 all phases, M14 Slice A, M16 all phases, M17, M18, M19, M22, M23, M24, M25, M26 all phases, M27 all phases, M29 all phases, M30 all phases, M31 all phases, M32 all phases). **Parked milestones** (work that isn't being picked up right now) also live in the archive — currently M13. This file is for active + upcoming work + the cross-cutting architectural decisions that earlier milestones established.
+> **Shipped milestones live in `milestones_archived.md`** (M1, M2, M2.5, M3, M3.5, M4, M5, M6, M7, M8 all phases, M10, M11, M12 all phases, M14 all phases, M16 all phases, M17, M18, M19, M22, M23, M24, M25, M26 all phases, M27 all phases, M29 all phases, M30 all phases, M31 all phases, M32 all phases). **Parked milestones** (work that isn't being picked up right now) also live in the archive — currently M13. This file is for active + upcoming work + the cross-cutting architectural decisions that earlier milestones established.
 
 ## Phases (map)
 
 **Recently shipped** (this week):
 
+- **M14** — Outcome pipeline hardening (all phases shipped 2026-05-22 → 2026-06-06). Slice A (chess card arbitration), Phase 1 (per-match audit trail + `PipelineHealth` widget), Phase 2 (reliability — `ProviderError` hierarchy, classified job retry policy, `Retry-After` / `X-RateLimit-Reset` parsing, per-provider circuit breaker + dashboard banner), Phase 3 (coverage — aborted-as-draw refund, multi-candidate picker, single-candidate time-control enforcement), Phase 4 Slice 4a (flag-gated `OpenDisputeAction` → `ResolveDisputeAction` fast-path). Slice 4b is a calendar checkpoint — flip the flag after ~2 weeks of stable Phase 1 telemetry.
 - **M30** — Admin user management (all 6 phases, 2026-06-03 → 2026-06-04). UserResource, ban toggle + four enforcement guards, mandatory 2FA on admin role, on-every-login 2FA challenge via Fortify bridge, user-facing ban feedback (banner + bell + email), impersonation via `stechstudio/filament-impersonate` + Stakly audit/reason/expiry layer.
 - **M31** — Admin wallet ledger (both phases, 2026-06-04). Read-only `WalletTransactionResource` with filters + sum summarizer, ViewWalletTransaction with infolist + reference-ID parser + sibling-entity lookup.
 - **M32** — Admin listing management (both phases, 2026-06-04). Read-only `ListingResource` with status/platform/creator/stake/region/language filters, ViewListing with infolist (details + related match if Taken + wallet transactions via M31 parser) + force-cancel action routed through `CancelListingAction`. **Admin trio now complete — every state on the platform is investigable + actionable from `/admin` without Tinker.**
@@ -15,7 +16,7 @@ Frontend-first build. UI against real DB infrastructure + seeded fake data; back
 
 **In-flight:**
 
-- **M14** — Outcome pipeline hardening. Slice A (2026-05-22) + Phase 1 (2026-05-29) shipped — both in archive. Phases 2 (reliability), 3 (coverage), 4 (dispute fast-path) remain, expanded into shipping-sized slices below. Production-critical pre-launch for the settlement engine.
+_None — pick the next milestone from "Active / upcoming" below._
 
 **Active / upcoming:**
 
@@ -46,51 +47,6 @@ Decisions made earlier that have shaped a lot of code downstream. Not locked —
 - **User-supplied free-text never lands in system messages** (M10 Phase 3). System messages bypass the M13 chat anti-abuse layer by construction. Any user-supplied text (cancellation reasons, future dispute notes, etc.) surfaces in structured banner UI we control — never spliced into chat lifecycle narration. The banner is the sanitization surface; chat stays for player-to-player communication that DOES go through M13 filters.
 - **Outcome is API-truth, not player self-report** (M16). Match results come from the game API (Lichess stream, chess.com archive polling) — not from "I won / lost / drawn" player buttons. Player self-reports were always non-binding (the API was the tiebreaker on disagreement); M16 removes the redundant confirm layer entirely. The dispute surface (`Report a problem`) survives as the manual escalation path for unresolvable cases. "Mutual cancellation" (M10) remains the cooperative early-exit when no game gets played.
 - **Trust signal = single composite "completion rate", not per-failure-mode rates** (M18 Phase 3 Slice B). One metric — "of your engaged matches, how many reached Settled?" — replaces separate dispute + cancellation rate badges. Positive framing (higher = better), forgiveness buffer for cooperative cancellation (3 free per rolling 30 days), no arbitrary threshold colors, no initiator-vs-defender ambiguity (a match that's disputed-then-settled is still a completion for both parties). Rolling 30-day headline + lifetime breakdown in the "more info" modal. Shown on both profile pages and listing rows so the signal travels with the user wherever their reputation might matter.
-
----
-
-## M14 — Outcome pipeline hardening
-
-Reframed from the original "automated outcome adapters" framing. That milestone made sense in a world where every match needed manual confirmation and the work was "build dispute auto-resolution." M16 changed the world — the auto-fetch pipeline now settles the bulk of matches without anyone touching them. The leverage isn't expanding dispute resolution; it's making the pipeline itself observable and resilient before launch. Stakly is custodial money code with an automated settlement engine — flying blind on its health is the biggest pre-launch risk.
-
-The FACEIT / OpenDota / Riot adapter work and the "no-admin-fallback policy" piece move to M15, where the per-game adapter shape already lives.
-
-**Slice A — Chess card arbitration** ✅ shipped 2026-05-22 (see `milestones_archived.md` for the implementation detail). `ChessGameApi` reads the most-recent auto-fetched card off chat — provider-agnostic, handles both Lichess and chess.com via the card's `provider` field — and returns the named winner with `Confirmed` confidence. Falls through to `MockGameApi` for race / no-card / unmappable. Originally pulled forward because the mock was paying the wrong player whenever a Lichess card disagreed; under the reframe, this is the foundation the rest of M14 builds on (the adapter has to be correct before the pipeline around it can be hardened).
-
-### Phases
-
-**Phase 1 — Per-match audit trail + admin visibility** ✅ shipped 2026-05-29 (see `milestones_archived.md` for the implementation detail). `match_auto_fetch_attempts` audit table + `RecordAutoFetchAttemptAction` single write point + audit trail wired into `DispatchAutoFetchAction` and both auto-fetch jobs. Admin surfaces: `GameMatchInfolist` per-match timeline + `PipelineHealth` dashboard widget (24h counts + 7d latency trend). 63 tests, 186 assertions. Diverged from original spec on the widget shape — shipped 24h/7d operations-dashboard stats instead of 7d/30d analytics-style success-rate percentages; the analytics view can land as a separate slice if real telemetry shows it's needed.
-
-**Phase 2 — Reliability**
-
-The jobs currently catch provider errors and log a warning. Fine at one-match scale, dangerous at volume — every silent error is a match the user paid for and the system didn't settle. Phase 2 turns provider failures into retried-then-classified outcomes the pipeline can reason about.
-
-- [ ] **Slice 2a — Structured `ProviderError` hierarchy.** New `App\Services\GameApi\Errors\ProviderError` abstract → `TransientProviderError` (5xx, timeout, network) + `RateLimitedError` (429 with retry-after) + `PermanentProviderError` (4xx other than 429, malformed responses). `LichessGameClient` + `ChessComGameClient` map raw `RequestException`s into the right subclass. Tests for each branch. _(Diverges from the original spec's "transient / permanent / ambiguous" — rate-limited is split out because its retry strategy is provider-driven via `Retry-After`, and "ambiguous" is better modeled as an audit-row `outcome` than an exception class.)_
-- [ ] **Slice 2b — Job retry policy.** `AutoFetch*GameJob`s define `tries()`, `backoff()` (exponential), and a bounded `retryUntil()` so we don't retry past the M16 confirmation timeout. Job middleware catches `TransientProviderError` → release with computed backoff; `PermanentProviderError` → fail terminally + write `error` attempt row + land in `failed_jobs`. Tests via `Bus::fake()` asserting release / fail behaviour per exception class.
-- [ ] **Slice 2c — Rate-limit header awareness.** Both clients read `Retry-After` and `X-RateLimit-Reset` from response headers, build a `RateLimitedError` carrying the right `retryAt`. Job middleware honours the per-attempt backoff for that error class specifically (overrides the default `backoff()`). Tests with mocked HTTP responses for both providers.
-- [ ] **Slice 2d — Circuit breaker per provider.** Track per-provider error rate in cache (sliding 10-minute window). If error rate > 50% over the last 5 attempts, pause auto-fetch for that provider for 5 minutes (`DispatchAutoFetchAction` skips with `outcome=skipped` and a `circuit_open` reason in the audit row). Resume automatically when health recovers. Surface open state in the `PipelineHealth` widget + a dashboard banner while open. Tests cover open / closed / half-open transitions. Thresholds (50% / 5 attempts / 5 min) are starting defaults — re-tune after the first month of real telemetry.
-
-**Phase 3 — Coverage**
-
-The edge cases the pipeline currently silently skips. Each is a class of "match got stuck in Pending" that needs an explicit policy. Each slice pairs a research/decision step with the implementation; the decision gets written into this section before the implementation slice starts.
-
-- [ ] **Slice 3a — Aborted-game policy (decision).** Today `AutoFetchLichessGameJob::filterCompleted` drops aborted games silently. Decide whether aborts should auto-refund as a draw (cooperative early-exit, both stakes back) or stay Pending until a real game lands. Research: how often Lichess games end in `aborted`, does chess.com expose the same signal, what the user-facing banner copy reads. Doc the decision in this section before Slice 3b.
-- [ ] **Slice 3b — Aborted-game implementation.** Apply the Slice 3a decision in both jobs. Either lift the filter and settle aborted-as-draw, or surface the aborted candidate in the audit trail and keep the match Pending. Tests cover the chosen policy end-to-end including the notification path.
-- [ ] **Slice 3c — Multi-candidate disambiguation.** Currently silently skipped — "wrong game is worse than no game." Replace with a deterministic heuristic: the candidate whose `played_at` is closest to `match.created_at` AND whose time control matches the listing's `time_control` array. Tie-break on game id. If no candidate matches the time control, write `outcome=ambiguous` + stay Pending. Tests with synthetic multi-game windows.
-- [ ] **Slice 3d — Time-control mismatch.** If the matched game's speed/format differs from the listing's `time_control` array, do not auto-settle. Write `outcome=ambiguous` with reason `time_control_mismatch`. Match stays Pending until either a matching game lands or the timeout flips it to ManualReview. Tests cover blitz-listing + bullet-game (skip) and blitz-listing + blitz-game (settle).
-
-**Phase 4 — Dispute fast-path**
-
-The original M14 intent, slimmed down to chess only.
-
-- [ ] **Slice 4a — Wire `OpenDisputeAction` → `ResolveDisputeAction` (chess, flag-gated).** When `OpenDisputeAction` fires on a Pending chess match, dispatch `ResolveDisputeAction` immediately instead of waiting for the next 5-min auto-fetch cron tick. `ChessGameApi` already supports this. Gate behind `config('stakly.dispute_fast_path_enabled')`, default `false`. Tests for both flag states. FACEIT / OpenDota / Riot piece stays in M15.
-- [ ] **Slice 4b — Flag flip after Phase 1 metrics.** No code — calendar checkpoint. Once Phase 1's `PipelineHealth` widget shows ~2 weeks of stable auto-fetch (>95% success, no provider-side outages), flip the flag on in dev → observe → flip in prod.
-
-### Not in M14
-
-- New game adapters (FACEIT, OpenDota, Riot, etc.) — those live in M15.
-- Cross-provider Lichess↔chess.com disambiguation — a player would have to be linked on both AND play the same opponent on both within the same match window, which is implausible.
-- Streaming WebSocket consumer redesign — Phase 4 of M16 shipped the Lichess admin OAuth stream; if it proves insufficient at volume, revisit then.
 
 ---
 
