@@ -12,14 +12,15 @@ use App\Models\GameMatch;
 use App\Models\Message;
 use App\Services\Provider\ChessComGameClient;
 use App\Services\Provider\ChessComGameResult;
+use App\Services\Provider\Exceptions\PermanentProviderError;
 use App\Services\Provider\Exceptions\ProviderError;
+use DateTimeInterface;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueueAfterCommit;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
-use Throwable;
 
 /**
  * Posts an auto-fetched chess.com game card for a Pending match, then settles via
@@ -28,22 +29,39 @@ use Throwable;
  *
  * Every attempt (including empty ones) writes a `match_auto_fetch_attempts` row so
  * the admin timeline shows the full retry chain rather than a single terminal row.
+ *
+ * Retry policy (M14 Slice 2b):
+ *   - Two retry chains share the `$tries` budget:
+ *     * no_match (archive lag): explicit `release()` per `RETRY_DELAYS` ([5, 15, 45]s).
+ *     * HTTP error: re-throw + Laravel-driven `backoff()` ([5, 15, 30]s).
+ *   - `PermanentProviderError` → audit row + `$this->fail($e)`, no retry.
+ *   - `TransientProviderError` / `RateLimitedError` → audit row + re-throw, retried.
+ *   - `retryUntil()` caps the chain at `match.created_at + M16 confirmation timeout`.
  */
 class AutoFetchChessComGameJob implements ShouldBeUnique, ShouldQueueAfterCommit
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
-    public int $tries = 4;
+    /**
+     * Budget covers the longest plausible run: 3 transient-error retries +
+     * the 4-attempt no_match chain. They share the counter; the actual mix
+     * depends on what the provider returns.
+     */
+    public int $tries = 7;
 
     public int $timeout = 30;
 
     /**
-     * Caps unique-lock lifetime past the ~65s retry chain so the lock doesn't strand
+     * Caps unique-lock lifetime past the worst-case retry chain (combined
+     * no_match + transient-error delays). Prevents the lock from stranding
      * if the queue worker dies mid-retry.
      */
-    public int $uniqueFor = 120;
+    public int $uniqueFor = 360;
 
     /**
+     * Per-attempt delays for the archive-lag retry chain (no_match outcome).
+     * HTTP transient errors use `backoff()` instead.
+     *
      * @var list<int>
      */
     private const RETRY_DELAYS = [5, 15, 45];
@@ -59,6 +77,21 @@ class AutoFetchChessComGameJob implements ShouldBeUnique, ShouldQueueAfterCommit
     public function uniqueId(): string
     {
         return (string) $this->match->id;
+    }
+
+    /**
+     * @return list<int>
+     */
+    public function backoff(): array
+    {
+        return [5, 15, 30];
+    }
+
+    public function retryUntil(): DateTimeInterface
+    {
+        return $this->match->created_at
+            ->copy()
+            ->addHours((int) config('stakly.match_confirmation_timeout_hours'));
     }
 
     public function handle(
@@ -94,21 +127,33 @@ class AutoFetchChessComGameJob implements ShouldBeUnique, ShouldQueueAfterCommit
             return;
         }
 
-        [$games, $errorMessage, $latencyMs] = $this->searchWithMetrics(
-            $client,
-            $creatorUsername,
-            $takerUsername,
-        );
+        $start = microtime(true);
 
-        if ($games === null) {
+        try {
+            $games = $client->searchGamesBetween(
+                $creatorUsername,
+                $takerUsername,
+                $this->match->created_at,
+            );
+        } catch (PermanentProviderError $e) {
             $this->record($recordAttempt, AutoFetchOutcome::Error, [
-                'error_message' => $errorMessage,
-                'latency_ms' => $latencyMs,
+                'error_message' => $e->getMessage(),
+                'latency_ms' => $this->elapsedMs($start),
+                'outcome_reason' => 'permanent',
             ]);
+            $this->fail($e);
 
             return;
+        } catch (ProviderError $e) {
+            $this->record($recordAttempt, AutoFetchOutcome::Error, [
+                'error_message' => $e->getMessage(),
+                'latency_ms' => $this->elapsedMs($start),
+                'outcome_reason' => $this->errorRetriesExhausted() ? 'retry_exhausted' : null,
+            ]);
+            throw $e;
         }
 
+        $latencyMs = $this->elapsedMs($start);
         $completed = array_values(array_filter(
             $games,
             // Decisive or draw — aborted / half-played excluded (not a real result to settle).
@@ -118,14 +163,14 @@ class AutoFetchChessComGameJob implements ShouldBeUnique, ShouldQueueAfterCommit
 
         if ($count === 0) {
             // Record before releasing so each retry shows independently in the audit timeline.
-            $reason = $this->isFinalAttempt() ? 'retry_exhausted' : null;
+            $reason = $this->noMatchRetriesExhausted() ? 'retry_exhausted' : null;
             $this->record($recordAttempt, AutoFetchOutcome::NoMatch, [
                 'candidates_count' => 0,
                 'latency_ms' => $latencyMs,
                 'outcome_reason' => $reason,
             ]);
 
-            $this->retryIfBudgetRemains();
+            $this->retryNoMatchIfBudgetRemains();
 
             return;
         }
@@ -153,57 +198,37 @@ class AutoFetchChessComGameJob implements ShouldBeUnique, ShouldQueueAfterCommit
         $settleFromCard->handle($this->match, $card);
     }
 
-    /**
-     * Returns `[games, errorMessage, latencyMs]` — exactly one of `games` / `errorMessage` is non-null.
-     *
-     * @return array{0: list<ChessComGameResult>|null, 1: string|null, 2: int}
-     */
-    private function searchWithMetrics(
-        ChessComGameClient $client,
-        string $creatorUsername,
-        string $takerUsername,
-    ): array {
-        $start = microtime(true);
-
-        try {
-            $games = $client->searchGamesBetween(
-                $creatorUsername,
-                $takerUsername,
-                $this->match->created_at,
-            );
-
-            return [$games, null, $this->elapsedMs($start)];
-        } catch (ProviderError $e) {
-            return [null, $e->getMessage(), $this->elapsedMs($start)];
-        } catch (Throwable $e) {
-            return [null, $e->getMessage(), $this->elapsedMs($start)];
-        }
-    }
-
     private function elapsedMs(float $start): int
     {
         return (int) round((microtime(true) - $start) * 1000);
     }
 
     /**
-     * Marks the terminal `NoMatch` row with `retry_exhausted` so PipelineHealth can distinguish
-     * "still hoping the archive catches up" from "we gave up."
+     * True once attempts have reached the no_match retry chain length. Drives
+     * the `retry_exhausted` audit-row reason for terminal no_match outcomes.
      */
-    private function isFinalAttempt(): bool
+    private function noMatchRetriesExhausted(): bool
     {
         return $this->attempts() >= count(self::RETRY_DELAYS) + 1;
     }
 
-    private function retryIfBudgetRemains(): void
+    /**
+     * True on the final attempt of the overall `$tries` budget. Drives the
+     * `retry_exhausted` audit-row reason for terminal transient-error outcomes.
+     */
+    private function errorRetriesExhausted(): bool
     {
-        $attempt = $this->attempts();
+        return $this->attempts() >= $this->tries;
+    }
 
-        if ($attempt >= count(self::RETRY_DELAYS) + 1) {
+    private function retryNoMatchIfBudgetRemains(): void
+    {
+        if ($this->noMatchRetriesExhausted()) {
             return;
         }
 
         // `attempts()` is 1-indexed; RETRY_DELAYS is 0-indexed.
-        $this->release(self::RETRY_DELAYS[$attempt - 1]);
+        $this->release(self::RETRY_DELAYS[$this->attempts() - 1]);
     }
 
     /**

@@ -14,6 +14,9 @@ use App\Models\MatchProviderSnapshot;
 use App\Models\Message;
 use App\Models\User;
 use App\Services\Provider\ChessComGameClient;
+use App\Services\Provider\Exceptions\PermanentProviderError;
+use App\Services\Provider\Exceptions\RateLimitedError;
+use App\Services\Provider\Exceptions\TransientProviderError;
 use App\Services\Wallet;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Http;
@@ -145,18 +148,75 @@ test('no_match on final attempt: writes outcome_reason = retry_exhausted', funct
         ->and($attempt->attempt_number)->toBe(4);
 });
 
-test('error: writes a row with error_message and provider=chess_com', function () {
+test('error (5xx): writes a row + re-throws TransientProviderError for retry', function () {
     $match = chessComAuditMatch();
     Http::fake([
         'api.chess.com/pub/player/*/games/*' => Http::response('boom', 503),
     ]);
 
-    runChessComAudit($match);
+    expect(fn () => runChessComAudit($match))->toThrow(TransientProviderError::class);
 
     $attempt = MatchAutoFetchAttempt::query()->where('match_id', $match->id)->first();
     expect($attempt->outcome)->toBe(AutoFetchOutcome::Error)
         ->and($attempt->provider)->toBe(LinkedAccountProvider::ChessCom)
-        ->and($attempt->error_message)->toContain('503');
+        ->and($attempt->error_message)->toContain('503')
+        ->and($attempt->outcome_reason)->toBeNull();
+});
+
+test('error (4xx other than 429): writes outcome_reason=permanent + does not re-throw (job fails internally)', function () {
+    $match = chessComAuditMatch();
+    Http::fake([
+        'api.chess.com/pub/player/*/games/*' => Http::response('', 403),
+    ]);
+
+    expect(fn () => runChessComAudit($match))->not->toThrow(PermanentProviderError::class);
+
+    $attempt = MatchAutoFetchAttempt::query()->where('match_id', $match->id)->first();
+    expect($attempt->outcome)->toBe(AutoFetchOutcome::Error)
+        ->and($attempt->outcome_reason)->toBe('permanent')
+        ->and($attempt->error_message)->toContain('403');
+});
+
+test('rate limited (429): writes a row + re-throws RateLimitedError for retry', function () {
+    $match = chessComAuditMatch();
+    Http::fake([
+        'api.chess.com/pub/player/*/games/*' => Http::response('', 429),
+    ]);
+
+    expect(fn () => runChessComAudit($match))->toThrow(RateLimitedError::class);
+
+    $attempt = MatchAutoFetchAttempt::query()->where('match_id', $match->id)->first();
+    expect($attempt->outcome)->toBe(AutoFetchOutcome::Error)
+        ->and($attempt->error_message)->toContain('429');
+});
+
+test('error on final attempt: writes outcome_reason=retry_exhausted', function () {
+    $match = chessComAuditMatch();
+    Http::fake([
+        'api.chess.com/pub/player/*/games/*' => Http::response('', 503),
+    ]);
+
+    // Stand-in for a queue worker on the final attempt — overrides
+    // `attempts()` so `errorRetriesExhausted()` evaluates true at the new
+    // shared $tries = 7 budget.
+    $job = new class($match) extends AutoFetchChessComGameJob
+    {
+        public function attempts(): int
+        {
+            return 7;
+        }
+    };
+
+    expect(fn () => $job->handle(
+        app(ChessComGameClient::class),
+        app(PostSystemMessageAction::class),
+        app(SettleFromCardAction::class),
+        app(RecordAutoFetchAttemptAction::class),
+    ))->toThrow(TransientProviderError::class);
+
+    $attempt = MatchAutoFetchAttempt::query()->where('match_id', $match->id)->first();
+    expect($attempt->outcome)->toBe(AutoFetchOutcome::Error)
+        ->and($attempt->outcome_reason)->toBe('retry_exhausted');
 });
 
 test('ambiguous: writes a row with candidates_count = N', function () {
@@ -192,6 +252,20 @@ test('already_posted: writes skipped/already_posted row, no provider call', func
     $attempt = MatchAutoFetchAttempt::query()->where('match_id', $match->id)->first();
     expect($attempt->outcome)->toBe(AutoFetchOutcome::Skipped)
         ->and($attempt->outcome_reason)->toBe('already_posted');
+});
+
+test('retry policy: 7 tries, [5, 15, 30] backoff, retryUntil at match.created_at + M16 timeout', function () {
+    $match = chessComAuditMatch();
+    $job = new AutoFetchChessComGameJob($match);
+
+    expect($job->tries)->toBe(7);
+    expect($job->backoff())->toBe([5, 15, 30]);
+    expect($job->retryUntil()->getTimestamp())->toBe(
+        $match->created_at
+            ->copy()
+            ->addHours((int) config('stakly.match_confirmation_timeout_hours'))
+            ->getTimestamp(),
+    );
 });
 
 test('snapshot_missing (defensive): writes skipped/snapshot_missing row', function () {

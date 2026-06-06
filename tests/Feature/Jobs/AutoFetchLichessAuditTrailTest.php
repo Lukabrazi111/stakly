@@ -13,6 +13,9 @@ use App\Models\MatchAutoFetchAttempt;
 use App\Models\MatchProviderSnapshot;
 use App\Models\Message;
 use App\Models\User;
+use App\Services\Provider\Exceptions\PermanentProviderError;
+use App\Services\Provider\Exceptions\RateLimitedError;
+use App\Services\Provider\Exceptions\TransientProviderError;
 use App\Services\Provider\LichessGameClient;
 use App\Services\Wallet;
 use Illuminate\Support\Facades\Http;
@@ -111,17 +114,69 @@ test('ambiguous: writes a row with candidates_count = N', function () {
         ->and($attempt->candidates_count)->toBe(2);
 });
 
-test('error: writes a row with error_message + latency when provider 5xx', function () {
+test('error (5xx): writes a row + re-throws TransientProviderError for retry', function () {
     $match = lichessAuditMatch();
     Http::fake(['lichess.org/api/games/user/*' => Http::response('boom', 503)]);
 
-    runLichessAudit($match);
+    expect(fn () => runLichessAudit($match))->toThrow(TransientProviderError::class);
 
     $attempt = MatchAutoFetchAttempt::query()->where('match_id', $match->id)->first();
     expect($attempt->outcome)->toBe(AutoFetchOutcome::Error)
         ->and($attempt->error_message)->toContain('503')
         ->and($attempt->latency_ms)->toBeGreaterThanOrEqual(0)
-        ->and($attempt->candidates_count)->toBeNull();
+        ->and($attempt->candidates_count)->toBeNull()
+        ->and($attempt->outcome_reason)->toBeNull();
+});
+
+test('error (4xx other than 429): writes outcome_reason=permanent + does not re-throw (job fails internally)', function () {
+    $match = lichessAuditMatch();
+    Http::fake(['lichess.org/api/games/user/*' => Http::response('', 401)]);
+
+    // Direct handle() invocation: `$this->fail($e)` is a no-op when there's
+    // no queue context, so the call returns normally instead of propagating.
+    expect(fn () => runLichessAudit($match))->not->toThrow(PermanentProviderError::class);
+
+    $attempt = MatchAutoFetchAttempt::query()->where('match_id', $match->id)->first();
+    expect($attempt->outcome)->toBe(AutoFetchOutcome::Error)
+        ->and($attempt->outcome_reason)->toBe('permanent')
+        ->and($attempt->error_message)->toContain('401');
+});
+
+test('rate limited (429): writes a row + re-throws RateLimitedError for retry', function () {
+    $match = lichessAuditMatch();
+    Http::fake(['lichess.org/api/games/user/*' => Http::response('', 429)]);
+
+    expect(fn () => runLichessAudit($match))->toThrow(RateLimitedError::class);
+
+    $attempt = MatchAutoFetchAttempt::query()->where('match_id', $match->id)->first();
+    expect($attempt->outcome)->toBe(AutoFetchOutcome::Error)
+        ->and($attempt->error_message)->toContain('429');
+});
+
+test('error on final attempt: writes outcome_reason=retry_exhausted', function () {
+    $match = lichessAuditMatch();
+    Http::fake(['lichess.org/api/games/user/*' => Http::response('', 503)]);
+
+    // Stand-in for a queue worker on the final attempt — overrides
+    // `attempts()` so `errorRetriesExhausted()` evaluates true.
+    $job = new class($match) extends AutoFetchLichessGameJob
+    {
+        public function attempts(): int
+        {
+            return 4;
+        }
+    };
+
+    expect(fn () => $job->handle(
+        app(LichessGameClient::class),
+        app(PostSystemMessageAction::class),
+        app(SettleFromCardAction::class),
+        app(RecordAutoFetchAttemptAction::class),
+    ))->toThrow(TransientProviderError::class);
+
+    $attempt = MatchAutoFetchAttempt::query()->where('match_id', $match->id)->first();
+    expect($attempt->outcome)->toBe(AutoFetchOutcome::Error)
+        ->and($attempt->outcome_reason)->toBe('retry_exhausted');
 });
 
 test('already_posted: writes a skipped row with reason already_posted, no provider call', function () {
@@ -139,6 +194,20 @@ test('already_posted: writes a skipped row with reason already_posted, no provid
     expect($attempt->outcome)->toBe(AutoFetchOutcome::Skipped)
         ->and($attempt->outcome_reason)->toBe('already_posted')
         ->and($attempt->latency_ms)->toBeNull();
+});
+
+test('retry policy: 4 tries, [5, 15, 30] backoff, retryUntil at match.created_at + M16 timeout', function () {
+    $match = lichessAuditMatch();
+    $job = new AutoFetchLichessGameJob($match);
+
+    expect($job->tries)->toBe(4);
+    expect($job->backoff())->toBe([5, 15, 30]);
+    expect($job->retryUntil()->getTimestamp())->toBe(
+        $match->created_at
+            ->copy()
+            ->addHours((int) config('stakly.match_confirmation_timeout_hours'))
+            ->getTimestamp(),
+    );
 });
 
 test('snapshot_missing: writes a skipped row with reason snapshot_missing (defensive)', function () {

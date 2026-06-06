@@ -13,6 +13,7 @@ use App\Models\Listing;
 use App\Models\MatchProviderSnapshot;
 use App\Models\Message;
 use App\Models\User;
+use App\Services\Provider\Exceptions\TransientProviderError;
 use App\Services\Provider\LichessGameClient;
 use App\Services\Wallet;
 use Illuminate\Support\Facades\Event;
@@ -248,14 +249,15 @@ test('one decisive + one aborted → posts the decisive one + settles', function
 
 // ─── Failure modes ──────────────────────────────────────────────────────────
 
-test('provider 5xx → silent log + no post', function () {
+test('provider 5xx → no post, no settle (re-throws for queue retry)', function () {
     $match = autoFetchMatch();
 
     Http::fake([
         'lichess.org/api/games/user/*' => Http::response('', 503),
     ]);
 
-    runAutoFetch($match);
+    expect(fn () => runAutoFetch($match))
+        ->toThrow(TransientProviderError::class);
 
     expect(Message::query()->where('match_id', $match->id)->where('type', MessageType::System)->count())
         ->toBe(0);

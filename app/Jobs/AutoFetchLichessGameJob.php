@@ -10,16 +10,17 @@ use App\Enums\LinkedAccountProvider;
 use App\Enums\MessageType;
 use App\Models\GameMatch;
 use App\Models\Message;
+use App\Services\Provider\Exceptions\PermanentProviderError;
 use App\Services\Provider\Exceptions\ProviderError;
 use App\Services\Provider\LichessGameClient;
 use App\Services\Provider\LichessGameResult;
+use DateTimeInterface;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueueAfterCommit;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
-use Throwable;
 
 /**
  * Posts an auto-fetched Lichess game card for a Pending match, then settles via
@@ -30,14 +31,29 @@ use Throwable;
  * Snapshot-cross-checked (not live-looked-up) so a mid-match unlink can't strip the anchor.
  * Idempotent via attachments_json scan (`alreadyPosted()`) — re-dispatch / queue-retry won't
  * double-post or double-settle.
+ *
+ * Retry policy (M14 Slice 2b):
+ *   - `TransientProviderError` / `RateLimitedError` → audit row + re-throw; Laravel
+ *     retries per `backoff()` up to `$tries`.
+ *   - `PermanentProviderError` → audit row (`outcome_reason='permanent'`) + `$this->fail($e)`;
+ *     no retry, lands in `failed_jobs`.
+ *   - `retryUntil()` caps the whole chain at `match.created_at + M16 confirmation timeout`
+ *     so we never retry past the point where `ResolveMatchTimeoutAction` flips the match
+ *     to ManualReview.
  */
 class AutoFetchLichessGameJob implements ShouldBeUnique, ShouldQueueAfterCommit
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
-    public int $tries = 1;
+    public int $tries = 4;
 
     public int $timeout = 30;
+
+    /**
+     * Caps unique-lock lifetime past the worst-case retry chain so the lock
+     * doesn't strand if the queue worker dies mid-retry.
+     */
+    public int $uniqueFor = 240;
 
     public function __construct(
         public GameMatch $match,
@@ -50,6 +66,26 @@ class AutoFetchLichessGameJob implements ShouldBeUnique, ShouldQueueAfterCommit
     public function uniqueId(): string
     {
         return (string) $this->match->id;
+    }
+
+    /**
+     * @return list<int>
+     */
+    public function backoff(): array
+    {
+        return [5, 15, 30];
+    }
+
+    /**
+     * Bound the retry chain so it can't outlive the match's M16 confirmation
+     * window. Once the timeout fires, `ResolveMatchTimeoutAction` flips the
+     * match to ManualReview and further auto-fetch is pointless.
+     */
+    public function retryUntil(): DateTimeInterface
+    {
+        return $this->match->created_at
+            ->copy()
+            ->addHours((int) config('stakly.match_confirmation_timeout_hours'));
     }
 
     public function handle(
@@ -86,21 +122,33 @@ class AutoFetchLichessGameJob implements ShouldBeUnique, ShouldQueueAfterCommit
             return;
         }
 
-        [$games, $errorMessage, $latencyMs] = $this->searchWithMetrics(
-            $client,
-            $creatorUsername,
-            $takerUsername,
-        );
+        $start = microtime(true);
 
-        if ($games === null) {
+        try {
+            $games = $client->searchGamesBetween(
+                $creatorUsername,
+                $takerUsername,
+                $this->match->created_at,
+            );
+        } catch (PermanentProviderError $e) {
             $this->record($recordAttempt, AutoFetchOutcome::Error, [
-                'error_message' => $errorMessage,
-                'latency_ms' => $latencyMs,
+                'error_message' => $e->getMessage(),
+                'latency_ms' => $this->elapsedMs($start),
+                'outcome_reason' => 'permanent',
             ]);
+            $this->fail($e);
 
             return;
+        } catch (ProviderError $e) {
+            $this->record($recordAttempt, AutoFetchOutcome::Error, [
+                'error_message' => $e->getMessage(),
+                'latency_ms' => $this->elapsedMs($start),
+                'outcome_reason' => $this->errorRetriesExhausted() ? 'retry_exhausted' : null,
+            ]);
+            throw $e;
         }
 
+        $latencyMs = $this->elapsedMs($start);
         $completed = $this->filterCompleted($games);
         $count = count($completed);
 
@@ -138,31 +186,9 @@ class AutoFetchLichessGameJob implements ShouldBeUnique, ShouldQueueAfterCommit
         $settleFromCard->handle($this->match, $card);
     }
 
-    /**
-     * Returns `[games, errorMessage, latencyMs]` — exactly one of `games` / `errorMessage` is non-null.
-     *
-     * @return array{0: list<LichessGameResult>|null, 1: string|null, 2: int}
-     */
-    private function searchWithMetrics(
-        LichessGameClient $client,
-        string $creatorUsername,
-        string $takerUsername,
-    ): array {
-        $start = microtime(true);
-
-        try {
-            $games = $client->searchGamesBetween(
-                $creatorUsername,
-                $takerUsername,
-                $this->match->created_at,
-            );
-
-            return [$games, null, $this->elapsedMs($start)];
-        } catch (ProviderError $e) {
-            return [null, $e->getMessage(), $this->elapsedMs($start)];
-        } catch (Throwable $e) {
-            return [null, $e->getMessage(), $this->elapsedMs($start)];
-        }
+    private function errorRetriesExhausted(): bool
+    {
+        return $this->attempts() >= $this->tries;
     }
 
     private function elapsedMs(float $start): int
