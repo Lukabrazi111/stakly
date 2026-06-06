@@ -10,7 +10,7 @@ use App\Enums\LinkedAccountProvider;
 use App\Enums\MessageType;
 use App\Models\GameMatch;
 use App\Models\Message;
-use App\Services\Provider\Exceptions\ProviderUnavailableException;
+use App\Services\Provider\Exceptions\ProviderError;
 use App\Services\Provider\LichessGameClient;
 use App\Services\Provider\LichessGameResult;
 use Illuminate\Bus\Queueable;
@@ -158,7 +158,7 @@ class AutoFetchLichessGameJob implements ShouldBeUnique, ShouldQueueAfterCommit
             );
 
             return [$games, null, $this->elapsedMs($start)];
-        } catch (ProviderUnavailableException $e) {
+        } catch (ProviderError $e) {
             return [null, $e->getMessage(), $this->elapsedMs($start)];
         } catch (Throwable $e) {
             return [null, $e->getMessage(), $this->elapsedMs($start)];

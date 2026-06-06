@@ -6,7 +6,7 @@ use App\Enums\LinkedAccountProvider;
 use App\Events\MessageSent;
 use App\Models\GameMatch;
 use App\Models\Message;
-use App\Services\Provider\Exceptions\ProviderUnavailableException;
+use App\Services\Provider\Exceptions\ProviderError;
 use App\Services\Provider\LichessGameClient;
 use App\Services\Provider\LichessGameResult;
 use Illuminate\Bus\Queueable;
@@ -42,7 +42,7 @@ class FetchLichessGameMetadataJob implements ShouldQueueAfterCommit
     {
         try {
             $game = $client->fetchGame($this->gameId);
-        } catch (ProviderUnavailableException $e) {
+        } catch (ProviderError $e) {
             Log::info('Lichess game fetch failed (provider unavailable)', [
                 'message_id' => $this->message->id,
                 'game_id' => $this->gameId,

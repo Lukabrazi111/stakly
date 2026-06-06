@@ -2,7 +2,10 @@
 
 namespace App\Services\Provider;
 
-use App\Services\Provider\Exceptions\ProviderUnavailableException;
+use App\Services\Provider\Exceptions\PermanentProviderError;
+use App\Services\Provider\Exceptions\ProviderError;
+use App\Services\Provider\Exceptions\RateLimitedError;
+use App\Services\Provider\Exceptions\TransientProviderError;
 use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
 use Illuminate\Http\Client\ConnectionException;
@@ -32,6 +35,8 @@ use Illuminate\Support\Facades\Http;
  *     `config('stakly.chess_com_user_agent')` so the contact email lives
  *     in env, not in code.
  *
+ * Error semantics mirror `LichessGameClient` — see that class's docblock.
+ *
  * `Http::fake()`-able from tests.
  */
 class ChessComGameClient
@@ -56,11 +61,7 @@ class ChessComGameClient
         $monthsToTry = [$now, $now->subMonthNoOverflow()];
 
         foreach ($monthsToTry as $month) {
-            try {
-                $games = $this->fetchMonthArchive($forUsername, $month->year, $month->month);
-            } catch (ProviderUnavailableException $e) {
-                throw $e;
-            }
+            $games = $this->fetchMonthArchive($forUsername, $month->year, $month->month);
 
             foreach ($games as $game) {
                 if (strtolower((string) ($game['url'] ?? '')) === $normalisedUrl) {
@@ -143,7 +144,7 @@ class ChessComGameClient
                 ->timeout(self::TIMEOUT_SECONDS)
                 ->get($url);
         } catch (ConnectionException $e) {
-            throw new ProviderUnavailableException(
+            throw new TransientProviderError(
                 "chess.com unreachable for archive '{$username}/{$year}/{$monthPadded}': {$e->getMessage()}",
                 previous: $e,
             );
@@ -157,8 +158,9 @@ class ChessComGameClient
         }
 
         if (! $response->successful()) {
-            throw new ProviderUnavailableException(
-                "chess.com returned status {$response->status()} for archive '{$username}/{$year}/{$monthPadded}'.",
+            throw self::classifyStatusError(
+                $response->status(),
+                "for archive '{$username}/{$year}/{$monthPadded}'",
             );
         }
 
@@ -173,6 +175,26 @@ class ChessComGameClient
             $data['games'],
             fn ($game) => is_array($game),
         ));
+    }
+
+    /**
+     * Classify a non-2xx response into the right `ProviderError` subclass.
+     * 429 → `RateLimitedError` (Slice 2c populates `retryAt` from headers).
+     * 5xx → `TransientProviderError`. 4xx-other → `PermanentProviderError`.
+     */
+    private static function classifyStatusError(int $status, string $context): ProviderError
+    {
+        return match (true) {
+            $status === 429 => new RateLimitedError(
+                "chess.com returned 429 (rate-limited) {$context}.",
+            ),
+            $status >= 500 => new TransientProviderError(
+                "chess.com returned status {$status} {$context}.",
+            ),
+            default => new PermanentProviderError(
+                "chess.com returned status {$status} {$context}.",
+            ),
+        };
     }
 
     /**

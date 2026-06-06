@@ -15,7 +15,7 @@ Frontend-first build. UI against real DB infrastructure + seeded fake data; back
 
 **In-flight:**
 
-- **M14** — Outcome pipeline hardening. Slice A (chess card arbitration) shipped 2026-05-22; Phases 1–4 expanded into shipping-sized slices below. Production-critical pre-launch for the settlement engine: observability first (Phase 1), then reliability (Phase 2), coverage edge cases (Phase 3), dispute fast-path (Phase 4).
+- **M14** — Outcome pipeline hardening. Slice A (2026-05-22) + Phase 1 (2026-05-29) shipped — both in archive. Phases 2 (reliability), 3 (coverage), 4 (dispute fast-path) remain, expanded into shipping-sized slices below. Production-critical pre-launch for the settlement engine.
 
 **Active / upcoming:**
 
@@ -59,14 +59,7 @@ The FACEIT / OpenDota / Riot adapter work and the "no-admin-fallback policy" pie
 
 ### Phases
 
-**Phase 1 — Per-match audit trail + admin visibility**
-
-Today nobody can answer "why is this match in ManualReview?" without grepping logs. Every dispute investigation starts blind. Phase 1 captures the auto-fetch pipeline's reasoning as queryable data inside the app — every dispatch, fetch, skip, and outcome lands as a row, and admins read the trail straight from the match's Filament page. This is the highest-leverage piece of M14 because nothing downstream can be tuned without the visibility.
-
-- [ ] **Slice 1a — Schema + Model + Factory.** New `match_auto_fetch_attempts` table (append-only, indexed on `match_id`). Columns: `match_id`, `provider` (`lichess` / `chess_com`), `outcome` (`matched` / `no_match` / `ambiguous` / `error` / `skipped`), `winner_username` nullable, `candidates_count`, `error_message` nullable, `latency_ms`, `created_at`. `MatchAutoFetchAttempt` model with `BelongsTo $match` + `enum` casts on `provider` and `outcome`. Factory for tests. `GameMatch::autoFetchAttempts(): HasMany`. Migration schema test (column types, indexes) + relationship round-trip test.
-- [ ] **Slice 1b — Wire writes from the pipeline.** Every code path in `DispatchAutoFetchAction` + `AutoFetchLichessGameJob` + `AutoFetchChessComGameJob` writes exactly one row per attempt — including the "we didn't even try" skips (snapshot missing, status not Pending, provider not linked, circuit open). `latency_ms` measured around the HTTP call. `Log::info` / `Log::warning` mirrors of the same shape so any future production log forwarding picks up the same events without a second instrumentation pass. Tests cover each `outcome` enum value (matched, no_match, ambiguous, error, skipped).
-- [ ] **Slice 1c — Filament audit-trail timeline.** New Infolist section on `GameMatchResource` View page: per-match audit timeline. Admin opens a disputed match → sees the full history of what the system tried, when, and what it found. Outcome badge colors (matched=success, no_match=warning, error=destructive, skipped=muted, ambiguous=warning). Latency shown as ms. Tests via `Livewire::test()` on the Filament page asserting timeline rows render.
-- [ ] **Slice 1d — `PipelineHealth` dashboard widget.** New widget alongside `OpsOverview` on the Filament dashboard: auto-fetch success rate (7d / 30d), avg time-to-settle (Pending → Settled), top "no_match" reasons (grouped by provider). Tests verify widget renders + queries respect the time windows.
+**Phase 1 — Per-match audit trail + admin visibility** ✅ shipped 2026-05-29 (see `milestones_archived.md` for the implementation detail). `match_auto_fetch_attempts` audit table + `RecordAutoFetchAttemptAction` single write point + audit trail wired into `DispatchAutoFetchAction` and both auto-fetch jobs. Admin surfaces: `GameMatchInfolist` per-match timeline + `PipelineHealth` dashboard widget (24h counts + 7d latency trend). 63 tests, 186 assertions. Diverged from original spec on the widget shape — shipped 24h/7d operations-dashboard stats instead of 7d/30d analytics-style success-rate percentages; the analytics view can land as a separate slice if real telemetry shows it's needed.
 
 **Phase 2 — Reliability**
 

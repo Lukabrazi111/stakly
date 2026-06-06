@@ -290,6 +290,24 @@ Originally landed Lichess-only as `LichessGameApi`; Phase 4b extended to chess.c
 
 ---
 
+## M14 Phase 1 — Per-match audit trail + admin visibility ✅ shipped 2026-05-29
+
+Closes the "why is this match in ManualReview?" gap. Pre-Phase-1, every dispute investigation started with `grep` against ephemeral logs — the pipeline ran in production conditions with no in-app record of what it tried, when, or why it failed. M14 Phase 1 captures the auto-fetch pipeline's reasoning as queryable data inside the app: every dispatch, every fetch, every skip lands as one `match_auto_fetch_attempts` row, and admins read the trail straight from the match's Filament page.
+
+**Schema** — `match_auto_fetch_attempts` table (append-only, no `updated_at`). Columns: `match_id` (cascade-on-delete FK to `game_matches`), `provider`, `outcome`, `outcome_reason`, `attempt_number`, `winner_username`, `candidates_count`, `error_message`, `latency_ms`, `created_at`. Three indexes: `(match_id, created_at)` for the per-match timeline, `(outcome, created_at)` for outcome-wide rollups, `(provider, outcome, created_at)` for provider-specific health queries. `App\Enums\AutoFetchOutcome` (Matched / NoMatch / Ambiguous / Error / Skipped) cast on the model. `GameMatch::autoFetchAttempts()` ordered oldest→newest so the timeline reads top-down.
+
+**Single write point** — `App\Actions\GameMatch\RecordAutoFetchAttemptAction`. Mirrors the Wallet pattern: every audit row goes through one Action so the write surface stays auditable. Trims `error_message` to 2000 chars at the boundary (full message stays in the log mirror). DB insert failures log + return null rather than cascade into pipeline failure — losing an audit row beats losing a settlement. Pairs every DB row with a `Log::info` / `Log::warning` line (warning on `error` outcomes, info on all others) so operators tailing either surface see the same record. `DispatchAutoFetchAction` writes skips for `not_pending` and `snapshot_missing` before reaching the jobs. Both `AutoFetchLichessGameJob` and `AutoFetchChessComGameJob` write `matched` / `no_match` / `ambiguous` / `error` rows with `latency_ms` measured around the HTTP call.
+
+**Admin surfaces** — `GameMatchInfolist::autoFetchHistorySection` renders a per-attempt timeline inside the match View page (inline HTML with colored outcome badges, latency, and per-outcome detail strings — `Matched` shows the winner, `NoMatch` shows the candidate count + reason, `Skipped` shows the reason). `PipelineHealth` widget on the Filament dashboard (`StatsOverviewWidget` with 4 stats): auto-settlements (24h count + 7d sparkline), pipeline errors (24h count + 7d sparkline, danger ≥10/day), avg provider latency (7d vs prior 7d trend — lower = success), pipeline attempts (24h volume + per-outcome breakdown). 30s polling.
+
+**Diverges from the original spec on the widget shape** — original called for 7d/30d success-rate percentages + avg time-to-settle (Pending → Settled) + top no_match reasons grouped by provider. Shipped 24h-counts + 7d-latency-trend instead. The 24h focus matches how an operations dashboard actually gets read at launch ("what's broken right now?") and raw counts give clearer signal than ratios at low volume. The percentage / time-to-settle / top-failure-reasons views can land as a separate slice if real telemetry shows they're needed. Also: `no_match` badge color is gray (muted), not warning — `no_match` is the expected outcome on most ticks (the game hasn't been played yet), warning would cry wolf.
+
+**Tests** — `DispatchAutoFetchActionTest` (skip path coverage), `RecordAutoFetchAttemptActionTest` (write + log mirror + truncation + insert-failure swallowing), `AutoFetchLichessAuditTrailTest` + `AutoFetchChessComAuditTrailTest` (per-job outcome coverage), `Admin/GameMatchResourceTest` (Filament timeline rendering), `Admin/PipelineHealthWidgetTest` (widget stats + time-window queries). 63 tests, 186 assertions.
+
+Commit: `527dd1e`. Files touched: 21 (1995 insertions). Foundation for Phase 2 (reliability) — the audit rows are the substrate every retry / circuit-breaker decision will read from.
+
+---
+
 ## M12 — Filament admin panel + chat-driven dispute resolution ✅ shipped 2026-05-24
 
 Pulled forward from "pre-launch gate" because chat-first dispute resolution needs admin tooling. Without M12, M8's chat sat alongside the existing `MockGameApi` dispute path — useful but not the primary mechanism. M12 makes chat the source of truth for disputes; the game API becomes one input among many that an admin weighs.

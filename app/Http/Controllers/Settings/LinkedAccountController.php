@@ -7,7 +7,7 @@ use App\Actions\LinkedAccount\VerifyLinkedAccountAction;
 use App\Enums\LinkedAccountProvider;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Settings\RequestLinkVerificationRequest;
-use App\Services\Provider\Exceptions\ProviderUnavailableException;
+use App\Services\Provider\Exceptions\ProviderError;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -77,7 +77,7 @@ class LinkedAccountController extends Controller
     ): RedirectResponse {
         try {
             $sentinel = $action->handle($request->user());
-        } catch (ProviderUnavailableException) {
+        } catch (ProviderError) {
             Inertia::flash('toast', [
                 'type' => 'error',
                 'message' => __("We couldn't reach the provider right now. Please try again in a moment."),

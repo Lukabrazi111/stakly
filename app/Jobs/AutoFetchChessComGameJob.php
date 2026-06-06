@@ -12,7 +12,7 @@ use App\Models\GameMatch;
 use App\Models\Message;
 use App\Services\Provider\ChessComGameClient;
 use App\Services\Provider\ChessComGameResult;
-use App\Services\Provider\Exceptions\ProviderUnavailableException;
+use App\Services\Provider\Exceptions\ProviderError;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueueAfterCommit;
@@ -173,7 +173,7 @@ class AutoFetchChessComGameJob implements ShouldBeUnique, ShouldQueueAfterCommit
             );
 
             return [$games, null, $this->elapsedMs($start)];
-        } catch (ProviderUnavailableException $e) {
+        } catch (ProviderError $e) {
             return [null, $e->getMessage(), $this->elapsedMs($start)];
         } catch (Throwable $e) {
             return [null, $e->getMessage(), $this->elapsedMs($start)];

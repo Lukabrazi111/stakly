@@ -19,7 +19,7 @@ use Illuminate\Validation\ValidationException;
  * the provider — required for snapshot-on-match-creation to match game records exactly.
  *
  * Returns one of: `'verified'`, `'expired'`, `'profile-not-found'`, `'code-not-found'`,
- * `'username-claimed'` (TOCTOU race during commit). `ProviderUnavailableException` bubbles up.
+ * `'username-claimed'` (TOCTOU race during commit). `ProviderError` (subclass per status) bubbles up.
  */
 class VerifyLinkedAccountAction
 {

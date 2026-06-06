@@ -2,7 +2,10 @@
 
 namespace App\Services\Provider;
 
-use App\Services\Provider\Exceptions\ProviderUnavailableException;
+use App\Services\Provider\Exceptions\PermanentProviderError;
+use App\Services\Provider\Exceptions\ProviderError;
+use App\Services\Provider\Exceptions\RateLimitedError;
+use App\Services\Provider\Exceptions\TransientProviderError;
 use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
 use Illuminate\Http\Client\ConnectionException;
@@ -26,15 +29,13 @@ use Illuminate\Support\Facades\Http;
  * Stakly's per-match enrichment cadence. A recognisable User-Agent makes it
  * easy for Lichess to contact us if our traffic ever misbehaves.
  *
- * Error semantics:
- *   - `fetchGame` 404                → `null` (URL pointed at a game that
- *                                     doesn't exist — caller renders nothing)
- *   - `searchGamesBetween` 404       → `[]` (e.g. user deactivated their
- *                                     Lichess account — auto-fetch skips)
- *   - any 4xx-other / 5xx / 429 / connect error / malformed JSON
- *                                    → `ProviderUnavailableException`
- *                                     (transient — calling job swallows so a
- *                                     missing card isn't a failed-jobs entry)
+ * Error semantics (M14 Slice 2a):
+ *   - `fetchGame` 404                → `null` (caller renders nothing)
+ *   - `searchGamesBetween` 404       → `[]` (e.g. user deactivated account)
+ *   - 5xx / connect / timeout        → `TransientProviderError` (retry)
+ *   - 429                            → `RateLimitedError` (retry per `Retry-After`)
+ *   - 4xx other than 429             → `PermanentProviderError` (terminal)
+ *   - Malformed JSON                 → `PermanentProviderError` (terminal)
  *
  * `Http::fake()`-able from tests.
  */
@@ -58,7 +59,7 @@ class LichessGameClient
                 ->timeout(self::TIMEOUT_SECONDS)
                 ->get($url, self::minimalPayloadParams());
         } catch (ConnectionException $e) {
-            throw new ProviderUnavailableException(
+            throw new TransientProviderError(
                 "Lichess unreachable for game '{$gameId}': {$e->getMessage()}",
                 previous: $e,
             );
@@ -69,15 +70,13 @@ class LichessGameClient
         }
 
         if (! $response->successful()) {
-            throw new ProviderUnavailableException(
-                "Lichess returned status {$response->status()} for game '{$gameId}'.",
-            );
+            throw self::classifyStatusError($response->status(), "for game '{$gameId}'");
         }
 
         $data = $response->json();
 
         if (! is_array($data) || ! isset($data['id'])) {
-            throw new ProviderUnavailableException(
+            throw new PermanentProviderError(
                 "Lichess returned malformed JSON for game '{$gameId}'.",
             );
         }
@@ -114,7 +113,7 @@ class LichessGameClient
                     ...self::minimalPayloadParams(),
                 ]);
         } catch (ConnectionException $e) {
-            throw new ProviderUnavailableException(
+            throw new TransientProviderError(
                 "Lichess unreachable searching games {$userA} vs {$userB}: {$e->getMessage()}",
                 previous: $e,
             );
@@ -125,12 +124,30 @@ class LichessGameClient
         }
 
         if (! $response->successful()) {
-            throw new ProviderUnavailableException(
-                "Lichess returned status {$response->status()} searching games {$userA} vs {$userB}.",
-            );
+            throw self::classifyStatusError($response->status(), "searching games {$userA} vs {$userB}");
         }
 
         return self::parseNdjson($response);
+    }
+
+    /**
+     * Classify a non-2xx response into the right `ProviderError` subclass.
+     * 429 → `RateLimitedError` (Slice 2c populates `retryAt` from headers).
+     * 5xx → `TransientProviderError`. 4xx-other → `PermanentProviderError`.
+     */
+    private static function classifyStatusError(int $status, string $context): ProviderError
+    {
+        return match (true) {
+            $status === 429 => new RateLimitedError(
+                "Lichess returned 429 (rate-limited) {$context}.",
+            ),
+            $status >= 500 => new TransientProviderError(
+                "Lichess returned status {$status} {$context}.",
+            ),
+            default => new PermanentProviderError(
+                "Lichess returned status {$status} {$context}.",
+            ),
+        };
     }
 
     /**
