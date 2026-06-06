@@ -12,6 +12,7 @@ interface Props {
 export function BalanceCard({ balance, variant = 'hero', label }: Props) {
     const t = useT();
     const resolvedLabel = label ?? t('Available balance');
+
     if (variant === 'compact') {
         return (
             <div className="flex items-baseline justify-between rounded-xl border border-border/60 bg-card/60 px-4 py-3">

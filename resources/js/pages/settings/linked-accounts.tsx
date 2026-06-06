@@ -189,9 +189,7 @@ function VerifiedRow({ provider }: { provider: Provider }) {
                                     variant="destructive"
                                     disabled={processing}
                                 >
-                                    {processing
-                                        ? t('Unlinking…')
-                                        : t('Unlink')}
+                                    {processing ? t('Unlinking…') : t('Unlink')}
                                 </Button>
                             </DialogFooter>
                         )}
@@ -236,10 +234,13 @@ function PendingRow({
                 <span className="font-medium text-foreground">
                     {provider.targetFieldLabel}
                 </span>{' '}
-                {t('field on :provider (:instructions), save it there, then come back and verify. After we verify, you can safely remove the code from your profile — we only check it once.', {
-                    provider: provider.displayName,
-                    instructions: provider.targetFieldInstructions,
-                })}
+                {t(
+                    'field on :provider (:instructions), save it there, then come back and verify. After we verify, you can safely remove the code from your profile — we only check it once.',
+                    {
+                        provider: provider.displayName,
+                        instructions: provider.targetFieldInstructions,
+                    },
+                )}
             </p>
 
             <div className="flex items-center gap-2 rounded-xl border border-primary/40 bg-primary/5 p-3">

@@ -279,7 +279,9 @@ export default function Profile({
                                                 <DialogContent>
                                                     <DialogHeader>
                                                         <DialogTitle>
-                                                            {t('Remove avatar?')}
+                                                            {t(
+                                                                'Remove avatar?',
+                                                            )}
                                                         </DialogTitle>
                                                         <DialogDescription>
                                                             {t(

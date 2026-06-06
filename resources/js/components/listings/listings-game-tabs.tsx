@@ -52,7 +52,7 @@ export function ListingsGameTabs({ games, selectedSlug, onSelect }: Props) {
             ref={scrollerRef}
             role="tablist"
             aria-label={t('Game')}
-            className="-mx-4 flex snap-x snap-mandatory gap-2 overflow-x-auto px-4 pb-1 md:mx-0 md:flex-wrap md:overflow-visible md:px-0 [&::-webkit-scrollbar]:hidden [scrollbar-width:none]"
+            className="-mx-4 flex snap-x snap-mandatory [scrollbar-width:none] gap-2 overflow-x-auto px-4 pb-1 md:mx-0 md:flex-wrap md:overflow-visible md:px-0 [&::-webkit-scrollbar]:hidden"
         >
             {games.map((game) => {
                 const isSelected = game.slug === selectedSlug;

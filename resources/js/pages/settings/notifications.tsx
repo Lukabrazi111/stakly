@@ -249,10 +249,7 @@ export default function NotificationPreferencesPage({
                         'Pick the chime that plays when an event has Sound on.',
                     )}
                 >
-                    <div
-                        role="radiogroup"
-                        aria-label={t('Notification sound')}
-                    >
+                    <div role="radiogroup" aria-label={t('Notification sound')}>
                         {soundChoices.map((choice) => {
                             const meta = SOUND_META[choice];
 
@@ -288,9 +285,7 @@ export default function NotificationPreferencesPage({
 
                 <div className="flex justify-end">
                     <Button type="submit" disabled={form.processing}>
-                        {form.processing
-                            ? t('Saving…')
-                            : t('Save preferences')}
+                        {form.processing ? t('Saving…') : t('Save preferences')}
                     </Button>
                 </div>
             </form>
@@ -403,9 +398,7 @@ function EventRow({
                     onChange={() => onToggle('sound')}
                     disabled={soundDisabled}
                     tooltip={
-                        soundDisabled
-                            ? t('Sound is off globally.')
-                            : undefined
+                        soundDisabled ? t('Sound is off globally.') : undefined
                     }
                 />
                 <ChannelCheckbox

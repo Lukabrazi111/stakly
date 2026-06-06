@@ -121,7 +121,7 @@ export default function ListingShow({ listing, match }: ListingShowProps) {
     // resolve to `hasMatchingPlatform = false`.
     const hasMatchingPlatform = Boolean(
         (
-            auth.user?.linked_platforms as readonly typeof listing.platform[]
+            auth.user?.linked_platforms as readonly (typeof listing.platform)[]
         )?.includes(listing.platform),
     );
     // Owner-inactive frontend gate (M6 Phase 6.5). Mirrors the server-side
