@@ -190,6 +190,65 @@ test('rate limited (429): writes a row + re-throws RateLimitedError for retry', 
         ->and($attempt->error_message)->toContain('429');
 });
 
+test('rate limited with Retry-After: release() called with provider-supplied delay (overrides backoff)', function () {
+    CarbonImmutable::setTestNow('2026-06-06T12:00:00Z');
+    $match = chessComAuditMatch();
+    Http::fake([
+        'api.chess.com/pub/player/*/games/*' => Http::response('', 429, ['Retry-After' => '120']),
+    ]);
+
+    $job = new class($match) extends AutoFetchChessComGameJob
+    {
+        public ?int $releasedDelay = null;
+
+        public function release($delay = 0): mixed
+        {
+            $this->releasedDelay = $delay;
+
+            return null;
+        }
+    };
+
+    expect(fn () => $job->handle(
+        app(ChessComGameClient::class),
+        app(PostSystemMessageAction::class),
+        app(SettleFromCardAction::class),
+        app(RecordAutoFetchAttemptAction::class),
+    ))->not->toThrow(RateLimitedError::class);
+
+    expect($job->releasedDelay)->toBe(120);
+
+    $attempt = MatchAutoFetchAttempt::query()->where('match_id', $match->id)->first();
+    expect($attempt->outcome)->toBe(AutoFetchOutcome::Error)
+        ->and($attempt->error_message)->toContain('429');
+});
+
+test('rate limited on final attempt: throws instead of release (budget exhausted)', function () {
+    CarbonImmutable::setTestNow('2026-06-06T12:00:00Z');
+    $match = chessComAuditMatch();
+    Http::fake([
+        'api.chess.com/pub/player/*/games/*' => Http::response('', 429, ['Retry-After' => '60']),
+    ]);
+
+    $job = new class($match) extends AutoFetchChessComGameJob
+    {
+        public function attempts(): int
+        {
+            return 7; // matches $tries
+        }
+    };
+
+    expect(fn () => $job->handle(
+        app(ChessComGameClient::class),
+        app(PostSystemMessageAction::class),
+        app(SettleFromCardAction::class),
+        app(RecordAutoFetchAttemptAction::class),
+    ))->toThrow(RateLimitedError::class);
+
+    $attempt = MatchAutoFetchAttempt::query()->where('match_id', $match->id)->first();
+    expect($attempt->outcome_reason)->toBe('retry_exhausted');
+});
+
 test('error on final attempt: writes outcome_reason=retry_exhausted', function () {
     $match = chessComAuditMatch();
     Http::fake([

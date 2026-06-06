@@ -18,6 +18,7 @@ use App\Services\Provider\Exceptions\RateLimitedError;
 use App\Services\Provider\Exceptions\TransientProviderError;
 use App\Services\Provider\LichessGameClient;
 use App\Services\Wallet;
+use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Http;
 
 /**
@@ -151,6 +152,67 @@ test('rate limited (429): writes a row + re-throws RateLimitedError for retry', 
     $attempt = MatchAutoFetchAttempt::query()->where('match_id', $match->id)->first();
     expect($attempt->outcome)->toBe(AutoFetchOutcome::Error)
         ->and($attempt->error_message)->toContain('429');
+});
+
+test('rate limited with Retry-After: release() called with provider-supplied delay (overrides backoff)', function () {
+    CarbonImmutable::setTestNow('2026-06-06T12:00:00Z');
+    $match = lichessAuditMatch();
+    Http::fake([
+        'lichess.org/api/games/user/*' => Http::response('', 429, ['Retry-After' => '90']),
+    ]);
+
+    // Subclass captures the release() delay arg so we can assert it.
+    $job = new class($match) extends AutoFetchLichessGameJob
+    {
+        public ?int $releasedDelay = null;
+
+        public function release($delay = 0): mixed
+        {
+            $this->releasedDelay = $delay;
+
+            return null;
+        }
+    };
+
+    // No throw — the RateLimitedError catch released instead of re-throwing.
+    expect(fn () => $job->handle(
+        app(LichessGameClient::class),
+        app(PostSystemMessageAction::class),
+        app(SettleFromCardAction::class),
+        app(RecordAutoFetchAttemptAction::class),
+    ))->not->toThrow(RateLimitedError::class);
+
+    expect($job->releasedDelay)->toBe(90);
+
+    $attempt = MatchAutoFetchAttempt::query()->where('match_id', $match->id)->first();
+    expect($attempt->outcome)->toBe(AutoFetchOutcome::Error)
+        ->and($attempt->error_message)->toContain('429');
+});
+
+test('rate limited on final attempt: throws instead of release (budget exhausted)', function () {
+    CarbonImmutable::setTestNow('2026-06-06T12:00:00Z');
+    $match = lichessAuditMatch();
+    Http::fake([
+        'lichess.org/api/games/user/*' => Http::response('', 429, ['Retry-After' => '60']),
+    ]);
+
+    $job = new class($match) extends AutoFetchLichessGameJob
+    {
+        public function attempts(): int
+        {
+            return 4; // matches $tries
+        }
+    };
+
+    expect(fn () => $job->handle(
+        app(LichessGameClient::class),
+        app(PostSystemMessageAction::class),
+        app(SettleFromCardAction::class),
+        app(RecordAutoFetchAttemptAction::class),
+    ))->toThrow(RateLimitedError::class);
+
+    $attempt = MatchAutoFetchAttempt::query()->where('match_id', $match->id)->first();
+    expect($attempt->outcome_reason)->toBe('retry_exhausted');
 });
 
 test('error on final attempt: writes outcome_reason=retry_exhausted', function () {

@@ -9,6 +9,7 @@ use App\Services\Provider\Exceptions\TransientProviderError;
 use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
 use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
 
 /**
@@ -158,8 +159,8 @@ class ChessComGameClient
         }
 
         if (! $response->successful()) {
-            throw self::classifyStatusError(
-                $response->status(),
+            throw self::classifyResponseError(
+                $response,
                 "for archive '{$username}/{$year}/{$monthPadded}'",
             );
         }
@@ -179,14 +180,18 @@ class ChessComGameClient
 
     /**
      * Classify a non-2xx response into the right `ProviderError` subclass.
-     * 429 → `RateLimitedError` (Slice 2c populates `retryAt` from headers).
-     * 5xx → `TransientProviderError`. 4xx-other → `PermanentProviderError`.
+     * 429 → `RateLimitedError` with `retryAt` populated from `Retry-After`
+     * or `X-RateLimit-Reset` (M14 Slice 2c). 5xx → `TransientProviderError`.
+     * 4xx-other → `PermanentProviderError`.
      */
-    private static function classifyStatusError(int $status, string $context): ProviderError
+    private static function classifyResponseError(Response $response, string $context): ProviderError
     {
+        $status = $response->status();
+
         return match (true) {
             $status === 429 => new RateLimitedError(
                 "chess.com returned 429 (rate-limited) {$context}.",
+                retryAt: RateLimitHeaderParser::parseRetryAt($response),
             ),
             $status >= 500 => new TransientProviderError(
                 "chess.com returned status {$status} {$context}.",

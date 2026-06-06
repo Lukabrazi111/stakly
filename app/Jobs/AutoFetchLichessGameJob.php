@@ -12,6 +12,7 @@ use App\Models\GameMatch;
 use App\Models\Message;
 use App\Services\Provider\Exceptions\PermanentProviderError;
 use App\Services\Provider\Exceptions\ProviderError;
+use App\Services\Provider\Exceptions\RateLimitedError;
 use App\Services\Provider\LichessGameClient;
 use App\Services\Provider\LichessGameResult;
 use DateTimeInterface;
@@ -139,6 +140,28 @@ class AutoFetchLichessGameJob implements ShouldBeUnique, ShouldQueueAfterCommit
             $this->fail($e);
 
             return;
+        } catch (RateLimitedError $e) {
+            $this->record($recordAttempt, AutoFetchOutcome::Error, [
+                'error_message' => $e->getMessage(),
+                'latency_ms' => $this->elapsedMs($start),
+                'outcome_reason' => $this->errorRetriesExhausted() ? 'retry_exhausted' : null,
+            ]);
+
+            $retryAt = $e->retryAt();
+            // `now()->getTimestamp()` (not PHP's `time()`) so Carbon's
+            // `setTestNow` mocking carries through to tests.
+            $nowTs = now()->getTimestamp();
+            if ($retryAt !== null
+                && $retryAt->getTimestamp() > $nowTs
+                && ! $this->errorRetriesExhausted()
+            ) {
+                // Honor the provider-supplied delay over the job's default `backoff()`.
+                $this->release(max(1, $retryAt->getTimestamp() - $nowTs));
+
+                return;
+            }
+
+            throw $e;
         } catch (ProviderError $e) {
             $this->record($recordAttempt, AutoFetchOutcome::Error, [
                 'error_message' => $e->getMessage(),

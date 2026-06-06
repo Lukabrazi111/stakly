@@ -61,6 +61,24 @@ test('fetchGame throws RateLimitedError on 429', function () {
         ->toThrow(RateLimitedError::class);
 });
 
+test('fetchGame populates retryAt from Retry-After header on 429', function () {
+    CarbonImmutable::setTestNow('2026-06-06T12:00:00Z');
+    Http::fake([
+        'lichess.org/game/export/*' => Http::response('', 429, ['Retry-After' => '120']),
+    ]);
+
+    $error = null;
+    try {
+        client()->fetchGame('a1b2c3d4');
+    } catch (RateLimitedError $e) {
+        $error = $e;
+    }
+
+    expect($error)->not->toBeNull();
+    expect($error->retryAt()->getTimestamp())
+        ->toBe(CarbonImmutable::parse('2026-06-06T12:02:00Z')->getTimestamp());
+});
+
 test('fetchGame throws PermanentProviderError on 4xx other than 429', function () {
     Http::fake([
         'lichess.org/game/export/*' => Http::response('', 401),
