@@ -39,9 +39,15 @@ test('settings page renders for verified users', function () {
         ->assertOk()
         ->assertInertia(fn ($page) => $page
             ->component('settings/linked-accounts')
-            ->has('providers', 2)
+            // M15 P2 — three providers: chess.com + Lichess (bio-code) + FACEIT (oauth).
+            ->has('providers', 3)
             ->where('providers.0.value', 'chess_com')
+            ->where('providers.0.verificationType', 'bio_code')
             ->where('providers.1.value', 'lichess')
+            ->where('providers.1.verificationType', 'bio_code')
+            ->where('providers.2.value', 'faceit')
+            ->where('providers.2.verificationType', 'oauth')
+            ->where('providers.2.oauthRedirectUrl', fn ($url) => str_ends_with((string) $url, '/auth/faceit/redirect'))
             ->where('pending', null)
         );
 });

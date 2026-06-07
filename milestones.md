@@ -214,11 +214,11 @@ Read-only research pass. Use Context7 + FACEIT developer docs (developers.faceit
 
 > **Prerequisite (out-of-engineering)**: register Stakly as a FACEIT developer app at developers.faceit.com to obtain `client_id` + `client_secret`. Worth doing in parallel with Phases 0/1 so it isn't a Phase 2 blocker.
 
-- [ ] `config/services.faceit` entries for `client_id`, `client_secret`, `redirect`.
-- [ ] `FaceitLinkController` — redirect to FACEIT's authorize endpoint, handle the callback, fetch the player record (id + nickname + ELO), upsert `LinkedAccount`. State CSRF protection on the callback.
-- [ ] Extend `LinkedAccountController::index()` provider list with the FACEIT row (different UI affordance than the bio-code paste flow chess uses).
-- [ ] Settings UI surfaces a "Link FACEIT" OAuth button alongside the existing chess paste flow.
-- [ ] Tests: callback success path, declined consent, state-CSRF mismatch, idempotency on re-link, ELO populated on the model.
+- [x] `config/services.faceit` entries for `client_id`, `client_secret`, `redirect`.
+- [x] `FaceitLinkController` — redirect to FACEIT's authorize endpoint, handle the callback, fetch the player record (id + nickname + ELO), upsert `LinkedAccount`. State CSRF protection on the callback.
+- [x] Extend `LinkedAccountController::index()` provider list with the FACEIT row (different UI affordance than the bio-code paste flow chess uses).
+- [x] Settings UI surfaces a "Link FACEIT" OAuth button alongside the existing chess paste flow.
+- [x] Tests: callback success path, declined consent, state-CSRF mismatch, idempotency on re-link, ELO populated on the model.
 
 **Phase 3 — Per-game create form + listing creation gating**
 
@@ -232,7 +232,7 @@ Read-only research pass. Use Context7 + FACEIT developer docs (developers.faceit
 
 **Phase 4 — FACEIT outcome pipeline**
 
-- [ ] `FaceitGameClient` — HTTP wrapper for the FACEIT Data API, OAuth bearer auth, error mapping into the existing `ProviderError` hierarchy.
+- [ ] `FaceitGameClient` — HTTP wrapper for the FACEIT Data API. API-key bearer auth (already wired via `config('services.faceit.api_key')` in Phase 2 — Data API rejects OAuth user tokens with 403). Error mapping into the existing `ProviderError` hierarchy.
 - [ ] `AutoFetchFaceitGameJob` mirrors `AutoFetchChessComGameJob`'s shape: retry policy, circuit breaker integration, posts a system card with `provider: 'faceit'` using the existing uniform card schema.
 - [ ] `FaceitGameApi` implements `GameApi` — reads the card by provider discriminator, maps `provider_user_id` (or `username` fallback) to the user via snapshots, returns a `GameApiResult`.
 - [ ] `DispatchAutoFetchAction` extends its match expression to dispatch the FACEIT job when `listing.platform === 'faceit'`.
@@ -255,9 +255,9 @@ Done via Context7 (Laravel Socialite) + FACEIT developer docs + community source
 **OAuth endpoints + token model**:
 
 - Authorize: `https://accounts.faceit.com/` · Token: `https://api.faceit.com/auth/v1/oauth/token` · Userinfo: `https://api.faceit.com/auth/v1/resources/userinfo`.
-- Scopes: `openid profile email membership`. No per-resource scope for Data API access — the OAuth user token can call the Data API, but the standard pattern is a separate server-side API key for backend calls.
+- Scopes: `openid profile email membership`. No per-resource scope for Data API access — and OAuth user tokens cannot read the Data API regardless of scope (403). The server-side API key from App Studio → API KEYS is required for any Data API read.
 - Access token: 24h. Refresh token: doesn't expire but **rotates** — re-store every refresh.
-- PKCE: not advertised by FACEIT's OpenID config; confidential clients use `client_secret_basic`. Acceptable for a server-side confidential client.
+- PKCE: **REQUIRED in practice**. FACEIT's App Studio (2026) only issues confidential PKCE clients — token exchange needs BOTH `code_verifier` in the body AND `Authorization: Basic <client_id:client_secret>` header (stacked defenses). The OpenID config doesn't advertise `code_challenge_methods_supported` but the App Studio behaviour shows PKCE is the only path. Stakly's local `App\Services\Provider\FaceitProvider` extends the upstream package and re-adds `code_verifier` to the token body (upstream drops it).
 - Userinfo payload: `guid` (stable player UUID — becomes `linked_accounts.provider_user_id`), `nickname` (becomes `linked_accounts.username`), `email` (nullable), `picture` (nullable).
 
 **Data API endpoints we'll use** (host: `open.faceit.com`):
@@ -265,7 +265,7 @@ Done via Context7 (Laravel Socialite) + FACEIT developer docs + community source
 - `GET /data/v4/matches/{match_id}` — single match.
 - `GET /data/v4/players/{player_id}/matches?game=cs2&type=past&limit=...` — list past matches.
 - `GET /data/v4/players/{player_id}` — player profile including `games.cs2.faceit_elo` (raw int) + `games.cs2.skill_level` (1–10 ladder) + `games.cs2.game_player_id` + `games.cs2.region`.
-- Auth: `Authorization: Bearer {api_key_or_oauth_token}`.
+- Auth: `Authorization: Bearer {server_side_api_key}` only. OAuth user tokens return 403 against the Data API regardless of scope.
 - **Winner in one call**: `results.winner ∈ {"faction1","faction2"}` + `teams.{faction1,faction2}.roster[]` with `player_id`, `nickname`, and `anticheat_required` per player.
 - Per-player ELO at match time is NOT exposed (only current ELO via `/players/{player_id}`); for sandbag detection we have to snapshot at match creation, not derive from history.
 
@@ -285,13 +285,22 @@ The pre-research call was "accept any FACEIT match (Competitive + Hub)." The act
 1. **Rate limits**: per-minute / per-hour quota on a production server-side API key, and which headers (`Retry-After` / `X-RateLimit-Reset`) the 429 response carries.
 2. **Webhook retry policy**: at-least-once is confirmed, but the budget (max retries, backoff) is undocumented.
 3. **Webhook egress IPs**: if available, allowlisting these strengthens webhook security beyond the static shared secret.
-4. **PKCE support**: silently absent from the OpenID config but might still work. Low priority — confidential server-side flow is fine without it.
+
+(PKCE support is no longer pending — confirmed required during Phase 2 implementation.)
 
 **Other phase-affecting notes**:
 
 - **Phase 2**: FACEIT allows only **one redirect URI per OAuth app** — dev + production need separate FACEIT app registrations. Plan for two `client_id` / `client_secret` pairs (per-environment).
 - **Phase 4**: no Composer SDK for the FACEIT Data API exists — `FaceitGameClient` is a hand-rolled Http wrapper, consistent with how `LichessGameClient` is structured today.
 - **Phase 4 webhook handling**: when `match_status_finished` arrives, the handler MUST re-fetch via the Data API before triggering settlement. Defense-in-depth against webhook spoofing.
+
+**Phase 2 implementation corrections (2026-06-08)** — surfaced during real-world wiring:
+
+- **Server-side API key arrived in Phase 2**, not Phase 4. The Data API rejects OAuth user tokens with 403, so `FaceitProfileClient` reads `config('services.faceit.api_key')` for its bearer auth. When the env var is unset the link still creates a LinkedAccount row with `skill_rating = null` (graceful dev path) — Phase 4's `FaceitGameClient` reuses the same config key.
+- **FACEIT loosely validates redirect_uri (host match) but redirects to the saved URI** on the OAuth2 client, not the requested one. Mismatches silently land users on the wrong page with `?code=&state=` query params attached — they never reach our callback handler. Saved URI must exactly equal the callback path.
+- **HTTPS required for redirect URIs, no `http://localhost` exception**. Dev needs an HTTPS tunnel (ngrok / Cloudflare Tunnel / Caddy + mkcert). `bootstrap/app.php` gained `$middleware->trustProxies(at: '*')` so Laravel detects the tunnelled HTTPS scheme correctly.
+- **`RedirectUnprefixedLocale` middleware + `TestCase` exempt-list** both gained `'auth'` so `/auth/{provider}/callback` paths stay locale-agnostic (FACEIT's single-redirect-URI constraint forces this). Future OAuth providers (Riot, Discord, etc.) under `/auth/*` inherit the exemption.
+- **Toast flashes must use `Inertia::flash('toast', ...)`** — Stakly's frontend reads toasts from Inertia's flash channel only, not Laravel's session flash. `redirect()->with('toast', ...)` silently drops on the frontend.
 
 ### Not in M15
 

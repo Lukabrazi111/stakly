@@ -15,6 +15,7 @@
         "laravel/reverb": "^1.10",
         "laravel/tinker": "^3.0",
         "laravel/wayfinder": "^0.1.14",
+        "socialiteproviders/faceit": "^4.2",
         "spatie/laravel-medialibrary": "^11.22",
         "spatie/laravel-permission": "^7.4",
         "spatie/laravel-query-builder": "^7.3",
