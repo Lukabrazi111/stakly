@@ -15,11 +15,12 @@ return new class extends Migration
      * than columns on it so the per-provider identifier shape can grow
      * without per-game migrations on the wide `game_matches` table.
      *
-     * Today the only identifier carried is `username` (single string —
-     * sufficient for chess.com + Lichess). When M15 adds CS2 / Dota 2 /
-     * Valorant — each of which identifies players by multiple fields
-     * (Steam ID + Faceit handle, Riot ID + region, etc.) — extra columns
-     * land here (or a nullable `provider_data` jsonb), not on game_matches.
+     * Carries `username` (display handle), `provider_user_id` (stable ID
+     * for providers that expose one — FACEIT guid, Steam ID, Riot PUUID;
+     * NULL for chess providers), and `skill_rating_snapshot` (Faceit ELO,
+     * future MMR; NULL until the provider's adapter populates). M15 adds
+     * extra columns here as needed (e.g. Riot region) rather than widening
+     * the game_matches table.
      *
      * Populated by `App\Actions\GameMatch\TakeListingAction`. Read by
      * `App\Jobs\FetchLichessGameMetadataJob` (paste-path verification),
@@ -58,6 +59,12 @@ return new class extends Migration
             // 16+5 chars; Steam vanity URLs up to 32).
             $table->string('username', 64);
 
+            // M15 — stable identifier + skill rating snapshot at match
+            // creation, where the provider exposes them. Chess providers
+            // leave both null.
+            $table->string('provider_user_id', 128)->nullable();
+            $table->integer('skill_rating_snapshot')->nullable();
+
             $table->timestamps();
 
             // One snapshot per (match, side, provider). A second insert
@@ -68,6 +75,11 @@ return new class extends Migration
             // useful for admin / abuse review surfaces (M12 onward) without
             // joining through users.
             $table->index(['provider', 'username']);
+
+            // Same abuse-review lookup on the provider's stable ID (M15) —
+            // separate from the username index because display handles can
+            // change but the stable ID survives renames.
+            $table->index(['provider', 'provider_user_id']);
         });
     }
 

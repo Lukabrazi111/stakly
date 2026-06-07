@@ -3,7 +3,6 @@
 namespace App\Actions\GameMatch;
 
 use App\Actions\Message\PostSystemMessageAction;
-use App\Enums\LinkedAccountProvider;
 use App\Enums\ListingStatus;
 use App\Enums\MatchStatus;
 use App\Models\GameMatch;
@@ -157,13 +156,13 @@ class TakeListingAction
     }
 
     /**
-     * One `match_provider_snapshots` row per (side, provider) where the
-     * player has a verified link. Mid-match unlinks can't strip these —
-     * smart-link enrichment (M8 Phase 4) cross-checks against the snapshot,
-     * not against the live user record. Unverified-but-set columns on the
-     * user (e.g. left over from a never-completed verification flow) are
-     * deliberately skipped: an unverified handle can't anchor an evidence
-     * card.
+     * One `match_provider_snapshots` row per linked account each player
+     * has verified. Mid-match unlinks can't strip these — smart-link
+     * enrichment (M8 Phase 4) cross-checks against the snapshot, not the
+     * live user record. The snapshot copies `provider_user_id` (stable
+     * external ID for FACEIT/Steam/Riot) and `skill_rating` (M15) so the
+     * provider's stable identifier + rating at match time survive any
+     * subsequent updates to the user's link.
      *
      * Batch insert via the model query builder so all rows land in a single
      * SQL statement. Timestamps are set explicitly because `insert()`
@@ -177,18 +176,16 @@ class TakeListingAction
         $now = now();
 
         foreach ([GameMatch::SIDE_CREATOR => $creator, GameMatch::SIDE_TAKER => $taker] as $side => $user) {
-            foreach (LinkedAccountProvider::cases() as $provider) {
-                $username = $this->verifiedUsername($user, $provider);
+            $user->loadMissing('linkedAccounts');
 
-                if ($username === null) {
-                    continue;
-                }
-
+            foreach ($user->linkedAccounts as $link) {
                 $rows[] = [
                     'match_id' => $match->id,
                     'side' => $side,
-                    'provider' => $provider->value,
-                    'username' => $username,
+                    'provider' => $link->provider->value,
+                    'username' => $link->username,
+                    'provider_user_id' => $link->provider_user_id,
+                    'skill_rating_snapshot' => $link->skill_rating,
                     'created_at' => $now,
                     'updated_at' => $now,
                 ];
@@ -198,17 +195,5 @@ class TakeListingAction
         if (count($rows) > 0) {
             MatchProviderSnapshot::insert($rows);
         }
-    }
-
-    private function verifiedUsername(User $user, LinkedAccountProvider $provider): ?string
-    {
-        $key = $provider->value;
-        $verifiedAt = $user->{"{$key}_verified_at"};
-
-        if ($verifiedAt === null) {
-            return null;
-        }
-
-        return $user->{"{$key}_username"};
     }
 }

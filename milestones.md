@@ -195,20 +195,20 @@ Directional calls coming out of the planning discussion before Phase 0 starts. T
 
 Read-only research pass. Use Context7 + FACEIT developer docs (developers.faceit.com) for all of these. No schema or code changes yet. Output captured as a new subsection under this milestone once Phase 0 wraps.
 
-- [ ] OAuth flow: does a Laravel Socialite provider for FACEIT exist? If not, what does a manual OAuth2 client look like? Token lifetime, refresh model, required scopes.
-- [ ] Data API match endpoint: response shape, winner identifier (player UUID? nickname?), rate limits, error semantics, retry / `Retry-After` headers.
-- [ ] ELO: where to read current Faceit ELO from — OAuth `me` endpoint or separate call? Refresh cadence (per-link, per-match, periodic background job?).
-- [ ] Anti-cheat fields per match: confirm FACEIT AC runs on Competitive + Hub; identify the queue-type field that distinguishes them.
-- [ ] Webhook viability: match-completed payload shape, security model (signed body? IP allowlist?), can webhooks replace polling for FACEIT or only augment it?
-- [ ] Output: append a "Phase 0 — research findings" subsection under this milestone with the answers + a go/no-go on Socialite vs manual OAuth2 client. Revisit "Current direction" picks above if research surfaces a reason to.
+- [x] OAuth flow: does a Laravel Socialite provider for FACEIT exist? If not, what does a manual OAuth2 client look like? Token lifetime, refresh model, required scopes.
+- [x] Data API match endpoint: response shape, winner identifier (player UUID? nickname?), rate limits, error semantics, retry / `Retry-After` headers.
+- [x] ELO: where to read current Faceit ELO from — OAuth `me` endpoint or separate call? Refresh cadence (per-link, per-match, periodic background job?).
+- [x] Anti-cheat fields per match: confirm FACEIT AC runs on Competitive + Hub; identify the queue-type field that distinguishes them.
+- [x] Webhook viability: match-completed payload shape, security model (signed body? IP allowlist?), can webhooks replace polling for FACEIT or only augment it?
+- [x] Output: append a "Phase 0 — research findings" subsection under this milestone with the answers + a go/no-go on Socialite vs manual OAuth2 client. Revisit "Current direction" picks above if research surfaces a reason to.
 
 **Phase 1 — Schema extension**
 
-- [ ] Migration: add `linked_accounts.provider_user_id` (nullable text, indexed) and `linked_accounts.skill_rating` (nullable int).
-- [ ] Migration: add `match_provider_snapshots.provider_user_id` (nullable text, indexed for abuse-review parity with the existing `(provider, username)` index) and `match_provider_snapshots.skill_rating_snapshot` (nullable int).
-- [ ] `TakeListingAction::snapshotProviderAccounts()` writes the new columns from the matching `LinkedAccount` row.
-- [ ] Factory + seeder updates so dev fixtures populate the new columns for FACEIT/Steam stubs.
-- [ ] Tests covering the snapshot writer (chess rows stay null on `provider_user_id`; FACEIT rows populated).
+- [x] Migration: add `linked_accounts.provider_user_id` (nullable text, indexed) and `linked_accounts.skill_rating` (nullable int).
+- [x] Migration: add `match_provider_snapshots.provider_user_id` (nullable text, indexed for abuse-review parity with the existing `(provider, username)` index) and `match_provider_snapshots.skill_rating_snapshot` (nullable int).
+- [x] `TakeListingAction::snapshotProviderAccounts()` writes the new columns from the matching `LinkedAccount` row.
+- [x] Factory + seeder updates so dev fixtures populate the new columns for FACEIT/Steam stubs.
+- [x] Tests covering the snapshot writer (chess rows stay null on `provider_user_id`; FACEIT rows populated).
 
 **Phase 2 — FACEIT OAuth link flow**
 
@@ -245,6 +245,53 @@ Read-only research pass. Use Context7 + FACEIT developer docs (developers.faceit
 - [ ] `PipelineHealth` widget surfaces FACEIT alongside chess.com / Lichess (auto-settlements, errors, latency, volume).
 - [ ] Circuit breaker thresholds / cooldowns for FACEIT, distinct from chess's.
 - [ ] End-to-end dev test: seeded CS2 listing → take → result polled → card posted → settlement fires → wallet updates correct.
+
+### Phase 0 — research findings (2026-06-07)
+
+Done via Context7 (Laravel Socialite) + FACEIT developer docs + community sources. Headlines + only the bits that change Phase 1+ scope or need human follow-up.
+
+**Go on Socialite, not manual OAuth2.** `socialiteproviders/faceit` (Packagist v4.2.0, last tagged Sep 2022 but functional, ~2k installs) implements FACEIT's authorization-code flow correctly. Setup: `composer require socialiteproviders/faceit`, register an `Event::listen` for `SocialiteWasCalled` in `AppServiceProvider::boot()`, add a `'faceit'` block to `config/services.php`. The controller layer mirrors the existing chess link flow. Fork into a Stakly-controlled repo if upstream stalls further.
+
+**OAuth endpoints + token model**:
+
+- Authorize: `https://accounts.faceit.com/` · Token: `https://api.faceit.com/auth/v1/oauth/token` · Userinfo: `https://api.faceit.com/auth/v1/resources/userinfo`.
+- Scopes: `openid profile email membership`. No per-resource scope for Data API access — the OAuth user token can call the Data API, but the standard pattern is a separate server-side API key for backend calls.
+- Access token: 24h. Refresh token: doesn't expire but **rotates** — re-store every refresh.
+- PKCE: not advertised by FACEIT's OpenID config; confidential clients use `client_secret_basic`. Acceptable for a server-side confidential client.
+- Userinfo payload: `guid` (stable player UUID — becomes `linked_accounts.provider_user_id`), `nickname` (becomes `linked_accounts.username`), `email` (nullable), `picture` (nullable).
+
+**Data API endpoints we'll use** (host: `open.faceit.com`):
+
+- `GET /data/v4/matches/{match_id}` — single match.
+- `GET /data/v4/players/{player_id}/matches?game=cs2&type=past&limit=...` — list past matches.
+- `GET /data/v4/players/{player_id}` — player profile including `games.cs2.faceit_elo` (raw int) + `games.cs2.skill_level` (1–10 ladder) + `games.cs2.game_player_id` + `games.cs2.region`.
+- Auth: `Authorization: Bearer {api_key_or_oauth_token}`.
+- **Winner in one call**: `results.winner ∈ {"faction1","faction2"}` + `teams.{faction1,faction2}.roster[]` with `player_id`, `nickname`, and `anticheat_required` per player.
+- Per-player ELO at match time is NOT exposed (only current ELO via `/players/{player_id}`); for sandbag detection we have to snapshot at match creation, not derive from history.
+
+**Webhooks**:
+
+- Event for settlement: `match_status_finished`. Payload includes the full match object (id, region, game, teams, results.winner, results.score) — no follow-up call needed just to identify the winner.
+- Security: **no HMAC**. FACEIT supports only a static shared secret in a custom header or query string. Treat webhook as a notification, not proof — every settle-trigger re-fetches via `GET /matches/{match_id}` before releasing escrow.
+- Registration: developer-portal UI only. Each subscription = (event, URL, auth header/query).
+- Delivery: at-least-once with retries; envelope carries `event_id` for idempotency.
+
+**Adjustment to "Current direction"**:
+
+The pre-research call was "accept any FACEIT match (Competitive + Hub)." The actual implementation gate should be **`anticheat_required === true` for every player on both rosters**, not a check on `competition_type` (matchmaking vs hub). FACEIT AC is mandatory on `competition_type === 'matchmaking'` but Hubs opt in via their "Security Requirements" toggle — so the per-player roster boolean is the only reliable signal. Intent (both queue types acceptable) is preserved; the gate is per-player, not per-queue. Phase 4's anti-cheat filter lives in `FaceitGameClient` / `FaceitGameApi` and rejects matches where any roster entry has `anticheat_required === false`. All other directional picks hold up under the research.
+
+**Needs human follow-up before Phase 4** — questions to ask FACEIT support / via the dev portal:
+
+1. **Rate limits**: per-minute / per-hour quota on a production server-side API key, and which headers (`Retry-After` / `X-RateLimit-Reset`) the 429 response carries.
+2. **Webhook retry policy**: at-least-once is confirmed, but the budget (max retries, backoff) is undocumented.
+3. **Webhook egress IPs**: if available, allowlisting these strengthens webhook security beyond the static shared secret.
+4. **PKCE support**: silently absent from the OpenID config but might still work. Low priority — confidential server-side flow is fine without it.
+
+**Other phase-affecting notes**:
+
+- **Phase 2**: FACEIT allows only **one redirect URI per OAuth app** — dev + production need separate FACEIT app registrations. Plan for two `client_id` / `client_secret` pairs (per-environment).
+- **Phase 4**: no Composer SDK for the FACEIT Data API exists — `FaceitGameClient` is a hand-rolled Http wrapper, consistent with how `LichessGameClient` is structured today.
+- **Phase 4 webhook handling**: when `match_status_finished` arrives, the handler MUST re-fetch via the Data API before triggering settlement. Defense-in-depth against webhook spoofing.
 
 ### Not in M15
 

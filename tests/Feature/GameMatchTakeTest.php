@@ -9,6 +9,7 @@ use App\Models\Listing;
 use App\Models\User;
 use App\Models\WalletTransaction;
 use App\Services\Wallet;
+use Illuminate\Support\Str;
 
 /**
  * Helper: a verified creator with a deposit + an open listing whose stake
@@ -467,6 +468,62 @@ test('match creation snapshots only the verified provider per side', function ()
 // row in `linked_accounts` always implies verification (the column
 // `verified_at` is NOT NULL). The boundary is now structural, not
 // behavioural; no test needed.
+
+test('match creation snapshots provider_user_id + skill_rating for FACEIT-linked players (M15)', function () {
+    // M15 Phase 1 — when a player has a FACEIT linked account (with stable
+    // provider_user_id + current skill_rating), the snapshot captures both
+    // alongside the display username. Chess accounts on the same player
+    // continue to snapshot null for these columns. The take itself is a
+    // Lichess take because the FACEIT verify + create flow hasn't landed
+    // yet (Phase 2/3) — this test just exercises the snapshot writer.
+    $creator = User::factory()
+        ->active()
+        ->withLichess('alice-lichess')
+        ->create();
+    Wallet::deposit($creator, '500', reference: "test:deposit:creator:{$creator->id}");
+
+    $listing = Listing::factory()->open()->forLichess()->for($creator)->state([
+        'stake_amount' => '100',
+    ])->create();
+    Wallet::hold(
+        user: $creator,
+        amount: '100',
+        listing: $listing,
+        reference: "listing-create:{$listing->id}",
+    );
+
+    $faceitId = (string) Str::uuid();
+    $taker = User::factory()
+        ->withLichess('bob-lichess')
+        ->withFaceit('bob-faceit', $faceitId, 1850)
+        ->create();
+    Wallet::deposit($taker, '500', reference: "test:deposit:taker:{$taker->id}");
+
+    $this->actingAs($taker)->postJson("/listings/{$listing->id}/take")->assertRedirect();
+
+    $match = GameMatch::query()->where('listing_id', $listing->id)->firstOrFail();
+
+    // 1 creator account (lichess) + 2 taker accounts (lichess + faceit) = 3 snapshots.
+    expect($match->providerSnapshots()->count())->toBe(3);
+
+    // Chess snapshot — provider_user_id + skill_rating_snapshot stay null.
+    $takerLichess = $match->providerSnapshots()
+        ->where('side', GameMatch::SIDE_TAKER)
+        ->where('provider', LinkedAccountProvider::Lichess)
+        ->firstOrFail();
+    expect($takerLichess->username)->toBe('bob-lichess')
+        ->and($takerLichess->provider_user_id)->toBeNull()
+        ->and($takerLichess->skill_rating_snapshot)->toBeNull();
+
+    // FACEIT snapshot — provider_user_id + skill_rating_snapshot populated.
+    $takerFaceit = $match->providerSnapshots()
+        ->where('side', GameMatch::SIDE_TAKER)
+        ->where('provider', LinkedAccountProvider::Faceit)
+        ->firstOrFail();
+    expect($takerFaceit->username)->toBe('bob-faceit')
+        ->and($takerFaceit->provider_user_id)->toBe($faceitId)
+        ->and($takerFaceit->skill_rating_snapshot)->toBe(1850);
+});
 
 // ─── BCMath round-trip on the taker hold ────────────────────────────────────
 
