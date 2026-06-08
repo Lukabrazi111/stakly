@@ -270,7 +270,7 @@ function PendingRow({
                     'field on :provider (:instructions), save it there, then come back and verify. After we verify, you can safely remove the code from your profile — we only check it once.',
                     {
                         provider: provider.displayName,
-                        instructions: provider.targetFieldInstructions,
+                        instructions: provider.targetFieldInstructions ?? '',
                     },
                 )}
             </p>

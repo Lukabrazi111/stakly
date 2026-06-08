@@ -1,6 +1,6 @@
 import { router } from '@inertiajs/react';
-import { forwardRef   } from 'react';
-import type {MouseEvent, ReactNode} from 'react';
+import { forwardRef } from 'react';
+import type { MouseEvent, ReactNode } from 'react';
 
 interface Props {
     children: ReactNode;

@@ -149,7 +149,10 @@ export function MobileMenu() {
                                         {inner}
                                     </HowItWorksLink>
                                 ) : (
-                                    <Link href={link.href} className={className}>
+                                    <Link
+                                        href={link.href}
+                                        className={className}
+                                    >
                                         {inner}
                                     </Link>
                                 )}
