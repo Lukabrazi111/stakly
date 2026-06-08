@@ -233,12 +233,12 @@ Three slices, each shippable + commit-sized.
 
 **Slice 2 — Frontend game picker + per-game form swap** _(commit: `feat(m15-p3): per-game create form (game picker + CS2 fields)`)_
 
-- [ ] Tile picker in the create form's Game section — two side-by-side tiles (Chess / CS2), selected state mirrors the homepage `GameSelector` treatment.
-- [ ] Per-game inline link-account gate — when the selected game's required provider isn't linked, show an inline "Link FACEIT to post CS2 listings →" notice rather than the current full-page swap. Users can preview the form for either game and link from there.
-- [ ] Extract `ChessFormatFilter` (time-control toggle) + `ChessSkillRangeFilter` (Elo min/max) into `components/listings/`.
-- [ ] Add `Cs2SkillRangeFilter` (Faceit ELO range) sibling component.
-- [ ] Platform display branches: chess keeps the existing chess.com / Lichess picker (shown only when both linked); CS2 shows a static FACEIT chip (only platform).
-- [ ] Drop the obsolete `// Create-listing is chess-only today` comment in `pages/listings/create.tsx`.
+- [x] Dropdown game picker in the create form's Game section — single-row trigger (gradient game icon + game name + verification chip + chevron) opens a Popover listing all Active games. Iterated from the original tile-grid sketch during Slice 2 because the dropdown reads tighter and scales better as more games ship.
+- [x] Per-game inline link-account gate — when the selected game's required provider isn't linked, show an inline "Link FACEIT to post CS2 listings →" notice rather than the current full-page swap. Users can preview the form for either game and link from there.
+- [x] Extract `ChessFormatFilter` (time-control toggle) + `ChessSkillRangeFilter` (Elo min/max) into `components/listings/`.
+- [x] Add `Cs2SkillRangeFilter` (Faceit ELO range) sibling component.
+- [x] Platform display branches: chess keeps the existing chess.com / Lichess picker (shown only when both linked); CS2 shows a static FACEIT chip (only platform).
+- [x] Drop the obsolete `// Create-listing is chess-only today` comment in `pages/listings/create.tsx`.
 
 **Slice 3 — Browser verify + edge cases** _(commit: `test(m15-p3): browser smoke for per-game listing creation`)_
 

@@ -44,8 +44,7 @@ class TakeListingAction
 {
     public function __construct(
         private readonly PostSystemMessageAction $postSystem,
-    ) {
-    }
+    ) {}
 
     public function handle(User $user, Listing $listing): GameMatch|string
     {
@@ -55,7 +54,7 @@ class TakeListingAction
         // platform. Frontend disables the Take CTA with platform-named
         // copy ("Link Lichess to take"); reaching here means a stale tab
         // or a crafted call.
-        if (!$user->isVerifiedOn($listing->platform)) {
+        if (! $user->isVerifiedOn($listing->platform)) {
             return 'not_linked';
         }
 
@@ -68,7 +67,7 @@ class TakeListingAction
                 return 'race_lost';
             }
 
-            if (!$this->ownerIsActive($locked)) {
+            if (! $this->ownerIsActive($locked)) {
                 return 'owner_inactive';
             }
 

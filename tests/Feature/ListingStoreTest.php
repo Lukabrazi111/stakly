@@ -107,10 +107,37 @@ test('missing required fields produce field-level 422 errors', function () {
     $user = User::factory()->withLichess()->create();
     Wallet::deposit($user, '500', reference: "test:deposit:{$user->id}");
 
+    // `time_control` is no longer required when `game` is missing — the
+    // conditional rule (M15 Phase 3 Slice 3) only adds `required` when game
+    // resolves to chess.
     $this->actingAs($user)
         ->postJson('/listings', [])
         ->assertStatus(422)
-        ->assertJsonValidationErrors(['stake_amount', 'time_control', 'duration_hours', 'game']);
+        ->assertJsonValidationErrors(['stake_amount', 'duration_hours', 'game']);
+});
+
+test('missing time_control with game=chess still produces a required error', function () {
+    $user = User::factory()->withLichess()->create();
+    Wallet::deposit($user, '500', reference: "test:deposit:{$user->id}");
+
+    $this->actingAs($user)
+        ->postJson('/listings', validPayload(['time_control' => null]))
+        ->assertJsonValidationErrors('time_control');
+});
+
+test('CS2 listing without time_control is accepted and stored as empty', function () {
+    $user = User::factory()->withFaceit()->create();
+    Wallet::deposit($user, '500', reference: "test:deposit:{$user->id}");
+
+    $payload = validPayload(['game' => 'cs2', 'platform' => 'faceit']);
+    unset($payload['time_control']);
+
+    $this->actingAs($user)
+        ->postJson('/listings', $payload)
+        ->assertRedirect(route('listings.mine'));
+
+    $listing = Listing::query()->where('user_id', $user->id)->firstOrFail();
+    expect($listing->time_control->all())->toBe([]);
 });
 
 test('time_control must be a non-empty array of valid enum values', function () {
