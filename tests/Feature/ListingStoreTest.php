@@ -1,5 +1,7 @@
 <?php
 
+use App\Enums\Game;
+use App\Enums\LinkedAccountProvider;
 use App\Enums\ListingStatus;
 use App\Enums\WalletTransactionType;
 use App\Models\Listing;
@@ -294,4 +296,75 @@ test('successful store flashes a success toast', function () {
             'type' => 'success',
             'message' => 'Listing created.',
         ]);
+});
+
+// ─── Per-game gating (M15 Phase 3) ────────────────────────────────────────
+
+test('CS2 listing creation succeeds when the user has FACEIT linked', function () {
+    $user = User::factory()->withFaceit()->create();
+    Wallet::deposit($user, '500', reference: "test:deposit:{$user->id}");
+
+    $response = $this->actingAs($user)->postJson('/listings', validPayload([
+        'game' => 'cs2',
+        'platform' => 'faceit',
+    ]));
+
+    $response->assertRedirect(route('listings.mine'));
+
+    $listing = Listing::query()->where('user_id', $user->id)->firstOrFail();
+
+    expect($listing->game)->toBe(Game::Cs2)
+        ->and($listing->platform)->toBe(LinkedAccountProvider::Faceit);
+});
+
+test('CS2 listing creation is blocked when the user has no FACEIT link', function () {
+    // game + platform pair is valid (cs2 + faceit), so cross-validation
+    // passes — but CreateListingAction's isVerifiedOn(Faceit) check fires the
+    // 'not_linked' sentinel because the user only has chess linked.
+    $user = User::factory()->withLichess()->create();
+    Wallet::deposit($user, '500', reference: "test:deposit:{$user->id}");
+
+    $response = $this->actingAs($user)->postJson('/listings', validPayload([
+        'game' => 'cs2',
+        'platform' => 'faceit',
+    ]));
+
+    $response->assertRedirect(route('linked-accounts.edit'));
+    $response->assertInertiaFlash('toast', [
+        'type' => 'info',
+        'message' => 'Link a FACEIT account before posting a FACEIT listing.',
+    ]);
+
+    expect(Listing::count())->toBe(0);
+});
+
+test('CS2 listing with a chess platform is rejected by the cross-game validation', function () {
+    // Stale-tab / crafted-request case. User has BOTH providers linked so
+    // the rejection can ONLY be the platform-doesn't-fit-game check, not a
+    // missing-link gate.
+    $user = User::factory()->withFaceit()->withChessCom()->create();
+    Wallet::deposit($user, '500', reference: "test:deposit:{$user->id}");
+
+    $this->actingAs($user)
+        ->postJson('/listings', validPayload([
+            'game' => 'cs2',
+            'platform' => 'chess_com',
+        ]))
+        ->assertJsonValidationErrors('platform');
+
+    expect(Listing::count())->toBe(0);
+});
+
+test('chess listing with a FACEIT platform is rejected by the cross-game validation', function () {
+    $user = User::factory()->withFaceit()->withChessCom()->create();
+    Wallet::deposit($user, '500', reference: "test:deposit:{$user->id}");
+
+    $this->actingAs($user)
+        ->postJson('/listings', validPayload([
+            'game' => 'chess',
+            'platform' => 'faceit',
+        ]))
+        ->assertJsonValidationErrors('platform');
+
+    expect(Listing::count())->toBe(0);
 });

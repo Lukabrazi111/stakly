@@ -121,6 +121,27 @@ class StoreListingRequest extends FormRequest
                     ]),
                 );
             }
+
+            // M15 Phase 3 — platform must belong to the game's required
+            // providers. CS2 listings can't post to chess.com, chess listings
+            // can't post to FACEIT, etc. Frontend gates the picker in Slice 2;
+            // server check covers stale tabs and crafted requests.
+            $gameValue = $this->input('game');
+            $platformValue = $this->input('platform');
+            $game = is_string($gameValue) ? Game::tryFrom($gameValue) : null;
+            $platform = is_string($platformValue) ? LinkedAccountProvider::tryFrom($platformValue) : null;
+
+            if ($game !== null && $platform !== null
+                && ! in_array($platform, $game->requiredProviders(), true)
+            ) {
+                $validator->errors()->add(
+                    'platform',
+                    __('The :platform platform isn\'t valid for :game listings.', [
+                        'platform' => $platform->displayName(),
+                        'game' => $game->displayName(),
+                    ]),
+                );
+            }
         });
     }
 

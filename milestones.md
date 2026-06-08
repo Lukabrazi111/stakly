@@ -222,13 +222,29 @@ Read-only research pass. Use Context7 + FACEIT developer docs (developers.faceit
 
 **Phase 3 — Per-game create form + listing creation gating**
 
-- [ ] Game picker on `pages/listings/create.tsx` (chess + CS2; future-extensible).
-- [ ] Per-game platform gate: CS2 requires FACEIT linked; chess keeps the existing chess.com / Lichess picker.
-- [ ] Extract chess-specific filter UI into `ChessFormatFilter` + `ChessSkillRangeFilter` sibling components.
-- [ ] `Cs2SkillRangeFilter` rendering Faceit ELO range alongside chess's rating range.
-- [ ] `User::isVerifiedOn(LinkedAccountProvider): bool` replaces the dynamic `{provider}_verified_at` column lookup in `CreateListingAction`.
-- [ ] `StoreListingRequest` gets per-game platform validation (CS2 platform must be `faceit`; chess platform must be `chess_com` or `lichess`).
-- [ ] Tests covering successful CS2 listing creation, blocked CS2 creation without FACEIT link, blocked cross-platform requests (e.g. CS2 listing with `chess_com` platform).
+Three slices, each shippable + commit-sized.
+
+**Slice 1 — Backend gates** _(commit: `feat(m15-p3): per-game listing validation + isVerifiedOn helper`)_
+
+- [x] `User::isVerifiedOn(LinkedAccountProvider): bool` helper replaces the dynamic `{provider}_verified_at` column lookup in `CreateListingAction` + `TakeListingAction`.
+- [x] `StoreListingRequest` per-game platform validation (CS2 platform must be `faceit`; chess platform must be `chess_com` or `lichess`).
+- [x] `ListingController::create()` returns `games[]` (Active games from the catalog) + `requirementsByGame` (which `LinkedAccountProvider` each game needs) as Inertia props.
+- [x] Pest tests: successful CS2 listing creation, blocked CS2 creation without FACEIT link, blocked cross-platform requests (e.g. CS2 listing with `chess_com` platform).
+
+**Slice 2 — Frontend game picker + per-game form swap** _(commit: `feat(m15-p3): per-game create form (game picker + CS2 fields)`)_
+
+- [ ] Tile picker in the create form's Game section — two side-by-side tiles (Chess / CS2), selected state mirrors the homepage `GameSelector` treatment.
+- [ ] Per-game inline link-account gate — when the selected game's required provider isn't linked, show an inline "Link FACEIT to post CS2 listings →" notice rather than the current full-page swap. Users can preview the form for either game and link from there.
+- [ ] Extract `ChessFormatFilter` (time-control toggle) + `ChessSkillRangeFilter` (Elo min/max) into `components/listings/`.
+- [ ] Add `Cs2SkillRangeFilter` (Faceit ELO range) sibling component.
+- [ ] Platform display branches: chess keeps the existing chess.com / Lichess picker (shown only when both linked); CS2 shows a static FACEIT chip (only platform).
+- [ ] Drop the obsolete `// Create-listing is chess-only today` comment in `pages/listings/create.tsx`.
+
+**Slice 3 — Browser verify + edge cases** _(commit: `test(m15-p3): browser smoke for per-game listing creation`)_
+
+- [ ] Pest browser smoke test: log in as a FACEIT-only-linked user → can create a CS2 listing end-to-end; cannot create a Chess listing (sees the inline gate).
+- [ ] Default-game logic: chess-only-linked → defaults to Chess; FACEIT-only-linked → defaults to CS2; both linked → Chess; neither linked → defaults to CS2 first (drives them toward the newer integration).
+- [ ] Copy polish pass on inline gate + tile labels.
 
 **Phase 4 — FACEIT outcome pipeline**
 

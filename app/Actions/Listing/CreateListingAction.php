@@ -43,9 +43,8 @@ class CreateListingAction
         // submit) for unverified providers; reaching here means a stale
         // tab or a crafted request.
         $platform = LinkedAccountProvider::from($data['platform']);
-        $verifiedAtColumn = $platform->value.'_verified_at';
 
-        if ($user->{$verifiedAtColumn} === null) {
+        if (! $user->isVerifiedOn($platform)) {
             return 'not_linked';
         }
 
