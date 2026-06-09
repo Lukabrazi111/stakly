@@ -5,6 +5,7 @@ use App\Enums\LinkedAccountProvider;
 use App\Enums\MatchStatus;
 use App\Models\GameMatch;
 use App\Models\MatchProviderSnapshot;
+use App\Models\User;
 use App\Models\WalletTransaction;
 
 /**
@@ -190,9 +191,12 @@ test('card winner not in snapshots → silent no-op, match stays Pending', funct
 test('card with unknown provider → no-op', function () {
     [, , , $match] = settleFromCardMatch();
 
+    // Use a provider Stakly doesn't recognise. FACEIT is known as of M15 P4
+    // and takes a different code path (`winner_user_id`-driven), so it's no
+    // longer a valid stand-in for "unknown provider".
     app(SettleFromCardAction::class)->handle(
         $match,
-        lichessCard(['provider' => 'faceit']),
+        lichessCard(['provider' => 'riot']),
     );
 
     expect($match->fresh()->status)->toBe(MatchStatus::Pending);
@@ -224,4 +228,96 @@ test('card with chess.com provider resolves against ChessCom snapshot, not Liche
     );
 
     expect($match->fresh()->winner_user_id)->toBe($creator->id);
+});
+
+// ─── FACEIT cards (M15 P4) — `winner_user_id`-driven settlement ────────────
+
+function faceitCard(array $overrides = []): array
+{
+    return array_merge([
+        'type' => 'game_card',
+        'provider' => 'faceit',
+        'source' => 'auto_fetch',
+        'match_id' => '1-abcd-1234',
+        'url' => 'https://www.faceit.com/en/cs2/room/1-abcd-1234',
+        'verified' => true,
+        'game' => 'cs2',
+        'competition_type' => 'matchmaking',
+        'status' => 'FINISHED',
+        'winner_faction' => 'faction1',
+        'winner_username' => 'alice-faceit',
+        // winner_user_id intentionally omitted by default — tests set the
+        // creator's or taker's id via override.
+        'ac_complete' => true,
+        'started_at' => '2026-06-09T12:00:00+00:00',
+        'finished_at' => '2026-06-09T12:33:00+00:00',
+    ], $overrides);
+}
+
+test('faceit card with winner_user_id = creator settles to creator', function () {
+    [$creator, , , $match] = settleFromCardMatch(stake: '100');
+
+    app(SettleFromCardAction::class)->handle(
+        $match,
+        faceitCard(['winner_user_id' => $creator->id]),
+    );
+
+    $fresh = $match->fresh();
+    expect($fresh->status)->toBe(MatchStatus::Settled)
+        ->and($fresh->winner_user_id)->toBe($creator->id);
+
+    expect(WalletTransaction::query()->where('reference_id', "match-payout:{$match->id}")->exists())->toBeTrue();
+});
+
+test('faceit card with winner_user_id = taker settles to taker', function () {
+    [, $taker, , $match] = settleFromCardMatch();
+
+    app(SettleFromCardAction::class)->handle(
+        $match,
+        faceitCard([
+            'winner_faction' => 'faction2',
+            'winner_username' => 'bob-faceit',
+            'winner_user_id' => $taker->id,
+        ]),
+    );
+
+    expect($match->fresh()->winner_user_id)->toBe($taker->id);
+});
+
+test('faceit card with winner_user_id = null settles as draw', function () {
+    [$creator, $taker, , $match] = settleFromCardMatch(stake: '100');
+
+    app(SettleFromCardAction::class)->handle(
+        $match,
+        faceitCard([
+            'winner_faction' => null,
+            'winner_username' => null,
+            'winner_user_id' => null,
+        ]),
+    );
+
+    $fresh = $match->fresh();
+    expect($fresh->status)->toBe(MatchStatus::Settled)
+        ->and($fresh->winner_user_id)->toBeNull();
+
+    // Both refunded — no fee posted, balances back to deposit.
+    expect((string) $creator->fresh()->usdt_balance)->toBe('500.000000')
+        ->and((string) $taker->fresh()->usdt_balance)->toBe('500.000000')
+        ->and(WalletTransaction::query()->where('reference_id', "match-fee:{$match->id}")->exists())->toBeFalse();
+});
+
+test('faceit card with winner_user_id = some unrelated user → no-op (defensive)', function () {
+    // Forged or buggy card naming a foreign user as winner. The Action
+    // refuses anything that isn't the listing creator or the match taker
+    // — match stays Pending until admin investigation.
+    [, , , $match] = settleFromCardMatch();
+    $stranger = User::factory()->create();
+
+    app(SettleFromCardAction::class)->handle(
+        $match,
+        faceitCard(['winner_user_id' => $stranger->id]),
+    );
+
+    expect($match->fresh()->status)->toBe(MatchStatus::Pending)
+        ->and($match->fresh()->winner_user_id)->toBeNull();
 });

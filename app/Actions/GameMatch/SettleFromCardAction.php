@@ -109,27 +109,54 @@ class SettleFromCardAction
     }
 
     /**
-     * Draw cards carry `winner_color = null` regardless of provider — both
-     * Lichess and chess.com result builders set this to null when the game
-     * ended without a winner (agreed, stalemate, repetition, 50-move, etc.).
+     * Draw rule per provider:
+     *   - Chess (lichess / chess_com): `winner_color = null` — set when the
+     *     game ended without a winner (agreed, stalemate, 50-move, etc.).
+     *   - FACEIT (M15 P4): `winner_user_id = null` — the auto-fetch job
+     *     embeds the resolved Stakly user_id directly on the card, so no
+     *     winner means no resolution (draw).
      *
      * @param  array<string, mixed>  $gameCard
      */
     private function isDraw(array $gameCard): bool
     {
+        if (($gameCard['provider'] ?? null) === 'faceit') {
+            return ! isset($gameCard['winner_user_id']) || $gameCard['winner_user_id'] === null;
+        }
+
         return ($gameCard['winner_color'] ?? null) === null;
     }
 
     /**
-     * Map the card's `winner_username` back to a Stakly user via the
-     * match's snapshotted handles for THE CARD'S PROVIDER. Mirrors
-     * `ChessGameApi::resolveWinnerUserId` — both Lichess and chess.com
-     * usernames are case-insensitive at the provider level.
+     * Resolve the card's winner to a Stakly user. Two paths:
+     *
+     *   - FACEIT (M15 P4): card carries `winner_user_id` resolved at job
+     *     time. Direct lookup, with a defensive participant check — refuse
+     *     any id that isn't the listing creator or the match taker
+     *     (guards against a malformed card forging a foreign winner).
+     *
+     *   - Chess (M8 / M14): card carries `winner_username`, resolved via
+     *     the match's snapshotted handle for the card's provider. Both
+     *     Lichess and chess.com handles are case-insensitive.
      *
      * @param  array<string, mixed>  $gameCard
      */
     private function resolveWinnerFromCard(GameMatch $match, array $gameCard): ?User
     {
+        $winnerUserId = $gameCard['winner_user_id'] ?? null;
+
+        if (is_int($winnerUserId)) {
+            if ($winnerUserId === $match->listing->user_id) {
+                return $match->listing->user;
+            }
+
+            if ($winnerUserId === $match->taker_user_id) {
+                return $match->taker;
+            }
+
+            return null;
+        }
+
         $winnerUsername = $gameCard['winner_username'] ?? null;
 
         if (! is_string($winnerUsername) || $winnerUsername === '') {

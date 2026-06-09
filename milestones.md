@@ -25,6 +25,7 @@ _None — pick the next milestone from "Active / upcoming" below._
 - **M20** — Email notifications. **Spec materially shrunk**: M27 P5 already shipped the in-app preferences UI + `notification_preferences` table + 9 `PlayerNotification` classes; M30 P4 wired the `mail` channel for ban notifications. What's left = branded HTML email templates, flip `'mail'` into `via()` on the remaining PlayerNotification subclasses, production SMTP config. Realistically 2–3 days.
 - **M21** — Blacklist + safety. Block users from listings + chat, with anti-evasion considerations. Has open design questions (block semantics + multi-account evasion) — needs alignment before coding.
 - **M33** — Listing time-control contract. Make Stakly's accepted time controls (blitz / rapid / classical) explicit in the listing-creation form, surface `time_control_mismatch` as a player-facing banner on stuck matches, and optionally re-enable Slice 3d strictness behind a per-listing opt-in. Reverted from M14 on 2026-06-06 — friction (legitimate correspondence / bullet games rejected silently) outweighed the small sandbag attack surface at this stage. Revisit when launch scale or a real abuse incident makes it relevant.
+- **M34** — Team play + lobbies. Production-launch dependency for CS2 and every future 5v5 game (Dota 2 / Valorant / LoL). Adds `team_size` to listings (default 1; chess stays 1, CS2 = 5), a lobby model for multi-player team assembly (private invite-link or public auto-fill), per-player stake collection with all-or-nothing locking (4-of-5 staked → listing waits or expires + refunds), roster-aware match snapshots (`match_provider_snapshots.slot_index` 0–4), per-player skill gate, and settlement payout split across the winning roster. Public / private listings (invite-only via shareable link) also lands here — same lobby surface. **5v5 first; 2v2 Wingman is a fast follow-up since it shares the same lobby infrastructure with a smaller team size.** The FACEIT outcome pipeline (M15 P4) doesn't need to change — `FaceitMatchResult` already parses full 5-player rosters; M34 only changes the identity-mapping side (which snapshot rows we cross-check against the roster).
 
 > Active milestone keeps a detailed task list. Future milestones expand when started. Any of this can shift — flag the change, update the doc.
 
@@ -188,6 +189,7 @@ Directional calls coming out of the planning discussion before Phase 0 starts. T
 - **CS2 skill range**: Faceit ELO min/max on listings; current ELO cached on `linked_accounts`, snapshotted onto `match_provider_snapshots` at match creation for sandbag-detection surfaces.
 - **Snapshot table extension**: nullable `provider_user_id` text column on both `linked_accounts` (source of truth) and `match_provider_snapshots` (denormalized copy). Holds FACEIT player UUID, Steam ID, future Riot PUUID — all as text. `username` stays for display.
 - **Phase 0 output location**: appended inline under this milestone as a new "Phase 0 — research findings" subsection once it wraps.
+- **CS2 production launch is gated on M34 (Team play + lobbies)** (added 2026-06-09). FACEIT competitive CS2 is 5v5 — there's no native ranked 1v1 CS2 mode with consistent AC + ELO (only community-run Hubs with per-Hub AC config, which leaks the trust pitch). M15 P3 lets dev users create CS2 listings today; M15 P4 builds the polling pipeline 5v5-aware (`FaceitMatchResult` already parses full rosters). But the create-form is still 1v1-shaped (one creator, one stake), so CS2 listings can't be taken-and-settled end-to-end in production until M34 ships the lobby + multi-player stake collection. 2v2 Wingman is a follow-up after 5v5 lands. The P4 polling pipeline keeps shipping in parallel — its tests use fixture rosters, so the infrastructure validates independently of when M34 unlocks production CS2 takes.
 
 ### Phases
 
@@ -249,12 +251,37 @@ Three slices, each shippable + commit-sized.
 
 **Phase 4 — FACEIT outcome pipeline**
 
-- [ ] `FaceitGameClient` — HTTP wrapper for the FACEIT Data API. API-key bearer auth (already wired via `config('services.faceit.api_key')` in Phase 2 — Data API rejects OAuth user tokens with 403). Error mapping into the existing `ProviderError` hierarchy.
-- [ ] `AutoFetchFaceitGameJob` mirrors `AutoFetchChessComGameJob`'s shape: retry policy, circuit breaker integration, posts a system card with `provider: 'faceit'` using the existing uniform card schema.
-- [ ] `FaceitGameApi` implements `GameApi` — reads the card by provider discriminator, maps `provider_user_id` (or `username` fallback) to the user via snapshots, returns a `GameApiResult`.
-- [ ] `DispatchAutoFetchAction` extends its match expression to dispatch the FACEIT job when `listing.platform === 'faceit'`.
-- [ ] Anti-cheat filter inside the client per Phase 0 outcome (FACEIT AC matches only — likely the default for the Data API match endpoint, but verify).
-- [ ] Webhook wiring if Phase 0 says yes — additive to polling, not replacing it; polling stays as the safety net.
+Polling-first; webhook receiver lives in Slice 4, deferred until FACEIT support replies on webhook egress IPs (one of the Phase 0 "needs human follow-up" items). Polling remains the safety net regardless of webhook.
+
+**Slice 1 — `FaceitGameClient` + Data API wrapper** _(commit: `feat(m15-p4): FaceitGameClient + Data API wrapper`)_
+
+- [x] `FaceitGameClient` — HTTP wrapper for the FACEIT Data API. API-key bearer auth via `config('services.faceit.api_key')` (already wired in Phase 2 — Data API rejects OAuth user tokens with 403, the server-side key is required). Graceful null on missing key (matches `FaceitProfileClient`).
+- [x] `GET /data/v4/matches/{match_id}` parser: `results.winner ∈ {faction1, faction2}` + `teams.{faction1,faction2}.roster[]` with `player_id` / `nickname` / `anticheat_required` per player.
+- [x] Anti-cheat gate lives on the result DTO via `FaceitMatchResult::isAntiCheatComplete()` and `isDecisive()` (returns false if any roster player has `anticheat_required === false`). Per Phase 0: queue-agnostic gate (FACEIT AC mandatory on `competition_type === 'matchmaking'`, opt-in for Hubs — the per-player boolean is the only reliable signal that AC ran on both teams). Client returns the raw match; the caller (Slice 2 job + adapter) decides what to do with an AC-incomplete match.
+- [x] Error mapping into the existing `ProviderError` hierarchy (`Retry-After` parsing via `RateLimitHeaderParser`, classified retry vs permanent failures) — mirrors the shape `LichessGameClient` / `ChessComGameClient` use today.
+- [x] Fixture tests (`tests/Feature/Services/Provider/FaceitGameClientTest.php` — 12 cases): happy path (winner identified, both rosters AC=true), AC-incomplete match parses but `isDecisive()` returns false, non-FINISHED status, faction2 winner roster lookup, 4xx-other → `PermanentProviderError`, 5xx → `TransientProviderError`, 429 → `RateLimitedError` with `Retry-After` honoured, malformed JSON → `PermanentProviderError`, missing API key → null (graceful dev path), Authorization Bearer header sent correctly.
+
+**Slice 2 — `FaceitGameApi` + `AutoFetchFaceitGameJob`** _(commit: `feat(m15-p4): FaceitGameApi adapter + auto-fetch job`)_
+
+- [x] `FaceitGameClient::searchPlayerMatches()` — `GET /data/v4/players/{id}/history` wrapper, returns slim match-ID list with `game` + `from` + `limit` query params. 10 new tests covering happy path / query-param wiring / 404 / empty list / no-API-key / 4xx / 5xx / 429 / malformed JSON.
+- [x] `App\Enums\AutoFetchOutcome::AcIncomplete` — terminal outcome for "match found via API but anti-cheat wasn't required on every roster slot." Recorded in `match_auto_fetch_attempts`; match falls to ManualReview via timeout.
+- [x] `App\Models\GameMatch::snapshotProviderUserId()` accessor sibling to `snapshotUsername()` — reads the snapshotted FACEIT GUID (Steam ID, Riot PUUID — text) for cross-provider identity at arbitration.
+- [x] `AutoFetchFaceitGameJob` mirrors `AutoFetchChessComGameJob`'s shape — same `ShouldBeUnique` / `ShouldQueueAfterCommit`, same `$tries = 7` budget, same `[5, 15, 30]` backoff + `[5, 15, 45]` no_match retry chain, same `retryUntil()` (match-confirmation timeout), same `ProviderCircuitBreaker` integration. Match-finding strategy per Slice 2 agreement: query creator's history first (top 10 by recency since `match.created_at`), fall back to taker's history if creator yields nothing; for each candidate `match_id` call `fetchMatch()` then verify creator + taker GUIDs sit on OPPOSING factions before posting a card. AC-incomplete → terminal `AcIncomplete` audit row (no card, no retry — per Slice 2 agreement). 10 tests cover happy path (creator + taker wins), AC-incomplete, no-match retry, opposing-roster check, fall-back-to-taker, snapshot-missing skip, already-posted idempotency, permanent provider error, transient provider error.
+- [x] `FaceitGameApi` implements `GameApi` — reads the chat card by `provider: 'faceit'` discriminator, returns `GameApiResult` with `winner_user_id` resolved directly off the card (the job already resolved snapshot→user). Defensive participant check refuses cards naming foreign winners. Falls through to `MockGameApi` when no FACEIT card is present, card has no winner (draw), or the named user isn't a match participant. 7 tests.
+- [x] `SettleFromCardAction` extension — new fast-path: when card's `winner_user_id` is set (FACEIT), look up `User` by id directly with a participant-check guard; chess cards continue through the existing `winner_username` + snapshot cross-check. `isDraw()` rule per provider: chess on `winner_color === null`, FACEIT on `winner_user_id === null`. 4 new tests + 1 existing test updated (the "unknown provider → no-op" test now uses `'riot'` since FACEIT is no longer unknown).
+
+**Slice 3 — `DispatchAutoFetchAction` wiring + end-to-end** _(commit: `feat(m15-p4): dispatch FACEIT job per listing.platform`)_
+
+- [ ] `DispatchAutoFetchAction` extends its match expression to dispatch `AutoFetchFaceitGameJob` when `listing.platform === LinkedAccountProvider::Faceit`.
+- [ ] End-to-end seeded test: CS2 listing → take → API result polled → card posted → settlement fires → wallet balances correct (winner = stake × 2 minus platform fee).
+- [ ] Idempotency: re-dispatch with the same match_id is a no-op (existing AutoFetch shape already covers this via `MatchAutoFetchAttempt`).
+
+**Slice 4 — Webhook receiver (deferred until egress IPs land)**
+
+- [ ] Webhook endpoint listening for `match_status_finished`. Re-fetches via Data API before settlement (defense-in-depth — Phase 0 found webhook auth is a static shared secret only, no HMAC; treat webhook as a notification, not proof).
+- [ ] Idempotency via `event_id` from FACEIT's envelope (at-least-once delivery).
+- [ ] Additive to polling, not replacing it.
+- [ ] **Blocked on FACEIT support reply** about webhook egress IPs — when those land, add an IP allowlist on top of the shared-secret check.
 
 **Phase 5 — Dispute fast-path + telemetry**
 
