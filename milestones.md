@@ -234,6 +234,7 @@ Three slices, each shippable + commit-sized.
 **Slice 2 — Frontend game picker + per-game form swap** _(commit: `feat(m15-p3): per-game create form (game picker + CS2 fields)`)_
 
 - [x] Dropdown game picker in the create form's Game section — single-row trigger (gradient game icon + game name + verification chip + chevron) opens a Popover listing all Active games. Iterated from the original tile-grid sketch during Slice 2 because the dropdown reads tighter and scales better as more games ship.
+- [x] Game-aware list surfaces — reusable `GameChip` component (Crown / Target / Swords icon + game label, mirroring the create-form picker) rolled out to `/listings/mine` (new Game column), `/matches` (chip cluster), `/listings` marketplace row, and `/match/{id}` header. Each surface shows the listing's game at a glance so chess + CS2 listings are distinguishable without expanding the row.
 - [x] Per-game inline link-account gate — when the selected game's required provider isn't linked, show an inline "Link FACEIT to post CS2 listings →" notice rather than the current full-page swap. Users can preview the form for either game and link from there.
 - [x] Extract `ChessFormatFilter` (time-control toggle) + `ChessSkillRangeFilter` (Elo min/max) into `components/listings/`.
 - [x] Add `Cs2SkillRangeFilter` (Faceit ELO range) sibling component.

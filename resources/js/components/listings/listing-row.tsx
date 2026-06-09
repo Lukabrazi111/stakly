@@ -1,5 +1,6 @@
 import { Link } from '@inertiajs/react';
 import { Clock, Globe, Languages, Trophy } from 'lucide-react';
+import { GameChip } from '@/components/listings/game-chip';
 import { SellerTrustMeta } from '@/components/listings/seller-trust-meta';
 import { TakeButton } from '@/components/listings/take-button';
 import { VerifiedPlatformChip } from '@/components/listings/verified-platform-chip';
@@ -96,6 +97,8 @@ export function ListingRow({ listing }: Props) {
 
             <div className="pointer-events-none relative flex flex-1 flex-wrap items-center gap-3 md:flex-nowrap md:gap-6">
                 <div className="flex flex-wrap items-center gap-2 md:flex-1">
+                    <GameChip game={listing.game} />
+
                     <VerifiedPlatformChip platform={listing.platform} />
 
                     <span className="inline-flex items-center gap-1.5 rounded-full border border-border/60 bg-background/60 px-3 py-1 text-xs font-medium text-muted-foreground">

@@ -123,6 +123,7 @@ export default function ListingsMine({
                     <div className="overflow-hidden rounded-2xl border border-border/60 bg-card/40">
                         {/* Column header — desktop only */}
                         <div className="hidden border-b border-border/40 px-5 py-3 text-xs tracking-wide text-muted-foreground uppercase md:flex md:items-center md:gap-4">
+                            <div className="md:w-24">{t('Game')}</div>
                             <div className="md:w-24 md:text-center">
                                 {t('Status')}
                             </div>
@@ -220,6 +221,9 @@ function MineRowSkeleton() {
             aria-hidden
             className="flex flex-col gap-3 border-t border-border/40 px-4 py-4 first:border-t-0 md:flex-row md:items-center md:gap-4 md:px-5"
         >
+            <div className="md:w-24">
+                <Skeleton className="h-6 w-20 rounded-full" />
+            </div>
             <div className="md:flex md:w-24 md:justify-center">
                 <Skeleton className="h-6 w-20 rounded-full" />
             </div>

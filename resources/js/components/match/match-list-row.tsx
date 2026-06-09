@@ -1,5 +1,6 @@
 import { Link, usePage } from '@inertiajs/react';
 import { Clock, Handshake, Trophy } from 'lucide-react';
+import { GameChip } from '@/components/listings/game-chip';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { useInitials } from '@/hooks/use-initials';
 import { useT } from '@/lib/i18n';
@@ -67,6 +68,8 @@ export function MatchListRow({ match }: Props) {
 
             <div className="pointer-events-none relative flex flex-1 flex-wrap items-center gap-3 md:flex-nowrap md:gap-6">
                 <div className="flex flex-wrap items-center gap-2 md:flex-1">
+                    <GameChip game={match.listing.game} />
+
                     <span
                         className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-medium ${matchStatusTone[match.status]}`}
                     >

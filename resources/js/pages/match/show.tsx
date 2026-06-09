@@ -1,5 +1,6 @@
 import { router, usePage } from '@inertiajs/react';
 import { useEffect, useMemo, useState } from 'react';
+import { GameChip } from '@/components/listings/game-chip';
 import { AdminReviewBanner } from '@/components/match/admin-review-banner';
 import { CancellationRequestBanner } from '@/components/match/cancellation-request-banner';
 import { CancellationSummary } from '@/components/match/cancellation-summary';
@@ -219,10 +220,11 @@ export default function MatchShow({ match, messages }: MatchShowProps) {
                                     finishedAt={match.settled_at}
                                 />
                             </div>
-                            {/* Status + countdown live together on the right side
-                        of the header. Wraps to a new line on narrow widths
-                        so neither chip truncates. */}
+                            {/* Game + status + countdown live together on the
+                        right side of the header. Wraps to a new line on
+                        narrow widths so nothing truncates. */}
                             <div className="flex flex-wrap items-center gap-2">
+                                <GameChip game={match.listing.game} />
                                 <span
                                     className={`inline-flex w-fit shrink-0 items-center rounded-full border px-3 py-1.5 text-xs font-medium ${STATUS_TONE[match.status]}`}
                                 >

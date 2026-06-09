@@ -3,6 +3,7 @@ import { Clock, X } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useState } from 'react';
 import { CancelListingDialog } from '@/components/listings/cancel-listing-dialog';
+import { GameChip } from '@/components/listings/game-chip';
 import { useT } from '@/lib/i18n';
 import {
     formatTimeRemaining,
@@ -58,6 +59,10 @@ export function MineListingRow({ listing }: Props) {
             {/* Mobile: two grouped rows. Desktop: wrappers collapse via
                 `md:contents` so children flow into the article's flex-row. */}
             <div className="flex items-center gap-3 md:contents">
+                <div className="pointer-events-none relative shrink-0 md:w-24">
+                    <GameChip game={listing.game} />
+                </div>
+
                 <span
                     className={`pointer-events-none relative inline-flex shrink-0 items-center justify-center rounded-full border px-3 py-1 text-xs font-medium md:w-24 ${STATUS_TONE[listing.status]}`}
                 >
