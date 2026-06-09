@@ -395,3 +395,53 @@ test('chess listing with a FACEIT platform is rejected by the cross-game validat
 
     expect(Listing::count())->toBe(0);
 });
+
+// ─── Per-game requirements props (M15 Phase 3 Slice 3) ────────────────────
+// Locks the `requirementsByGame` prop the frontend reads to pick the default
+// game in `defaultGameFor()` (resources/js/pages/listings/create.tsx). The
+// helper itself is small/pure TS; correctness flows from the backend props.
+
+test('FACEIT-only user lands on the create form with CS2 verified and Chess unverified', function () {
+    $user = User::factory()->withFaceit()->create();
+    Wallet::deposit($user, '500', reference: "test:deposit:{$user->id}");
+
+    $this->actingAs($user)
+        ->get('/listings/create')
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->component('listings/create')
+            ->where('requirementsByGame.cs2.verified', true)
+            ->where('requirementsByGame.chess.verified', false)
+            ->where('linkedPlatforms', ['faceit'])
+        );
+});
+
+test('chess-only user lands on the create form with Chess verified and CS2 unverified', function () {
+    $user = User::factory()->withLichess()->create();
+    Wallet::deposit($user, '500', reference: "test:deposit:{$user->id}");
+
+    $this->actingAs($user)
+        ->get('/listings/create')
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->component('listings/create')
+            ->where('requirementsByGame.chess.verified', true)
+            ->where('requirementsByGame.cs2.verified', false)
+            ->where('linkedPlatforms', ['lichess'])
+        );
+});
+
+test('unlinked user lands on the create form with neither game verified', function () {
+    $user = User::factory()->create();
+    Wallet::deposit($user, '500', reference: "test:deposit:{$user->id}");
+
+    $this->actingAs($user)
+        ->get('/listings/create')
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->component('listings/create')
+            ->where('requirementsByGame.chess.verified', false)
+            ->where('requirementsByGame.cs2.verified', false)
+            ->where('linkedPlatforms', [])
+        );
+});

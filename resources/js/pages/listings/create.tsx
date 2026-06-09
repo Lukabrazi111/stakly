@@ -28,6 +28,7 @@ import {
     store as storeListing,
 } from '@/routes/listings';
 import type { ListingCreateProps, ListingPlatform, TimeControl } from '@/types';
+import type { GameTile } from '@/types/home';
 
 const PROVIDER_LABEL: Record<ListingPlatform, string> = {
     chess_com: 'chess.com',
@@ -57,6 +58,27 @@ function defaultPlatformForGame(
     return linked ?? providers[0] ?? 'chess_com';
 }
 
+function defaultGameFor(
+    games: readonly GameTile[],
+    requirementsByGame: ListingCreateProps['requirementsByGame'],
+): GameId {
+    const active = games.filter((g) => g.status === 'active');
+
+    const verified = active.find(
+        (g) => requirementsByGame[g.slug as GameId]?.verified,
+    );
+
+    if (verified) {
+        return verified.slug as GameId;
+    }
+
+    // Nothing linked yet — push toward CS2 (newer integration) when it's in
+    // the active catalog. Falls back to the first active game otherwise.
+    const cs2 = active.find((g) => g.slug === 'cs2');
+
+    return (cs2?.slug ?? active[0]?.slug ?? 'chess') as GameId;
+}
+
 export default function ListingsCreate({
     balance,
     regions,
@@ -71,7 +93,7 @@ export default function ListingsCreate({
     const t = useT();
     const atCap = activeListingsCount >= maxActiveListings;
 
-    const initialGame: GameId = 'chess';
+    const initialGame = defaultGameFor(games.data, requirementsByGame);
     const initialPlatform = defaultPlatformForGame(
         initialGame,
         requirementsByGame,
@@ -94,7 +116,7 @@ export default function ListingsCreate({
         stake_amount: '',
         skill_min: '',
         skill_max: '',
-        time_control: ['blitz'],
+        time_control: initialGame === 'chess' ? ['blitz'] : [],
         region: regions[0] ?? 'Global',
         language: [],
         duration_hours: durations.includes(24) ? 24 : (durations[0] ?? 24),
@@ -528,11 +550,11 @@ function LinkGateNotice({ requiredProviders }: LinkGateNoticeProps) {
             </div>
             <div className="flex flex-col gap-1">
                 <h2 className="font-display text-xl font-bold tracking-tight">
-                    {t('Link :provider first', { provider: providerNames })}
+                    {t('Link :provider to post', { provider: providerNames })}
                 </h2>
                 <p className="text-sm leading-relaxed text-muted-foreground">
                     {t(
-                        'Stakly verifies match outcomes against your linked account. Link :provider to post and take listings on this game — it takes about a minute.',
+                        'We verify match outcomes through your linked account. Linking :provider lets you post and take listings on this game — about a minute of setup.',
                         { provider: providerNames },
                     )}
                 </p>

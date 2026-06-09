@@ -241,11 +241,11 @@ Three slices, each shippable + commit-sized.
 - [x] Platform display branches: chess keeps the existing chess.com / Lichess picker (shown only when both linked); CS2 shows a static FACEIT chip (only platform).
 - [x] Drop the obsolete `// Create-listing is chess-only today` comment in `pages/listings/create.tsx`.
 
-**Slice 3 — Browser verify + edge cases** _(commit: `test(m15-p3): browser smoke for per-game listing creation`)_
+**Slice 3 — Defaults + polish + props coverage** _(commit: `feat(m15-p3): default-game logic + create-form copy polish`)_
 
-- [ ] Pest browser smoke test: log in as a FACEIT-only-linked user → can create a CS2 listing end-to-end; cannot create a Chess listing (sees the inline gate).
-- [ ] Default-game logic: chess-only-linked → defaults to Chess; FACEIT-only-linked → defaults to CS2; both linked → Chess; neither linked → defaults to CS2 first (drives them toward the newer integration).
-- [ ] Copy polish pass on inline gate + tile labels.
+- [x] Default-game logic: chess-only-linked → defaults to Chess; FACEIT-only-linked → defaults to CS2; both linked → Chess; neither linked → CS2 (drives toward the newer integration). Helper `defaultGameFor()` in `pages/listings/create.tsx`; initial `time_control` also resets to `[]` when the default game isn't chess so a stale `['blitz']` doesn't tag along on CS2 form opens.
+- [x] Copy polish on inline link gate: `LinkGateNotice` title now reads `Link :provider to post` (was `Link :provider first`); body collapsed to a first-person sentence with the "about a minute" reassurance preserved.
+- [x] Inertia-assertion Feature tests in `tests/Feature/ListingStoreTest.php` lock the per-game `requirementsByGame.{game}.verified` prop that `defaultGameFor()` reads — three cases (FACEIT-only, chess-only, unlinked). A Pest browser smoke test was attempted via `pest-plugin-browser` + Playwright but rolled back: React wasn't hydrating inside the plugin's testbench HTTP server (Vite asset URL rewriting + SSR shell mismatch). Browser-test foundation deferred — auth modal, take-flow, and wallet flow share the same infra need, so we'll set it up properly once we have multiple consumers.
 
 **Phase 4 — FACEIT outcome pipeline**
 
