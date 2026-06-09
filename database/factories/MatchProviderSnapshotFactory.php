@@ -22,6 +22,8 @@ class MatchProviderSnapshotFactory extends Factory
             'side' => fake()->randomElement([GameMatch::SIDE_CREATOR, GameMatch::SIDE_TAKER]),
             'provider' => LinkedAccountProvider::Lichess,
             'username' => Str::slug(fake()->unique()->userName()),
+            'provider_user_id' => null,
+            'skill_rating_snapshot' => null,
         ];
     }
 
@@ -48,6 +50,16 @@ class MatchProviderSnapshotFactory extends Factory
         return $this->state(fn () => [
             'provider' => LinkedAccountProvider::ChessCom,
             ...$username ? ['username' => $username] : [],
+        ]);
+    }
+
+    public function faceit(?string $username = null, ?string $providerUserId = null, ?int $skillRating = null): static
+    {
+        return $this->state(fn () => [
+            'provider' => LinkedAccountProvider::Faceit,
+            ...$username ? ['username' => $username] : [],
+            'provider_user_id' => $providerUserId ?? (string) Str::uuid(),
+            'skill_rating_snapshot' => $skillRating ?? fake()->numberBetween(800, 2200),
         ]);
     }
 }

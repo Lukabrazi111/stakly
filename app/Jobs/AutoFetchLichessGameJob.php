@@ -194,11 +194,15 @@ class AutoFetchLichessGameJob implements ShouldBeUnique, ShouldQueueAfterCommit
             return;
         }
 
-        // M14 Slice 3d — picker filters by time-control even for the
-        // single-candidate case. A blitz-listing matched on a bullet game
-        // doesn't auto-settle; the match stays Pending until a matching
-        // game lands or the M16 timeout routes it to ManualReview.
-        $game = $this->pickSettleableCandidate($completed);
+        // M14 Slice 3c — single candidates are settled directly (no TC
+        // filter). The picker only disambiguates when the search window
+        // surfaces multiple games. Slice 3d's strict single-candidate
+        // enforcement was reverted on 2026-06-06 — too aggressive in
+        // practice given Lichess's `correspondence` / `bullet` speeds
+        // sit outside Stakly's TimeControl enum.
+        $game = $count === 1
+            ? $completed[0]
+            : $this->pickSettleableCandidate($completed);
 
         if ($game === null) {
             $this->record($recordAttempt, AutoFetchOutcome::Ambiguous, [

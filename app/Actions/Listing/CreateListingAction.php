@@ -43,9 +43,8 @@ class CreateListingAction
         // submit) for unverified providers; reaching here means a stale
         // tab or a crafted request.
         $platform = LinkedAccountProvider::from($data['platform']);
-        $verifiedAtColumn = $platform->value.'_verified_at';
 
-        if ($user->{$verifiedAtColumn} === null) {
+        if (! $user->isVerifiedOn($platform)) {
             return 'not_linked';
         }
 
@@ -56,7 +55,10 @@ class CreateListingAction
                 'stake_amount' => $data['stake_amount'],
                 'skill_min' => $data['skill_min'] ?? null,
                 'skill_max' => $data['skill_max'] ?? null,
-                'time_control' => $data['time_control'],
+                // `time_control` is chess-only; non-chess listings drop the
+                // field entirely and the column stores an empty array (M15
+                // Phase 3 Slice 3).
+                'time_control' => $data['time_control'] ?? [],
                 'region' => $data['region'] ?? null,
                 'language' => $data['language'] ?? null,
                 'expires_at' => now()->addHours((int) $data['duration_hours']),

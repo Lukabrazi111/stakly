@@ -83,7 +83,19 @@ class StoreListingRequest extends FormRequest
             ],
             'skill_min' => ['nullable', 'integer', 'min:0', 'max:3500'],
             'skill_max' => ['nullable', 'integer', 'min:0', 'max:3500', 'gte:skill_min'],
-            'time_control' => ['required', 'array', 'min:1', 'max:'.count(TimeControl::cases())],
+            // `time_control` is chess-only (Blitz / Rapid / Classical). For
+            // non-chess games it stays null on the listing row — the
+            // marketplace already hides the column via `gameSupports()`.
+            // Base shape (array, max) always applies; `required + min:1`
+            // only fires when the listing's game is chess.
+            'time_control' => [
+                'array',
+                'max:'.count(TimeControl::cases()),
+                Rule::when(
+                    fn () => $this->input('game') === Game::Chess->value,
+                    ['required', 'min:1'],
+                ),
+            ],
             'time_control.*' => ['string', Rule::enum(TimeControl::class), 'distinct'],
             'region' => ['nullable', 'string', Rule::in(self::REGIONS)],
             'language' => ['nullable', 'array', 'max:'.count(self::LANGUAGES)],
@@ -118,6 +130,27 @@ class StoreListingRequest extends FormRequest
                     'active_listings_cap',
                     __('You already have :count active listings — the maximum allowed. Cancel one (or wait for it to settle / expire) before creating another.', [
                         'count' => $activeCount,
+                    ]),
+                );
+            }
+
+            // M15 Phase 3 — platform must belong to the game's required
+            // providers. CS2 listings can't post to chess.com, chess listings
+            // can't post to FACEIT, etc. Frontend gates the picker in Slice 2;
+            // server check covers stale tabs and crafted requests.
+            $gameValue = $this->input('game');
+            $platformValue = $this->input('platform');
+            $game = is_string($gameValue) ? Game::tryFrom($gameValue) : null;
+            $platform = is_string($platformValue) ? LinkedAccountProvider::tryFrom($platformValue) : null;
+
+            if ($game !== null && $platform !== null
+                && ! in_array($platform, $game->requiredProviders(), true)
+            ) {
+                $validator->errors()->add(
+                    'platform',
+                    __('The :platform platform isn\'t valid for :game listings.', [
+                        'platform' => $platform->displayName(),
+                        'game' => $game->displayName(),
                     ]),
                 );
             }

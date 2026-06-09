@@ -7,6 +7,7 @@ use App\Listeners\RecordImpersonationStart;
 use App\Services\GameApi\ChessGameApi;
 use App\Services\GameApi\GameApi;
 use App\Services\GameApi\MockGameApi;
+use App\Services\Provider\FaceitProvider;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\DB;
@@ -15,6 +16,7 @@ use Illuminate\Support\Facades\URL;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Validation\Rules\Password;
 use InvalidArgumentException;
+use SocialiteProviders\Manager\SocialiteWasCalled;
 use STS\FilamentImpersonate\Events\EnterImpersonation;
 use STS\FilamentImpersonate\Events\LeaveImpersonation;
 
@@ -65,6 +67,7 @@ class AppServiceProvider extends ServiceProvider
     {
         $this->configureDefaults();
         $this->registerImpersonationListeners();
+        $this->registerSocialiteListeners();
     }
 
     /**
@@ -75,6 +78,21 @@ class AppServiceProvider extends ServiceProvider
     {
         Event::listen(EnterImpersonation::class, RecordImpersonationStart::class);
         Event::listen(LeaveImpersonation::class, RecordImpersonationEnd::class);
+    }
+
+    /**
+     * Register Socialite community providers (M15 Phase 2). The FACEIT
+     * driver uses our local `App\Services\Provider\FaceitProvider` —
+     * a thin PKCE-aware subclass of `socialiteproviders/faceit`'s
+     * provider. FACEIT's App Studio only exposes PKCE-enabled OAuth
+     * clients these days, and the upstream package (last tagged 2022)
+     * doesn't send `code_verifier` on token exchange.
+     */
+    private function registerSocialiteListeners(): void
+    {
+        Event::listen(function (SocialiteWasCalled $event): void {
+            $event->extendSocialite('faceit', FaceitProvider::class);
+        });
     }
 
     /**

@@ -201,31 +201,6 @@ test('abandoned chess.com game posts a card AND settles as draw (M14 Slice 3b �
         ->and($match->winner_user_id)->toBeNull();
 });
 
-test('single game with time-control mismatch → ambiguous, no post (M14 Slice 3d)', function () {
-    $match = chessComAutoFetchMatch();
-    $match->listing->update(['time_control' => ['blitz']]);
-
-    // Listing blitz-only; matched game is bullet → no auto-settle.
-    Http::fake([
-        'api.chess.com/pub/player/*/games/*' => Http::response(
-            chessComArchiveFixture([
-                chessComGameFixture([
-                    'url' => 'https://www.chess.com/game/live/bullet111',
-                    'end_time' => CarbonImmutable::now()->subMinutes(5)->timestamp,
-                    'time_class' => 'bullet',
-                ]),
-            ]),
-            200,
-        ),
-    ]);
-
-    runChessComAutoFetch($match);
-
-    expect(Message::query()->where('match_id', $match->id)->where('type', MessageType::System)->count())
-        ->toBe(0);
-    expect($match->fresh()->status)->toBe(MatchStatus::Pending);
-});
-
 // ─── Retry-on-empty (chess.com eventual consistency) ───────────────────────
 
 test('empty archive does not post a system message (would retry in real queue)', function () {

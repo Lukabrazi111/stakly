@@ -1,5 +1,7 @@
 <?php
 
+use App\Enums\Game;
+use App\Enums\LinkedAccountProvider;
 use App\Enums\ListingStatus;
 use App\Enums\WalletTransactionType;
 use App\Models\Listing;
@@ -105,10 +107,37 @@ test('missing required fields produce field-level 422 errors', function () {
     $user = User::factory()->withLichess()->create();
     Wallet::deposit($user, '500', reference: "test:deposit:{$user->id}");
 
+    // `time_control` is no longer required when `game` is missing — the
+    // conditional rule (M15 Phase 3 Slice 3) only adds `required` when game
+    // resolves to chess.
     $this->actingAs($user)
         ->postJson('/listings', [])
         ->assertStatus(422)
-        ->assertJsonValidationErrors(['stake_amount', 'time_control', 'duration_hours', 'game']);
+        ->assertJsonValidationErrors(['stake_amount', 'duration_hours', 'game']);
+});
+
+test('missing time_control with game=chess still produces a required error', function () {
+    $user = User::factory()->withLichess()->create();
+    Wallet::deposit($user, '500', reference: "test:deposit:{$user->id}");
+
+    $this->actingAs($user)
+        ->postJson('/listings', validPayload(['time_control' => null]))
+        ->assertJsonValidationErrors('time_control');
+});
+
+test('CS2 listing without time_control is accepted and stored as empty', function () {
+    $user = User::factory()->withFaceit()->create();
+    Wallet::deposit($user, '500', reference: "test:deposit:{$user->id}");
+
+    $payload = validPayload(['game' => 'cs2', 'platform' => 'faceit']);
+    unset($payload['time_control']);
+
+    $this->actingAs($user)
+        ->postJson('/listings', $payload)
+        ->assertRedirect(route('listings.mine'));
+
+    $listing = Listing::query()->where('user_id', $user->id)->firstOrFail();
+    expect($listing->time_control->all())->toBe([]);
 });
 
 test('time_control must be a non-empty array of valid enum values', function () {
@@ -294,4 +323,125 @@ test('successful store flashes a success toast', function () {
             'type' => 'success',
             'message' => 'Listing created.',
         ]);
+});
+
+// ─── Per-game gating (M15 Phase 3) ────────────────────────────────────────
+
+test('CS2 listing creation succeeds when the user has FACEIT linked', function () {
+    $user = User::factory()->withFaceit()->create();
+    Wallet::deposit($user, '500', reference: "test:deposit:{$user->id}");
+
+    $response = $this->actingAs($user)->postJson('/listings', validPayload([
+        'game' => 'cs2',
+        'platform' => 'faceit',
+    ]));
+
+    $response->assertRedirect(route('listings.mine'));
+
+    $listing = Listing::query()->where('user_id', $user->id)->firstOrFail();
+
+    expect($listing->game)->toBe(Game::Cs2)
+        ->and($listing->platform)->toBe(LinkedAccountProvider::Faceit);
+});
+
+test('CS2 listing creation is blocked when the user has no FACEIT link', function () {
+    // game + platform pair is valid (cs2 + faceit), so cross-validation
+    // passes — but CreateListingAction's isVerifiedOn(Faceit) check fires the
+    // 'not_linked' sentinel because the user only has chess linked.
+    $user = User::factory()->withLichess()->create();
+    Wallet::deposit($user, '500', reference: "test:deposit:{$user->id}");
+
+    $response = $this->actingAs($user)->postJson('/listings', validPayload([
+        'game' => 'cs2',
+        'platform' => 'faceit',
+    ]));
+
+    $response->assertRedirect(route('linked-accounts.edit'));
+    $response->assertInertiaFlash('toast', [
+        'type' => 'info',
+        'message' => 'Link a FACEIT account before posting a FACEIT listing.',
+    ]);
+
+    expect(Listing::count())->toBe(0);
+});
+
+test('CS2 listing with a chess platform is rejected by the cross-game validation', function () {
+    // Stale-tab / crafted-request case. User has BOTH providers linked so
+    // the rejection can ONLY be the platform-doesn't-fit-game check, not a
+    // missing-link gate.
+    $user = User::factory()->withFaceit()->withChessCom()->create();
+    Wallet::deposit($user, '500', reference: "test:deposit:{$user->id}");
+
+    $this->actingAs($user)
+        ->postJson('/listings', validPayload([
+            'game' => 'cs2',
+            'platform' => 'chess_com',
+        ]))
+        ->assertJsonValidationErrors('platform');
+
+    expect(Listing::count())->toBe(0);
+});
+
+test('chess listing with a FACEIT platform is rejected by the cross-game validation', function () {
+    $user = User::factory()->withFaceit()->withChessCom()->create();
+    Wallet::deposit($user, '500', reference: "test:deposit:{$user->id}");
+
+    $this->actingAs($user)
+        ->postJson('/listings', validPayload([
+            'game' => 'chess',
+            'platform' => 'faceit',
+        ]))
+        ->assertJsonValidationErrors('platform');
+
+    expect(Listing::count())->toBe(0);
+});
+
+// ─── Per-game requirements props (M15 Phase 3 Slice 3) ────────────────────
+// Locks the `requirementsByGame` prop the frontend reads to pick the default
+// game in `defaultGameFor()` (resources/js/pages/listings/create.tsx). The
+// helper itself is small/pure TS; correctness flows from the backend props.
+
+test('FACEIT-only user lands on the create form with CS2 verified and Chess unverified', function () {
+    $user = User::factory()->withFaceit()->create();
+    Wallet::deposit($user, '500', reference: "test:deposit:{$user->id}");
+
+    $this->actingAs($user)
+        ->get('/listings/create')
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->component('listings/create')
+            ->where('requirementsByGame.cs2.verified', true)
+            ->where('requirementsByGame.chess.verified', false)
+            ->where('linkedPlatforms', ['faceit'])
+        );
+});
+
+test('chess-only user lands on the create form with Chess verified and CS2 unverified', function () {
+    $user = User::factory()->withLichess()->create();
+    Wallet::deposit($user, '500', reference: "test:deposit:{$user->id}");
+
+    $this->actingAs($user)
+        ->get('/listings/create')
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->component('listings/create')
+            ->where('requirementsByGame.chess.verified', true)
+            ->where('requirementsByGame.cs2.verified', false)
+            ->where('linkedPlatforms', ['lichess'])
+        );
+});
+
+test('unlinked user lands on the create form with neither game verified', function () {
+    $user = User::factory()->create();
+    Wallet::deposit($user, '500', reference: "test:deposit:{$user->id}");
+
+    $this->actingAs($user)
+        ->get('/listings/create')
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->component('listings/create')
+            ->where('requirementsByGame.chess.verified', false)
+            ->where('requirementsByGame.cs2.verified', false)
+            ->where('linkedPlatforms', [])
+        );
 });

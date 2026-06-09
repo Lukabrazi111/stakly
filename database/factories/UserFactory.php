@@ -132,6 +132,27 @@ class UserFactory extends Factory
     }
 
     /**
+     * Mark the user as having a verified FACEIT account (M15). Populates
+     * `provider_user_id` (FACEIT guid) and `skill_rating` (Faceit ELO)
+     * alongside `username` — these columns are NULL for chess providers
+     * but expected for non-chess adapters. Used by Phase 1 snapshot tests
+     * until the Phase 2 OAuth callback writes real values.
+     */
+    public function withFaceit(?string $username = null, ?string $providerUserId = null, ?int $skillRating = null): static
+    {
+        return $this->afterCreating(function (User $user) use ($username, $providerUserId, $skillRating) {
+            LinkedAccount::create([
+                'user_id' => $user->id,
+                'provider' => LinkedAccountProvider::Faceit->value,
+                'username' => $username ?? Str::slug(fake()->unique()->userName()),
+                'provider_user_id' => $providerUserId ?? (string) Str::uuid(),
+                'skill_rating' => $skillRating ?? fake()->numberBetween(800, 2200),
+                'verified_at' => now(),
+            ]);
+        });
+    }
+
+    /**
      * Assign the Spatie `admin` role after creation. Creates the role if
      * it doesn't exist yet (RefreshDatabase tests drop the roles table
      * between cases). Used by Filament panel tests + any other admin-only

@@ -47,9 +47,11 @@ export interface ListingCreator {
     // (provider, username) pairs the detail-page chip strip needs to click
     // out to each external profile — different shape from `verified_providers`
     // above (which only carries the provider id, sufficient for the badge).
+    // M15 Phase 3 — widened from `ChessProvider` to `ListingPlatform` so
+    // FACEIT (+ future Steam) verifications surface in the chip strip too.
     bio: string | null;
     member_since: string | null;
-    linked_accounts: Array<{ provider: ChessProvider; username: string }>;
+    linked_accounts: Array<{ provider: ListingPlatform; username: string }>;
 }
 
 // Chess-only linked-account providers. Distinct from `ListingPlatform` below
@@ -161,11 +163,22 @@ export interface ListingCreateProps {
     durations: number[];
     activeListingsCount: number;
     maxActiveListings: number;
-    // M8 Phase 5 Slice B — the verified providers the user has linked.
-    // Empty array = no link; create form swaps to the link-CTA notice card.
-    // One = picker hidden, platform auto-selected.
-    // Two = picker shown so the user picks per listing.
-    linkedPlatforms: ChessProvider[];
+    // M8 Phase 5 Slice B (widened in M15 Phase 3) — every provider the user
+    // has verified. Drives the chess platform picker (shown when both chess
+    // providers linked) + the per-game default-platform pick.
+    linkedPlatforms: ListingPlatform[];
+    // M15 Phase 3 — DB-backed game catalog (Active games). Same shape the
+    // homepage GameSelector consumes; drives the in-form game-tile picker.
+    games: { data: GameTile[] };
+    // M15 Phase 3 — per-game gate data. `providers` = which platforms the
+    // game can be posted on (chess → chess_com|lichess; cs2 → faceit).
+    // `verified` = the current user has at least one of those linked. The
+    // form shows an inline "Link X to post" notice when verified=false for
+    // the picked game.
+    requirementsByGame: Record<
+        GameId,
+        { providers: ListingPlatform[]; verified: boolean }
+    >;
 }
 
 // Tab values for the /listings/mine page (M6 Phase 6.5).

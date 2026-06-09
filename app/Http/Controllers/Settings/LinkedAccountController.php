@@ -7,6 +7,7 @@ use App\Actions\LinkedAccount\VerifyLinkedAccountAction;
 use App\Enums\LinkedAccountProvider;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Settings\RequestLinkVerificationRequest;
+use App\Models\LinkedAccount;
 use App\Services\Provider\Exceptions\ProviderError;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -14,9 +15,12 @@ use Inertia\Inertia;
 use Inertia\Response;
 
 /**
- * Settings page for chess.com / Lichess bio-code account linking.
- * The pending code is persisted on the user (not flash) so a refresh
- * after starting verification still shows the code.
+ * Settings page for chess.com / Lichess / FACEIT account linking. Chess
+ * providers verify via the bio-code paste flow (`store` / `update`);
+ * FACEIT verifies via OAuth in a separate controller
+ * (`App\Http\Controllers\FaceitLinkController`, M15 Phase 2). The pending
+ * code is persisted on the user (not flash) so a refresh after starting
+ * a chess verification still shows the code.
  */
 class LinkedAccountController extends Controller
 {
@@ -24,24 +28,39 @@ class LinkedAccountController extends Controller
     {
         $user = $request->user()->load(['linkedAccounts', 'pendingVerification']);
         $pending = $user->pendingVerification;
+        $linkFor = fn (LinkedAccountProvider $p): ?LinkedAccount => $user->linkedAccounts->firstWhere('provider', $p);
+
+        $chessCom = $linkFor(LinkedAccountProvider::ChessCom);
+        $lichess = $linkFor(LinkedAccountProvider::Lichess);
+        $faceit = $linkFor(LinkedAccountProvider::Faceit);
 
         return Inertia::render('settings/linked-accounts', [
             'providers' => [
                 [
                     'value' => LinkedAccountProvider::ChessCom->value,
                     'displayName' => LinkedAccountProvider::ChessCom->displayName(),
-                    'username' => $user->chess_com_username,
-                    'verifiedAt' => $user->chess_com_verified_at?->toIso8601String(),
+                    'verificationType' => 'bio_code',
+                    'username' => $chessCom?->username,
+                    'verifiedAt' => $chessCom?->verified_at?->toIso8601String(),
                     'targetFieldLabel' => 'Location',
                     'targetFieldInstructions' => 'Settings → Profile → Location',
                 ],
                 [
                     'value' => LinkedAccountProvider::Lichess->value,
                     'displayName' => LinkedAccountProvider::Lichess->displayName(),
-                    'username' => $user->lichess_username,
-                    'verifiedAt' => $user->lichess_verified_at?->toIso8601String(),
+                    'verificationType' => 'bio_code',
+                    'username' => $lichess?->username,
+                    'verifiedAt' => $lichess?->verified_at?->toIso8601String(),
                     'targetFieldLabel' => 'Bio',
                     'targetFieldInstructions' => 'Settings → Edit Profile → Bio',
+                ],
+                [
+                    'value' => LinkedAccountProvider::Faceit->value,
+                    'displayName' => LinkedAccountProvider::Faceit->displayName(),
+                    'verificationType' => 'oauth',
+                    'username' => $faceit?->username,
+                    'verifiedAt' => $faceit?->verified_at?->toIso8601String(),
+                    'oauthRedirectUrl' => route('auth.faceit.redirect'),
                 ],
             ],
             'pending' => $pending ? [

@@ -23,6 +23,8 @@ class MatchProviderSnapshot extends Model
         'side',
         'provider',
         'username',
+        'provider_user_id',
+        'skill_rating_snapshot',
     ];
 
     protected function casts(): array

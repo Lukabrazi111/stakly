@@ -198,6 +198,75 @@ function chessComArchiveFixture(array $games): array
 }
 
 /**
+ * Realistic FACEIT `GET /data/v4/players/{id}/history` response fixture —
+ * paginated list of match references the auto-fetch job iterates. Each item
+ * is the slim shape `searchPlayerMatches()` reads (just `match_id`); the job
+ * calls `fetchMatch()` per ID for full details.
+ *
+ * @param  list<string>  $matchIds
+ * @return array<string, mixed>
+ */
+function faceitHistoryFixture(array $matchIds = []): array
+{
+    return [
+        'items' => array_map(
+            fn (string $id) => [
+                'match_id' => $id,
+                'status' => 'FINISHED',
+            ],
+            $matchIds,
+        ),
+        'start' => 0,
+        'end' => count($matchIds),
+    ];
+}
+
+/**
+ * Realistic FACEIT `GET /data/v4/matches/{match_id}` response fixture, trimmed
+ * to the fields `FaceitGameClient` parses. Captured from the Phase 0 research
+ * shape — 5v5 CS2 matchmaking, faction1 wins, both rosters AC-required.
+ *
+ * @param  array<string, mixed>  $overrides
+ * @return array<string, mixed>
+ */
+function faceitMatchFixture(array $overrides = []): array
+{
+    return array_merge([
+        'match_id' => '1-abcd1234-ef56-7890-ab12-cd34ef567890',
+        'game' => 'cs2',
+        'region' => 'EU',
+        'competition_type' => 'matchmaking',
+        'started_at' => 1_716_000_000,
+        'finished_at' => 1_716_002_000,
+        'status' => 'FINISHED',
+        'results' => [
+            'winner' => 'faction1',
+            'score' => ['faction1' => 16, 'faction2' => 14],
+        ],
+        'teams' => [
+            'faction1' => [
+                'roster' => [
+                    ['player_id' => 'guid-a1', 'nickname' => 'alice-faceit', 'anticheat_required' => true],
+                    ['player_id' => 'guid-a2', 'nickname' => 'alice2', 'anticheat_required' => true],
+                    ['player_id' => 'guid-a3', 'nickname' => 'alice3', 'anticheat_required' => true],
+                    ['player_id' => 'guid-a4', 'nickname' => 'alice4', 'anticheat_required' => true],
+                    ['player_id' => 'guid-a5', 'nickname' => 'alice5', 'anticheat_required' => true],
+                ],
+            ],
+            'faction2' => [
+                'roster' => [
+                    ['player_id' => 'guid-b1', 'nickname' => 'bob-faceit', 'anticheat_required' => true],
+                    ['player_id' => 'guid-b2', 'nickname' => 'bob2', 'anticheat_required' => true],
+                    ['player_id' => 'guid-b3', 'nickname' => 'bob3', 'anticheat_required' => true],
+                    ['player_id' => 'guid-b4', 'nickname' => 'bob4', 'anticheat_required' => true],
+                    ['player_id' => 'guid-b5', 'nickname' => 'bob5', 'anticheat_required' => true],
+                ],
+            ],
+        ],
+    ], $overrides);
+}
+
+/**
  * Resolve the `MockGameApi` singleton directly. Tests that exercise
  * dispute resolution use this to call `forceWinner` / `forceUnknown`
  * without going through the public `GameApi` interface — which under the

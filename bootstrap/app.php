@@ -34,6 +34,13 @@ return Application::configure(basePath: dirname(__DIR__))
         // before the router gives up.
         $middleware->prepend(RedirectUnprefixedLocale::class);
 
+        // Trust X-Forwarded-* headers from any proxy. Required so Laravel
+        // detects HTTPS correctly when running behind an HTTPS-terminating
+        // proxy (ngrok in dev, load balancer in prod). Without this, secure
+        // cookies + URL scheme detection break behind the tunnel. Tighten
+        // to a specific IP/CIDR list once a real prod proxy is in place.
+        $middleware->trustProxies(at: '*');
+
         $middleware->web(append: [
             HandleInertiaRequests::class,
             AddLinkHeadersForPreloadedAssets::class,

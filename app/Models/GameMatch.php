@@ -133,6 +133,22 @@ class GameMatch extends Model
     }
 
     /**
+     * "What stable provider-side ID did the {side} player verify for
+     * {provider}?" — FACEIT player GUID, Steam ID, Riot PUUID (text). Null
+     * for chess providers (chess.com / Lichess use username as the
+     * stable identifier; `provider_user_id` is nullable on snapshots).
+     */
+    public function snapshotProviderUserId(string $side, LinkedAccountProvider $provider): ?string
+    {
+        return $this->providerSnapshots
+            ->first(
+                fn (MatchProviderSnapshot $snapshot) => $snapshot->side === $side
+                    && $snapshot->provider === $provider,
+            )
+            ?->provider_user_id;
+    }
+
+    /**
      * Matches where $userId is creator (via listing.user_id) OR taker.
      */
     public function scopeForParticipant(Builder $query, int $userId): Builder

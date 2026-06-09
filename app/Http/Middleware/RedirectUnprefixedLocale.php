@@ -52,6 +52,11 @@ class RedirectUnprefixedLocale
         'livewire',
         'filament',
         'filament-impersonate',
+        // M15 Phase 2 — `/auth/{provider}/callback` OAuth callbacks must
+        // be locale-agnostic because external IdPs only support a single
+        // redirect URI per app. Future Riot/Discord/etc. callbacks land
+        // under `/auth/*` too, so the exemption is for the whole subtree.
+        'auth',
     ];
 
     /**

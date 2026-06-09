@@ -57,4 +57,26 @@ return [
         'token' => env('LICHESS_API_TOKEN'),
     ],
 
+    /*
+     * FACEIT OAuth + Data API credentials (M15 Phase 2). Wired as a Socialite
+     * community provider in `AppServiceProvider::registerSocialiteListeners()`
+     * via the `socialiteproviders/faceit` package.
+     *
+     * Register the app at developers.faceit.com → App Studio. One redirect
+     * URI per FACEIT app (their limitation), so dev and production each need
+     * a separate FACEIT app.
+     *
+     * `api_key` is the server-side API key from App Studio → API KEYS. Used
+     * for Data API calls (player profile / ELO lookups). FACEIT's OAuth user
+     * tokens are scoped to identity (openid) and cannot read the Data API —
+     * 403 Forbidden — so the API key is the only path. When unset, link still
+     * works but `skill_rating` is null until the key is configured.
+     */
+    'faceit' => [
+        'client_id' => env('FACEIT_CLIENT_ID'),
+        'client_secret' => env('FACEIT_CLIENT_SECRET'),
+        'redirect' => env('FACEIT_REDIRECT_URI'),
+        'api_key' => env('FACEIT_API_KEY'),
+    ],
+
 ];

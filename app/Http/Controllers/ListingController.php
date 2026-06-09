@@ -166,11 +166,36 @@ class ListingController extends Controller
         // have multiple, (c) swap the form for the link-CTA notice when
         // they have zero (handled by the existing `has_chess_link` flag in
         // shared auth.user props).
-        $linkedPlatforms = $user->linkedAccounts()
-            ->orderBy('provider')
+        $user->loadMissing('linkedAccounts');
+        $linkedPlatforms = $user->linkedAccounts
             ->pluck('provider')
-            ->map(fn ($provider) => $provider->value)
+            ->map(fn (LinkedAccountProvider $provider) => $provider->value)
+            ->sort()
             ->values()
+            ->all();
+
+        // Reuse the homepage's resolved-array cache — `Game::booted` already
+        // invalidates it on save/delete, so admin tile edits land here too.
+        $games = Cache::remember(
+            GameModel::HOMEPAGE_CACHE_KEY,
+            now()->addHour(),
+            fn () => GameResource::collection(GameModel::forHomepage()->get())->resolve()
+        );
+
+        // Per-game requirement map: which providers gate which game, and
+        // whether the user already qualifies. Drives the tile picker's
+        // "Link FACEIT to post CS2" inline hint in Slice 2.
+        $requirementsByGame = collect(Game::cases())
+            ->mapWithKeys(fn (Game $game) => [
+                $game->value => [
+                    'providers' => array_map(
+                        fn (LinkedAccountProvider $provider) => $provider->value,
+                        $game->requiredProviders(),
+                    ),
+                    'verified' => collect($game->requiredProviders())
+                        ->contains(fn (LinkedAccountProvider $provider) => $user->isVerifiedOn($provider)),
+                ],
+            ])
             ->all();
 
         return Inertia::render('listings/create', [
@@ -181,6 +206,8 @@ class ListingController extends Controller
             'activeListingsCount' => $activeCount,
             'maxActiveListings' => StoreListingRequest::MAX_ACTIVE_LISTINGS,
             'linkedPlatforms' => $linkedPlatforms,
+            'games' => ['data' => $games],
+            'requirementsByGame' => $requirementsByGame,
         ]);
     }
 

@@ -1,5 +1,6 @@
 <?php
 
+use App\Enums\Game as GameEnum;
 use App\Enums\GameStatus;
 use App\Models\Game;
 use App\Models\Listing;
@@ -12,13 +13,15 @@ test('homepage is publicly accessible and renders welcome', function () {
     $response->assertInertia(fn ($page) => $page->component('welcome'));
 });
 
-test('featured strip ships up to 4 open listings sorted by ending-soon', function () {
-    // 5 open listings, expires_at spread out — only the 4 soonest should ship.
-    $first = Listing::factory()->open()->create(['expires_at' => now()->addHour()]);
-    $second = Listing::factory()->open()->create(['expires_at' => now()->addHours(2)]);
-    $third = Listing::factory()->open()->create(['expires_at' => now()->addHours(3)]);
-    $fourth = Listing::factory()->open()->create(['expires_at' => now()->addHours(4)]);
-    $fifth = Listing::factory()->open()->create(['expires_at' => now()->addDays(2)]);
+test('featured strip ships up to 4 open listings per active game, sorted by ending-soon', function () {
+    Game::factory()->active()->create(['slug' => 'chess']);
+
+    // 5 chess open listings — only the 4 soonest should ship.
+    $first = Listing::factory()->open()->forGame(GameEnum::Chess)->create(['expires_at' => now()->addHour()]);
+    $second = Listing::factory()->open()->forGame(GameEnum::Chess)->create(['expires_at' => now()->addHours(2)]);
+    $third = Listing::factory()->open()->forGame(GameEnum::Chess)->create(['expires_at' => now()->addHours(3)]);
+    $fourth = Listing::factory()->open()->forGame(GameEnum::Chess)->create(['expires_at' => now()->addHours(4)]);
+    $fifth = Listing::factory()->open()->forGame(GameEnum::Chess)->create(['expires_at' => now()->addDays(2)]);
 
     $response = $this->get('/');
 
@@ -34,11 +37,26 @@ test('featured strip ships up to 4 open listings sorted by ending-soon', functio
     expect($fifth)->not->toBeNull();
 });
 
+test('featured strip ships top N for each active game so no arena is starved', function () {
+    Game::factory()->active()->create(['slug' => 'chess', 'position' => 10]);
+    Game::factory()->active()->create(['slug' => 'cs2', 'position' => 20]);
+
+    // 5 chess + 5 CS2 — top 4 of each should ship (8 total).
+    Listing::factory()->count(5)->open()->forGame(GameEnum::Chess)->create();
+    Listing::factory()->count(5)->open()->forGame(GameEnum::Cs2)->create();
+
+    $response = $this->get('/');
+
+    $response->assertInertia(fn ($page) => $page->has('featured.data', 8));
+});
+
 test('featured strip omits non-open listings', function () {
-    Listing::factory()->open()->create(['expires_at' => now()->addHour()]);
-    Listing::factory()->taken()->create();
-    Listing::factory()->expired()->create();
-    Listing::factory()->cancelled()->create();
+    Game::factory()->active()->create(['slug' => 'chess']);
+
+    Listing::factory()->open()->forGame(GameEnum::Chess)->create(['expires_at' => now()->addHour()]);
+    Listing::factory()->taken()->forGame(GameEnum::Chess)->create();
+    Listing::factory()->expired()->forGame(GameEnum::Chess)->create();
+    Listing::factory()->cancelled()->forGame(GameEnum::Chess)->create();
 
     $response = $this->get('/');
 
@@ -46,14 +64,28 @@ test('featured strip omits non-open listings', function () {
 });
 
 test('featured strip is empty when no open listings exist', function () {
+    Game::factory()->active()->create(['slug' => 'chess']);
+
+    $response = $this->get('/');
+
+    $response->assertInertia(fn ($page) => $page->has('featured.data', 0));
+});
+
+test('featured strip omits listings for non-active games (Coming Soon / Disabled)', function () {
+    Game::factory()->comingSoon()->create(['slug' => 'cs2']);
+
+    Listing::factory()->open()->forGame(GameEnum::Cs2)->create();
+
     $response = $this->get('/');
 
     $response->assertInertia(fn ($page) => $page->has('featured.data', 0));
 });
 
 test('featured listings whitelist creator (no email leak)', function () {
+    Game::factory()->active()->create(['slug' => 'chess']);
+
     $user = User::factory()->active()->create(['email' => 'private@example.com']);
-    Listing::factory()->open()->for($user)->create();
+    Listing::factory()->open()->forGame(GameEnum::Chess)->for($user)->create();
 
     $response = $this->get('/');
 

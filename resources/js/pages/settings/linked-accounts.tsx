@@ -41,8 +41,12 @@ interface Provider {
     displayName: string;
     username: string | null;
     verifiedAt: string | null;
-    targetFieldLabel: string;
-    targetFieldInstructions: string;
+    verificationType: 'bio_code' | 'oauth';
+    // Bio-code providers only (chess.com, Lichess).
+    targetFieldLabel?: string;
+    targetFieldInstructions?: string;
+    // OAuth providers only (FACEIT).
+    oauthRedirectUrl?: string;
 }
 
 interface PendingVerification {
@@ -64,7 +68,9 @@ export default function LinkedAccountsPage({ providers, pending }: Props) {
         <>
             <PageMeta
                 title={t('Linked accounts')}
-                description={t('Manage linked chess.com and Lichess accounts.')}
+                description={t(
+                    'Manage linked chess.com, Lichess, and FACEIT accounts.',
+                )}
                 noindex
             />
 
@@ -75,7 +81,7 @@ export default function LinkedAccountsPage({ providers, pending }: Props) {
                     variant="small"
                     title={t('Linked game accounts')}
                     description={t(
-                        'Verify ownership of your chess.com and Lichess accounts. Required before you can create or take a chess listing.',
+                        'Verify ownership of your chess.com, Lichess, and FACEIT accounts. Required before you can create or take a listing on the matching platform.',
                     )}
                 />
 
@@ -102,6 +108,7 @@ function ProviderRow({
 }) {
     const t = useT();
     const isVerified = provider.verifiedAt !== null;
+    const isOAuth = provider.verificationType === 'oauth';
     const isPending = pending?.provider === provider.value;
 
     return (
@@ -121,12 +128,37 @@ function ProviderRow({
 
             {isVerified ? (
                 <VerifiedRow provider={provider} />
+            ) : isOAuth ? (
+                <OAuthLinkButton provider={provider} />
             ) : isPending ? (
                 <PendingRow provider={provider} pending={pending!} />
             ) : (
                 <RequestForm provider={provider} />
             )}
         </article>
+    );
+}
+
+function OAuthLinkButton({ provider }: { provider: Provider }) {
+    const t = useT();
+
+    return (
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-sm text-muted-foreground">
+                {t(
+                    'Sign in with :provider to link your account. We use this to verify match outcomes and your skill rating.',
+                    { provider: provider.displayName },
+                )}
+            </p>
+            <Button asChild variant="gradient">
+                <a
+                    href={provider.oauthRedirectUrl ?? '#'}
+                    data-test={`link-${provider.value}-button`}
+                >
+                    {t('Link :provider', { provider: provider.displayName })}
+                </a>
+            </Button>
+        </div>
     );
 }
 
@@ -238,7 +270,7 @@ function PendingRow({
                     'field on :provider (:instructions), save it there, then come back and verify. After we verify, you can safely remove the code from your profile — we only check it once.',
                     {
                         provider: provider.displayName,
-                        instructions: provider.targetFieldInstructions,
+                        instructions: provider.targetFieldInstructions ?? '',
                     },
                 )}
             </p>

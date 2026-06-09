@@ -307,6 +307,11 @@ class User extends Authenticatable implements FilamentUser, HasMedia, MustVerify
         return $this->linkedAccounts()->exists();
     }
 
+    public function isVerifiedOn(LinkedAccountProvider $provider): bool
+    {
+        return $this->linkedAccountFor($provider) !== null;
+    }
+
     /**
      * Backwards-compat accessor — reads off `linkedAccounts`. Eager-load
      * `linkedAccounts` first to keep this query-free.

@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { useState } from 'react';
 import { useAuthModal } from '@/components/auth/auth-modal-provider';
+import { HowItWorksLink } from '@/components/site/how-it-works-link';
 import { LocaleSwitcher } from '@/components/site/locale-switcher';
 import { UnverifiedChip } from '@/components/site/unverified-chip';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -123,12 +124,14 @@ export function MobileMenu() {
                 </div>
 
                 <nav className="flex flex-col px-5 pt-8">
-                    {navLinks.map((link) => (
-                        <SheetClose key={link.label} asChild>
-                            <Link
-                                href={link.href}
-                                className="group flex items-center justify-between border-b border-border/40 py-4 font-display text-2xl font-bold tracking-tight text-foreground transition-colors hover:text-primary"
-                            >
+                    {navLinks.map((link) => {
+                        const isHashAnchor =
+                            typeof link.href === 'string' &&
+                            link.href.includes('#');
+                        const className =
+                            'group flex items-center justify-between border-b border-border/40 py-4 font-display text-2xl font-bold tracking-tight text-foreground transition-colors hover:text-primary';
+                        const inner = (
+                            <>
                                 <span>{link.label}</span>
                                 <span
                                     aria-hidden
@@ -136,9 +139,26 @@ export function MobileMenu() {
                                 >
                                     →
                                 </span>
-                            </Link>
-                        </SheetClose>
-                    ))}
+                            </>
+                        );
+
+                        return (
+                            <SheetClose key={link.label} asChild>
+                                {isHashAnchor ? (
+                                    <HowItWorksLink className={className}>
+                                        {inner}
+                                    </HowItWorksLink>
+                                ) : (
+                                    <Link
+                                        href={link.href}
+                                        className={className}
+                                    >
+                                        {inner}
+                                    </Link>
+                                )}
+                            </SheetClose>
+                        );
+                    })}
                 </nav>
 
                 {user && (

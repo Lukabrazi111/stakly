@@ -332,8 +332,9 @@ class GameMatchInfolist
             AutoFetchOutcome::NoMatch => '0 candidates'
                 .($row->outcome_reason ? ' · '.e($row->outcome_reason) : '')
                 .' · '.self::latencyLabel($row->latency_ms),
-            AutoFetchOutcome::Ambiguous => ($row->candidates_count ?? 0).' candidates · '
-                .self::latencyLabel($row->latency_ms),
+            AutoFetchOutcome::Ambiguous => ($row->candidates_count ?? 0).' candidates'
+                .($row->outcome_reason ? ' · '.e($row->outcome_reason) : '')
+                .' · '.self::latencyLabel($row->latency_ms),
             AutoFetchOutcome::Error => e($row->error_message ?? 'Unknown error')
                 .' · '.self::latencyLabel($row->latency_ms),
             AutoFetchOutcome::Skipped => 'Reason: '.e($row->outcome_reason ?? 'unspecified'),

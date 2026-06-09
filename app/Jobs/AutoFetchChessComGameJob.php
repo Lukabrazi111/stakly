@@ -204,10 +204,12 @@ class AutoFetchChessComGameJob implements ShouldBeUnique, ShouldQueueAfterCommit
             return;
         }
 
-        // M14 Slice 3d — picker filters by time-control even for the
-        // single-candidate case. Match stays Pending if the game's speed
-        // doesn't match the listing's time_control.
-        $game = $this->pickSettleableCandidate($completed);
+        // M14 Slice 3c — single candidates are settled directly (no TC
+        // filter). Picker only fires for multi-candidate disambiguation.
+        // Slice 3d's strict enforcement reverted on 2026-06-06.
+        $game = $count === 1
+            ? $completed[0]
+            : $this->pickSettleableCandidate($completed);
 
         if ($game === null) {
             $this->record($recordAttempt, AutoFetchOutcome::Ambiguous, [

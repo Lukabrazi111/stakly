@@ -104,23 +104,6 @@ test('no_match: writes a row with candidates_count = 0', function () {
         ->and($attempt->winner_username)->toBeNull();
 });
 
-test('single TC-mismatch candidate: writes outcome=ambiguous + outcome_reason=time_control_mismatch (M14 Slice 3d)', function () {
-    $match = lichessAuditMatch();
-    $match->listing->update(['time_control' => ['classical']]);
-
-    $bullet = json_encode(lichessGameFixture(['id' => 'bulletgg', 'speed' => 'bullet']));
-    Http::fake([
-        'lichess.org/api/games/user/*' => Http::response($bullet, 200),
-    ]);
-
-    runLichessAudit($match);
-
-    $attempt = MatchAutoFetchAttempt::query()->where('match_id', $match->id)->first();
-    expect($attempt->outcome)->toBe(AutoFetchOutcome::Ambiguous)
-        ->and($attempt->candidates_count)->toBe(1)
-        ->and($attempt->outcome_reason)->toBe('time_control_mismatch');
-});
-
 test('ambiguous: writes a row with candidates_count + outcome_reason=time_control_mismatch (M14 Slice 3c)', function () {
     $match = lichessAuditMatch();
     // Force TC mismatch so the picker rejects both candidates.

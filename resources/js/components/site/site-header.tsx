@@ -4,6 +4,7 @@ import type { ReactNode } from 'react';
 import { useAuthModal } from '@/components/auth/auth-modal-provider';
 import { BellButton } from '@/components/notifications/bell-button';
 import { BalanceChip } from '@/components/site/balance-chip';
+import { HowItWorksLink } from '@/components/site/how-it-works-link';
 import { LocaleSwitcher } from '@/components/site/locale-switcher';
 import { MobileMenu } from '@/components/site/mobile-menu';
 import { ProfileMenu } from '@/components/site/profile-menu';
@@ -59,12 +60,9 @@ export function SiteHeader() {
                     >
                         {t('Listings')}
                     </Link>
-                    <Link
-                        href="/#how-it-works"
-                        className="px-3 py-2 text-sm text-foreground transition-colors hover:text-primary"
-                    >
+                    <HowItWorksLink className="px-3 py-2 text-sm text-foreground transition-colors hover:text-primary">
                         {t('How it works')}
-                    </Link>
+                    </HowItWorksLink>
 
                     {user && (
                         <div className="ml-2">

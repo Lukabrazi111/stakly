@@ -58,7 +58,7 @@ export function MatchTimer({ deadline }: MatchTimerProps) {
 
     const display = isExpired
         ? t('Expired')
-        : t(':hours h :minutes m :seconds s', {
+        : t(':hoursh :minutesm :secondss', {
               hours,
               minutes: minutes.toString().padStart(2, '0'),
               seconds: seconds.toString().padStart(2, '0'),

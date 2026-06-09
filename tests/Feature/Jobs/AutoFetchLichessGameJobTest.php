@@ -202,47 +202,6 @@ test('no games found → no system message posted, match stays Pending', functio
     expect($match->fresh()->status)->toBe(MatchStatus::Pending);
 });
 
-test('single game with time-control mismatch → ambiguous, no post (M14 Slice 3d)', function () {
-    $match = autoFetchMatch();
-    // Listing is blitz-only; the matched game is bullet → no auto-settle.
-    $match->listing->update(['time_control' => ['blitz']]);
-
-    $bullet = lichessGameFixture(['id' => 'bulletgg', 'speed' => 'bullet']);
-
-    Http::fake([
-        'lichess.org/api/games/user/*' => Http::response(json_encode($bullet), 200),
-    ]);
-
-    runAutoFetch($match);
-
-    expect(Message::query()->where('match_id', $match->id)->where('type', MessageType::System)->count())
-        ->toBe(0);
-    expect($match->fresh()->status)->toBe(MatchStatus::Pending);
-});
-
-test('single game with time-control match → posts a card AND settles (M14 Slice 3d sanity check)', function () {
-    $match = autoFetchMatch();
-    $match->listing->update(['time_control' => ['blitz']]);
-
-    // Default fixture speed is blitz — matches the listing.
-    $blitz = lichessGameFixture(['id' => 'blitzgg0']);
-
-    Http::fake([
-        'lichess.org/api/games/user/*' => Http::response(json_encode($blitz), 200),
-    ]);
-
-    runAutoFetch($match);
-
-    $system = Message::query()
-        ->where('match_id', $match->id)
-        ->where('type', MessageType::System)
-        ->first();
-
-    expect($system)->not->toBeNull()
-        ->and($system->attachments_json[0]['game_id'])->toBe('blitzgg0');
-    expect($match->fresh()->status)->toBe(MatchStatus::Settled);
-});
-
 test('multiple decisive games with time-control mismatch → ambiguous, no post (M14 Slice 3c)', function () {
     $match = autoFetchMatch();
     // Force listing time-control away from the fixture default (blitz)

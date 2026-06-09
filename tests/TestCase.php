@@ -116,6 +116,7 @@ abstract class TestCase extends BaseTestCase
         'livewire',
         'filament',
         'filament-impersonate',
+        'auth',
     ];
 
     private const EXEMPT_FILES = [

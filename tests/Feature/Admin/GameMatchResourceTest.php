@@ -122,6 +122,19 @@ test('auto-fetch history surfaces skipped reasons + error messages', function ()
         ->assertSee('Lichess returned 503.');
 });
 
+test('auto-fetch history surfaces outcome_reason for ambiguous rows (M14 Slice 3c/3d UX)', function () {
+    [, , , $match] = pendingMatch();
+
+    MatchAutoFetchAttempt::factory()->ambiguous(1)->create([
+        'match_id' => $match->id,
+        'outcome_reason' => 'time_control_mismatch',
+    ]);
+
+    Livewire::test(ViewGameMatch::class, ['record' => $match->getKey()])
+        ->assertSuccessful()
+        ->assertSee('time_control_mismatch');
+});
+
 test('resolve actions are visible for Disputed match', function () {
     [, , , $match] = pendingMatch();
     $match->update(['status' => MatchStatus::Disputed, 'dispute_opened_at' => now()]);

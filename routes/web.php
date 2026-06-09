@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\ActiveModeController;
+use App\Http\Controllers\FaceitLinkController;
 use App\Http\Controllers\GameMatchController;
 use App\Http\Controllers\HomeController;
 use App\Http\Controllers\LinkImageController;
@@ -143,6 +144,15 @@ Route::prefix('{locale}')
 
         require __DIR__.'/settings.php';
 
+        // M15 Phase 2 — FACEIT OAuth link initiation. Stays inside the locale
+        // group so `app()->getLocale()` reflects the user's current page when
+        // they click "Link FACEIT"; the controller stashes it in session for
+        // the locale-agnostic callback to read back. The matching callback
+        // route lives OUTSIDE this group (see below).
+        Route::middleware(['auth', 'verified'])->prefix('auth/faceit')->name('auth.faceit.')->group(function () {
+            Route::get('/redirect', [FaceitLinkController::class, 'redirect'])->name('redirect');
+        });
+
         // M26 — admin-managed CMS pages (About, Privacy, Terms). Registered LAST so
         // the single-segment `/{slug}` doesn't swallow any explicit route above it.
         // The `{locale}` comes from the enclosing group, so the route URI ends up as
@@ -154,3 +164,12 @@ Route::prefix('{locale}')
             ->where('slug', '[a-z0-9-]+')
             ->name('pages.show');
     });
+
+// M15 Phase 2 — FACEIT OAuth callback. Sits OUTSIDE the `{locale}` prefix
+// group because FACEIT only supports a single redirect URI per OAuth app;
+// keeping the callback URL stable across locales avoids one app per locale.
+// The controller restores the user's locale from session (stashed during
+// `auth.faceit.redirect`) and redirects back to `/{locale}/settings/linked-accounts`.
+Route::get('/auth/faceit/callback', [FaceitLinkController::class, 'callback'])
+    ->middleware(['auth', 'verified'])
+    ->name('auth.faceit.callback');
