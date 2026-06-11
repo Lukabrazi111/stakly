@@ -13,6 +13,8 @@ Frontend-first build. UI against real DB infrastructure + seeded fake data; back
 - **M31** — Admin wallet ledger (both phases, 2026-06-04). Read-only `WalletTransactionResource` with filters + sum summarizer, ViewWalletTransaction with infolist + reference-ID parser + sibling-entity lookup.
 - **M32** — Admin listing management (both phases, 2026-06-04). Read-only `ListingResource` with status/platform/creator/stake/region/language filters, ViewListing with infolist (details + related match if Taken + wallet transactions via M31 parser) + force-cancel action routed through `CancelListingAction`. **Admin trio now complete — every state on the platform is investigable + actionable from `/admin` without Tinker.**
 - **M26** — Filament-managed CMS pages + global SSR + full-site i18n (all 4 phases, 2026-05-29 → 2026-06-05). Admin-editable About / Privacy / Terms / Support, global Inertia SSR (homepage / listings / profiles / CMS first-byte HTML), full i18n framework (locale-prefix routing, `useT()` / `__()` bridge, `LocaleSwitcher`, Inertia-rendered 403/404/500/503 pages). `lang/en.json` at ~790 keys; `ka.json` / `ru.json` content backlog.
+- **M15 Phase 4** — FACEIT outcome pipeline (all 4 slices, 2026-06-09 → 2026-06-11). `FaceitGameClient` + Data API wrapper, `AutoFetchFaceitGameJob` + `FaceitGameApi` adapter, `DispatchAutoFetchAction` wiring + e2e pipeline integration test, webhook receiver pre-answer scaffold (`/webhooks/faceit` + `VerifyFaceitWebhook` middleware + idempotency deferred to job-level). CS2 matches now settle end-to-end through the polling pipeline; webhook receiver collapses lag once a real envelope is captured (20-min FACEIT-portal task, no support reply required).
+- **M35** — Outbound third-party API rate-limit audit (all 3 phases + skipped Phase 4, 2026-06-11). Self-throttle (Laravel `RateLimiter::for(...)` + `RateLimited` job middleware) on `AutoFetchChessComGameJob` (30/min), `AutoFetchLichessGameJob` (60/min), `AutoFetchFaceitGameJob` (30/min); profile clients (`ChessComProfileClient` / `LichessProfileClient` / `FaceitProfileClient`) brought up to game-client parity (429 → `RateLimitedError` + `Retry-After` parsing, breaker integration). All caps env-tunable via `{PROVIDER}_REQUESTS_PER_MINUTE`. Goal: zero production 429-driven settlement freezes.
 
 **In-flight:**
 
@@ -20,14 +22,12 @@ _None — pick the next milestone from "Active / upcoming" below._
 
 **Active / upcoming:**
 
-- **M15** — Multi-game expansion. First cut is CS2 via FACEIT; Dota 2 / Riot adapters extend the same pattern once that ships. Phase 0 = FACEIT API research write-up (Context7 + provider docs). Phases 1–5 = schema extension → OAuth link flow → per-game create form → outcome pipeline → dispute fast-path + telemetry. Phase plan below.
+- **M15** — Multi-game expansion. First cut is CS2 via FACEIT; Dota 2 / Riot adapters extend the same pattern once that ships. **Phases 0–4 shipped** (research, schema, OAuth link flow, per-game create form, outcome pipeline). **Phase 5 remaining** — dispute fast-path generalization (`OpenDisputeAction` capability gate to replace `Game::Chess` hard-check), `PipelineHealth` widget extension for FACEIT, per-provider circuit-breaker config. Plus two small Slice 4 follow-ups when FACEIT data arrives (IP allowlist + envelope verification). Phase plan below.
 - **M28** — Designed Fees page. Hand-coded marketing surface — transparent 5–10% commission disclosure, interactive calculator, replaces footer Support link in header nav. Pre-launch trust signal; design-driven (`ui-ux-pro-max` skill).
 - **M20** — Email notifications. **Spec materially shrunk**: M27 P5 already shipped the in-app preferences UI + `notification_preferences` table + 9 `PlayerNotification` classes; M30 P4 wired the `mail` channel for ban notifications. What's left = branded HTML email templates, flip `'mail'` into `via()` on the remaining PlayerNotification subclasses, production SMTP config. Realistically 2–3 days.
 - **M21** — Blacklist + safety. Block users from listings + chat, with anti-evasion considerations. Has open design questions (block semantics + multi-account evasion) — needs alignment before coding.
 - **M33** — Listing time-control contract. Make Stakly's accepted time controls (blitz / rapid / classical) explicit in the listing-creation form, surface `time_control_mismatch` as a player-facing banner on stuck matches, and optionally re-enable Slice 3d strictness behind a per-listing opt-in. Reverted from M14 on 2026-06-06 — friction (legitimate correspondence / bullet games rejected silently) outweighed the small sandbag attack surface at this stage. Revisit when launch scale or a real abuse incident makes it relevant.
 - **M34** — Team play + lobbies. Production-launch dependency for CS2 and every future 5v5 game (Dota 2 / Valorant / LoL). Adds `team_size` to listings (default 1; chess stays 1, CS2 = 5), a lobby model for multi-player team assembly (private invite-link or public auto-fill), per-player stake collection with all-or-nothing locking (4-of-5 staked → listing waits or expires + refunds), roster-aware match snapshots (`match_provider_snapshots.slot_index` 0–4), per-player skill gate, and settlement payout split across the winning roster. Public / private listings (invite-only via shareable link) also lands here — same lobby surface. **5v5 first; 2v2 Wingman is a fast follow-up since it shares the same lobby infrastructure with a smaller team size.** The FACEIT outcome pipeline (M15 P4) doesn't need to change — `FaceitMatchResult` already parses full 5-player rosters; M34 only changes the identity-mapping side (which snapshot rows we cross-check against the roster).
-- **M35** — Outbound third-party API rate-limit audit. Sweep every external HTTP integration (chess.com, Lichess, FACEIT, link-preview fetcher) and add missing pieces per provider: client-side self-throttle (default 30 req/min when limit undocumented), 429 response handling via `RateLimitHeaderParser`, per-provider `ProviderCircuitBreaker`, explicit timeouts. Goal: zero production 429 incidents and zero settlement freezes from breaker trips. Detailed phase plan in the M35 section below.
-
 > Active milestone keeps a detailed task list. Future milestones expand when started. Any of this can shift — flag the change, update the doc.
 
 ---
@@ -180,124 +180,26 @@ Decide per-adapter when the first non-chess one ships. The current `username` co
 
 **Per-game listings filter UI** — `/listings` has a per-game tab strip (`ListingsGameTabs`) above the filter bar. **CS2 + Dota 2 ship as M15 placeholders** (`App\Enums\Game::Cs2`, `Game::Dota2`; `LinkedAccountProvider::Faceit`, `Steam` with stub `displayName()` + `usernamePattern()`; catalog status flipped to Active; `ListingFactory::forGame()` + `ListingSeeder` distribute dev-seed listings across all 3 Active games). Browse + per-game filter UX is testable end-to-end today; **Create flow is still chess-only** — no FACEIT/Steam ProfileClient or bio-code verification yet. Chess-specific filter widgets (the `Blitz / Rapid / Classical` time-control toggle group) are gated by `gameSupports(filters.game, 'time_control')` and live inline in `listing-filters-bar.tsx` / `listing-filters.tsx`. **When the real adapters land, extract chess-specific filter UI into a sibling component (`ChessFormatFilter`, `ChessSkillRangeFilter`) and create matching per-game siblings (`Cs2FormatFilter`, `DotaSkillRangeFilter`, etc.).** The form just branches: `{filters.game === 'chess' && <ChessFormatFilter />}{filters.game === 'cs2' && <Cs2FormatFilter />}`. No premature generic-filter-interface abstraction — the shape of "what's variable between games" emerges from the second game, not the first. The `time_control` URL filter resets on game-switch (`switchGame()` in `pages/listings/index.tsx`); when the second adapter lands, expand the reset set to drop all game-specific filters during the switch. Skill range is held over because cross-game skill-metric semantics (Elo vs MMR vs Faceit ELO) are theoretical until real M15 wiring — design that filter UX alongside the actual game. Frontend type discipline already in place: `ChessProvider` (narrow, `chess_com | lichess`) for verified linked-account contexts vs `ListingPlatform` (wide, `ChessProvider | faceit | steam`) for the listing's actual platform field — when M15 wires real FACEIT/Steam linking, the narrow contexts widen too.
 
-### Current direction (revisable)
-
-Directional calls coming out of the planning discussion before Phase 0 starts. These shape the phase plan below but are not locked — research findings or new constraints may push back on any of them.
-
-- **First adapter**: CS2 via FACEIT. Cleanest API surface, free developer tier, OAuth available, single anti-cheat platform per game.
-- **Link method**: OAuth where the provider exposes it (FACEIT now, Riot later). Bio-code paste stays the fallback for providers without OAuth (Steam, when Dota 2 lands).
-- **Anti-cheat scope**: accept any FACEIT match (Competitive + Hub). FACEIT AC runs on both — the trust pitch holds without restricting to Competitive.
-- **CS2 skill range**: Faceit ELO min/max on listings; current ELO cached on `linked_accounts`, snapshotted onto `match_provider_snapshots` at match creation for sandbag-detection surfaces.
-- **Snapshot table extension**: nullable `provider_user_id` text column on both `linked_accounts` (source of truth) and `match_provider_snapshots` (denormalized copy). Holds FACEIT player UUID, Steam ID, future Riot PUUID — all as text. `username` stays for display.
-- **Phase 0 output location**: appended inline under this milestone as a new "Phase 0 — research findings" subsection once it wraps.
-- **CS2 production launch is gated on M34 (Team play + lobbies)** (added 2026-06-09). FACEIT competitive CS2 is 5v5 — there's no native ranked 1v1 CS2 mode with consistent AC + ELO (only community-run Hubs with per-Hub AC config, which leaks the trust pitch). M15 P3 lets dev users create CS2 listings today; M15 P4 builds the polling pipeline 5v5-aware (`FaceitMatchResult` already parses full rosters). But the create-form is still 1v1-shaped (one creator, one stake), so CS2 listings can't be taken-and-settled end-to-end in production until M34 ships the lobby + multi-player stake collection. 2v2 Wingman is a follow-up after 5v5 lands. The P4 polling pipeline keeps shipping in parallel — its tests use fixture rosters, so the infrastructure validates independently of when M34 unlocks production CS2 takes.
+**CS2 production launch is gated on M34 (Team play + lobbies)** — FACEIT competitive CS2 is 5v5 with no native 1v1 ranked mode. M15 P4 polling pipeline is 5v5-aware (`FaceitMatchResult` parses full rosters) and validates via fixture-roster tests independent of M34. But the create-form is still 1v1-shaped, so CS2 listings can't be taken-and-settled end-to-end in production until M34 ships the lobby + multi-player stake collection.
 
 ### Phases
 
-**Phase 0 — FACEIT API research write-up**
+**Phases 0–4 — shipped 2026-06-07 → 2026-06-11.**
 
-Read-only research pass. Use Context7 + FACEIT developer docs (developers.faceit.com) for all of these. No schema or code changes yet. Output captured as a new subsection under this milestone once Phase 0 wraps.
+- **Phase 0** — FACEIT API research write-up. Findings preserved in the "Phase 0 — research findings" subsection below.
+- **Phase 1** — Schema extension. `linked_accounts.provider_user_id` + `skill_rating` columns; `match_provider_snapshots.provider_user_id` + `skill_rating_snapshot` columns; `TakeListingAction::snapshotProviderAccounts()` writes them.
+- **Phase 2** — FACEIT OAuth link flow. `FaceitLinkController` + `socialiteproviders/faceit` + Stakly's local `FaceitProvider` PKCE patch. Settings UI exposes "Link FACEIT" OAuth button alongside the existing chess paste flow. Phase 2 corrections captured at the bottom of Phase 0 findings (server-side API key, HTTPS-required redirect URI, `auth` exempt-list, Inertia flash toast).
+- **Phase 3** — Per-game create form + listing creation gating (3 slices). `User::isVerifiedOn()` helper, per-game `StoreListingRequest` validation, dropdown game picker, `GameChip` rolled out across listing surfaces (`/listings/mine`, `/matches`, `/listings`, `/match/{id}`), inline link-account gate, default-game logic in `defaultGameFor()`. `ChessFormatFilter` / `ChessSkillRangeFilter` / `Cs2SkillRangeFilter` siblings in `components/listings/`.
+- **Phase 4** — FACEIT outcome pipeline (4 slices). `FaceitGameClient` Data API wrapper (matches + player history endpoints, `Retry-After` parsing, classified `ProviderError` hierarchy). `AutoFetchFaceitGameJob` + `FaceitGameApi` adapter (creator-history-first match finding with taker fallback, opposing-roster check, AC gate → terminal `AcIncomplete` outcome). `DispatchAutoFetchAction` wiring + end-to-end pipeline test (`tests/Feature/Jobs/AutoFetchFaceitPipelineTest.php` asserts BCMath-exact wallet ledger). `POST /webhooks/faceit` receiver (shared-secret `hash_equals` + per-IP throttle, CSRF excluded, idempotency deferred to job-level `ShouldBeUnique`). `SettleFromCardAction` extended for FACEIT cards (`winner_user_id` direct lookup + participant check).
 
-- [x] OAuth flow: does a Laravel Socialite provider for FACEIT exist? If not, what does a manual OAuth2 client look like? Token lifetime, refresh model, required scopes.
-- [x] Data API match endpoint: response shape, winner identifier (player UUID? nickname?), rate limits, error semantics, retry / `Retry-After` headers.
-- [x] ELO: where to read current Faceit ELO from — OAuth `me` endpoint or separate call? Refresh cadence (per-link, per-match, periodic background job?).
-- [x] Anti-cheat fields per match: confirm FACEIT AC runs on Competitive + Hub; identify the queue-type field that distinguishes them.
-- [x] Webhook viability: match-completed payload shape, security model (signed body? IP allowlist?), can webhooks replace polling for FACEIT or only augment it?
-- [x] Output: append a "Phase 0 — research findings" subsection under this milestone with the answers + a go/no-go on Socialite vs manual OAuth2 client. Revisit "Current direction" picks above if research surfaces a reason to.
+**Slice 4 follow-ups — small, no support reply required.** Set up a FACEIT dev app, point a test webhook at ngrok or webhook.site, fire one test event from the portal, capture the real envelope, respond 500 once to observe retry behavior. From that capture:
 
-**Phase 1 — Schema extension**
+- Lock the event-id field name in `FaceitWebhookController::extractPlayerGuids()` if different from our defensive scan; decide whether a `faceit_webhook_events` idempotency table is worth adding (currently deferred to job-level `ShouldBeUnique` + `alreadyPosted()`).
+- Confirm webhook retry policy + align 5xx response semantics; decide if a dead-letter table is needed.
 
-- [x] Migration: add `linked_accounts.provider_user_id` (nullable text, indexed) and `linked_accounts.skill_rating` (nullable int).
-- [x] Migration: add `match_provider_snapshots.provider_user_id` (nullable text, indexed for abuse-review parity with the existing `(provider, username)` index) and `match_provider_snapshots.skill_rating_snapshot` (nullable int).
-- [x] `TakeListingAction::snapshotProviderAccounts()` writes the new columns from the matching `LinkedAccount` row.
-- [x] Factory + seeder updates so dev fixtures populate the new columns for FACEIT/Steam stubs.
-- [x] Tests covering the snapshot writer (chess rows stay null on `provider_user_id`; FACEIT rows populated).
+**Deferred polish (post-launch):**
 
-**Phase 2 — FACEIT OAuth link flow**
-
-> **Prerequisite (out-of-engineering)**: register Stakly as a FACEIT developer app at developers.faceit.com to obtain `client_id` + `client_secret`. Worth doing in parallel with Phases 0/1 so it isn't a Phase 2 blocker.
-
-- [x] `config/services.faceit` entries for `client_id`, `client_secret`, `redirect`.
-- [x] `FaceitLinkController` — redirect to FACEIT's authorize endpoint, handle the callback, fetch the player record (id + nickname + ELO), upsert `LinkedAccount`. State CSRF protection on the callback.
-- [x] Extend `LinkedAccountController::index()` provider list with the FACEIT row (different UI affordance than the bio-code paste flow chess uses).
-- [x] Settings UI surfaces a "Link FACEIT" OAuth button alongside the existing chess paste flow.
-- [x] Tests: callback success path, declined consent, state-CSRF mismatch, idempotency on re-link, ELO populated on the model.
-
-**Phase 3 — Per-game create form + listing creation gating**
-
-Three slices, each shippable + commit-sized.
-
-**Slice 1 — Backend gates** _(commit: `feat(m15-p3): per-game listing validation + isVerifiedOn helper`)_
-
-- [x] `User::isVerifiedOn(LinkedAccountProvider): bool` helper replaces the dynamic `{provider}_verified_at` column lookup in `CreateListingAction` + `TakeListingAction`.
-- [x] `StoreListingRequest` per-game platform validation (CS2 platform must be `faceit`; chess platform must be `chess_com` or `lichess`).
-- [x] `ListingController::create()` returns `games[]` (Active games from the catalog) + `requirementsByGame` (which `LinkedAccountProvider` each game needs) as Inertia props.
-- [x] Pest tests: successful CS2 listing creation, blocked CS2 creation without FACEIT link, blocked cross-platform requests (e.g. CS2 listing with `chess_com` platform).
-
-**Slice 2 — Frontend game picker + per-game form swap** _(commit: `feat(m15-p3): per-game create form (game picker + CS2 fields)`)_
-
-- [x] Dropdown game picker in the create form's Game section — single-row trigger (gradient game icon + game name + verification chip + chevron) opens a Popover listing all Active games. Iterated from the original tile-grid sketch during Slice 2 because the dropdown reads tighter and scales better as more games ship.
-- [x] Game-aware list surfaces — reusable `GameChip` component (Crown / Target / Swords icon + game label, mirroring the create-form picker) rolled out to `/listings/mine` (new Game column), `/matches` (chip cluster), `/listings` marketplace row, and `/match/{id}` header. Each surface shows the listing's game at a glance so chess + CS2 listings are distinguishable without expanding the row.
-- [x] Per-game inline link-account gate — when the selected game's required provider isn't linked, show an inline "Link FACEIT to post CS2 listings →" notice rather than the current full-page swap. Users can preview the form for either game and link from there.
-- [x] Extract `ChessFormatFilter` (time-control toggle) + `ChessSkillRangeFilter` (Elo min/max) into `components/listings/`.
-- [x] Add `Cs2SkillRangeFilter` (Faceit ELO range) sibling component.
-- [x] Platform display branches: chess keeps the existing chess.com / Lichess picker (shown only when both linked); CS2 shows a static FACEIT chip (only platform).
-- [x] Drop the obsolete `// Create-listing is chess-only today` comment in `pages/listings/create.tsx`.
-
-**Slice 3 — Defaults + polish + props coverage** _(commit: `feat(m15-p3): default-game logic + create-form copy polish`)_
-
-- [x] Default-game logic: chess-only-linked → defaults to Chess; FACEIT-only-linked → defaults to CS2; both linked → Chess; neither linked → CS2 (drives toward the newer integration). Helper `defaultGameFor()` in `pages/listings/create.tsx`; initial `time_control` also resets to `[]` when the default game isn't chess so a stale `['blitz']` doesn't tag along on CS2 form opens.
-- [x] Copy polish on inline link gate: `LinkGateNotice` title now reads `Link :provider to post` (was `Link :provider first`); body collapsed to a first-person sentence with the "about a minute" reassurance preserved.
-- [x] Inertia-assertion Feature tests in `tests/Feature/ListingStoreTest.php` lock the per-game `requirementsByGame.{game}.verified` prop that `defaultGameFor()` reads — three cases (FACEIT-only, chess-only, unlinked). A Pest browser smoke test was attempted via `pest-plugin-browser` + Playwright but rolled back: React wasn't hydrating inside the plugin's testbench HTTP server (Vite asset URL rewriting + SSR shell mismatch). Browser-test foundation deferred — auth modal, take-flow, and wallet flow share the same infra need, so we'll set it up properly once we have multiple consumers.
-
-**Phase 4 — FACEIT outcome pipeline**
-
-Polling-first. The Slice 4 webhook receiver collapses the polling lag whenever FACEIT pings us, but the polling pipeline (Slices 1–3) remains the safety net underneath — settlement never *depends* on webhooks for correctness.
-
-**Slice 1 — `FaceitGameClient` + Data API wrapper** _(commit: `feat(m15-p4): FaceitGameClient + Data API wrapper`)_
-
-- [x] `FaceitGameClient` — HTTP wrapper for the FACEIT Data API. API-key bearer auth via `config('services.faceit.api_key')` (already wired in Phase 2 — Data API rejects OAuth user tokens with 403, the server-side key is required). Graceful null on missing key (matches `FaceitProfileClient`).
-- [x] `GET /data/v4/matches/{match_id}` parser: `results.winner ∈ {faction1, faction2}` + `teams.{faction1,faction2}.roster[]` with `player_id` / `nickname` / `anticheat_required` per player.
-- [x] Anti-cheat gate lives on the result DTO via `FaceitMatchResult::isAntiCheatComplete()` and `isDecisive()` (returns false if any roster player has `anticheat_required === false`). Per Phase 0: queue-agnostic gate (FACEIT AC mandatory on `competition_type === 'matchmaking'`, opt-in for Hubs — the per-player boolean is the only reliable signal that AC ran on both teams). Client returns the raw match; the caller (Slice 2 job + adapter) decides what to do with an AC-incomplete match.
-- [x] Error mapping into the existing `ProviderError` hierarchy (`Retry-After` parsing via `RateLimitHeaderParser`, classified retry vs permanent failures) — mirrors the shape `LichessGameClient` / `ChessComGameClient` use today.
-- [x] Fixture tests (`tests/Feature/Services/Provider/FaceitGameClientTest.php` — 12 cases): happy path (winner identified, both rosters AC=true), AC-incomplete match parses but `isDecisive()` returns false, non-FINISHED status, faction2 winner roster lookup, 4xx-other → `PermanentProviderError`, 5xx → `TransientProviderError`, 429 → `RateLimitedError` with `Retry-After` honoured, malformed JSON → `PermanentProviderError`, missing API key → null (graceful dev path), Authorization Bearer header sent correctly.
-
-**Slice 2 — `FaceitGameApi` + `AutoFetchFaceitGameJob`** _(commit: `feat(m15-p4): FaceitGameApi adapter + auto-fetch job`)_
-
-- [x] `FaceitGameClient::searchPlayerMatches()` — `GET /data/v4/players/{id}/history` wrapper, returns slim match-ID list with `game` + `from` + `limit` query params. 10 new tests covering happy path / query-param wiring / 404 / empty list / no-API-key / 4xx / 5xx / 429 / malformed JSON.
-- [x] `App\Enums\AutoFetchOutcome::AcIncomplete` — terminal outcome for "match found via API but anti-cheat wasn't required on every roster slot." Recorded in `match_auto_fetch_attempts`; match falls to ManualReview via timeout.
-- [x] `App\Models\GameMatch::snapshotProviderUserId()` accessor sibling to `snapshotUsername()` — reads the snapshotted FACEIT GUID (Steam ID, Riot PUUID — text) for cross-provider identity at arbitration.
-- [x] `AutoFetchFaceitGameJob` mirrors `AutoFetchChessComGameJob`'s shape — same `ShouldBeUnique` / `ShouldQueueAfterCommit`, same `$tries = 7` budget, same `[5, 15, 30]` backoff + `[5, 15, 45]` no_match retry chain, same `retryUntil()` (match-confirmation timeout), same `ProviderCircuitBreaker` integration. Match-finding strategy per Slice 2 agreement: query creator's history first (top 10 by recency since `match.created_at`), fall back to taker's history if creator yields nothing; for each candidate `match_id` call `fetchMatch()` then verify creator + taker GUIDs sit on OPPOSING factions before posting a card. AC-incomplete → terminal `AcIncomplete` audit row (no card, no retry — per Slice 2 agreement). 10 tests cover happy path (creator + taker wins), AC-incomplete, no-match retry, opposing-roster check, fall-back-to-taker, snapshot-missing skip, already-posted idempotency, permanent provider error, transient provider error.
-- [x] `FaceitGameApi` implements `GameApi` — reads the chat card by `provider: 'faceit'` discriminator, returns `GameApiResult` with `winner_user_id` resolved directly off the card (the job already resolved snapshot→user). Defensive participant check refuses cards naming foreign winners. Falls through to `MockGameApi` when no FACEIT card is present, card has no winner (draw), or the named user isn't a match participant. 7 tests.
-- [x] `SettleFromCardAction` extension — new fast-path: when card's `winner_user_id` is set (FACEIT), look up `User` by id directly with a participant-check guard; chess cards continue through the existing `winner_username` + snapshot cross-check. `isDraw()` rule per provider: chess on `winner_color === null`, FACEIT on `winner_user_id === null`. 4 new tests + 1 existing test updated (the "unknown provider → no-op" test now uses `'riot'` since FACEIT is no longer unknown).
-
-**Slice 3 — `DispatchAutoFetchAction` wiring + end-to-end** _(commit: `feat(m15-p4): dispatch FACEIT job per listing.platform`)_
-
-- [x] `DispatchAutoFetchAction` extends its match expression to dispatch `AutoFetchFaceitGameJob` when `listing.platform === LinkedAccountProvider::Faceit`. No `default` arm — Steam (the other enum stub) keeps throwing `UnhandledMatchError` loud, which is the right shape until a Steam adapter lands. Snapshot guard untouched: `TakeListingAction::snapshotProviderAccounts()` always populates `username` + `provider_user_id` atomically for FACEIT, so `snapshotUsername()` remains a valid proxy for "snapshot exists with the data the job needs." 2 new dispatch tests (positive + per-provider circuit-breaker isolation).
-- [x] End-to-end seeded test at `tests/Feature/Jobs/AutoFetchFaceitPipelineTest.php`: CS2 listing created → `TakeListingAction` (creator-stake hold + taker-stake hold + match + snapshots from linked accounts) → `DispatchAutoFetchAction` (sync queue runs the job inline) → `Http::fake` for FACEIT `/players/{guid}/history` + `/matches/{id}` → system card posted with `winner_user_id` resolved at job time → `SettleFromCardAction` pays the winner + credits platform fee → wallet ledger asserted via BCMath exact (`580.000000` creator winner / `400.000000` taker loser / `20.000000` platform fee at the default 10% rate). `faceitOpposingRosterFixture` promoted from the job test to `Pest.php` so both files share it.
-- [x] Idempotency test covers re-dispatch after settlement → `not_pending` skip → wallet balance unchanged + no second card posted. Plus a third defensive test that a CS2-FACEIT listing taken by a non-FACEIT-linked taker short-circuits at `TakeListingAction`'s gate (`not_linked` sentinel, no money moves).
-
-**Slice 4 — Webhook receiver (shipped; IP allowlist + envelope verification land as small follow-ups)**
-
-Webhooks collapse the polling lag — when FACEIT pings us the moment a match ends, settlement runs within seconds instead of waiting for page-visit / chat-send / cron triggers. The polling pipeline (Slices 1–3) stays underneath as the safety net so we're never *dependent* on webhooks for correctness.
-
-What we can build now (pre-answer):
-
-- [x] `POST /webhooks/faceit` endpoint behind `VerifyFaceitWebhook` middleware (constant-time `hash_equals` against `X-Faceit-Webhook-Secret` header → 401 on mismatch, 503 when the receiver isn't configured) + per-IP `throttle:60,1`. Excluded from CSRF in `bootstrap/app.php`. Sits outside the `{locale}` prefix group — `webhooks` added to `RedirectUnprefixedLocale::EXEMPT_FIRST_SEGMENTS` AND to `tests/TestCase.php`'s parallel exempt list (they share the locale-routing model; comment in the test-case file flagged the manual sync requirement).
-- [x] `FaceitWebhookController` defensively scans the JSON payload for player guids (both at the root and under a `payload` envelope), looks up Pending Stakly matches via the `(provider, provider_user_id)` index on `match_provider_snapshots`, and dispatches `AutoFetchFaceitGameJob` for each candidate. Always 200 on authenticated requests — webhook is a *notification*, NOT proof. The dispatched job re-fetches via Data API and runs the existing AC + opposing-roster + winner checks. Settlement path unchanged from Slice 3.
-- [x] Idempotency deferred to job level (`ShouldBeUnique` keyed on Stakly `match_id` + `alreadyPosted()` short-circuit) — no `faceit_webhook_events` table until we confirm the event-id field name from support. Duplicate webhooks become two cheap dispatch attempts that both no-op.
-- [x] 10 feature tests cover: 401 missing/wrong secret, 503 unconfigured receiver, CSRF exemption, dispatch on valid + matching payload, no-dispatch on no candidates / Settled match / malformed payload, defensive single-player-guid match, and the alternative flat-envelope shape.
-
-**Unblock path — 20-minute empirical capture, no support reply required.** Set up a FACEIT dev app at developers.faceit.com, point a test webhook subscription at ngrok (tunnel to localhost) or webhook.site, fire one test event from the portal, and capture the real envelope. Respond with a 500 once to observe FACEIT's retry behavior. From the captured data:
-
-- **Lock the event-id field name** in `FaceitWebhookController::extractPlayerGuids()` if it differs from our defensive scan, and decide whether a `faceit_webhook_events` idempotency table is worth adding (currently deferred to job-level `ShouldBeUnique` + `alreadyPosted()`).
-- **Confirm webhook retry policy** (max attempts + backoff) and align our 5xx response semantics. Decide if a dead-letter table is needed for events that exhaust the budget.
-
-**Deferred polish (post-launch follow-up):**
-
-- **Webhook egress IPs → IP-allowlist middleware.** Second defense layer on top of the shared secret. Without IPs, the secret is the only auth — but the webhook is never trusted as outcome proof (the dispatched job re-verifies via Data API), so a leaked secret's worst case is wasted API quota + worker time, not wrong settlement. Two paths to the IPs: ask FACEIT support, or observe egress in production logs over a few weeks of real traffic. Small follow-up commit when the IPs land: populate `services.faceit.webhook_egress_ips` + add allowlist check to `VerifyFaceitWebhook`.
-
-The support questions doc ([`docs/faceit-support-questions.md`](docs/faceit-support-questions.md)) remains a parallel path — sending it doesn't block anything, but it's the cleanest source if FACEIT replies.
+- Webhook egress IPs → IP-allowlist middleware. Two paths: ask FACEIT support OR observe egress in production logs. Small follow-up commit: populate `services.faceit.webhook_egress_ips` + add allowlist check to `VerifyFaceitWebhook`. Support questions doc ([`docs/faceit-support-questions.md`](docs/faceit-support-questions.md)) remains a parallel path.
 
 **Phase 5 — Dispute fast-path + telemetry**
 
@@ -469,23 +371,7 @@ Read across `app/Services/Provider/` + `app/Jobs/AutoFetch*GameJob.php` + `app/J
 |---|---|---|---|---|---|
 | `FetchLinkMetadataJob` (chat link previews) | ❌ | — (calls arbitrary URLs, no per-provider notion) | — | ✅ `$tries=1` (intentional — no point retrying a dead URL) | ✅ 30s |
 
-**Confirmed zero `RateLimiter::for(...)` definitions in `AppServiceProvider` for outbound providers.** The CLAUDE.md self-throttle rule we just landed isn't enforced anywhere yet.
-
-### Gap analysis + Phase 1–3 priorities
-
-**Tier 1 (must fix — money path).** Self-throttle missing on all three auto-fetch jobs. Without it, a busy moment with many simultaneous match completions burns through provider quota → 429 → circuit breaker trips → settlement freezes for *every* Pending match in that provider's pipeline until the breaker recloses. This is exactly what M35 was created to prevent. **Addresses: Phase 1 (chess.com), Phase 2 (Lichess), Phase 3 (FACEIT).**
-
-**Tier 2 (should fix — signup path).** The three profile clients are noticeably weaker than the game clients: no 429-specific handling, no circuit-breaker integration, no retry. A chess.com profile-lookup 429 during a signup spike surfaces as a generic "couldn't reach chess.com" error to the user, with no retry. **Add to each phase as a sub-task: bring the matching profile client up to game-client parity (`classifyResponseError` + `RateLimitHeaderParser` + circuit-breaker `recordSuccess`/`recordFailure` calls).** Profile clients still won't have a self-throttle (they're called synchronously, not via a queued job), so the protection is the breaker + Retry-After honoring + (optionally) a request-key-scoped throttle on the calling controller endpoint.
-
-**Tier 3 (nice-to-have).** `FetchLinkMetadataJob` calls arbitrary user-pasted URLs and is already capped at `tries=1`. Could add a global `RateLimiter::for('link-preview-fetch')` at 60/min to prevent a single user from DOS'ing the job worker via a spammed message of 100 links — but per-user message rate-limit already bounds this. **Defer to Phase 4 (conditional) or skip entirely.**
-
-**Decisions confirmed (2026-06-11):**
-
-1. **Profile-client upgrade bundled with sibling game-client phase.** Phase 1 = chess.com game-job throttle + `ChessComProfileClient` upgrade to game-client parity. Same shape for Phases 2 and 3.
-2. **Per-provider cap tuning.** Each provider gets its own `services.{provider}.requests_per_minute` config key + `RateLimiter::for(...)` definition. Initial values: **chess.com = 30/min** (undocumented; CLAUDE.md default), **Lichess = 60/min** (per-provider tuning — Lichess docs publish `20 req/sec`, so 60 still leaves a 20× safety margin), **FACEIT = 30/min** (undocumented; CLAUDE.md default). All tunable via config without code change.
-3. **Phase 4 skipped.** Link-preview is already capped at `tries=1` + naturally bounded by per-user message rate. Revisit only if abuse surfaces.
-
-Scope note on the profile-client side: self-throttling at the HTTP-call layer of profile clients is OUT of scope for M35 (they're called synchronously from controllers / actions, not via queued jobs, so `RateLimited` middleware doesn't fit). What WE upgrade is 429 classification + `RateLimitHeaderParser` use + `ProviderCircuitBreaker` integration. Self-throttling at the profile layer would need a different shape (e.g. controller-level `throttle:` middleware on the bio-verify endpoint); defer until a real abuse vector is observed.
+All gaps above closed by Phases 1–3 below. Profile-client self-throttling was intentionally left out — they're called synchronously from controllers, not via queued jobs, so `RateLimited` middleware doesn't fit; revisit with controller-level `throttle:` if a real abuse vector surfaces.
 
 **Phase 1 — chess.com remediation + shared infra** _(commit: `feat(m35-p1): chess.com self-throttle + profile-client upgrade`)_
 
