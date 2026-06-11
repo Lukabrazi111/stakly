@@ -77,6 +77,16 @@ return [
         'client_secret' => env('FACEIT_CLIENT_SECRET'),
         'redirect' => env('FACEIT_REDIRECT_URI'),
         'api_key' => env('FACEIT_API_KEY'),
+
+        // Shared-secret header value FACEIT POSTs back to `/webhooks/faceit`
+        // (M15 P4 Slice 4). Configured in the FACEIT developer portal under
+        // the webhook subscription's Authentication settings. Stakly checks
+        // it via `hash_equals` against the `X-Faceit-Webhook-Secret` header.
+        // Defense-in-depth — the webhook is never trusted as proof; the
+        // dispatched `AutoFetchFaceitGameJob` re-fetches via Data API.
+        // IP allowlist (`webhook_egress_ips`) is a planned second layer
+        // once FACEIT support confirms egress IPs.
+        'webhook_secret' => env('FACEIT_WEBHOOK_SECRET'),
     ],
 
 ];

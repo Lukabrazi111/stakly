@@ -47,6 +47,13 @@ return Application::configure(basePath: dirname(__DIR__))
             ThrottleVerificationSend::class,
             HandleImpersonationExpiry::class,
         ]);
+
+        // M15 P4 Slice 4 — FACEIT POSTs from outside our session, so the
+        // webhook receiver can't carry a CSRF token. Auth happens in the
+        // `VerifyFaceitWebhook` middleware via a shared-secret header.
+        $middleware->validateCsrfTokens(except: [
+            'webhooks/faceit',
+        ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         // Render 403 / 404 / 500 / 503 as Inertia pages so they keep the

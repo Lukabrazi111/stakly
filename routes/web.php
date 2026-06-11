@@ -11,7 +11,9 @@ use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\PageController;
 use App\Http\Controllers\UserController;
 use App\Http\Controllers\WalletController;
+use App\Http\Controllers\Webhooks\FaceitWebhookController;
 use App\Http\Middleware\SetLocale;
+use App\Http\Middleware\VerifyFaceitWebhook;
 use App\Models\UsernameHistory;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
@@ -173,3 +175,13 @@ Route::prefix('{locale}')
 Route::get('/auth/faceit/callback', [FaceitLinkController::class, 'callback'])
     ->middleware(['auth', 'verified'])
     ->name('auth.faceit.callback');
+
+// M15 P4 Slice 4 — FACEIT webhook receiver. Sits OUTSIDE the `{locale}`
+// prefix group because FACEIT calls a single configured URL with no locale
+// in path. CSRF excluded in `bootstrap/app.php`. Auth = shared-secret
+// header verified by `VerifyFaceitWebhook` middleware; IP allowlist added
+// once egress IPs land. Per-IP `throttle:60,1` bounds spam from a leaked
+// secret while keeping headroom for legit retry storms.
+Route::post('/webhooks/faceit', FaceitWebhookController::class)
+    ->middleware(['throttle:60,1', VerifyFaceitWebhook::class])
+    ->name('webhooks.faceit');

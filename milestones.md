@@ -276,12 +276,24 @@ Polling-first; webhook receiver lives in Slice 4, deferred until FACEIT support 
 - [x] End-to-end seeded test at `tests/Feature/Jobs/AutoFetchFaceitPipelineTest.php`: CS2 listing created → `TakeListingAction` (creator-stake hold + taker-stake hold + match + snapshots from linked accounts) → `DispatchAutoFetchAction` (sync queue runs the job inline) → `Http::fake` for FACEIT `/players/{guid}/history` + `/matches/{id}` → system card posted with `winner_user_id` resolved at job time → `SettleFromCardAction` pays the winner + credits platform fee → wallet ledger asserted via BCMath exact (`580.000000` creator winner / `400.000000` taker loser / `20.000000` platform fee at the default 10% rate). `faceitOpposingRosterFixture` promoted from the job test to `Pest.php` so both files share it.
 - [x] Idempotency test covers re-dispatch after settlement → `not_pending` skip → wallet balance unchanged + no second card posted. Plus a third defensive test that a CS2-FACEIT listing taken by a non-FACEIT-linked taker short-circuits at `TakeListingAction`'s gate (`not_linked` sentinel, no money moves).
 
-**Slice 4 — Webhook receiver (deferred until egress IPs land)**
+**Slice 4 — Webhook receiver (in-progress; full ship awaiting FACEIT support reply)**
 
-- [ ] Webhook endpoint listening for `match_status_finished`. Re-fetches via Data API before settlement (defense-in-depth — Phase 0 found webhook auth is a static shared secret only, no HMAC; treat webhook as a notification, not proof).
-- [ ] Idempotency via `event_id` from FACEIT's envelope (at-least-once delivery).
-- [ ] Additive to polling, not replacing it.
-- [ ] **Blocked on FACEIT support reply** about webhook egress IPs — when those land, add an IP allowlist on top of the shared-secret check.
+Webhooks collapse the polling lag — when FACEIT pings us the moment a match ends, settlement runs within seconds instead of waiting for page-visit / chat-send / cron triggers. The polling pipeline (Slices 1–3) stays underneath as the safety net so we're never *dependent* on webhooks for correctness.
+
+What we can build now (pre-answer):
+
+- [x] `POST /webhooks/faceit` endpoint behind `VerifyFaceitWebhook` middleware (constant-time `hash_equals` against `X-Faceit-Webhook-Secret` header → 401 on mismatch, 503 when the receiver isn't configured) + per-IP `throttle:60,1`. Excluded from CSRF in `bootstrap/app.php`. Sits outside the `{locale}` prefix group — `webhooks` added to `RedirectUnprefixedLocale::EXEMPT_FIRST_SEGMENTS` AND to `tests/TestCase.php`'s parallel exempt list (they share the locale-routing model; comment in the test-case file flagged the manual sync requirement).
+- [x] `FaceitWebhookController` defensively scans the JSON payload for player guids (both at the root and under a `payload` envelope), looks up Pending Stakly matches via the `(provider, provider_user_id)` index on `match_provider_snapshots`, and dispatches `AutoFetchFaceitGameJob` for each candidate. Always 200 on authenticated requests — webhook is a *notification*, NOT proof. The dispatched job re-fetches via Data API and runs the existing AC + opposing-roster + winner checks. Settlement path unchanged from Slice 3.
+- [x] Idempotency deferred to job level (`ShouldBeUnique` keyed on Stakly `match_id` + `alreadyPosted()` short-circuit) — no `faceit_webhook_events` table until we confirm the event-id field name from support. Duplicate webhooks become two cheap dispatch attempts that both no-op.
+- [x] 10 feature tests cover: 401 missing/wrong secret, 503 unconfigured receiver, CSRF exemption, dispatch on valid + matching payload, no-dispatch on no candidates / Settled match / malformed payload, defensive single-player-guid match, and the alternative flat-envelope shape.
+
+⏳ **Awaiting FACEIT support answers** (questions live in [`docs/faceit-support-questions.md`](docs/faceit-support-questions.md)) — when replies arrive we'll revisit:
+
+- **Webhook egress IPs** → add IP-allowlist middleware in front of the shared-secret check. The secret alone is a single point of compromise; the allowlist is the second layer.
+- **Webhook retry policy** → align our 5xx response semantics with FACEIT's retry budget so transient errors don't drop events. Informs whether we need a dead-letter table.
+- **Exact event payload shape** → confirm the `event_id` field name + envelope structure. Phase 0 has a community-docs sketch; we'll verify against the real schema and adjust the controller's parser if it differs.
+
+Code areas that will likely change once answers land: `app/Http/Middleware/VerifyFaceitWebhook.php` (IP allowlist), `config/services.php` (`faceit.webhook_egress_ips`), and the event-id parsing in the controller.
 
 **Phase 5 — Dispute fast-path + telemetry**
 

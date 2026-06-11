@@ -57,6 +57,11 @@ class RedirectUnprefixedLocale
         // redirect URI per app. Future Riot/Discord/etc. callbacks land
         // under `/auth/*` too, so the exemption is for the whole subtree.
         'auth',
+        // M15 P4 Slice 4 — `/webhooks/*` receivers are called by external
+        // services with no concept of Stakly locales. POST is already safe
+        // (this middleware only fires on GET/HEAD), but exempting the
+        // subtree keeps GET probes / health pings from being redirected.
+        'webhooks',
     ];
 
     /**
