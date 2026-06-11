@@ -102,6 +102,7 @@ class HandleInertiaRequests extends Middleware
             ],
             'status' => fn () => $request->session()->get('status'),
             'sidebarOpen' => ! $request->hasCookie('sidebar_state') || $request->cookie('sidebar_state') === 'true',
+            'playerSidebarCollapsed' => $request->cookie('player_sidebar_collapsed') === 'true',
         ];
     }
 
