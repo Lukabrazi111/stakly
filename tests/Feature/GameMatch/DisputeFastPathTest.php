@@ -62,9 +62,14 @@ test('flag on: chess dispute with unknown API result → match flips to ManualRe
         ->and($fresh->settled_at)->toBeNull();
 });
 
-test('flag on but non-chess match: dispute opens → status stays Disputed (chess gate)', function () {
+test('flag on but game has no arbitration driver (Dota2): dispute stays Disputed, no API call', function () {
+    // M15 P5 — the gate is now `Game::hasArbitrationDriver()`. Dota2 has
+    // no `GameApi` adapter wired into the production chain yet, so
+    // disputes route to slow-path admin review. Once a Dota2 adapter
+    // ships (M15 follow-on or M-future), this test should flip to
+    // confirm the fast-path now fires.
     [$creator, , , $match] = pendingMatch();
-    $match->listing->update(['game' => Game::Cs2]);
+    $match->listing->update(['game' => Game::Dota2]);
     config(['stakly.dispute_fast_path_enabled' => true]);
 
     app(OpenDisputeAction::class)->handle($creator, $match->fresh(), 'opponent cheated');
@@ -73,4 +78,23 @@ test('flag on but non-chess match: dispute opens → status stays Disputed (ches
     expect($fresh->status)->toBe(MatchStatus::Disputed)
         ->and($fresh->settled_at)->toBeNull()
         ->and($fresh->api_resolved_at)->toBeNull();
+});
+
+test('flag on: CS2 dispute is now eligible for fast-path (M15 P5 capability gate)', function () {
+    // Before M15 P5 this would have been blocked by the hardcoded
+    // `Game::Chess` check. After P5 the gate is capability-based and
+    // CS2 has `FaceitGameApi` in the production chain. With no FACEIT
+    // card on the match the composition falls through to `MockGameApi`,
+    // which a forced winner resolves to Confirmed → match Settled.
+    [$creator, , , $match] = pendingMatch();
+    $match->listing->update(['game' => Game::Cs2]);
+    config(['stakly.dispute_fast_path_enabled' => true]);
+    mockGameApi()->forceWinner($creator->id);
+
+    app(OpenDisputeAction::class)->handle($creator, $match->fresh(), 'opponent cheated');
+
+    $fresh = $match->fresh();
+    expect($fresh->status)->toBe(MatchStatus::Settled)
+        ->and($fresh->winner_user_id)->toBe($creator->id)
+        ->and($fresh->api_resolved_at)->not->toBeNull();
 });

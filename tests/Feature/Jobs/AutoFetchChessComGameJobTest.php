@@ -16,7 +16,10 @@ use App\Services\Provider\ChessComGameClient;
 use App\Services\Provider\ProviderCircuitBreaker;
 use App\Services\Wallet;
 use Carbon\CarbonImmutable;
+use Illuminate\Cache\RateLimiting\Limit;
+use Illuminate\Queue\Middleware\RateLimited;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\RateLimiter;
 
 function chessComAutoFetchMatch(?array $snapshots = null): GameMatch
 {
@@ -262,4 +265,28 @@ test('idempotency check uses provider-scoped attachments_json query', function (
         ->whereJsonContains('attachments_json', [['source' => 'auto_fetch']])
         ->count())
         ->toBe(1);
+});
+
+// ─── M35 P1 — self-throttle wiring ─────────────────────────────────────────
+
+test('AutoFetchChessComGameJob declares the chess-com-api RateLimited middleware', function () {
+    $match = chessComAutoFetchMatch();
+    $job = new AutoFetchChessComGameJob($match);
+
+    $middleware = $job->middleware();
+
+    expect($middleware)->toHaveCount(1)
+        ->and($middleware[0])->toBeInstanceOf(RateLimited::class);
+});
+
+test('chess-com-api rate limiter reflects services.chess_com.requests_per_minute config', function () {
+    config(['services.chess_com.requests_per_minute' => 7]);
+
+    $resolver = RateLimiter::limiter('chess-com-api');
+    expect($resolver)->not->toBeNull();
+
+    $limit = $resolver(new stdClass);
+
+    expect($limit)->toBeInstanceOf(Limit::class)
+        ->and($limit->maxAttempts)->toBe(7);
 });

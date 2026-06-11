@@ -136,11 +136,70 @@ test('chess.com and Lichess rows both count toward the same stats', function () 
         'match_id' => $match->id,
     ]);
 
-    // Settlements stat shows the combined count (2) — pipeline health is
-    // a provider-agnostic signal at the widget level. Per-provider rollups
-    // are a separate concern (future stat / chart, not in M14 P1).
+    // Settlements aggregate stays as the headline number; the per-provider
+    // rollup is appended in the description (asserted in the breakdown tests
+    // below). M14 P1 was provider-agnostic at the widget level; M15 P5
+    // Item 2 surfaced the per-provider split alongside.
     Livewire::test(PipelineHealth::class)
         ->assertSuccessful()
         ->assertSeeText('Auto-settlements (24h)')
         ->assertSeeText('2');
+});
+
+// ─── M15 P5 Item 2 — per-provider breakdown (settlements + errors) ─────────
+
+test('settlements description includes per-provider breakdown (FACEIT alongside chess)', function () {
+    [, , , $match] = pendingMatch();
+
+    MatchAutoFetchAttempt::factory()->matched()->create([
+        'match_id' => $match->id,
+        'provider' => LinkedAccountProvider::ChessCom,
+    ]);
+    MatchAutoFetchAttempt::factory()->matched()->count(2)->create([
+        'match_id' => $match->id,
+        'provider' => LinkedAccountProvider::Lichess,
+    ]);
+    MatchAutoFetchAttempt::factory()->matched()->count(3)->create([
+        'match_id' => $match->id,
+        'provider' => LinkedAccountProvider::Faceit,
+    ]);
+
+    Livewire::test(PipelineHealth::class)
+        ->assertSuccessful()
+        ->assertSeeText('Auto-settlements (24h)')
+        ->assertSeeText('6')
+        ->assertSeeText('chess_com 1 / lichess 2 / faceit 3');
+});
+
+test('errors description includes per-provider breakdown', function () {
+    [, , , $match] = pendingMatch();
+
+    MatchAutoFetchAttempt::factory()->error()->count(2)->create([
+        'match_id' => $match->id,
+        'provider' => LinkedAccountProvider::Lichess,
+    ]);
+    MatchAutoFetchAttempt::factory()->error()->count(4)->create([
+        'match_id' => $match->id,
+        'provider' => LinkedAccountProvider::Faceit,
+    ]);
+
+    Livewire::test(PipelineHealth::class)
+        ->assertSuccessful()
+        ->assertSeeText('Pipeline errors (24h)')
+        ->assertSeeText('6 provider failures today · lichess 2 / faceit 4');
+});
+
+test('FACEIT-only failures surface even when chess providers are quiet', function () {
+    // The interesting case for M15 launch — early FACEIT traffic shouldn't
+    // get hidden in an aggregate that's dominated by chess volume.
+    [, , , $match] = pendingMatch();
+
+    MatchAutoFetchAttempt::factory()->error()->count(3)->create([
+        'match_id' => $match->id,
+        'provider' => LinkedAccountProvider::Faceit,
+    ]);
+
+    Livewire::test(PipelineHealth::class)
+        ->assertSuccessful()
+        ->assertSeeText('3 provider failures today · faceit 3');
 });

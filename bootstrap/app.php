@@ -25,7 +25,7 @@ return Application::configure(basePath: dirname(__DIR__))
         // read it without round-tripping Inertia props. Value is a 2-char code,
         // no security implication if tampered with — server re-validates
         // against `config('stakly.locales')` in SetLocale anyway.
-        $middleware->encryptCookies(except: ['sidebar_state', SetLocale::COOKIE_NAME]);
+        $middleware->encryptCookies(except: ['sidebar_state', 'player_sidebar_collapsed', SetLocale::COOKIE_NAME]);
 
         // Registered GLOBALLY (not in the web group): unprefixed paths like
         // `/listings` don't match any route, so the framework 404s before
@@ -46,6 +46,13 @@ return Application::configure(basePath: dirname(__DIR__))
             AddLinkHeadersForPreloadedAssets::class,
             ThrottleVerificationSend::class,
             HandleImpersonationExpiry::class,
+        ]);
+
+        // M15 P4 Slice 4 — FACEIT POSTs from outside our session, so the
+        // webhook receiver can't carry a CSRF token. Auth happens in the
+        // `VerifyFaceitWebhook` middleware via a shared-secret header.
+        $middleware->validateCsrfTokens(except: [
+            'webhooks/faceit',
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

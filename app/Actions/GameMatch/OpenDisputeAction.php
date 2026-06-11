@@ -5,7 +5,6 @@ namespace App\Actions\GameMatch;
 use App\Actions\Admin\NotifyAdminsAction;
 use App\Actions\Message\PostSystemMessageAction;
 use App\Actions\Message\SendMessageAction;
-use App\Enums\Game;
 use App\Enums\MatchStatus;
 use App\Enums\MessageType;
 use App\Events\MessageSent;
@@ -22,9 +21,14 @@ use Illuminate\Support\Facades\DB;
  * and lands in the admin review queue.
  *
  * M14 Slice 4a — when `config('stakly.dispute_fast_path_enabled')` is true AND
- * the match is chess, `ResolveDisputeAction` runs synchronously right after
- * the status flip. Skips the wait for the next 5-min cron tick. Default off
- * until Slice 4b's Phase-1-metrics checkpoint.
+ * the match's game has an arbitration driver registered, `ResolveDisputeAction`
+ * runs synchronously right after the status flip. Skips the wait for the next
+ * 5-min cron tick. Default off until Slice 4b's Phase-1-metrics checkpoint.
+ *
+ * M15 P5 — the game-eligibility gate was generalized from a hardcoded
+ * `Game::Chess` check to `Game::hasArbitrationDriver()`. FACEIT (CS2)
+ * is now eligible; Dota2 (no adapter yet) still routes to slow-path
+ * admin review.
  *
  * Returns true if opened, false on race (lock acquired after status moved off Pending).
  */
@@ -78,7 +82,10 @@ class OpenDisputeAction
     }
 
     /**
-     * M14 Slice 4a — flag-gated synchronous arbitration. Chess only today;
+     * M14 Slice 4a — flag-gated synchronous arbitration. M15 P5 — gate
+     * generalized from `Game::Chess` to `Game::hasArbitrationDriver()` so
+     * any game with a wired `GameApi` adapter (currently Chess + Cs2 via
+     * the `FaceitGameApi → ChessGameApi → MockGameApi` chain) is eligible.
      * `ResolveDisputeAction` short-circuits on terminal statuses, so a race
      * where admin resolves the same match while we're querying is safe.
      */
@@ -89,7 +96,7 @@ class OpenDisputeAction
         }
 
         $game = $match->listing?->game;
-        if ($game !== Game::Chess) {
+        if ($game === null || ! $game->hasArbitrationDriver()) {
             return;
         }
 

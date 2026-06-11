@@ -2,9 +2,14 @@
 
 namespace App\Services\Provider;
 
+use App\Enums\LinkedAccountProvider;
+use App\Services\Provider\Exceptions\PermanentProviderError;
 use App\Services\Provider\Exceptions\ProfileNotFoundException;
+use App\Services\Provider\Exceptions\ProviderError;
+use App\Services\Provider\Exceptions\RateLimitedError;
 use App\Services\Provider\Exceptions\TransientProviderError;
 use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
 
 /**
@@ -22,13 +27,28 @@ use Illuminate\Support\Facades\Http;
  * they're not surfaced into the `FaceitProfile` value object until the
  * adapter for that game lands.
  *
- * Used by `LinkFaceitAccountAction`. `Http::fake()`-able from tests.
+ * Error semantics (M35 P3 — brought up to `FaceitGameClient` parity):
+ *   - 404                       → `ProfileNotFoundException` (terminal, separate hierarchy)
+ *   - 429                       → `RateLimitedError` with `retryAt` from `RateLimitHeaderParser`
+ *   - 5xx / connect / timeout   → `TransientProviderError` (retry-eligible)
+ *   - 4xx-other                 → `PermanentProviderError` (terminal)
+ *
+ * Circuit breaker (M35 P3): every HTTP call records success / failure on
+ * the shared `ProviderCircuitBreaker` keyed on `LinkedAccountProvider::Faceit`.
+ *
  * Returns `null` if no API key is configured — useful in dev when the
  * key hasn't been set yet; the link still creates the LinkedAccount
- * row, just with `skill_rating = null`.
+ * row, just with `skill_rating = null`. The breaker is NOT touched in
+ * this path (we never made an API call to assess provider health).
+ *
+ * Used by `LinkFaceitAccountAction`. `Http::fake()`-able from tests.
  */
 class FaceitProfileClient
 {
+    public function __construct(
+        private readonly ProviderCircuitBreaker $breaker,
+    ) {}
+
     public function fetchPlayer(string $playerId): ?FaceitProfile
     {
         $apiKey = config('services.faceit.api_key');
@@ -44,6 +64,8 @@ class FaceitProfileClient
                 ->timeout(10)
                 ->get($url);
         } catch (ConnectionException $e) {
+            $this->breaker->recordFailure(LinkedAccountProvider::Faceit);
+
             throw new TransientProviderError(
                 "FACEIT unreachable for player '{$playerId}': {$e->getMessage()}",
                 previous: $e,
@@ -51,14 +73,21 @@ class FaceitProfileClient
         }
 
         if ($response->status() === 404) {
+            // 404 is a "player doesn't exist" answer, not a provider-health
+            // failure. Count as breaker success — bad-id burst shouldn't
+            // trip the breaker.
+            $this->breaker->recordSuccess(LinkedAccountProvider::Faceit);
+
             throw new ProfileNotFoundException("FACEIT player '{$playerId}' not found.");
         }
 
         if (! $response->successful()) {
-            throw new TransientProviderError(
-                "FACEIT returned status {$response->status()} for player '{$playerId}'.",
-            );
+            $this->breaker->recordFailure(LinkedAccountProvider::Faceit);
+
+            throw self::classifyResponseError($response, "for player '{$playerId}'");
         }
+
+        $this->breaker->recordSuccess(LinkedAccountProvider::Faceit);
 
         $data = $response->json();
 
@@ -68,5 +97,28 @@ class FaceitProfileClient
             cs2Elo: $data['games']['cs2']['faceit_elo'] ?? null,
             cs2SkillLevel: $data['games']['cs2']['skill_level'] ?? null,
         );
+    }
+
+    /**
+     * Mirror of `FaceitGameClient::classifyResponseError` so the two clients
+     * map provider statuses identically — keeps the retry / breaker / rendering
+     * surface uniform.
+     */
+    private static function classifyResponseError(Response $response, string $context): ProviderError
+    {
+        $status = $response->status();
+
+        return match (true) {
+            $status === 429 => new RateLimitedError(
+                "FACEIT returned 429 (rate-limited) {$context}.",
+                retryAt: RateLimitHeaderParser::parseRetryAt($response),
+            ),
+            $status >= 500 => new TransientProviderError(
+                "FACEIT returned status {$status} {$context}.",
+            ),
+            default => new PermanentProviderError(
+                "FACEIT returned status {$status} {$context}.",
+            ),
+        };
     }
 }

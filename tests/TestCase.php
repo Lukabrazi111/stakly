@@ -117,6 +117,10 @@ abstract class TestCase extends BaseTestCase
         'filament',
         'filament-impersonate',
         'auth',
+        // M15 P4 Slice 4 — `/webhooks/faceit` (and any future provider's
+        // webhook receiver) sits outside the locale-prefix group because
+        // external services don't know about Stakly locales.
+        'webhooks',
     ];
 
     private const EXEMPT_FILES = [

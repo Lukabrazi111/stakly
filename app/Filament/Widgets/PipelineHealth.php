@@ -44,10 +44,23 @@ class PipelineHealth extends StatsOverviewWidget
         $last7 = $this->lastSevenDaysCounts(AutoFetchOutcome::Matched);
 
         return Stat::make('Auto-settlements (24h)', (string) $today)
-            ->description($today > 0 ? 'API resolved matches today' : 'No auto-settlements today')
+            ->description($this->settlementsDescription($today))
             ->descriptionIcon($today > 0 ? 'heroicon-m-check-circle' : 'heroicon-m-minus-circle')
             ->chart($last7)
             ->color($today > 0 ? 'success' : 'gray');
+    }
+
+    private function settlementsDescription(int $today): string
+    {
+        if ($today === 0) {
+            return 'No auto-settlements today';
+        }
+
+        $breakdown = $this->providerBreakdown(AutoFetchOutcome::Matched, CarbonImmutable::today());
+
+        return $breakdown === ''
+            ? 'API resolved matches today'
+            : "API resolved · {$breakdown}";
     }
 
     // ─── Errors (24h) ──────────────────────────────────────────────────────
@@ -75,11 +88,53 @@ class PipelineHealth extends StatsOverviewWidget
             return ['No provider failures today', 'success'];
         }
 
+        $breakdown = $this->providerBreakdown(AutoFetchOutcome::Error, CarbonImmutable::today());
+        $suffix = $breakdown === '' ? '' : " · {$breakdown}";
+
         if ($today >= self::DANGER_ERROR_THRESHOLD) {
-            return ["{$today} provider failures — investigate", 'danger'];
+            return ["{$today} provider failures — investigate{$suffix}", 'danger'];
         }
 
-        return ["{$today} provider failures today", 'warning'];
+        return ["{$today} provider failures today{$suffix}", 'warning'];
+    }
+
+    /**
+     * Compact `chess_com 2 / lichess 1 / faceit 1` rollup for a given outcome
+     * on a given day. M15 P5 Item 2 — lets admin tell at a glance which
+     * provider is generating today's settlements / errors instead of just
+     * seeing aggregate totals. Empty when no rows match (caller appends
+     * a generic suffix instead).
+     */
+    private function providerBreakdown(AutoFetchOutcome $outcome, CarbonImmutable $day): string
+    {
+        $counts = MatchAutoFetchAttempt::query()
+            ->where('outcome', $outcome)
+            ->whereDate('created_at', $day)
+            ->selectRaw('provider, COUNT(*) as total')
+            ->groupBy('provider')
+            ->pluck('total', 'provider')
+            ->toArray();
+
+        if ($counts === []) {
+            return '';
+        }
+
+        // Stable order so the rollup reads the same day-to-day. New
+        // providers append at the end via `array_diff` against the
+        // explicit head.
+        $order = ['chess_com', 'lichess', 'faceit'];
+        $tail = array_diff(array_keys($counts), $order);
+        $ordered = [...$order, ...$tail];
+
+        $parts = [];
+        foreach ($ordered as $provider) {
+            $count = $counts[$provider] ?? 0;
+            if ($count > 0) {
+                $parts[] = "{$provider} {$count}";
+            }
+        }
+
+        return implode(' / ', $parts);
     }
 
     // ─── Avg latency (7d) ──────────────────────────────────────────────────

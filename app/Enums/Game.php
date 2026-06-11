@@ -36,4 +36,24 @@ enum Game: string
             self::Dota2 => [LinkedAccountProvider::Steam],
         };
     }
+
+    /**
+     * True when this game has a real `GameApi` adapter wired into the
+     * production composition chain (M15 P5). Drives the
+     * `OpenDisputeAction` fast-path gate: disputes for games returning
+     * `true` are eligible for synchronous arbitration via
+     * `ResolveDisputeAction`; disputes for games returning `false` route
+     * straight to admin manual review.
+     *
+     * Stays in sync with `AppServiceProvider::bindGameApi()` — adding a
+     * new game adapter requires both flipping this method's case AND
+     * prepending the adapter to the production chain.
+     */
+    public function hasArbitrationDriver(): bool
+    {
+        return match ($this) {
+            self::Chess, self::Cs2 => true,
+            self::Dota2 => false,
+        };
+    }
 }

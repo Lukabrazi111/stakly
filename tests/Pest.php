@@ -5,6 +5,7 @@ use App\Models\Listing;
 use App\Models\User;
 use App\Services\GameApi\MockGameApi;
 use App\Services\Wallet;
+use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -264,6 +265,35 @@ function faceitMatchFixture(array $overrides = []): array
             ],
         ],
     ], $overrides);
+}
+
+/**
+ * Build a `faceitMatchFixture` variant where Alice (creator) + Bob (taker) sit
+ * on OPPOSING factions — the only roster shape that satisfies
+ * `AutoFetchFaceitGameJob::isOpposingRosterPair()`. First slot of each faction
+ * is the Stakly player; the other four per side stay as the fixture's unknown
+ * extras (alice2..5 / bob2..5) so AC checks still pass.
+ *
+ * @return array<string, mixed>
+ */
+function faceitOpposingRosterFixture(
+    string $creatorGuid = 'guid-a1',
+    string $takerGuid = 'guid-b1',
+    string $winnerFaction = 'faction1',
+    ?int $finishedAt = null,
+): array {
+    $fixture = faceitMatchFixture();
+
+    $fixture['match_id'] = '1-real-match';
+    $fixture['results']['winner'] = $winnerFaction;
+    $fixture['finished_at'] = $finishedAt ?? CarbonImmutable::now()->subMinutes(5)->timestamp;
+
+    $fixture['teams']['faction1']['roster'][0]['player_id'] = $creatorGuid;
+    $fixture['teams']['faction1']['roster'][0]['nickname'] = 'alice-faceit';
+    $fixture['teams']['faction2']['roster'][0]['player_id'] = $takerGuid;
+    $fixture['teams']['faction2']['roster'][0]['nickname'] = 'bob-faceit';
+
+    return $fixture;
 }
 
 /**

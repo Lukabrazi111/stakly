@@ -20,7 +20,10 @@ use App\Services\Provider\FaceitGameClient;
 use App\Services\Provider\ProviderCircuitBreaker;
 use App\Services\Wallet;
 use Carbon\CarbonImmutable;
+use Illuminate\Cache\RateLimiting\Limit;
+use Illuminate\Queue\Middleware\RateLimited;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\RateLimiter;
 
 beforeEach(function () {
     config(['services.faceit.api_key' => 'test-faceit-api-key']);
@@ -80,34 +83,6 @@ function runFaceitAutoFetch(GameMatch $match): void
             app(RecordAutoFetchAttemptAction::class),
             app(ProviderCircuitBreaker::class),
         );
-}
-
-/**
- * Build a fixture where Alice (creator) + Bob (taker) are on OPPOSING factions.
- * Uses Slice 1's `faceitMatchFixture()` and overrides the first roster slot
- * on each faction so the job's `isOpposingRosterPair()` check passes.
- *
- * @return array<string, mixed>
- */
-function faceitOpposingRosterFixture(
-    string $creatorGuid = 'guid-a1',
-    string $takerGuid = 'guid-b1',
-    string $winnerFaction = 'faction1',
-    ?int $finishedAt = null,
-): array {
-    $fixture = faceitMatchFixture();
-
-    $fixture['match_id'] = '1-real-match';
-    $fixture['results']['winner'] = $winnerFaction;
-    $fixture['finished_at'] = $finishedAt ?? CarbonImmutable::now()->subMinutes(5)->timestamp;
-
-    // First slot of each faction is the Stakly player — others are unknowns.
-    $fixture['teams']['faction1']['roster'][0]['player_id'] = $creatorGuid;
-    $fixture['teams']['faction1']['roster'][0]['nickname'] = 'alice-faceit';
-    $fixture['teams']['faction2']['roster'][0]['player_id'] = $takerGuid;
-    $fixture['teams']['faction2']['roster'][0]['nickname'] = 'bob-faceit';
-
-    return $fixture;
 }
 
 // ─── Happy path ────────────────────────────────────────────────────────────
@@ -341,4 +316,28 @@ test('transient provider error records Error and re-throws for Laravel retry', f
 
     $attempt = MatchAutoFetchAttempt::query()->where('match_id', $match->id)->latest('id')->firstOrFail();
     expect($attempt->outcome)->toBe(AutoFetchOutcome::Error);
+});
+
+// ─── M35 P3 — self-throttle wiring ─────────────────────────────────────────
+
+test('AutoFetchFaceitGameJob declares the faceit-api RateLimited middleware', function () {
+    $match = faceitAutoFetchMatch();
+    $job = new AutoFetchFaceitGameJob($match);
+
+    $middleware = $job->middleware();
+
+    expect($middleware)->toHaveCount(1)
+        ->and($middleware[0])->toBeInstanceOf(RateLimited::class);
+});
+
+test('faceit-api rate limiter reflects services.faceit.requests_per_minute config', function () {
+    config(['services.faceit.requests_per_minute' => 13]);
+
+    $resolver = RateLimiter::limiter('faceit-api');
+    expect($resolver)->not->toBeNull();
+
+    $limit = $resolver(new stdClass);
+
+    expect($limit)->toBeInstanceOf(Limit::class)
+        ->and($limit->maxAttempts)->toBe(13);
 });

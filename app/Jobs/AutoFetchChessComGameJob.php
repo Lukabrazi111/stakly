@@ -23,6 +23,7 @@ use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueueAfterCommit;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
+use Illuminate\Queue\Middleware\RateLimited;
 use Illuminate\Queue\SerializesModels;
 
 /**
@@ -49,8 +50,14 @@ class AutoFetchChessComGameJob implements ShouldBeUnique, ShouldQueueAfterCommit
      * Budget covers the longest plausible run: 3 transient-error retries +
      * the 4-attempt no_match chain. They share the counter; the actual mix
      * depends on what the provider returns.
+     *
+     * M35 P1 — extra headroom for `RateLimited` middleware releases. Each
+     * throttle release consumes an attempt without running the handler, so
+     * we widen the budget to absorb plausible burst-moment release counts
+     * before the retry chain itself starts firing. `retryUntil()` remains
+     * the real safety net.
      */
-    public int $tries = 7;
+    public int $tries = 15;
 
     public int $timeout = 30;
 
@@ -95,6 +102,20 @@ class AutoFetchChessComGameJob implements ShouldBeUnique, ShouldQueueAfterCommit
         return $this->match->created_at
             ->copy()
             ->addHours((int) config('stakly.match_confirmation_timeout_hours'));
+    }
+
+    /**
+     * Self-throttle (M35 P1). `chess-com-api` limiter is defined in
+     * `AppServiceProvider::registerProviderRateLimiters()` and reads
+     * `config('services.chess_com.requests_per_minute')`. When the cap is
+     * hit, this middleware releases the job back to the queue (consuming
+     * one of the `$tries` budget) and retries after the limit window.
+     *
+     * @return list<object>
+     */
+    public function middleware(): array
+    {
+        return [new RateLimited('chess-com-api')];
     }
 
     public function handle(

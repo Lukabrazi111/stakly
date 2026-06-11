@@ -6,6 +6,7 @@ use App\Enums\AutoFetchOutcome;
 use App\Enums\LinkedAccountProvider;
 use App\Enums\MatchStatus;
 use App\Jobs\AutoFetchChessComGameJob;
+use App\Jobs\AutoFetchFaceitGameJob;
 use App\Jobs\AutoFetchLichessGameJob;
 use App\Models\GameMatch;
 use App\Services\Provider\ProviderCircuitBreaker;
@@ -57,6 +58,7 @@ class DispatchAutoFetchAction
         match ($platform) {
             LinkedAccountProvider::Lichess => AutoFetchLichessGameJob::dispatch($match),
             LinkedAccountProvider::ChessCom => AutoFetchChessComGameJob::dispatch($match),
+            LinkedAccountProvider::Faceit => AutoFetchFaceitGameJob::dispatch($match),
         };
     }
 

@@ -231,7 +231,7 @@ test('rate limited on final attempt: throws instead of release (budget exhausted
     {
         public function attempts(): int
         {
-            return 4; // matches $tries
+            return 12; // matches $tries (M35 P2 raised it to absorb RateLimited middleware releases)
         }
     };
 
@@ -257,7 +257,7 @@ test('error on final attempt: writes outcome_reason=retry_exhausted', function (
     {
         public function attempts(): int
         {
-            return 4;
+            return 12;
         }
     };
 
@@ -291,11 +291,11 @@ test('already_posted: writes a skipped row with reason already_posted, no provid
         ->and($attempt->latency_ms)->toBeNull();
 });
 
-test('retry policy: 4 tries, [5, 15, 30] backoff, retryUntil at match.created_at + M16 timeout', function () {
+test('retry policy: 12 tries (M35 P2 widened for throttle releases), [5, 15, 30] backoff, retryUntil at match.created_at + M16 timeout', function () {
     $match = lichessAuditMatch();
     $job = new AutoFetchLichessGameJob($match);
 
-    expect($job->tries)->toBe(4);
+    expect($job->tries)->toBe(12);
     expect($job->backoff())->toBe([5, 15, 30]);
     expect($job->retryUntil()->getTimestamp())->toBe(
         $match->created_at

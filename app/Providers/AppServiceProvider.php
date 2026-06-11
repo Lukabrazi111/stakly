@@ -5,13 +5,16 @@ namespace App\Providers;
 use App\Listeners\RecordImpersonationEnd;
 use App\Listeners\RecordImpersonationStart;
 use App\Services\GameApi\ChessGameApi;
+use App\Services\GameApi\FaceitGameApi;
 use App\Services\GameApi\GameApi;
 use App\Services\GameApi\MockGameApi;
 use App\Services\Provider\FaceitProvider;
 use Carbon\CarbonImmutable;
+use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\URL;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Validation\Rules\Password;
@@ -37,13 +40,21 @@ class AppServiceProvider extends ServiceProvider
      *
      * `MockGameApi` is also registered as its own concrete binding so tests
      * can resolve + force a winner without going through the public
-     * `GameApi` interface (which on the `chess` driver is wrapped by
-     * `ChessGameApi`). Both bindings resolve to the SAME singleton
-     * instance so a forced winner applied on either is visible to both.
+     * `GameApi` interface (which on the `chess` driver is wrapped by the
+     * production composition chain). Both bindings resolve to the SAME
+     * singleton instance so a forced winner applied on either is visible
+     * to both.
      *
-     * Adding a future 'chess_com' driver (Phase 4b) means a new case here
-     * plus a new `App\Services\GameApi\ChessComGameApi` implementation
-     * following the same fallback-to-mock pattern.
+     * M15 P5 — the `chess` driver is now a composition chain
+     * (`FaceitGameApi → ChessGameApi → MockGameApi`), not a chess-only
+     * adapter. Each link inspects the match's chat for its own provider's
+     * card and falls through on miss. So a chess match with a chess card
+     * resolves via `ChessGameApi`; a CS2 match with a FACEIT card resolves
+     * via `FaceitGameApi`; a card-less match of either game falls through
+     * to `MockGameApi` (Unknown → ManualReview). The driver name `chess`
+     * is retained for env-config backwards compatibility — adding a new
+     * non-chess game adapter (e.g. Riot for Valorant) means prepending a
+     * new link to the chain here, not creating a new driver case.
      */
     private function bindGameApi(): void
     {
@@ -54,7 +65,9 @@ class AppServiceProvider extends ServiceProvider
 
             return match ($driver) {
                 'mock' => $app->make(MockGameApi::class),
-                'chess' => new ChessGameApi($app->make(MockGameApi::class)),
+                'chess' => new FaceitGameApi(
+                    new ChessGameApi($app->make(MockGameApi::class)),
+                ),
                 default => throw new InvalidArgumentException("Unknown game_api_driver: {$driver}"),
             };
         });
@@ -68,6 +81,32 @@ class AppServiceProvider extends ServiceProvider
         $this->configureDefaults();
         $this->registerImpersonationListeners();
         $this->registerSocialiteListeners();
+        $this->registerProviderRateLimiters();
+    }
+
+    /**
+     * Self-throttle every outbound third-party API call (M35 / CLAUDE.md rule).
+     * Each limiter is consumed by `RateLimited` job middleware on the
+     * matching `AutoFetch*GameJob`. Caps live in `config/services.*` so
+     * they're tunable per-environment without a code change.
+     *
+     * When a job exceeds the limit the middleware releases it back to the
+     * queue (consuming an attempt — the job's `$tries` includes headroom
+     * for plausible release counts during burst traffic).
+     */
+    private function registerProviderRateLimiters(): void
+    {
+        RateLimiter::for('chess-com-api', fn () => Limit::perMinute(
+            (int) config('services.chess_com.requests_per_minute', 30),
+        ));
+
+        RateLimiter::for('lichess-api', fn () => Limit::perMinute(
+            (int) config('services.lichess.requests_per_minute', 60),
+        ));
+
+        RateLimiter::for('faceit-api', fn () => Limit::perMinute(
+            (int) config('services.faceit.requests_per_minute', 30),
+        ));
     }
 
     /**

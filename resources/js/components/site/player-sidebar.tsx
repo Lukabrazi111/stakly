@@ -1,4 +1,4 @@
-import { Link, usePage } from '@inertiajs/react';
+import { Link, router, usePage } from '@inertiajs/react';
 import {
     ListChecks,
     PanelLeftClose,
@@ -8,7 +8,7 @@ import {
     Wallet as WalletIcon,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import { Fragment, useEffect, useState } from 'react';
+import { Fragment, useState } from 'react';
 import {
     Tooltip,
     TooltipContent,
@@ -31,36 +31,30 @@ interface NavItem {
     matchPrefix: string;
 }
 
-const STORAGE_KEY = 'stakly:player-sidebar:collapsed';
-
-function readCollapsed(): boolean {
-    if (typeof window === 'undefined') {
-        return false;
-    }
-
-    return window.localStorage.getItem(STORAGE_KEY) === 'true';
-}
+const COOKIE_NAME = 'player_sidebar_collapsed';
+const COOKIE_MAX_AGE = 60 * 60 * 24 * 365;
 
 /**
  * Side navigation for the player hub. Sticky at `top-28` (just below
- * SiteHeader + MarqueeStrip). Collapsible rail mode persists in
- * localStorage; labels become tooltips when collapsed.
+ * SiteHeader + MarqueeStrip). Collapsible rail mode persists in a cookie
+ * shared via Inertia (`playerSidebarCollapsed`) so SSR + first paint +
+ * every subsequent navigation render the user's saved width — no
+ * post-mount transition from default → saved state on nav clicks.
  */
 export function PlayerSidebar() {
     const { url, props } = usePage();
     const username = props.auth.user?.username;
-    // Default false during SSR + first paint, sync from localStorage after
-    // mount — initial-render mismatch would snap the sidebar width.
-    const [collapsed, setCollapsed] = useState(false);
-
-    useEffect(() => {
-        setCollapsed(readCollapsed());
-    }, []);
+    const [collapsed, setCollapsed] = useState(props.playerSidebarCollapsed);
 
     const toggleCollapsed = () => {
         setCollapsed((current) => {
             const next = !current;
-            window.localStorage.setItem(STORAGE_KEY, String(next));
+            document.cookie = `${COOKIE_NAME}=${next}; max-age=${COOKIE_MAX_AGE}; path=/; samesite=lax`;
+            // Sidebar Links carry `prefetch`, which caches the full response
+            // (incl. shared props) for 30s. Without this flush, a toggle
+            // followed by a nav click within 30s would re-mount with the
+            // stale `playerSidebarCollapsed` from before the toggle.
+            router.flushAll();
 
             return next;
         });

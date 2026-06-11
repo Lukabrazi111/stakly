@@ -10,6 +10,7 @@ declare module '@inertiajs/core' {
             name: string;
             auth: Auth;
             sidebarOpen: boolean;
+            playerSidebarCollapsed: boolean;
             locale: string;
             availableLocales: LocaleMeta[];
             translations: Translations;
