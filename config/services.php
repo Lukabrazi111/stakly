@@ -65,6 +65,19 @@ return [
          * shows headroom (or 429s).
          */
         'requests_per_minute' => (int) env('LICHESS_REQUESTS_PER_MINUTE', 60),
+
+        /*
+         * Per-provider `ProviderCircuitBreaker` thresholds (M15 P5 Item 3).
+         * Each provider can tune its own trip + cooldown without affecting
+         * the others. Missing values fall back to the class-level defaults
+         * (10-min window, 5 min attempts, 50% error rate, 5-min cooldown).
+         */
+        'circuit_breaker' => [
+            'window_seconds' => (int) env('LICHESS_BREAKER_WINDOW_SECONDS', 600),
+            'min_attempts' => (int) env('LICHESS_BREAKER_MIN_ATTEMPTS', 5),
+            'error_rate_threshold' => (float) env('LICHESS_BREAKER_ERROR_RATE_THRESHOLD', 0.5),
+            'cooldown_seconds' => (int) env('LICHESS_BREAKER_COOLDOWN_SECONDS', 300),
+        ],
     ],
 
     /*
@@ -77,6 +90,14 @@ return [
      */
     'chess_com' => [
         'requests_per_minute' => (int) env('CHESS_COM_REQUESTS_PER_MINUTE', 30),
+
+        // Per-provider `ProviderCircuitBreaker` thresholds (M15 P5 Item 3).
+        'circuit_breaker' => [
+            'window_seconds' => (int) env('CHESS_COM_BREAKER_WINDOW_SECONDS', 600),
+            'min_attempts' => (int) env('CHESS_COM_BREAKER_MIN_ATTEMPTS', 5),
+            'error_rate_threshold' => (float) env('CHESS_COM_BREAKER_ERROR_RATE_THRESHOLD', 0.5),
+            'cooldown_seconds' => (int) env('CHESS_COM_BREAKER_COOLDOWN_SECONDS', 300),
+        ],
     ],
 
     /*
@@ -119,6 +140,14 @@ return [
          * once we observe real headroom or 429s.
          */
         'requests_per_minute' => (int) env('FACEIT_REQUESTS_PER_MINUTE', 30),
+
+        // Per-provider `ProviderCircuitBreaker` thresholds (M15 P5 Item 3).
+        'circuit_breaker' => [
+            'window_seconds' => (int) env('FACEIT_BREAKER_WINDOW_SECONDS', 600),
+            'min_attempts' => (int) env('FACEIT_BREAKER_MIN_ATTEMPTS', 5),
+            'error_rate_threshold' => (float) env('FACEIT_BREAKER_ERROR_RATE_THRESHOLD', 0.5),
+            'cooldown_seconds' => (int) env('FACEIT_BREAKER_COOLDOWN_SECONDS', 300),
+        ],
     ],
 
 ];

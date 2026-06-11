@@ -201,11 +201,11 @@ Decide per-adapter when the first non-chess one ships. The current `username` co
 
 - Webhook egress IPs → IP-allowlist middleware. Two paths: ask FACEIT support OR observe egress in production logs. Small follow-up commit: populate `services.faceit.webhook_egress_ips` + add allowlist check to `VerifyFaceitWebhook`. Support questions doc ([`docs/faceit-support-questions.md`](docs/faceit-support-questions.md)) remains a parallel path.
 
-**Phase 5 — Dispute fast-path + telemetry**
+**Phase 5 — Dispute fast-path + telemetry** _(shipped 2026-06-11)_
 
-- [ ] `OpenDisputeAction` — replace the `Game::Chess` hard-check on the fast-path gate with a capability check ("does this game have a real `GameApi` adapter registered?"). Likely a method on the `Game` enum (`hasArbitrationDriver(): bool`); see decision points in implementation notes.
-- [ ] `PipelineHealth` widget surfaces FACEIT alongside chess.com / Lichess (auto-settlements, errors, latency, volume).
-- [ ] Circuit breaker thresholds / cooldowns for FACEIT, distinct from chess's (per-provider config exposure).
+- [x] `OpenDisputeAction` capability gate (Item 1) — `Game::hasArbitrationDriver(): bool` enum method replaces the hardcoded `Game::Chess` check. Plus a **GameApi composition chain** (`FaceitGameApi → ChessGameApi → MockGameApi` in `AppServiceProvider::bindGameApi()`) so FACEIT disputes now actually settle via the fast-path — fallback type widened from concrete `MockGameApi` to the `GameApi` interface on both adapters to enable composition. Dota2 (no adapter) still routes to admin manual review.
+- [x] `PipelineHealth` widget per-provider breakdown (Item 2) — `settlementsStat()` and `errorsStat()` descriptions now append `chess_com / lichess / faceit` rollups via `providerBreakdown()` helper. Stable display order (chess providers first, FACEIT, future providers tail-appended). Admin can spot FACEIT-only error spikes that would otherwise hide in aggregate.
+- [x] Per-provider circuit-breaker config (Item 3) — `ProviderCircuitBreaker` thresholds (window seconds, min attempts, error rate, cooldown seconds) now read from `services.{provider}.circuit_breaker.*` with class-level defaults preserved. FACEIT can be tuned independently of chess once production telemetry diverges. No behavior change unless an env var explicitly overrides.
 
 > End-to-end dev test (seeded CS2 listing → take → polled → card → settle → wallet updates) is already covered by `tests/Feature/Jobs/AutoFetchFaceitPipelineTest.php` shipped in M15 P4 Slice 3.
 
