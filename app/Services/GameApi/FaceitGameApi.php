@@ -16,13 +16,20 @@ use App\Models\Message;
  * job time, so this driver only validates the card exists and the user is a
  * participant — no snapshot cross-check needed at arbitration time.
  *
- * Falls through to the injected `MockGameApi` when:
+ * Falls through to the injected `GameApi` fallback when:
  *   - No FACEIT auto-fetch card is on the match (job hasn't run yet, or
  *     AC-incomplete / no_winner outcome short-circuited).
- *   - The card carries no `winner_user_id` (draw) — `MockGameApi` decides
+ *   - The card carries no `winner_user_id` (draw) — fallback decides
  *     whether to surface as a winner-less Unknown or admin-forced result.
  *   - `winner_user_id` doesn't resolve to a match participant (defensive
  *     against a snapshot mutation after the card was posted).
+ *
+ * M15 P5 — fallback type widened to the `GameApi` interface so the
+ * production chain composes as `FaceitGameApi → ChessGameApi → MockGameApi`.
+ * Each link handles its own provider's cards and falls through on miss,
+ * which means a chess match with a chess card resolves via `ChessGameApi`
+ * and a CS2 match without a FACEIT card eventually reaches `MockGameApi`
+ * (Unknown → `ManualReview`).
  *
  * Confidence model: matches the chess driver. Auto-fetched cards are
  * `Confirmed` — the auto-fetch job has already enforced the anti-cheat gate
@@ -33,7 +40,7 @@ use App\Models\Message;
 final class FaceitGameApi implements GameApi
 {
     public function __construct(
-        private readonly MockGameApi $fallback,
+        private readonly GameApi $fallback,
     ) {}
 
     public function getMatchResult(GameMatch $match): GameApiResult

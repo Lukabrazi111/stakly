@@ -5,6 +5,7 @@ namespace App\Providers;
 use App\Listeners\RecordImpersonationEnd;
 use App\Listeners\RecordImpersonationStart;
 use App\Services\GameApi\ChessGameApi;
+use App\Services\GameApi\FaceitGameApi;
 use App\Services\GameApi\GameApi;
 use App\Services\GameApi\MockGameApi;
 use App\Services\Provider\FaceitProvider;
@@ -39,13 +40,21 @@ class AppServiceProvider extends ServiceProvider
      *
      * `MockGameApi` is also registered as its own concrete binding so tests
      * can resolve + force a winner without going through the public
-     * `GameApi` interface (which on the `chess` driver is wrapped by
-     * `ChessGameApi`). Both bindings resolve to the SAME singleton
-     * instance so a forced winner applied on either is visible to both.
+     * `GameApi` interface (which on the `chess` driver is wrapped by the
+     * production composition chain). Both bindings resolve to the SAME
+     * singleton instance so a forced winner applied on either is visible
+     * to both.
      *
-     * Adding a future 'chess_com' driver (Phase 4b) means a new case here
-     * plus a new `App\Services\GameApi\ChessComGameApi` implementation
-     * following the same fallback-to-mock pattern.
+     * M15 P5 — the `chess` driver is now a composition chain
+     * (`FaceitGameApi → ChessGameApi → MockGameApi`), not a chess-only
+     * adapter. Each link inspects the match's chat for its own provider's
+     * card and falls through on miss. So a chess match with a chess card
+     * resolves via `ChessGameApi`; a CS2 match with a FACEIT card resolves
+     * via `FaceitGameApi`; a card-less match of either game falls through
+     * to `MockGameApi` (Unknown → ManualReview). The driver name `chess`
+     * is retained for env-config backwards compatibility — adding a new
+     * non-chess game adapter (e.g. Riot for Valorant) means prepending a
+     * new link to the chain here, not creating a new driver case.
      */
     private function bindGameApi(): void
     {
@@ -56,7 +65,9 @@ class AppServiceProvider extends ServiceProvider
 
             return match ($driver) {
                 'mock' => $app->make(MockGameApi::class),
-                'chess' => new ChessGameApi($app->make(MockGameApi::class)),
+                'chess' => new FaceitGameApi(
+                    new ChessGameApi($app->make(MockGameApi::class)),
+                ),
                 default => throw new InvalidArgumentException("Unknown game_api_driver: {$driver}"),
             };
         });

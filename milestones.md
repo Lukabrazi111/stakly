@@ -203,10 +203,11 @@ Decide per-adapter when the first non-chess one ships. The current `username` co
 
 **Phase 5 — Dispute fast-path + telemetry**
 
-- [ ] `OpenDisputeAction` — replace the `Game::Chess` hard-check on the fast-path gate with a capability check ("does this game have a real `GameApi` adapter registered?"). Could be a method on the `Game` enum (e.g. `hasArbitrationDriver(): bool`) or a config-driven allowlist.
+- [ ] `OpenDisputeAction` — replace the `Game::Chess` hard-check on the fast-path gate with a capability check ("does this game have a real `GameApi` adapter registered?"). Likely a method on the `Game` enum (`hasArbitrationDriver(): bool`); see decision points in implementation notes.
 - [ ] `PipelineHealth` widget surfaces FACEIT alongside chess.com / Lichess (auto-settlements, errors, latency, volume).
-- [ ] Circuit breaker thresholds / cooldowns for FACEIT, distinct from chess's.
-- [ ] End-to-end dev test: seeded CS2 listing → take → result polled → card posted → settlement fires → wallet updates correct.
+- [ ] Circuit breaker thresholds / cooldowns for FACEIT, distinct from chess's (per-provider config exposure).
+
+> End-to-end dev test (seeded CS2 listing → take → polled → card → settle → wallet updates) is already covered by `tests/Feature/Jobs/AutoFetchFaceitPipelineTest.php` shipped in M15 P4 Slice 3.
 
 ### Phase 0 — research findings (2026-06-07)
 

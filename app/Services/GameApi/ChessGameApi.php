@@ -18,12 +18,18 @@ use App\Models\Message;
  * card uses the chess.com snapshot. M15's per-game adapters (FACEIT,
  * Riot, etc.) get their own arbitration drivers — this class is chess-only.
  *
- * Falls through to the injected `MockGameApi` fallback when:
+ * Falls through to the injected `GameApi` fallback when:
  *   - No auto-fetched card exists (race window / unlinked players / no
  *     decisive game in the search / both jobs ran but found nothing).
  *   - The card's winner_username doesn't map to either snapshotted handle
  *     (defensive — auto-fetch validates upstream, but a snapshot mutated
  *     post-card-post shouldn't crash arbitration).
+ *
+ * M15 P5 — fallback type widened to the `GameApi` interface so this driver
+ * can be composed with non-chess drivers (e.g. wrapped by `FaceitGameApi`
+ * in `AppServiceProvider::bindGameApi()`). The default production chain
+ * is `FaceitGameApi → ChessGameApi → MockGameApi`; each link handles its
+ * own provider's cards and falls through to the next on miss.
  *
  * Confidence model: auto-fetched cards are always `Confirmed` because the
  * auto-fetch jobs already enforce single-decisive-game-in-window +
@@ -36,7 +42,7 @@ use App\Models\Message;
 final class ChessGameApi implements GameApi
 {
     public function __construct(
-        private readonly MockGameApi $fallback,
+        private readonly GameApi $fallback,
     ) {}
 
     public function getMatchResult(GameMatch $match): GameApiResult
