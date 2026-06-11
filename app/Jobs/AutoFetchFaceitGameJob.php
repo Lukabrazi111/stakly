@@ -23,6 +23,7 @@ use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueueAfterCommit;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
+use Illuminate\Queue\Middleware\RateLimited;
 use Illuminate\Queue\SerializesModels;
 
 /**
@@ -52,7 +53,12 @@ class AutoFetchFaceitGameJob implements ShouldBeUnique, ShouldQueueAfterCommit
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
-    public int $tries = 7;
+    /**
+     * M35 P3 — widened from 7 to 15 to absorb `RateLimited` middleware
+     * releases. Each throttle release consumes an attempt without running
+     * the handler; `retryUntil()` is the real safety net.
+     */
+    public int $tries = 15;
 
     public int $timeout = 30;
 
@@ -95,6 +101,20 @@ class AutoFetchFaceitGameJob implements ShouldBeUnique, ShouldQueueAfterCommit
         return $this->match->created_at
             ->copy()
             ->addHours((int) config('stakly.match_confirmation_timeout_hours'));
+    }
+
+    /**
+     * Self-throttle (M35 P3). `faceit-api` limiter is defined in
+     * `AppServiceProvider::registerProviderRateLimiters()` and reads
+     * `config('services.faceit.requests_per_minute')`. When the cap is
+     * hit, this middleware releases the job back to the queue (consuming
+     * one of the `$tries` budget) and retries after the limit window.
+     *
+     * @return list<object>
+     */
+    public function middleware(): array
+    {
+        return [new RateLimited('faceit-api')];
     }
 
     public function handle(

@@ -92,6 +92,10 @@ class AppServiceProvider extends ServiceProvider
         RateLimiter::for('lichess-api', fn () => Limit::perMinute(
             (int) config('services.lichess.requests_per_minute', 60),
         ));
+
+        RateLimiter::for('faceit-api', fn () => Limit::perMinute(
+            (int) config('services.faceit.requests_per_minute', 30),
+        ));
     }
 
     /**

@@ -501,9 +501,12 @@ Scope note on the profile-client side: self-throttling at the HTTP-call layer of
 - [x] `LichessProfileClient` brought up to `LichessGameClient` parity: `classifyResponseError` mirrors the game-client mapping (429 → `RateLimitedError` with `retryAt`, 5xx → `TransientProviderError`, 4xx-other → `PermanentProviderError`), 404 still throws `ProfileNotFoundException` and counts as breaker success. Constructor takes `ProviderCircuitBreaker`; records success / failure on `LinkedAccountProvider::Lichess`.
 - [x] Tests: 10 new `LichessProfileClientTest` cases (happy path, missing-profile 200, 404, 429 + retryAt, 5xx, 4xx-other, breaker trip / no-trip / 404-defined-answer / connection-failure). 2 new throttle-wiring tests in `AutoFetchLichessGameJobTest`. Existing `AutoFetchLichessAuditTrailTest` updated for `$tries=12`.
 
-**Phase 3 — FACEIT remediation** _(commit: `feat(m35-p3): FACEIT self-throttle + gap fixes`)_
+**Phase 3 — FACEIT remediation** _(commit: `feat(m35-p3): FACEIT self-throttle + profile-client upgrade`)_
 
-- [ ] Same shape, FACEIT-specific. By here the pattern is muscle memory.
+- [x] `RateLimiter::for('faceit-api', ...)` in `AppServiceProvider`. Cap value from `services.faceit.requests_per_minute` (default **30** — undocumented provider quota; CLAUDE.md conservative-cap rule applies). Tune via `FACEIT_REQUESTS_PER_MINUTE` once we observe real headroom or 429s.
+- [x] `RateLimited::class` middleware applied to `AutoFetchFaceitGameJob`. `$tries` widened from 7 → 15 to absorb throttle releases.
+- [x] `FaceitProfileClient` brought up to `FaceitGameClient` parity: `classifyResponseError` mirrors the game-client mapping (429 → `RateLimitedError` with `retryAt`, 5xx → `TransientProviderError`, 4xx-other → `PermanentProviderError`), 404 still throws `ProfileNotFoundException` and counts as breaker success. Constructor takes `ProviderCircuitBreaker`. Graceful-null path (missing API key) preserved — returns null without making a request and without touching the breaker (no API call means no health signal).
+- [x] Tests: 12 new `FaceitProfileClientTest` cases (happy path, missing CS2 block, missing API key dev path, 404, 429 + retryAt, 5xx, 4xx-other, breaker trip / no-trip / 404-defined-answer / connection-failure, Authorization Bearer header). 2 new throttle-wiring tests in `AutoFetchFaceitGameJobTest` (FACEIT job test had no pinned `$tries` assertions to update).
 
 **Phase 4 — Telemetry pass _(skipped 2026-06-11)_**
 

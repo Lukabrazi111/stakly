@@ -109,6 +109,16 @@ return [
         // IP allowlist (`webhook_egress_ips`) is a planned second layer
         // once FACEIT support confirms egress IPs.
         'webhook_secret' => env('FACEIT_WEBHOOK_SECRET'),
+
+        /*
+         * Outbound API self-throttle (M35 Phase 3). Caps how many
+         * `AutoFetchFaceitGameJob` executions per minute hit the
+         * provider. Default 30 reflects the CLAUDE.md conservative-cap
+         * rule for undocumented provider quotas — FACEIT support hasn't
+         * confirmed their production-key limit yet. Tune via the env var
+         * once we observe real headroom or 429s.
+         */
+        'requests_per_minute' => (int) env('FACEIT_REQUESTS_PER_MINUTE', 30),
     ],
 
 ];
