@@ -272,9 +272,9 @@ Polling-first; webhook receiver lives in Slice 4, deferred until FACEIT support 
 
 **Slice 3 — `DispatchAutoFetchAction` wiring + end-to-end** _(commit: `feat(m15-p4): dispatch FACEIT job per listing.platform`)_
 
-- [ ] `DispatchAutoFetchAction` extends its match expression to dispatch `AutoFetchFaceitGameJob` when `listing.platform === LinkedAccountProvider::Faceit`.
-- [ ] End-to-end seeded test: CS2 listing → take → API result polled → card posted → settlement fires → wallet balances correct (winner = stake × 2 minus platform fee).
-- [ ] Idempotency: re-dispatch with the same match_id is a no-op (existing AutoFetch shape already covers this via `MatchAutoFetchAttempt`).
+- [x] `DispatchAutoFetchAction` extends its match expression to dispatch `AutoFetchFaceitGameJob` when `listing.platform === LinkedAccountProvider::Faceit`. No `default` arm — Steam (the other enum stub) keeps throwing `UnhandledMatchError` loud, which is the right shape until a Steam adapter lands. Snapshot guard untouched: `TakeListingAction::snapshotProviderAccounts()` always populates `username` + `provider_user_id` atomically for FACEIT, so `snapshotUsername()` remains a valid proxy for "snapshot exists with the data the job needs." 2 new dispatch tests (positive + per-provider circuit-breaker isolation).
+- [x] End-to-end seeded test at `tests/Feature/Jobs/AutoFetchFaceitPipelineTest.php`: CS2 listing created → `TakeListingAction` (creator-stake hold + taker-stake hold + match + snapshots from linked accounts) → `DispatchAutoFetchAction` (sync queue runs the job inline) → `Http::fake` for FACEIT `/players/{guid}/history` + `/matches/{id}` → system card posted with `winner_user_id` resolved at job time → `SettleFromCardAction` pays the winner + credits platform fee → wallet ledger asserted via BCMath exact (`580.000000` creator winner / `400.000000` taker loser / `20.000000` platform fee at the default 10% rate). `faceitOpposingRosterFixture` promoted from the job test to `Pest.php` so both files share it.
+- [x] Idempotency test covers re-dispatch after settlement → `not_pending` skip → wallet balance unchanged + no second card posted. Plus a third defensive test that a CS2-FACEIT listing taken by a non-FACEIT-linked taker short-circuits at `TakeListingAction`'s gate (`not_linked` sentinel, no money moves).
 
 **Slice 4 — Webhook receiver (deferred until egress IPs land)**
 

@@ -82,34 +82,6 @@ function runFaceitAutoFetch(GameMatch $match): void
         );
 }
 
-/**
- * Build a fixture where Alice (creator) + Bob (taker) are on OPPOSING factions.
- * Uses Slice 1's `faceitMatchFixture()` and overrides the first roster slot
- * on each faction so the job's `isOpposingRosterPair()` check passes.
- *
- * @return array<string, mixed>
- */
-function faceitOpposingRosterFixture(
-    string $creatorGuid = 'guid-a1',
-    string $takerGuid = 'guid-b1',
-    string $winnerFaction = 'faction1',
-    ?int $finishedAt = null,
-): array {
-    $fixture = faceitMatchFixture();
-
-    $fixture['match_id'] = '1-real-match';
-    $fixture['results']['winner'] = $winnerFaction;
-    $fixture['finished_at'] = $finishedAt ?? CarbonImmutable::now()->subMinutes(5)->timestamp;
-
-    // First slot of each faction is the Stakly player — others are unknowns.
-    $fixture['teams']['faction1']['roster'][0]['player_id'] = $creatorGuid;
-    $fixture['teams']['faction1']['roster'][0]['nickname'] = 'alice-faceit';
-    $fixture['teams']['faction2']['roster'][0]['player_id'] = $takerGuid;
-    $fixture['teams']['faction2']['roster'][0]['nickname'] = 'bob-faceit';
-
-    return $fixture;
-}
-
 // ─── Happy path ────────────────────────────────────────────────────────────
 
 test('finished FACEIT match with both rosters AC-required posts a card AND settles to the winner', function () {

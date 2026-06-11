@@ -5,6 +5,7 @@ use App\Enums\AutoFetchOutcome;
 use App\Enums\LinkedAccountProvider;
 use App\Enums\MatchStatus;
 use App\Jobs\AutoFetchChessComGameJob;
+use App\Jobs\AutoFetchFaceitGameJob;
 use App\Jobs\AutoFetchLichessGameJob;
 use App\Models\GameMatch;
 use App\Models\Listing;
@@ -66,6 +67,17 @@ test('dispatches the chess.com job for a Pending chess.com match with full snaps
     app(DispatchAutoFetchAction::class)->handle($match);
 
     Queue::assertPushed(AutoFetchChessComGameJob::class, fn ($job) => $job->match->is($match));
+    Queue::assertNotPushed(AutoFetchLichessGameJob::class);
+    expect(MatchAutoFetchAttempt::count())->toBe(0);
+});
+
+test('dispatches the FACEIT job for a Pending FACEIT match with full snapshots', function () {
+    [, , , $match] = pendingMatchWithSnapshots(LinkedAccountProvider::Faceit);
+
+    app(DispatchAutoFetchAction::class)->handle($match);
+
+    Queue::assertPushed(AutoFetchFaceitGameJob::class, fn ($job) => $job->match->is($match));
+    Queue::assertNotPushed(AutoFetchChessComGameJob::class);
     Queue::assertNotPushed(AutoFetchLichessGameJob::class);
     expect(MatchAutoFetchAttempt::count())->toBe(0);
 });
@@ -151,6 +163,19 @@ test('circuit_open is checked per-provider — chess.com dispatches while Liches
     app(DispatchAutoFetchAction::class)->handle($match);
 
     Queue::assertPushed(AutoFetchChessComGameJob::class);
+});
+
+test('circuit_open is checked per-provider — FACEIT dispatches while chess.com is open', function () {
+    [, , , $match] = pendingMatchWithSnapshots(LinkedAccountProvider::Faceit);
+
+    $breaker = app(ProviderCircuitBreaker::class);
+    foreach (range(1, 5) as $_) {
+        $breaker->recordFailure(LinkedAccountProvider::ChessCom);
+    }
+
+    app(DispatchAutoFetchAction::class)->handle($match);
+
+    Queue::assertPushed(AutoFetchFaceitGameJob::class);
 });
 
 test('not_pending skip records the provider from the listing', function () {
