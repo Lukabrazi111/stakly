@@ -23,6 +23,7 @@ use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueueAfterCommit;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
+use Illuminate\Queue\Middleware\RateLimited;
 use Illuminate\Queue\SerializesModels;
 
 /**
@@ -48,7 +49,12 @@ class AutoFetchLichessGameJob implements ShouldBeUnique, ShouldQueueAfterCommit
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
-    public int $tries = 4;
+    /**
+     * M35 P2 — widened from 4 to 12 to absorb `RateLimited` middleware
+     * releases. Each throttle release consumes an attempt without running
+     * the handler; `retryUntil()` is the real safety net.
+     */
+    public int $tries = 12;
 
     public int $timeout = 30;
 
@@ -89,6 +95,20 @@ class AutoFetchLichessGameJob implements ShouldBeUnique, ShouldQueueAfterCommit
         return $this->match->created_at
             ->copy()
             ->addHours((int) config('stakly.match_confirmation_timeout_hours'));
+    }
+
+    /**
+     * Self-throttle (M35 P2). `lichess-api` limiter is defined in
+     * `AppServiceProvider::registerProviderRateLimiters()` and reads
+     * `config('services.lichess.requests_per_minute')`. When the cap is
+     * hit, this middleware releases the job back to the queue (consuming
+     * one of the `$tries` budget) and retries after the limit window.
+     *
+     * @return list<object>
+     */
+    public function middleware(): array
+    {
+        return [new RateLimited('lichess-api')];
     }
 
     public function handle(

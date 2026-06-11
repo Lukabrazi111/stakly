@@ -494,9 +494,12 @@ Scope note on the profile-client side: self-throttling at the HTTP-call layer of
 - [x] `ChessComProfileClient` brought up to `ChessComGameClient` parity (Tier 2 from Phase 0): `classifyResponseError` mirrors the game-client mapping (429 → `RateLimitedError` with `retryAt` from `RateLimitHeaderParser`, 5xx → `TransientProviderError`, 4xx-other → `PermanentProviderError`), 404 still throws `ProfileNotFoundException` (separate hierarchy; counts as breaker success — defined-answer). Constructor now takes `ProviderCircuitBreaker`; every HTTP call records success / failure on the shared breaker keyed on `LinkedAccountProvider::ChessCom`.
 - [x] Tests: 10 new `ChessComProfileClientTest` cases (happy path, missing-location 200, 404, 429 + retryAt parsing, 5xx, 4xx-other, breaker trip on 5xx/connection-failure, breaker stays closed on 200/404). 2 new throttle-wiring tests in `AutoFetchChessComGameJobTest` (middleware presence, cap-from-config). Existing `AutoFetchChessComAuditTrailTest` updated for the new `$tries=15` budget.
 
-**Phase 2 — Lichess remediation** _(commit: `feat(m35-p2): Lichess self-throttle + gap fixes`)_
+**Phase 2 — Lichess remediation** _(commit: `feat(m35-p2): Lichess self-throttle + profile-client upgrade`)_
 
-- [ ] Same shape as Phase 1, Lichess-specific. Reuses the Phase 1 infra pattern.
+- [x] `RateLimiter::for('lichess-api', ...)` in `AppServiceProvider`. Cap value from `services.lichess.requests_per_minute` (default **60** — Lichess documents 20 req/sec = 1200/min, so 60/min has a 20× safety margin while being well above realistic load).
+- [x] `RateLimited::class` middleware applied to `AutoFetchLichessGameJob`. `$tries` widened from 4 → 12 to absorb throttle releases.
+- [x] `LichessProfileClient` brought up to `LichessGameClient` parity: `classifyResponseError` mirrors the game-client mapping (429 → `RateLimitedError` with `retryAt`, 5xx → `TransientProviderError`, 4xx-other → `PermanentProviderError`), 404 still throws `ProfileNotFoundException` and counts as breaker success. Constructor takes `ProviderCircuitBreaker`; records success / failure on `LinkedAccountProvider::Lichess`.
+- [x] Tests: 10 new `LichessProfileClientTest` cases (happy path, missing-profile 200, 404, 429 + retryAt, 5xx, 4xx-other, breaker trip / no-trip / 404-defined-answer / connection-failure). 2 new throttle-wiring tests in `AutoFetchLichessGameJobTest`. Existing `AutoFetchLichessAuditTrailTest` updated for `$tries=12`.
 
 **Phase 3 — FACEIT remediation** _(commit: `feat(m35-p3): FACEIT self-throttle + gap fixes`)_
 

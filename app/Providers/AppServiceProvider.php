@@ -88,6 +88,10 @@ class AppServiceProvider extends ServiceProvider
         RateLimiter::for('chess-com-api', fn () => Limit::perMinute(
             (int) config('services.chess_com.requests_per_minute', 30),
         ));
+
+        RateLimiter::for('lichess-api', fn () => Limit::perMinute(
+            (int) config('services.lichess.requests_per_minute', 60),
+        ));
     }
 
     /**

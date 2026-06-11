@@ -55,6 +55,16 @@ return [
      */
     'lichess' => [
         'token' => env('LICHESS_API_TOKEN'),
+
+        /*
+         * Outbound API self-throttle (M35 Phase 2). Caps how many
+         * `AutoFetchLichessGameJob` executions per minute hit the
+         * provider. Default 60 reflects per-provider tuning — Lichess
+         * publishes a 20 req/sec global limit (= 1200/min) so 60/min
+         * leaves a 20× safety margin. Tune via env if production data
+         * shows headroom (or 429s).
+         */
+        'requests_per_minute' => (int) env('LICHESS_REQUESTS_PER_MINUTE', 60),
     ],
 
     /*

@@ -17,8 +17,11 @@ use App\Services\Provider\Exceptions\TransientProviderError;
 use App\Services\Provider\LichessGameClient;
 use App\Services\Provider\ProviderCircuitBreaker;
 use App\Services\Wallet;
+use Illuminate\Cache\RateLimiting\Limit;
+use Illuminate\Queue\Middleware\RateLimited;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\RateLimiter;
 
 /**
  * Behaviour for the auto-fetch path. The decision logic (single-completed-
@@ -443,4 +446,28 @@ test('paste-source game_card does NOT block a later auto-fetch post', function (
     expect($system)->not->toBeNull()
         ->and($system->attachments_json[0]['source'])->toBe('auto_fetch')
         ->and($system->attachments_json[0]['game_id'])->toBe('autoabcd');
+});
+
+// ─── M35 P2 — self-throttle wiring ─────────────────────────────────────────
+
+test('AutoFetchLichessGameJob declares the lichess-api RateLimited middleware', function () {
+    $match = autoFetchMatch();
+    $job = new AutoFetchLichessGameJob($match);
+
+    $middleware = $job->middleware();
+
+    expect($middleware)->toHaveCount(1)
+        ->and($middleware[0])->toBeInstanceOf(RateLimited::class);
+});
+
+test('lichess-api rate limiter reflects services.lichess.requests_per_minute config', function () {
+    config(['services.lichess.requests_per_minute' => 11]);
+
+    $resolver = RateLimiter::limiter('lichess-api');
+    expect($resolver)->not->toBeNull();
+
+    $limit = $resolver(new stdClass);
+
+    expect($limit)->toBeInstanceOf(Limit::class)
+        ->and($limit->maxAttempts)->toBe(11);
 });
