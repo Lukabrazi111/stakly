@@ -58,6 +58,18 @@ return [
     ],
 
     /*
+     * chess.com Published Data API client throttle (M35 Phase 1). Caps how
+     * many `AutoFetchChessComGameJob` executions per minute hit the
+     * provider — paired with `RateLimiter::for('chess-com-api', ...)` in
+     * AppServiceProvider and `RateLimited` job middleware. Default 30 is
+     * the M35 conservative cap for undocumented provider quotas; tune via
+     * the env var if production data shows headroom (or 429s).
+     */
+    'chess_com' => [
+        'requests_per_minute' => (int) env('CHESS_COM_REQUESTS_PER_MINUTE', 30),
+    ],
+
+    /*
      * FACEIT OAuth + Data API credentials (M15 Phase 2). Wired as a Socialite
      * community provider in `AppServiceProvider::registerSocialiteListeners()`
      * via the `socialiteproviders/faceit` package.

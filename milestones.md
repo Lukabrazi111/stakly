@@ -26,7 +26,7 @@ _None — pick the next milestone from "Active / upcoming" below._
 - **M21** — Blacklist + safety. Block users from listings + chat, with anti-evasion considerations. Has open design questions (block semantics + multi-account evasion) — needs alignment before coding.
 - **M33** — Listing time-control contract. Make Stakly's accepted time controls (blitz / rapid / classical) explicit in the listing-creation form, surface `time_control_mismatch` as a player-facing banner on stuck matches, and optionally re-enable Slice 3d strictness behind a per-listing opt-in. Reverted from M14 on 2026-06-06 — friction (legitimate correspondence / bullet games rejected silently) outweighed the small sandbag attack surface at this stage. Revisit when launch scale or a real abuse incident makes it relevant.
 - **M34** — Team play + lobbies. Production-launch dependency for CS2 and every future 5v5 game (Dota 2 / Valorant / LoL). Adds `team_size` to listings (default 1; chess stays 1, CS2 = 5), a lobby model for multi-player team assembly (private invite-link or public auto-fill), per-player stake collection with all-or-nothing locking (4-of-5 staked → listing waits or expires + refunds), roster-aware match snapshots (`match_provider_snapshots.slot_index` 0–4), per-player skill gate, and settlement payout split across the winning roster. Public / private listings (invite-only via shareable link) also lands here — same lobby surface. **5v5 first; 2v2 Wingman is a fast follow-up since it shares the same lobby infrastructure with a smaller team size.** The FACEIT outcome pipeline (M15 P4) doesn't need to change — `FaceitMatchResult` already parses full 5-player rosters; M34 only changes the identity-mapping side (which snapshot rows we cross-check against the roster).
-- **M35** — Outbound third-party API rate-limit audit. Sweep every external API integration in the app (chess.com, Lichess, FACEIT, future chain provider, mail / push providers, anywhere we call out to someone else's service) and confirm each has: a **client-side self-throttle** (Laravel `RateLimiter::for(...)` + `RateLimited` job middleware) at a conservative cap (default 30 req/min when the real limit isn't documented), **429 response-header handling** via `RateLimitHeaderParser` (`Retry-After` / `X-RateLimit-Reset`), and a **per-provider `ProviderCircuitBreaker`**. Add whichever piece is missing per provider; pull cap values out into `config/services.php` so they're tunable without code change. Goal: zero production 429 incidents and zero settlement freezes from breaker trips. Deliverable is a one-page table per provider (current state → target state → diff applied) + the code changes. Likely catches at least chess.com / Lichess (which have retry + breaker from M14 but no self-throttle).
+- **M35** — Outbound third-party API rate-limit audit. Sweep every external HTTP integration (chess.com, Lichess, FACEIT, link-preview fetcher) and add missing pieces per provider: client-side self-throttle (default 30 req/min when limit undocumented), 429 response handling via `RateLimitHeaderParser`, per-provider `ProviderCircuitBreaker`, explicit timeouts. Goal: zero production 429 incidents and zero settlement freezes from breaker trips. Detailed phase plan in the M35 section below.
 
 > Active milestone keeps a detailed task list. Future milestones expand when started. Any of this can shift — flag the change, update the doc.
 
@@ -416,5 +416,100 @@ Not CMS-managed on purpose. The Filament CMS template (`cms/page.tsx`) is intent
 - A/B testing infrastructure for headline copy. Premature for a page that isn't even live yet.
 - Affiliate / referral fee tracking. Different scope; if revenue-share programs ship, they own their own page.
 - Localised currency conversion ("how much is this in EUR?"). USDT is the unit on every Stakly surface; introducing currency conversion UI confuses the platform's denomination.
+
+---
+
+## M35 — Outbound third-party API rate-limit audit
+
+Sweep every outbound HTTP integration in the codebase and confirm each has:
+
+1. **Client-side self-throttle** — Laravel `RateLimiter::for(...)` + `RateLimited` job middleware at a conservative cap (default 30 req/min when the real provider limit isn't documented).
+2. **429 response-header handling** — via the existing `App\Services\Provider\RateLimitHeaderParser` (`Retry-After` / `X-RateLimit-Reset`).
+3. **Per-provider `App\Services\Provider\ProviderCircuitBreaker`** — so a sudden provider outage doesn't melt the queue.
+4. **Explicit timeouts** — every outbound HTTP call should set `->timeout(...)` and `->connectTimeout(...)`. Default Guzzle has no timeout — a hung third-party server holds the worker indefinitely without it.
+
+Goal: zero production 429 incidents and zero settlement freezes from breaker trips.
+
+### Scope
+
+- **In scope**: `ChessComGameClient` + `ChessComProfileClient`, `LichessGameClient` + `LichessProfileClient`, `FaceitGameClient` + `FaceitProfileClient`, `FetchLinkMetadataJob` (chat link previews — different shape, see Phase 0 notes).
+- **Out of scope (for now)**: OAuth callback flows (user-driven, low volume); mail providers (still on Mailpit locally — revisit when wiring Postmark / Resend / SES); chain integration (M9 paused).
+
+### Phases
+
+**Phase 0 — Inventory + audit table** _(read-only — shipped 2026-06-11)_
+
+- [x] Enumerated every `Http::` callsite + every Provider client in `app/Services/Provider/` + the link-preview job.
+- [x] Per-provider table with current vs target state + gap diff (below).
+- [x] Flagged the link-preview fetcher (arbitrary URLs, not a single provider — needs a global throttle if anything, not per-provider).
+
+### Phase 0 — audit findings (2026-06-11)
+
+Read across `app/Services/Provider/` + `app/Jobs/AutoFetch*GameJob.php` + `app/Jobs/FetchLinkMetadataJob.php`. Symbol key: ✅ = present; ❌ = missing; (job) = handled at the dispatched job's layer, not at the client; — = not applicable.
+
+**Game clients (auto-fetch path — money-touching).** All three game clients share the same shape and same gap.
+
+| Client / Job | Self-throttle | Circuit breaker | 429 handling | Retry policy | Timeout |
+|---|---|---|---|---|---|
+| `ChessComGameClient` + `AutoFetchChessComGameJob` | ❌ | ✅ (job uses `ProviderCircuitBreaker`) | ✅ (`classifyResponseError` → `RateLimitedError` + `RateLimitHeaderParser`) | ✅ (`$tries=7`, `backoff()=[5,15,30]`, no_match chain `[5,15,45]`, `retryUntil()`) | ✅ 10s |
+| `LichessGameClient` + `AutoFetchLichessGameJob` | ❌ | ✅ | ✅ | ✅ (`$tries=4`, `backoff()=[5,15,30]`) | ✅ 10s |
+| `FaceitGameClient` + `AutoFetchFaceitGameJob` | ❌ | ✅ | ✅ | ✅ (`$tries=7`, same shape as chess.com) | ✅ 10s |
+
+**Profile clients (signup / verification path — also money-relevant, looser handling).** Used by `VerifyLinkedAccountAction` + `LinkFaceitAccountAction` synchronously from controllers — no job-layer wrapping.
+
+| Client | Self-throttle | Circuit breaker | 429 handling | Retry policy | Timeout |
+|---|---|---|---|---|---|
+| `ChessComProfileClient` | ❌ | ❌ | ❌ (no `classifyResponseError` — only `successful()`-check; 429 lumped into generic `TransientProviderError`) | ❌ (called inline) | ✅ 10s |
+| `LichessProfileClient` | ❌ | ❌ | ❌ same | ❌ | ✅ 10s |
+| `FaceitProfileClient` | ❌ | ❌ | ❌ same | ❌ | ✅ 10s |
+
+**Other outbound HTTP (different shape).**
+
+| Job | Self-throttle | Circuit breaker | 429 handling | Retry policy | Timeout |
+|---|---|---|---|---|---|
+| `FetchLinkMetadataJob` (chat link previews) | ❌ | — (calls arbitrary URLs, no per-provider notion) | — | ✅ `$tries=1` (intentional — no point retrying a dead URL) | ✅ 30s |
+
+**Confirmed zero `RateLimiter::for(...)` definitions in `AppServiceProvider` for outbound providers.** The CLAUDE.md self-throttle rule we just landed isn't enforced anywhere yet.
+
+### Gap analysis + Phase 1–3 priorities
+
+**Tier 1 (must fix — money path).** Self-throttle missing on all three auto-fetch jobs. Without it, a busy moment with many simultaneous match completions burns through provider quota → 429 → circuit breaker trips → settlement freezes for *every* Pending match in that provider's pipeline until the breaker recloses. This is exactly what M35 was created to prevent. **Addresses: Phase 1 (chess.com), Phase 2 (Lichess), Phase 3 (FACEIT).**
+
+**Tier 2 (should fix — signup path).** The three profile clients are noticeably weaker than the game clients: no 429-specific handling, no circuit-breaker integration, no retry. A chess.com profile-lookup 429 during a signup spike surfaces as a generic "couldn't reach chess.com" error to the user, with no retry. **Add to each phase as a sub-task: bring the matching profile client up to game-client parity (`classifyResponseError` + `RateLimitHeaderParser` + circuit-breaker `recordSuccess`/`recordFailure` calls).** Profile clients still won't have a self-throttle (they're called synchronously, not via a queued job), so the protection is the breaker + Retry-After honoring + (optionally) a request-key-scoped throttle on the calling controller endpoint.
+
+**Tier 3 (nice-to-have).** `FetchLinkMetadataJob` calls arbitrary user-pasted URLs and is already capped at `tries=1`. Could add a global `RateLimiter::for('link-preview-fetch')` at 60/min to prevent a single user from DOS'ing the job worker via a spammed message of 100 links — but per-user message rate-limit already bounds this. **Defer to Phase 4 (conditional) or skip entirely.**
+
+**Decisions confirmed (2026-06-11):**
+
+1. **Profile-client upgrade bundled with sibling game-client phase.** Phase 1 = chess.com game-job throttle + `ChessComProfileClient` upgrade to game-client parity. Same shape for Phases 2 and 3.
+2. **Per-provider cap tuning.** Each provider gets its own `services.{provider}.requests_per_minute` config key + `RateLimiter::for(...)` definition. Initial values: **chess.com = 30/min** (undocumented; CLAUDE.md default), **Lichess = 60/min** (per-provider tuning — Lichess docs publish `20 req/sec`, so 60 still leaves a 20× safety margin), **FACEIT = 30/min** (undocumented; CLAUDE.md default). All tunable via config without code change.
+3. **Phase 4 skipped.** Link-preview is already capped at `tries=1` + naturally bounded by per-user message rate. Revisit only if abuse surfaces.
+
+Scope note on the profile-client side: self-throttling at the HTTP-call layer of profile clients is OUT of scope for M35 (they're called synchronously from controllers / actions, not via queued jobs, so `RateLimited` middleware doesn't fit). What WE upgrade is 429 classification + `RateLimitHeaderParser` use + `ProviderCircuitBreaker` integration. Self-throttling at the profile layer would need a different shape (e.g. controller-level `throttle:` middleware on the bio-verify endpoint); defer until a real abuse vector is observed.
+
+**Phase 1 — chess.com remediation + shared infra** _(commit: `feat(m35-p1): chess.com self-throttle + profile-client upgrade`)_
+
+- [x] `RateLimiter::for('chess-com-api', ...)` defined in `AppServiceProvider::registerProviderRateLimiters()`. Cap value from `services.chess_com.requests_per_minute` (default 30; `CHESS_COM_REQUESTS_PER_MINUTE` env override).
+- [x] `RateLimited::class` job middleware applied to `AutoFetchChessComGameJob` via its `middleware()` method. `$tries` widened from 7 → 15 to absorb plausible burst-moment release counts (each release consumes an attempt without running the handler); `retryUntil()` remains the real safety net.
+- [x] `ChessComProfileClient` brought up to `ChessComGameClient` parity (Tier 2 from Phase 0): `classifyResponseError` mirrors the game-client mapping (429 → `RateLimitedError` with `retryAt` from `RateLimitHeaderParser`, 5xx → `TransientProviderError`, 4xx-other → `PermanentProviderError`), 404 still throws `ProfileNotFoundException` (separate hierarchy; counts as breaker success — defined-answer). Constructor now takes `ProviderCircuitBreaker`; every HTTP call records success / failure on the shared breaker keyed on `LinkedAccountProvider::ChessCom`.
+- [x] Tests: 10 new `ChessComProfileClientTest` cases (happy path, missing-location 200, 404, 429 + retryAt parsing, 5xx, 4xx-other, breaker trip on 5xx/connection-failure, breaker stays closed on 200/404). 2 new throttle-wiring tests in `AutoFetchChessComGameJobTest` (middleware presence, cap-from-config). Existing `AutoFetchChessComAuditTrailTest` updated for the new `$tries=15` budget.
+
+**Phase 2 — Lichess remediation** _(commit: `feat(m35-p2): Lichess self-throttle + gap fixes`)_
+
+- [ ] Same shape as Phase 1, Lichess-specific. Reuses the Phase 1 infra pattern.
+
+**Phase 3 — FACEIT remediation** _(commit: `feat(m35-p3): FACEIT self-throttle + gap fixes`)_
+
+- [ ] Same shape, FACEIT-specific. By here the pattern is muscle memory.
+
+**Phase 4 — Telemetry pass _(skipped 2026-06-11)_**
+
+Decided to skip after Phase 0 audit — existing `PipelineHealth` widget coverage is sufficient for the current pipeline; throttle-wait visibility can land later as a small follow-up if we see real production caps being hit.
+
+### Not in M35
+
+- Throttling our own internal APIs (Stakly UI calling Stakly backend). Different concern; covered by the existing `throttle:...` middleware on auth routes.
+- Inbound rate-limiting of webhooks. Already covered per-receiver (`throttle:60,1` on `/webhooks/faceit`).
+- Token-bucket vs leaky-bucket optimization decisions. Laravel's `RateLimiter` is fixed-window; that's fine for our use case. Revisit only if production traffic exposes a real problem.
 
 ---

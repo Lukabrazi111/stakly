@@ -2,9 +2,14 @@
 
 namespace App\Services\Provider;
 
+use App\Enums\LinkedAccountProvider;
+use App\Services\Provider\Exceptions\PermanentProviderError;
 use App\Services\Provider\Exceptions\ProfileNotFoundException;
+use App\Services\Provider\Exceptions\ProviderError;
+use App\Services\Provider\Exceptions\RateLimitedError;
 use App\Services\Provider\Exceptions\TransientProviderError;
 use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
 
 /**
@@ -20,10 +25,25 @@ use Illuminate\Support\Facades\Http;
  * `name` display name). chess.com omits the `location` key from the
  * response entirely when it's empty — we surface that as `null`.
  *
+ * Error semantics (M35 P1 — brought up to `ChessComGameClient` parity):
+ *   - 404                       → `ProfileNotFoundException` (terminal, separate hierarchy)
+ *   - 429                       → `RateLimitedError` with `retryAt` from `RateLimitHeaderParser`
+ *   - 5xx / connect / timeout   → `TransientProviderError` (retry-eligible)
+ *   - 4xx-other                 → `PermanentProviderError` (terminal)
+ *
+ * Circuit breaker (M35 P1): every HTTP call records success / failure on
+ * the shared `ProviderCircuitBreaker` keyed on `LinkedAccountProvider::ChessCom`.
+ * The breaker is consulted by callers (e.g. `DispatchAutoFetchAction`) to
+ * gate further outbound calls when the provider is unhealthy.
+ *
  * Used by `VerifyLinkedAccountAction`. `Http::fake()`-able from tests.
  */
 class ChessComProfileClient implements ProfileClient
 {
+    public function __construct(
+        private readonly ProviderCircuitBreaker $breaker,
+    ) {}
+
     public function fetchProfile(string $username): ProfileFetchResult
     {
         $url = "https://api.chess.com/pub/player/{$username}";
@@ -36,6 +56,8 @@ class ChessComProfileClient implements ProfileClient
                 ->timeout(10)
                 ->get($url);
         } catch (ConnectionException $e) {
+            $this->breaker->recordFailure(LinkedAccountProvider::ChessCom);
+
             throw new TransientProviderError(
                 "chess.com unreachable for username '{$username}': {$e->getMessage()}",
                 previous: $e,
@@ -43,14 +65,22 @@ class ChessComProfileClient implements ProfileClient
         }
 
         if ($response->status() === 404) {
+            // 404 is a "user doesn't exist" answer from the API, not a
+            // provider-health failure. Don't trip the breaker — record
+            // success and let the caller distinguish via the dedicated
+            // exception type.
+            $this->breaker->recordSuccess(LinkedAccountProvider::ChessCom);
+
             throw new ProfileNotFoundException("chess.com username '{$username}' not found.");
         }
 
         if (! $response->successful()) {
-            throw new TransientProviderError(
-                "chess.com returned status {$response->status()} for username '{$username}'.",
-            );
+            $this->breaker->recordFailure(LinkedAccountProvider::ChessCom);
+
+            throw self::classifyResponseError($response, "for username '{$username}'");
         }
+
+        $this->breaker->recordSuccess(LinkedAccountProvider::ChessCom);
 
         $data = $response->json();
 
@@ -58,5 +88,28 @@ class ChessComProfileClient implements ProfileClient
             username: $data['username'] ?? $username,
             bioFieldValue: $data['location'] ?? null,
         );
+    }
+
+    /**
+     * Mirror of `ChessComGameClient::classifyResponseError` so the two clients
+     * map provider statuses identically — keeps the retry / breaker / rendering
+     * surface uniform.
+     */
+    private static function classifyResponseError(Response $response, string $context): ProviderError
+    {
+        $status = $response->status();
+
+        return match (true) {
+            $status === 429 => new RateLimitedError(
+                "chess.com returned 429 (rate-limited) {$context}.",
+                retryAt: RateLimitHeaderParser::parseRetryAt($response),
+            ),
+            $status >= 500 => new TransientProviderError(
+                "chess.com returned status {$status} {$context}.",
+            ),
+            default => new PermanentProviderError(
+                "chess.com returned status {$status} {$context}.",
+            ),
+        };
     }
 }

@@ -9,9 +9,11 @@ use App\Services\GameApi\GameApi;
 use App\Services\GameApi\MockGameApi;
 use App\Services\Provider\FaceitProvider;
 use Carbon\CarbonImmutable;
+use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\URL;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Validation\Rules\Password;
@@ -68,6 +70,24 @@ class AppServiceProvider extends ServiceProvider
         $this->configureDefaults();
         $this->registerImpersonationListeners();
         $this->registerSocialiteListeners();
+        $this->registerProviderRateLimiters();
+    }
+
+    /**
+     * Self-throttle every outbound third-party API call (M35 / CLAUDE.md rule).
+     * Each limiter is consumed by `RateLimited` job middleware on the
+     * matching `AutoFetch*GameJob`. Caps live in `config/services.*` so
+     * they're tunable per-environment without a code change.
+     *
+     * When a job exceeds the limit the middleware releases it back to the
+     * queue (consuming an attempt — the job's `$tries` includes headroom
+     * for plausible release counts during burst traffic).
+     */
+    private function registerProviderRateLimiters(): void
+    {
+        RateLimiter::for('chess-com-api', fn () => Limit::perMinute(
+            (int) config('services.chess_com.requests_per_minute', 30),
+        ));
     }
 
     /**

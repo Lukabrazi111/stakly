@@ -240,7 +240,7 @@ test('rate limited on final attempt: throws instead of release (budget exhausted
     {
         public function attempts(): int
         {
-            return 7; // matches $tries
+            return 15; // matches $tries (M35 P1 raised it to absorb RateLimited middleware releases)
         }
     };
 
@@ -263,13 +263,13 @@ test('error on final attempt: writes outcome_reason=retry_exhausted', function (
     ]);
 
     // Stand-in for a queue worker on the final attempt — overrides
-    // `attempts()` so `errorRetriesExhausted()` evaluates true at the new
-    // shared $tries = 7 budget.
+    // `attempts()` so `errorRetriesExhausted()` evaluates true at the
+    // shared $tries = 15 budget.
     $job = new class($match) extends AutoFetchChessComGameJob
     {
         public function attempts(): int
         {
-            return 7;
+            return 15;
         }
     };
 
@@ -359,11 +359,11 @@ test('already_posted: writes skipped/already_posted row, no provider call', func
         ->and($attempt->outcome_reason)->toBe('already_posted');
 });
 
-test('retry policy: 7 tries, [5, 15, 30] backoff, retryUntil at match.created_at + M16 timeout', function () {
+test('retry policy: 15 tries (M35 P1 widened for throttle releases), [5, 15, 30] backoff, retryUntil at match.created_at + M16 timeout', function () {
     $match = chessComAuditMatch();
     $job = new AutoFetchChessComGameJob($match);
 
-    expect($job->tries)->toBe(7);
+    expect($job->tries)->toBe(15);
     expect($job->backoff())->toBe([5, 15, 30]);
     expect($job->retryUntil()->getTimestamp())->toBe(
         $match->created_at
