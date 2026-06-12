@@ -204,9 +204,12 @@ class LobbyResource extends JsonResource
      */
     private function presentRoster(): array
     {
-        $live = $this->lobbyParticipants
-            ->whereNull('kicked_at')
-            ->load('user.linkedAccounts');
+        // Don't `->load(...)` here — that re-fetches user models from the
+        // database and wipes any `seller_trust` attribute the controller
+        // attached for the trust-signals aggregator. The controller already
+        // eager-loads `lobbyParticipants.user.linkedAccounts` so this
+        // collection has everything we need.
+        $live = $this->lobbyParticipants->whereNull('kicked_at');
 
         $bySide = $live->groupBy('side');
 
