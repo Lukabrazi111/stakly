@@ -42,60 +42,54 @@ function pageJoiner(): User
     return $user;
 }
 
-describe('GET /lobbies/{listing}', function () {
-    it('renders the lobby page for public listings to any visitor', function () {
+describe('GET /listings/{id} (team-play lobby UI)', function () {
+    it('renders the lobby UI for public listings to any visitor', function () {
         $listing = pageLobby();
 
-        $this->get(route('lobbies.show', ['locale' => 'en', 'listing' => $listing]))
+        $this->get(route('listings.show', ['locale' => 'en', 'listing' => $listing]))
             ->assertOk()
             ->assertInertia(fn ($page) => $page
-                ->component('lobby/show')
+                ->component('listings/show')
                 ->where('lobby.id', $listing->id)
                 ->where('lobby.team_size', 5)
                 ->where('lobby.lobby_state', 'recruiting'),
             );
     });
 
-    it('renders the page for a live participant on a private listing', function () {
+    it('renders the page for the listing owner on a private listing', function () {
         $listing = pageLobby(isPublic: false);
 
         $this->actingAs($listing->user)
-            ->get(route('lobbies.show', ['locale' => 'en', 'listing' => $listing]))
+            ->get(route('listings.show', ['locale' => 'en', 'listing' => $listing]))
             ->assertOk();
     });
 
-    it('404s a stranger on a private listing', function () {
+    it('renders for an unauthenticated visitor with the private URL (URL = access model)', function () {
         $listing = pageLobby(isPublic: false);
-        $stranger = User::factory()->active()->create();
 
-        $this->actingAs($stranger)
-            ->get(route('lobbies.show', ['locale' => 'en', 'listing' => $listing]))
-            ->assertNotFound();
+        // M34 P3.1 Slice B.1 — viewLobby relaxed so the invite-token flow
+        // can land non-participants on the page so they can join. Known
+        // trade-off: sequential ID enumeration exposes private lobbies.
+        $this->get(route('listings.show', ['locale' => 'en', 'listing' => $listing]))
+            ->assertOk();
     });
 
-    it('redirects locked / cancelled / expired lobbies to the listing detail', function () {
-        $listing = pageLobby();
-        $listing->update(['lobby_state' => 'cancelled', 'status' => ListingStatus::Cancelled]);
+    it('renders chess detail (not lobby UI) for team_size = 1 listings', function () {
+        $listing = Listing::factory()->open()->create(); // team_size = 1
 
-        $this->get(route('lobbies.show', ['locale' => 'en', 'listing' => $listing]))
-            ->assertRedirect(route('listings.show', ['locale' => 'en', 'listing' => $listing]));
-    });
-
-    it('404s on non-team-play listings', function () {
-        $listing = Listing::factory()->create(); // team_size = 1
-
-        $this->get(route('lobbies.show', ['locale' => 'en', 'listing' => $listing]))
-            ->assertNotFound();
+        $this->get(route('listings.show', ['locale' => 'en', 'listing' => $listing]))
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->component('listings/show')
+                ->missing('lobby'),
+            );
     });
 
     it('exposes the invite_token only to the listing owner', function () {
         $listing = pageLobby(isPublic: false);
-        $stranger = User::factory()->active()->create();
 
-        // Stranger can't see the page at all — covered by the 404 test above.
-        // Owner sees the token in the payload.
         $this->actingAs($listing->user)
-            ->get(route('lobbies.show', ['locale' => 'en', 'listing' => $listing]))
+            ->get(route('listings.show', ['locale' => 'en', 'listing' => $listing]))
             ->assertInertia(fn ($page) => $page
                 ->where('lobby.invite_token', $listing->invite_token),
             );
@@ -105,10 +99,27 @@ describe('GET /lobbies/{listing}', function () {
         app(JoinLobbyAction::class)->handle($joiner, $listing, LobbyParticipant::SIDE_B);
 
         $this->actingAs($joiner)
-            ->get(route('lobbies.show', ['locale' => 'en', 'listing' => $listing]))
+            ->get(route('listings.show', ['locale' => 'en', 'listing' => $listing]))
             ->assertInertia(fn ($page) => $page
                 ->where('lobby.invite_token', null),
             );
+    });
+});
+
+describe('GET /lobbies/{listing} (legacy URL — 301 redirect)', function () {
+    it('301-redirects to /listings/{id} for any team-play listing', function () {
+        $listing = pageLobby();
+
+        $this->get(route('lobbies.show', ['locale' => 'en', 'listing' => $listing]))
+            ->assertStatus(301)
+            ->assertRedirect(route('listings.show', ['locale' => 'en', 'listing' => $listing]));
+    });
+
+    it('still 404s for non-team-play (chess) listings', function () {
+        $listing = Listing::factory()->create(); // team_size = 1
+
+        $this->get(route('lobbies.show', ['locale' => 'en', 'listing' => $listing]))
+            ->assertNotFound();
     });
 });
 

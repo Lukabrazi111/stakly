@@ -14,7 +14,6 @@ import {
     timeControlLabels,
 } from '@/lib/listings-format';
 import { show as showListing } from '@/routes/listings';
-import { show as showLobby } from '@/routes/lobbies';
 import type { Listing, ListingStatus } from '@/types';
 
 interface Props {
@@ -47,10 +46,9 @@ export function MineListingGridCard({ listing }: Props) {
 
     const canCancel = listing.status === 'open';
     const isTeamPlay = listing.team_size > 1;
-    const overlayHref =
-        isTeamPlay && listing.status === 'open'
-            ? showLobby({ listing: listing.id }).url
-            : showListing({ listing: listing.id }).url;
+    // Single canonical destination since Slice B.1 collapsed
+    // `/lobbies/{listing}` into `/listings/{listing}` for team-play.
+    const overlayHref = showListing({ listing: listing.id }).url;
 
     const timeRemaining = formatTimeRemaining(listing.expires_at, t);
     const urgency = getTimeUrgency(listing.expires_at);

@@ -194,7 +194,7 @@ describe('marketplace hides private listings', function () {
 });
 
 describe('LobbyController::showByToken — /lobbies/{token}', function () {
-    it('redirects valid token to /lobbies/{listing}', function () {
+    it('301-redirects a valid token to the canonical /listings/{id} URL', function () {
         $user = User::factory()->active()->withFaceit()->create();
         $listing = Listing::factory()
             ->teamPlay()
@@ -211,7 +211,8 @@ describe('LobbyController::showByToken — /lobbies/{token}', function () {
 
         $this->actingAs($visitor)
             ->get(route('lobbies.invite', ['locale' => 'en', 'token' => $listing->invite_token]))
-            ->assertRedirect(route('lobbies.show', ['locale' => 'en', 'listing' => $listing]));
+            ->assertStatus(301)
+            ->assertRedirect(route('listings.show', ['locale' => 'en', 'listing' => $listing]));
     });
 
     it('404s when token does not exist', function () {

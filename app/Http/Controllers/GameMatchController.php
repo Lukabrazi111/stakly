@@ -111,6 +111,15 @@ class GameMatchController extends Controller
             return to_route('linked-accounts.edit');
         }
 
+        if ($result === 'not_takeable') {
+            Inertia::flash('toast', [
+                'type' => 'info',
+                'message' => __('This is a team-play lobby — join from the lobby page instead.'),
+            ]);
+
+            return to_route('listings.show', $listing);
+        }
+
         if ($result === 'owner_inactive') {
             Inertia::flash('toast', [
                 'type' => 'info',

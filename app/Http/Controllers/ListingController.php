@@ -13,6 +13,8 @@ use App\Http\Requests\Listings\IndexListingsRequest;
 use App\Http\Requests\Listings\StoreListingRequest;
 use App\Http\Resources\GameResource;
 use App\Http\Resources\ListingResource;
+use App\Http\Resources\LobbyResource;
+use App\Http\Resources\MessageResource;
 use App\Models\Game as GameModel;
 use App\Models\Listing;
 use App\Services\SellerTrust;
@@ -115,8 +117,16 @@ class ListingController extends Controller
      * participants don't get the id — it's not strongly PII, but there's no
      * reason for randoms to be able to enumerate match ids from listing pages.
      */
-    public function show(Request $request, Listing $listing): Response
+    public function show(Request $request, Listing $listing): Response|RedirectResponse
     {
+        // M34 P3.1 Slice B.1 — team-play listings host their lobby UI directly
+        // on this page rather than a sibling `/lobbies/{id}` URL. The branch
+        // mirrors `LobbyController::show` eager-loads + payload so the lobby
+        // view consumes the same shape it always has (LobbyResource).
+        if ($listing->isTeamPlay()) {
+            return $this->showTeamPlay($listing);
+        }
+
         // `is_active_mode` is needed for the frontend's owner-inactive gate
         // on the Take button (M6 Phase 6.5). The marketplace + public profile
         // surfaces never see inactive owners' listings via
@@ -151,6 +161,56 @@ class ListingController extends Controller
             'match' => $isParticipant && $match !== null
                 ? ['id' => $match->id]
                 : null,
+        ]);
+    }
+
+    /**
+     * Team-play branch of `show()` — renders the lobby UI on the canonical
+     * listing URL. For visibility checks (private listings, etc.) we use
+     * `ListingPolicy::viewLobby` so the auth boundary stays in one place.
+     *
+     * Mirrors `LobbyController::show`'s eager-loads + chat-message slice so
+     * the React page consumes the same `LobbyResource` shape it has since
+     * M34 P3.
+     */
+    private function showTeamPlay(Listing $listing): Response|RedirectResponse
+    {
+        abort_if(Gate::denies('viewLobby', $listing), 404);
+
+        $listing->load([
+            'user:id,name,username,bio,created_at',
+            'user.linkedAccounts',
+            'lobbyParticipants.user:id,name,username',
+            'lobbyParticipants.user.linkedAccounts',
+            'gameMatch:id,listing_id,status',
+        ]);
+
+        // Match the marketplace + my-listings card payload so the listing
+        // resource carries the same `live_participant_count` field. Cheap
+        // separate query; keeps the resource's read-from-attribute path safe.
+        $listing->loadCount(['lobbyParticipants as live_participant_count' => fn ($q) => $q->live()]);
+
+        // Lobby chat shares the existing match.{match_id} channel + Message
+        // pipeline. Every team-play listing has a paired GameMatch row since
+        // P1's `CreateTeamPlayListingAction`, so this load is reliable.
+        $messages = $listing->gameMatch === null
+            ? collect()
+            : $listing->gameMatch
+                ->messages()
+                ->with(['user:id,name,username', 'media'])
+                ->orderByDesc('id')
+                ->limit(200)
+                ->get()
+                ->reverse()
+                ->values();
+
+        return Inertia::render('listings/show', [
+            'listing' => (new ListingResource($listing))->resolve(),
+            'lobby' => (new LobbyResource($listing))->resolve(),
+            'messages' => MessageResource::collection($messages),
+            // Match column kept for chess back-compat in the shared props
+            // shape; team-play readers ignore it in favor of `lobby.match_id`.
+            'match' => null,
         ]);
     }
 

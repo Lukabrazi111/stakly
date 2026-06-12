@@ -15,7 +15,6 @@ import {
     timeControlLabels,
 } from '@/lib/listings-format';
 import { show as showListing } from '@/routes/listings';
-import { show as showLobby } from '@/routes/lobbies';
 import type { Listing, ListingStatus } from '@/types';
 
 const STATUS_LABEL: Record<ListingStatus, string> = {
@@ -44,14 +43,9 @@ export function MineListingRow({ listing }: Props) {
 
     const canCancel = listing.status === 'open';
     const isTeamPlay = listing.team_size > 1;
-    // Owners follow the same routing rule as marketplace viewers: team-play
-    // → lobby (coordination + leave-as-cancel), chess → listing detail.
-    // Locked / Settled / Cancelled team-play rows fall back to the detail
-    // page since the lobby URL 404s in those states.
-    const overlayHref =
-        isTeamPlay && listing.status === 'open'
-            ? showLobby({ listing: listing.id }).url
-            : showListing({ listing: listing.id }).url;
+    // Single canonical destination since Slice B.1 collapsed
+    // `/lobbies/{listing}` into `/listings/{listing}` for team-play.
+    const overlayHref = showListing({ listing: listing.id }).url;
 
     const openCancelDialog = (event: React.MouseEvent<HTMLButtonElement>) => {
         event.preventDefault();

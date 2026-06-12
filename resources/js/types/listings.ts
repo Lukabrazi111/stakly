@@ -161,9 +161,17 @@ export interface ListingsIndexProps {
 // viewer is a participant (creator or taker). For non-participants and
 // non-taken listings the controller sends `null` — the frontend uses its
 // presence as the sole gate for the "View match →" link.
+//
+// M34 P3.1 Slice B.1 — `lobby` + `messages` arrive only when the listing is
+// team-play (`team_size > 1`). Their presence signals the page should render
+// the lobby UI instead of the chess detail view. Chess listings keep the
+// `match` column populated for participants; team-play listings ignore it
+// in favour of `lobby.match_id`.
 export interface ListingShowProps {
     listing: Listing;
     match: { id: number } | null;
+    lobby?: import('./lobby').Lobby;
+    messages?: { data: import('./match').ChatMessage[] };
 }
 
 // Props for the create-listing form. Option lists (regions / languages /

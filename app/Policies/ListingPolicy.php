@@ -21,25 +21,20 @@ class ListingPolicy
     }
 
     /**
-     * M34 — lobby visibility. Public listings are anyone-readable (browse);
-     * private listings are participant-only. Non-team-play listings have no
-     * lobby page (their pair lives in `/listings/{id}` already).
+     * M34 — lobby visibility. Any team-play listing is viewable to anyone
+     * holding the URL — `is_public = false` hides the listing from the
+     * marketplace + gives the owner a memorable invite-token URL to share,
+     * but the access model is "URL = access" so the token redirect can land
+     * non-participants on the page so they can JOIN. Non-team-play listings
+     * have no lobby page (their pair lives in the chess detail view).
+     *
+     * Trade-off: someone enumerating sequential listing IDs can see private
+     * lobbies. M34 known limitation; tighten later with a token-confers-cookie
+     * pattern if abuse appears.
      */
     public function viewLobby(?User $user, Listing $listing): bool
     {
-        if (! $listing->isTeamPlay()) {
-            return false;
-        }
-
-        if ($listing->is_public) {
-            return true;
-        }
-
-        if ($user === null) {
-            return false;
-        }
-
-        return $this->isLiveLobbyParticipant($user, $listing);
+        return $listing->isTeamPlay();
     }
 
     public function joinLobby(User $user, Listing $listing): bool

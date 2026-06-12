@@ -2,8 +2,10 @@ import { Link, router, usePage } from '@inertiajs/react';
 import { Clock, Globe, Languages, Trophy } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useState } from 'react';
+import { GameChip } from '@/components/listings/game-chip';
 import { SellerTrustMeta } from '@/components/listings/seller-trust-meta';
 import { VerifiedPlatformChip } from '@/components/listings/verified-platform-chip';
+import { TeamPlayLobbyView } from '@/components/lobby/team-play-lobby-view';
 import { VerificationChip } from '@/components/profile/verification-chip';
 import { BackLink } from '@/components/site/back-link';
 import { PageMeta } from '@/components/site/page-meta';
@@ -60,7 +62,98 @@ const STATUS_TONE: Record<ListingStatus, string> = {
     cancelled: 'border-destructive/40 bg-destructive/10 text-destructive',
 };
 
-export default function ListingShow({ listing, match }: ListingShowProps) {
+export default function ListingShow({
+    listing,
+    match,
+    lobby,
+    messages,
+}: ListingShowProps) {
+    // M34 P3.1 Slice B.1 — team-play listings render the lobby UI on the
+    // canonical listing URL. Controller sends `lobby` + `messages` only when
+    // `team_size > 1`, so presence of `lobby` is the discriminator. The
+    // chess branch below remains untouched (decoupled UI surfaces).
+    if (lobby && messages) {
+        return <TeamPlayBranch lobby={lobby} messages={messages} />;
+    }
+
+    return <ChessBranch listing={listing} match={match} />;
+}
+
+interface TeamPlayBranchProps {
+    lobby: NonNullable<ListingShowProps['lobby']>;
+    messages: NonNullable<ListingShowProps['messages']>;
+}
+
+function TeamPlayBranch({ lobby, messages }: TeamPlayBranchProps) {
+    const t = useT();
+
+    const skillRange =
+        lobby.skill_min !== null && lobby.skill_max !== null
+            ? `${lobby.skill_min}–${lobby.skill_max}`
+            : t('Any skill');
+
+    return (
+        <SiteLayout>
+            <PageMeta
+                title={t(':teamSize v :teamSize lobby — :stake USDT', {
+                    teamSize: lobby.team_size,
+                    stake: lobby.stake_amount.toFixed(0),
+                })}
+                description={t('Team-play lobby for :stake USDT.', {
+                    stake: lobby.stake_amount.toFixed(0),
+                })}
+                noindex
+            />
+
+            <div className="mx-auto max-w-7xl px-4 py-10 md:px-6 md:py-14">
+                <div className="mb-6">
+                    <BackLink fallback={listingsIndex().url} />
+                </div>
+
+                <header className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                    <div className="min-w-0">
+                        <h1 className="font-display text-3xl font-bold tracking-tight text-foreground">
+                            {t(':teamSize v :teamSize lobby', {
+                                teamSize: lobby.team_size,
+                            })}
+                        </h1>
+                        <p className="mt-1 text-sm text-muted-foreground">
+                            {t('Hosted by :name', { name: lobby.creator.name })}
+                            {lobby.region !== null && (
+                                <>
+                                    {' · '}
+                                    {lobby.region}
+                                </>
+                            )}
+                            {' · '}
+                            {skillRange}
+                        </p>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                        <GameChip
+                            game={lobby.game}
+                            teamSize={lobby.team_size}
+                        />
+                        {!lobby.is_public && (
+                            <span className="inline-flex items-center rounded-full border border-accent/40 bg-accent/10 px-3 py-1 text-xs font-medium text-accent">
+                                {t('Invite-only')}
+                            </span>
+                        )}
+                    </div>
+                </header>
+
+                <TeamPlayLobbyView lobby={lobby} messages={messages} />
+            </div>
+        </SiteLayout>
+    );
+}
+
+interface ChessBranchProps {
+    listing: ListingShowProps['listing'];
+    match: ListingShowProps['match'];
+}
+
+function ChessBranch({ listing, match }: ChessBranchProps) {
     const t = useT();
     const getInitials = useInitials();
     const { auth } = usePage().props;

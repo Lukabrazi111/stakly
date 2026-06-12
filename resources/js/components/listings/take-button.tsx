@@ -4,7 +4,6 @@ import { Button } from '@/components/ui/button';
 import { useT } from '@/lib/i18n';
 import { edit as linkedAccountsEdit } from '@/routes/linked-accounts';
 import { mine as listingsMine, show as showListing } from '@/routes/listings';
-import { show as showLobby } from '@/routes/lobbies';
 import type { Listing, ListingPlatform } from '@/types';
 
 const PLATFORM_LABEL: Record<ListingPlatform, string> = {
@@ -61,7 +60,7 @@ export function TakeButton({ listing, className = '' }: Props) {
                     asChild
                     className={className}
                 >
-                    <Link href={showLobby({ listing: listing.id }).url}>
+                    <Link href={showListing({ listing: listing.id }).url}>
                         {t('View lobby')}
                     </Link>
                 </Button>
@@ -115,7 +114,7 @@ export function TakeButton({ listing, className = '' }: Props) {
                 asChild
                 className={className}
             >
-                <Link href={showLobby({ listing: listing.id }).url}>
+                <Link href={showListing({ listing: listing.id }).url}>
                     {t('View lobby')}
                 </Link>
             </Button>

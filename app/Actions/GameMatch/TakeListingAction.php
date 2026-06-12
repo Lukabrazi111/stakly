@@ -48,6 +48,16 @@ class TakeListingAction
 
     public function handle(User $user, Listing $listing): GameMatch|string
     {
+        // M34 P3.1 Slice B.1 — team-play listings own their join flow via
+        // `JoinLobbyAction`; reaching the chess Take path means a crafted
+        // POST (FE branches the CTA to "View lobby"). Returning a sentinel
+        // before any wallet / match writes happen avoids the UNIQUE-constraint
+        // 500 that would otherwise fire — the team-play listing already has
+        // a `LobbyFilling` `GameMatch` row from `CreateTeamPlayListingAction`.
+        if ($listing->isTeamPlay()) {
+            return 'not_takeable';
+        }
+
         // Platform-specific take-gate (M8 Phase 5 Slice B). Taker must be
         // verified on the listing's platform — players who only linked the
         // other provider literally couldn't play each other on the right

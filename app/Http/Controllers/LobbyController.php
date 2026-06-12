@@ -8,8 +8,6 @@ use App\Actions\Lobby\LeaveLobbyAction;
 use App\Actions\Lobby\ToggleReadyAction;
 use App\Enums\LinkedAccountProvider;
 use App\Enums\ListingStatus;
-use App\Http\Resources\LobbyResource;
-use App\Http\Resources\MessageResource;
 use App\Models\Listing;
 use App\Models\LobbyParticipant;
 use App\Models\User;
@@ -18,7 +16,6 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
-use Inertia\Response;
 
 /**
  * M34 P3 — lobby page + soft-join/leave/ready/kick action endpoints.
@@ -36,54 +33,24 @@ use Inertia\Response;
 class LobbyController extends Controller
 {
     /**
-     * Render the lobby page. Public listings render for any visitor;
-     * private listings only render for live participants.
+     * Legacy `/lobbies/{listing}` URL — collapsed into `/listings/{listing}`
+     * for team-play in M34 P3.1 Slice B.1. Returns a 301 (permanent) redirect
+     * so previously-shared links + crawled URLs land on the new canonical
+     * page. Route name retained for back-compat with Wayfinder helpers /
+     * any in-flight test paths that still use it.
      */
-    public function show(Listing $listing): Response|RedirectResponse
+    public function show(Listing $listing): RedirectResponse
     {
         abort_if(! $listing->isTeamPlay(), 404);
 
-        // Listings past their useful life — surface a friendly redirect to
-        // the listing detail page so the user sees the final state (won /
-        // cancelled / expired) rather than an empty lobby grid.
-        if (in_array($listing->lobby_state, ['cancelled', 'expired'], true)) {
-            return to_route('listings.show', $listing);
-        }
-
-        abort_if(Gate::denies('viewLobby', $listing), 404);
-
-        $listing->load([
-            'user:id,name,username,bio,created_at',
-            'user.linkedAccounts',
-            'lobbyParticipants.user:id,name,username',
-            'lobbyParticipants.user.linkedAccounts',
-            'gameMatch:id,listing_id,status',
-        ]);
-
-        // Lobby chat shares the existing match.{match_id} channel + Message
-        // pipeline — when the paired match exists (every team-play listing
-        // since P1's CreateTeamPlayListingAction), load the same 200-message
-        // slice the match/show page uses.
-        $messages = $listing->gameMatch === null
-            ? collect()
-            : $listing->gameMatch
-                ->messages()
-                ->with(['user:id,name,username', 'media'])
-                ->orderByDesc('id')
-                ->limit(200)
-                ->get()
-                ->reverse()
-                ->values();
-
-        return Inertia::render('lobby/show', [
-            'lobby' => (new LobbyResource($listing))->resolve(),
-            'messages' => MessageResource::collection($messages),
-        ]);
+        return to_route('listings.show', ['listing' => $listing], 301);
     }
 
     /**
-     * Resolve an invite token to its listing and redirect to the canonical
-     * lobby URL. 404 on missing / non-Open / locked / cancelled / expired.
+     * Resolve an invite token to its listing and 301-redirect to the
+     * canonical listing URL (now hosting the lobby UI). 404 on missing /
+     * non-Open / locked / cancelled / expired so leaked tokens don't point
+     * at dead lobbies.
      */
     public function showByToken(string $token): RedirectResponse
     {
@@ -103,7 +70,7 @@ class LobbyController extends Controller
             abort(404);
         }
 
-        return to_route('lobbies.show', $listing);
+        return to_route('listings.show', ['listing' => $listing], 301);
     }
 
     public function join(Request $request, Listing $listing, JoinLobbyAction $action): RedirectResponse

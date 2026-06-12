@@ -16,7 +16,6 @@ import {
     timeControlLabels,
 } from '@/lib/listings-format';
 import { show as showListing } from '@/routes/listings';
-import { show as showLobby } from '@/routes/lobbies';
 import { show as userShow } from '@/routes/users';
 import type { Listing } from '@/types';
 
@@ -48,9 +47,7 @@ export function ListingGridCard({ listing }: Props) {
               : 'text-muted-foreground';
 
     const isTeamPlay = listing.team_size > 1;
-    const overlayHref = isTeamPlay
-        ? showLobby({ listing: listing.id }).url
-        : showListing({ listing: listing.id }).url;
+    const overlayHref = showListing({ listing: listing.id }).url;
 
     const showReadyCheckBanner =
         listing.lobby_state === 'ready_checking' &&
