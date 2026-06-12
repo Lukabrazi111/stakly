@@ -248,6 +248,8 @@ class LobbyResource extends JsonResource
         $platformLink = $participant->user->linkedAccounts
             ->firstWhere('provider.value', $this->platform->value);
 
+        $stats = $participant->user->getAttribute('platform_stats');
+
         return [
             'participant_id' => $participant->id,
             'slot_index' => $participant->slot_index,
@@ -264,6 +266,16 @@ class LobbyResource extends JsonResource
             'platform_account' => $platformLink === null ? null : [
                 'username' => $platformLink->username,
                 'skill_rating' => $platformLink->skill_rating,
+            ],
+            // Overall / Last-20 stats line on the slot card. Null when the
+            // controller hasn't attached `platform_stats` (e.g. in a unit
+            // test that builds the resource directly without going through
+            // `ListingController::showTeamPlay`).
+            'platform_stats' => $stats === null ? null : [
+                'total_matches' => (int) ($stats['total_matches'] ?? 0),
+                'win_rate' => $stats['win_rate'] ?? null,
+                'last_played' => (int) ($stats['last_played'] ?? 0),
+                'last_win_rate' => $stats['last_win_rate'] ?? null,
             ],
         ];
     }

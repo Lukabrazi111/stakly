@@ -1,6 +1,6 @@
 import { EmptySlot, FilledSlot } from '@/components/lobby/slot-card';
 import { useT } from '@/lib/i18n';
-import type { Lobby, LobbySide } from '@/types';
+import type { Lobby, LobbyParticipantPayload, LobbySide } from '@/types';
 
 interface Props {
     lobby: Lobby;
@@ -9,17 +9,48 @@ interface Props {
     onKick: (username: string) => void;
 }
 
-const LABELS: Record<LobbySide, string> = {
+const FALLBACK_LABELS: Record<LobbySide, string> = {
     a: 'Team A',
     b: 'Team B',
 };
 
 /**
+ * Picks the team's leader name. Creator's side → the creator. Opposing
+ * side → first-joined participant (oldest `joined_at`). Falls back to a
+ * generic "Team A" / "Team B" label when no one has joined the side yet.
+ */
+function pickLeaderLabel(
+    slots: Array<LobbyParticipantPayload | null>,
+    fallback: string,
+): string {
+    const filled = slots.filter(
+        (s): s is LobbyParticipantPayload => s !== null,
+    );
+
+    if (filled.length === 0) {
+        return fallback;
+    }
+
+    const creator = filled.find((s) => s.is_creator);
+    if (creator) {
+        return `Team ${creator.user.username}`;
+    }
+
+    const earliest = [...filled].sort((a, b) => {
+        const ta = a.joined_at ? new Date(a.joined_at).getTime() : Infinity;
+        const tb = b.joined_at ? new Date(b.joined_at).getTime() : Infinity;
+        return ta - tb;
+    })[0];
+
+    return `Team ${earliest.user.username}`;
+}
+
+/**
  * A single team's slot column for the 3-col team-play layout — Team A on
  * the left, the center-column blocks in the middle, Team B on the right.
- * Header shows the team name + fill counter; slot rows render as the
- * shared `FilledSlot` / `EmptySlot` pair (matched dimensions so the grid
- * doesn't reflow when someone joins or leaves).
+ * Header shows the leader-derived team name + fill counter; slot rows
+ * render as the shared `FilledSlot` / `EmptySlot` pair (matched dimensions
+ * so the grid doesn't reflow when someone joins or leaves).
  */
 export function TeamSlotColumn({ lobby, side, onJoin, onKick }: Props) {
     const t = useT();
@@ -34,13 +65,15 @@ export function TeamSlotColumn({ lobby, side, onJoin, onKick }: Props) {
         lobby.status === 'open';
     const canKick = viewer?.is_owner === true;
 
+    const teamLabel = pickLeaderLabel(slots, t(FALLBACK_LABELS[side]));
+
     return (
         <div className="space-y-2">
             <header className="flex items-center justify-between px-1">
-                <h3 className="font-display text-sm font-semibold tracking-wide text-foreground">
-                    {t(LABELS[side])}
+                <h3 className="truncate font-display text-sm font-semibold tracking-wide text-foreground">
+                    {teamLabel}
                 </h3>
-                <span className="text-xs text-muted-foreground tabular-nums">
+                <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
                     {filledCount} / {slots.length}
                 </span>
             </header>

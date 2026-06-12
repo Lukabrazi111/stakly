@@ -17,6 +17,7 @@ use App\Http\Resources\LobbyResource;
 use App\Http\Resources\MessageResource;
 use App\Models\Game as GameModel;
 use App\Models\Listing;
+use App\Services\ParticipantStats;
 use App\Services\SellerTrust;
 use App\Services\Wallet;
 use App\Support\BanGuard;
@@ -190,10 +191,11 @@ class ListingController extends Controller
         // separate query; keeps the resource's read-from-attribute path safe.
         $listing->loadCount(['lobbyParticipants as live_participant_count' => fn ($q) => $q->live()]);
 
-        // M34 P3.1 Slice B.2 — trust signals block in the center column
-        // needs every participant's seller_trust. One batch aggregation
-        // across all live-participant user IDs; LobbyResource reads the
-        // attached `seller_trust` attribute per user.
+        // M34 P3.1 Slice B.2 — center column needs every participant's
+        // seller_trust (trust block) + per-player Overall/Last-20 stats
+        // (slot card stats line). Both are batched aggregations across
+        // the live-participant user IDs; LobbyResource reads the attached
+        // `seller_trust` + `platform_stats` attributes per user.
         $userIds = $listing->lobbyParticipants
             ->whereNull('kicked_at')
             ->pluck('user_id')
@@ -201,6 +203,7 @@ class ListingController extends Controller
             ->values()
             ->all();
         $trust = SellerTrust::forBatch($userIds);
+        $stats = ParticipantStats::forBatch($userIds);
         foreach ($listing->lobbyParticipants as $participant) {
             if ($participant->kicked_at !== null) {
                 continue;
@@ -208,6 +211,10 @@ class ListingController extends Controller
             $participant->user->setAttribute(
                 'seller_trust',
                 $trust[$participant->user_id] ?? ['rate_30d' => null, 'settled_lifetime' => 0],
+            );
+            $participant->user->setAttribute(
+                'platform_stats',
+                $stats[$participant->user_id] ?? null,
             );
         }
 

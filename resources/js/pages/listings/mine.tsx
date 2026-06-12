@@ -215,7 +215,6 @@ function EmptyState({ tab, atCap, isInactive }: EmptyStateProps) {
     );
 }
 
-
 function MineRowSkeleton() {
     return (
         <div
