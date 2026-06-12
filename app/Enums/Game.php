@@ -63,8 +63,8 @@ enum Game: string
      * through the M34 lobby pipeline.
      *
      *   Chess → [1] (no team play; native 1v1).
-     *   CS2   → [1, 5] (1 = legacy 1v1, 5 = M34 competitive 5v5 via lobby;
-     *           2v2 Wingman adds [2] in P5).
+     *   CS2   → [5] (FACEIT CS2 is competitive 5v5 only; no 1v1 mode on
+     *           our platform. 2v2 Wingman adds [2] in P5).
      *   Dota2 → [1] (no Dota lobby support until M15 Dota adapter + M34
      *           extension land).
      *
@@ -74,7 +74,7 @@ enum Game: string
     {
         return match ($this) {
             self::Chess => [1],
-            self::Cs2 => [1, 5],
+            self::Cs2 => [5],
             self::Dota2 => [1],
         };
     }

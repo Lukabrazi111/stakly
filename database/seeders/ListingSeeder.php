@@ -53,12 +53,10 @@ class ListingSeeder extends Seeder
             ->recycle($users)
             ->create();
 
-        $openCs2 = Listing::factory()
-            ->count(8)
-            ->open()
-            ->forGame(Game::Cs2)
-            ->recycle($users)
-            ->create();
+        // CS2 listings are 5v5 only — `Game::Cs2->allowedTeamSizes()` rejects
+        // 1v1, and the FACEIT product surface doesn't have a 1v1 mode. Those
+        // CS2 5v5 lobbies land via `seedTeamPlayLobby` below; the chess pool
+        // here is the only 1v1 marketplace content.
 
         $openDota = Listing::factory()
             ->count(7)
@@ -67,7 +65,7 @@ class ListingSeeder extends Seeder
             ->recycle($users)
             ->create();
 
-        $open = $openChess->concat($openCs2)->concat($openDota);
+        $open = $openChess->concat($openDota);
 
         $taken = Listing::factory()
             ->count(5)
@@ -120,6 +118,26 @@ class ListingSeeder extends Seeder
         $this->seedTeamPlayLobby(state: 'recruiting', participants: $users->slice(0, 4)->values(), readyCount: 2);
         $this->seedTeamPlayLobby(state: 'ready_checking', participants: $users->slice(4, 10)->values(), readyCount: 6);
         $this->seedTeamPlayLobby(state: 'locked', participants: $users->slice(14, 10)->values(), readyCount: 10);
+
+        // Extra thin recruiting lobbies for marketplace volume — locked
+        // lobbies hide from the public board (status=Taken) so without
+        // these the CS2 tab feels sparse. Each uses a fresh creator (no
+        // joiners) so the `JoinLobbyAction`'s already-in-lobby guard
+        // doesn't reject anyone from the slices above.
+        $extraCreators = User::factory()
+            ->count(3)
+            ->active()
+            ->withLichess()
+            ->withChessCom()
+            ->withFaceit()
+            ->create();
+        foreach ($extraCreators as $creator) {
+            $this->seedTeamPlayLobby(
+                state: 'recruiting',
+                participants: collect([$creator]),
+                readyCount: 0,
+            );
+        }
     }
 
     /**

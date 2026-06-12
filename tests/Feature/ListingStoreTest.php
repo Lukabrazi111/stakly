@@ -5,6 +5,7 @@ use App\Enums\LinkedAccountProvider;
 use App\Enums\ListingStatus;
 use App\Enums\WalletTransactionType;
 use App\Models\Listing;
+use App\Models\LobbyParticipant;
 use App\Models\User;
 use App\Models\WalletTransaction;
 use App\Services\Wallet;
@@ -126,10 +127,17 @@ test('missing time_control with game=chess still produces a required error', fun
 });
 
 test('CS2 listing without time_control is accepted and stored as empty', function () {
-    $user = User::factory()->withFaceit()->create();
+    platformUser();
+    $user = User::factory()->active()->withFaceit()->create();
     Wallet::deposit($user, '500', reference: "test:deposit:{$user->id}");
 
-    $payload = validPayload(['game' => 'cs2', 'platform' => 'faceit']);
+    // CS2 listings are team-play 5v5 only (no 1v1 mode); team_size + creator_side required.
+    $payload = validPayload([
+        'game' => 'cs2',
+        'platform' => 'faceit',
+        'team_size' => 5,
+        'creator_side' => LobbyParticipant::SIDE_A,
+    ]);
     unset($payload['time_control']);
 
     $this->actingAs($user)
@@ -328,12 +336,15 @@ test('successful store flashes a success toast', function () {
 // ─── Per-game gating (M15 Phase 3) ────────────────────────────────────────
 
 test('CS2 listing creation succeeds when the user has FACEIT linked', function () {
-    $user = User::factory()->withFaceit()->create();
+    platformUser();
+    $user = User::factory()->active()->withFaceit()->create();
     Wallet::deposit($user, '500', reference: "test:deposit:{$user->id}");
 
     $response = $this->actingAs($user)->postJson('/listings', validPayload([
         'game' => 'cs2',
         'platform' => 'faceit',
+        'team_size' => 5,
+        'creator_side' => LobbyParticipant::SIDE_A,
     ]));
 
     $response->assertRedirect(route('listings.mine'));
@@ -341,19 +352,23 @@ test('CS2 listing creation succeeds when the user has FACEIT linked', function (
     $listing = Listing::query()->where('user_id', $user->id)->firstOrFail();
 
     expect($listing->game)->toBe(Game::Cs2)
-        ->and($listing->platform)->toBe(LinkedAccountProvider::Faceit);
+        ->and($listing->platform)->toBe(LinkedAccountProvider::Faceit)
+        ->and($listing->team_size)->toBe(5);
 });
 
 test('CS2 listing creation is blocked when the user has no FACEIT link', function () {
+    platformUser();
     // game + platform pair is valid (cs2 + faceit), so cross-validation
-    // passes — but CreateListingAction's isVerifiedOn(Faceit) check fires the
-    // 'not_linked' sentinel because the user only has chess linked.
-    $user = User::factory()->withLichess()->create();
+    // passes — but the team-play create action's isVerifiedOn(Faceit) check
+    // fires the 'not_linked' sentinel because the user only has chess linked.
+    $user = User::factory()->active()->withLichess()->create();
     Wallet::deposit($user, '500', reference: "test:deposit:{$user->id}");
 
     $response = $this->actingAs($user)->postJson('/listings', validPayload([
         'game' => 'cs2',
         'platform' => 'faceit',
+        'team_size' => 5,
+        'creator_side' => LobbyParticipant::SIDE_A,
     ]));
 
     $response->assertRedirect(route('linked-accounts.edit'));
