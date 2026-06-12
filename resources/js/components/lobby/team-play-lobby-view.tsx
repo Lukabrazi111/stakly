@@ -1,9 +1,8 @@
 import { router, usePage } from '@inertiajs/react';
 import { useEffect, useMemo, useState } from 'react';
+import { LobbyCenterColumn } from '@/components/lobby/center/center-column';
 import { LobbyActions } from '@/components/lobby/lobby-actions';
-import { LobbyStatusBanner } from '@/components/lobby/lobby-status-banner';
-import { TeamRoster } from '@/components/lobby/team-roster';
-import { ChatPanel } from '@/components/match/chat-panel';
+import { TeamSlotColumn } from '@/components/lobby/team-slot-column';
 import { MobileChatTrigger } from '@/components/match/mobile-chat-trigger';
 import { useMatchChat } from '@/hooks/use-match-chat';
 import { join, kick, leave, ready } from '@/routes/lobbies';
@@ -22,9 +21,8 @@ interface Props {
 /**
  * Team-play lobby UI block — hosted on `pages/listings/show.tsx` for
  * `listing.team_size > 1`. Encapsulates the polling loop, action handlers,
- * and the responsive 2-col layout (TeamRoster | Chat) inherited from the
- * original `pages/lobby/show.tsx` (M34 P3) so the routing flip is a pure
- * reparenting, not a rebuild.
+ * and the 3-col layout (Team A | center column | Team B) with chat as a
+ * FAB at every viewport.
  */
 export function TeamPlayLobbyView({ lobby, messages }: Props) {
     const { auth } = usePage().props;
@@ -122,48 +120,42 @@ export function TeamPlayLobbyView({ lobby, messages }: Props) {
     const placeholderTaker: MatchPlayer =
         participants.find((p) => p.id !== lobby.creator.id) ?? lobby.creator;
 
+    const isReadOnlyChat =
+        lobby.lobby_state === 'cancelled' || lobby.lobby_state === 'expired';
+
     return (
         <>
-            <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_440px] lg:gap-6">
-                <div className="min-w-0 space-y-6">
-                    <LobbyStatusBanner lobby={lobby} />
-
-                    <TeamRoster
+            <div className="space-y-6">
+                {/* The headline 3-col layout — Team A | Center | Team B at
+                    lg+. Below lg the columns stack so mobile reads
+                    top-to-bottom: Team A → Center blocks → Team B. */}
+                <div className="grid gap-4 lg:grid-cols-[1fr_minmax(360px,400px)_1fr] lg:items-start lg:gap-6">
+                    <TeamSlotColumn
                         lobby={lobby}
+                        side="a"
                         onJoin={handleJoin}
                         onKick={handleKick}
                     />
-
-                    <LobbyActions
+                    <LobbyCenterColumn lobby={lobby} />
+                    <TeamSlotColumn
                         lobby={lobby}
-                        onToggleReady={handleToggleReady}
-                        onLeave={handleLeave}
-                        isProcessing={isProcessing}
+                        side="b"
+                        onJoin={handleJoin}
+                        onKick={handleKick}
                     />
                 </div>
 
-                {auth.user && matchId !== null && (
-                    <aside className="hidden lg:sticky lg:top-28 lg:block lg:h-[750px]">
-                        <ChatPanel
-                            messages={chat.messages}
-                            viewerId={auth.user.id}
-                            creator={lobby.creator}
-                            taker={placeholderTaker}
-                            participants={participants}
-                            isReadOnly={
-                                lobby.lobby_state === 'cancelled' ||
-                                lobby.lobby_state === 'expired'
-                            }
-                            isPending={chat.isPending}
-                            onSend={chat.send}
-                            onRetry={chat.retry}
-                            onDismiss={chat.dismiss}
-                            uploadProgress={chat.uploadProgress}
-                        />
-                    </aside>
-                )}
+                <LobbyActions
+                    lobby={lobby}
+                    onToggleReady={handleToggleReady}
+                    onLeave={handleLeave}
+                    isProcessing={isProcessing}
+                />
             </div>
 
+            {/* Chat — always FAB on the team-play lobby. The 4-block center
+                column replaces the chess-style sticky aside; coordination
+                via chat happens on demand instead of constantly visible. */}
             {auth.user && matchId !== null && (
                 <MobileChatTrigger
                     messages={chat.messages}
@@ -171,15 +163,13 @@ export function TeamPlayLobbyView({ lobby, messages }: Props) {
                     creator={lobby.creator}
                     taker={placeholderTaker}
                     participants={participants}
-                    isReadOnly={
-                        lobby.lobby_state === 'cancelled' ||
-                        lobby.lobby_state === 'expired'
-                    }
+                    isReadOnly={isReadOnlyChat}
                     isPending={chat.isPending}
                     onSend={chat.send}
                     onRetry={chat.retry}
                     onDismiss={chat.dismiss}
                     uploadProgress={chat.uploadProgress}
+                    containerClassName=""
                 />
             )}
         </>

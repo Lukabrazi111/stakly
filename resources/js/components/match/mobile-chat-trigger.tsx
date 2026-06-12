@@ -26,6 +26,12 @@ interface MobileChatTriggerProps {
     onRetry: (correlationId: string) => void;
     onDismiss: (correlationId: string) => void;
     uploadProgress: number | null;
+    /**
+     * Override the default `lg:hidden` visibility. Team-play lobby (B.2)
+     * passes an empty string so the FAB stays visible at every viewport —
+     * the 4-block center column replaced the desktop chat aside there.
+     */
+    containerClassName?: string;
 }
 
 /** Mobile FAB + bottom sheet for match chat. Unread = `messages.length`
@@ -42,6 +48,7 @@ export function MobileChatTrigger({
     onRetry,
     onDismiss,
     uploadProgress,
+    containerClassName,
 }: MobileChatTriggerProps) {
     const t = useT();
     const [open, setOpen] = useState(false);
@@ -82,7 +89,7 @@ export function MobileChatTrigger({
     const unreadCount = open ? 0 : Math.max(0, messages.length - seenCount);
 
     return (
-        <div className="lg:hidden">
+        <div className={containerClassName ?? 'lg:hidden'}>
             <Sheet open={open} onOpenChange={handleOpenChange}>
                 <Button
                     type="button"

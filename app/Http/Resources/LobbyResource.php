@@ -56,6 +56,128 @@ class LobbyResource extends JsonResource
             'creator' => $this->presentCreator(),
             'roster' => $this->presentRoster(),
             'viewer' => $this->presentViewer($viewer, $viewerParticipant),
+            'aggregates' => $this->presentAggregates(),
+        ];
+    }
+
+    /**
+     * Per-team computed view for the FACEIT-grade center column on
+     * `pages/listings/show.tsx`. Money math is derived from existing fields;
+     * skill aggregates come from each participant's `platform_account.skill_rating`
+     * (FACEIT ELO snapshot in M15); trust aggregates come from the `seller_trust`
+     * attribute that `ListingController::showTeamPlay` attaches via
+     * `SellerTrust::forBatch` over every participant's user.
+     *
+     * Floats at the JSON boundary (display, not authoritative). Internal
+     * money writes still go through Wallet's BCMath path.
+     *
+     * @return array<string, mixed>
+     */
+    private function presentAggregates(): array
+    {
+        $stakeAmount = (float) $this->stake_amount;
+        $feeRate = (float) config('stakly.platform_fee_rate');
+        $pot = $stakeAmount * $this->team_size * 2;
+        $fee = $pot * $feeRate;
+        $winnerTakePerPlayer = $this->team_size > 0
+            ? ($pot - $fee) / $this->team_size
+            : 0.0;
+
+        $live = $this->lobbyParticipants->whereNull('kicked_at');
+        $sideA = $live->where('side', 'a');
+        $sideB = $live->where('side', 'b');
+
+        $skillA = $this->skillFor($sideA);
+        $skillB = $this->skillFor($sideB);
+
+        $delta = ($skillA['avg'] !== null && $skillB['avg'] !== null)
+            ? (int) abs($skillA['avg'] - $skillB['avg'])
+            : null;
+
+        $deltaTone = $delta === null
+            ? null
+            : ($delta <= 50 ? 'even' : ($delta <= 150 ? 'mismatched' : 'stacked'));
+
+        return [
+            'pot' => $pot,
+            'fee' => $fee,
+            'winner_take_per_player' => $winnerTakePerPlayer,
+            'loser_loss_per_player' => $stakeAmount,
+            'skill' => [
+                'a' => $skillA,
+                'b' => $skillB,
+                'delta' => $delta,
+                'delta_tone' => $deltaTone,
+            ],
+            'trust' => [
+                'a' => $this->trustFor($sideA),
+                'b' => $this->trustFor($sideB),
+            ],
+        ];
+    }
+
+    /**
+     * @param  iterable<LobbyParticipant>  $participants
+     * @return array{avg: int|null, min: int|null, max: int|null, count: int}
+     */
+    private function skillFor(iterable $participants): array
+    {
+        $ratings = [];
+        foreach ($participants as $participant) {
+            $rating = $this->skillRatingFor($participant);
+            if ($rating !== null) {
+                $ratings[] = $rating;
+            }
+        }
+
+        if (count($ratings) === 0) {
+            return ['avg' => null, 'min' => null, 'max' => null, 'count' => 0];
+        }
+
+        return [
+            'avg' => (int) round(array_sum($ratings) / count($ratings)),
+            'min' => min($ratings),
+            'max' => max($ratings),
+            'count' => count($ratings),
+        ];
+    }
+
+    private function skillRatingFor(LobbyParticipant $participant): ?int
+    {
+        $link = $participant->user->linkedAccounts
+            ->firstWhere('provider.value', $this->platform->value);
+
+        return $link?->skill_rating;
+    }
+
+    /**
+     * @param  iterable<LobbyParticipant>  $participants
+     * @return array{avg_completion_rate: int|null, settled_lifetime_sum: int, player_count: int}
+     */
+    private function trustFor(iterable $participants): array
+    {
+        $rates = [];
+        $settledSum = 0;
+        $playerCount = 0;
+
+        foreach ($participants as $participant) {
+            $playerCount++;
+            $trust = $participant->user->getAttribute('seller_trust')
+                ?? ['rate_30d' => null, 'settled_lifetime' => 0];
+
+            $settledSum += (int) ($trust['settled_lifetime'] ?? 0);
+
+            if ($trust['rate_30d'] !== null) {
+                $rates[] = (int) $trust['rate_30d'];
+            }
+        }
+
+        return [
+            'avg_completion_rate' => count($rates) > 0
+                ? (int) round(array_sum($rates) / count($rates))
+                : null,
+            'settled_lifetime_sum' => $settledSum,
+            'player_count' => $playerCount,
         ];
     }
 

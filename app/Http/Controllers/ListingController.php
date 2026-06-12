@@ -190,6 +190,27 @@ class ListingController extends Controller
         // separate query; keeps the resource's read-from-attribute path safe.
         $listing->loadCount(['lobbyParticipants as live_participant_count' => fn ($q) => $q->live()]);
 
+        // M34 P3.1 Slice B.2 — trust signals block in the center column
+        // needs every participant's seller_trust. One batch aggregation
+        // across all live-participant user IDs; LobbyResource reads the
+        // attached `seller_trust` attribute per user.
+        $userIds = $listing->lobbyParticipants
+            ->whereNull('kicked_at')
+            ->pluck('user_id')
+            ->unique()
+            ->values()
+            ->all();
+        $trust = SellerTrust::forBatch($userIds);
+        foreach ($listing->lobbyParticipants as $participant) {
+            if ($participant->kicked_at !== null) {
+                continue;
+            }
+            $participant->user->setAttribute(
+                'seller_trust',
+                $trust[$participant->user_id] ?? ['rate_30d' => null, 'settled_lifetime' => 0],
+            );
+        }
+
         // Lobby chat shares the existing match.{match_id} channel + Message
         // pipeline. Every team-play listing has a paired GameMatch row since
         // P1's `CreateTeamPlayListingAction`, so this load is reliable.

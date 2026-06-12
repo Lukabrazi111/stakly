@@ -50,6 +50,51 @@ export interface LobbyViewer {
     balance: number;
 }
 
+/**
+ * Per-team aggregates for the FACEIT-grade center column. Computed server-side
+ * so the frontend renders directly without re-aggregating.
+ */
+export interface LobbyAggregates {
+    /** team_size × 2 × stake_amount */
+    pot: number;
+    /** pot × fee_rate */
+    fee: number;
+    /** (pot − fee) / team_size — what each winner walks away with */
+    winner_take_per_player: number;
+    /** stake_amount — what each loser's escrow paid out (no refund) */
+    loser_loss_per_player: number;
+    skill: {
+        a: LobbyTeamSkill;
+        b: LobbyTeamSkill;
+        /** |avg_a − avg_b|; null when either side has no skill data */
+        delta: number | null;
+        /** Tone tier for the matchup label. null when delta is null. */
+        delta_tone: 'even' | 'mismatched' | 'stacked' | null;
+    };
+    trust: {
+        a: LobbyTeamTrust;
+        b: LobbyTeamTrust;
+    };
+}
+
+export interface LobbyTeamSkill {
+    /** Mean platform skill rating across players with a known rating. */
+    avg: number | null;
+    min: number | null;
+    max: number | null;
+    /** Number of players with a non-null skill rating contributing to avg/min/max. */
+    count: number;
+}
+
+export interface LobbyTeamTrust {
+    /** Avg 30-day completion rate across players with a track record. */
+    avg_completion_rate: number | null;
+    /** Sum of lifetime settled matches across the team's roster. */
+    settled_lifetime_sum: number;
+    /** Total live participants on this side (filled slots). */
+    player_count: number;
+}
+
 export interface Lobby {
     id: number;
     game: GameId;
@@ -80,6 +125,7 @@ export interface Lobby {
     roster: LobbyRoster;
     /** Null for unauthenticated visitors browsing a public lobby. */
     viewer: LobbyViewer | null;
+    aggregates: LobbyAggregates;
 }
 
 export interface LobbyShowProps {
