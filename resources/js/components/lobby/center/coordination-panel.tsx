@@ -1,4 +1,4 @@
-import { Check, Copy, Info, ShieldCheck, Users } from 'lucide-react';
+import { Check, Copy, Info, ShieldCheck } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useClipboard } from '@/hooks/use-clipboard';
 import { useT } from '@/lib/i18n';
@@ -11,17 +11,14 @@ interface Props {
 
 /**
  * State-dependent coordination panel — final block in the center column.
- * One of three sub-views by `lobby_state`:
- *   - recruiting: muted info banner + chat reminder.
+ * Renders only for states with substantial content:
  *   - ready_checking: big countdown + "click Ready up below" CTA hint.
  *   - locked: FACEIT username list with click-to-copy + party-invite tips.
- * Cancelled / expired / null → nothing renders.
+ * Recruiting / cancelled / expired / null → nothing renders. The team-column
+ * fill counters ("4 / 5") already communicate recruiting progress; no need
+ * for a dedicated card to repeat it.
  */
 export function CoordinationPanel({ lobby }: Props) {
-    if (lobby.lobby_state === 'recruiting') {
-        return <RecruitingPanel lobby={lobby} />;
-    }
-
     if (lobby.lobby_state === 'ready_checking') {
         return <ReadyCheckingPanel lobby={lobby} />;
     }
@@ -31,32 +28,6 @@ export function CoordinationPanel({ lobby }: Props) {
     }
 
     return null;
-}
-
-function RecruitingPanel({ lobby }: Props) {
-    const t = useT();
-    const max = lobby.team_size * 2;
-    const filled =
-        lobby.roster.a.filter((s) => s !== null).length +
-        lobby.roster.b.filter((s) => s !== null).length;
-    const remaining = Math.max(0, max - filled);
-
-    return (
-        <section className="rounded-2xl border border-border/60 bg-card/60 p-5 text-center">
-            <Users
-                className="mx-auto size-5 text-muted-foreground"
-                aria-hidden="true"
-            />
-            <div className="mt-2 font-display text-lg font-semibold text-foreground">
-                {remaining > 0
-                    ? t('Waiting for :n more', { n: remaining })
-                    : t('Lobby is full — Ready up below')}
-            </div>
-            <p className="mt-1 text-xs text-muted-foreground">
-                {t('Use chat to coordinate teams and time.')}
-            </p>
-        </section>
-    );
 }
 
 function ReadyCheckingPanel({ lobby }: Props) {

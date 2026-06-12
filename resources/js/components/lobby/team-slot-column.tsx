@@ -32,6 +32,7 @@ function pickLeaderLabel(
     }
 
     const creator = filled.find((s) => s.is_creator);
+
     if (creator) {
         return `Team ${creator.user.username}`;
     }
@@ -39,6 +40,7 @@ function pickLeaderLabel(
     const earliest = [...filled].sort((a, b) => {
         const ta = a.joined_at ? new Date(a.joined_at).getTime() : Infinity;
         const tb = b.joined_at ? new Date(b.joined_at).getTime() : Infinity;
+
         return ta - tb;
     })[0];
 

@@ -12,14 +12,15 @@ interface FilledSlotProps {
 }
 
 /**
- * Filled lobby slot. Two visual rows separated by a hairline divider:
+ * Filled lobby slot. Display-only — the viewer's Ready / Leave actions live
+ * in the Money block on the center column, not on the slot card. Two visual
+ * rows separated by a hairline divider:
  *   1. Header — avatar (with crown on creator) + name/platform handle, rating
  *      chip on the right, Ready/Waiting state pill underneath the rating.
- *   2. Stats — "Overall · Last 20" platform stats line.
+ *   2. Stats — Matches / Win rate / Completion-30d row.
  *
  * Kept dimensionally identical to `EmptySlot` so the team column doesn't
- * reflow as players join / leave. No glow on Ready — the success-tone border
- * + chip is the active-state signal.
+ * reflow as players join / leave.
  */
 export function FilledSlot({
     participant,
@@ -37,6 +38,7 @@ export function FilledSlot({
             .toUpperCase() ?? '??';
 
     const rating = participant.platform_account?.skill_rating ?? null;
+    const showKickX = !isViewer && canKick && !participant.is_creator;
 
     return (
         <div
@@ -74,7 +76,7 @@ export function FilledSlot({
 
                 <div className="flex min-w-0 flex-1 flex-col">
                     <span className="truncate text-sm font-semibold text-foreground">
-                        {participant.user.name}
+                        {isViewer ? t('You') : participant.user.name}
                     </span>
                     {participant.platform_account && (
                         <span className="truncate font-mono text-[11px] text-muted-foreground">
@@ -92,7 +94,7 @@ export function FilledSlot({
                     <ReadyPill ready={participant.is_ready} />
                 </div>
 
-                {canKick && !participant.is_creator && (
+                {showKickX && (
                     <Button
                         type="button"
                         variant="ghost"
@@ -137,9 +139,9 @@ interface StatsLineProps {
 }
 
 /**
- * "Overall · Last 20" stats row at the foot of the slot card. Renders a
- * muted dash placeholder when the participant has no settled matches yet so
- * the card height stays stable.
+ * Three-cell stats row at the foot of the slot card: Matches / Win rate /
+ * Completion-30d. Renders a muted placeholder for users with no settled
+ * matches yet so the card height stays stable across roster states.
  */
 function StatsLine({ stats }: StatsLineProps) {
     const t = useT();
@@ -153,21 +155,24 @@ function StatsLine({ stats }: StatsLineProps) {
     }
 
     return (
-        <div className="mt-2 grid grid-cols-2 gap-3 border-t border-border/40 pt-1.5">
+        <div className="mt-2 grid grid-cols-3 gap-2 border-t border-border/40 pt-1.5">
             <StatCell
-                label={t('Overall')}
-                primary={`${stats.win_rate ?? '—'}%`}
-                secondary={t(':n matches', { n: stats.total_matches })}
+                label={t('Matches')}
+                value={String(stats.total_matches)}
             />
             <StatCell
-                label={t('Last :n', { n: 20 })}
-                primary={
-                    stats.last_played > 0
-                        ? `${stats.last_win_rate ?? '—'}%`
-                        : '—'
+                label={t('Win rate')}
+                value={stats.win_rate === null ? '—' : `${stats.win_rate}%`}
+                align="center"
+            />
+            <StatCell
+                label={t('Completion 30d')}
+                value={
+                    stats.completion_rate_30d === null
+                        ? '—'
+                        : `${stats.completion_rate_30d}%`
                 }
-                secondary={t(':n played', { n: stats.last_played })}
-                alignRight
+                align="right"
             />
         </div>
     );
@@ -175,27 +180,24 @@ function StatsLine({ stats }: StatsLineProps) {
 
 interface StatCellProps {
     label: string;
-    primary: string;
-    secondary: string;
-    alignRight?: boolean;
+    value: string;
+    align?: 'left' | 'center' | 'right';
 }
 
-function StatCell({ label, primary, secondary, alignRight }: StatCellProps) {
+function StatCell({ label, value, align = 'left' }: StatCellProps) {
     return (
         <div
             className={cn(
                 'flex min-w-0 flex-col',
-                alignRight && 'items-end text-right',
+                align === 'center' && 'items-center text-center',
+                align === 'right' && 'items-end text-right',
             )}
         >
             <span className="text-[9px] tracking-wider text-muted-foreground/70 uppercase">
                 {label}
             </span>
             <span className="font-display text-xs font-semibold text-foreground tabular-nums">
-                {primary}
-            </span>
-            <span className="text-[10px] text-muted-foreground/70">
-                {secondary}
+                {value}
             </span>
         </div>
     );

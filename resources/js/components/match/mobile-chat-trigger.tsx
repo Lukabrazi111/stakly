@@ -1,16 +1,11 @@
-import { MessageSquare } from 'lucide-react';
+import { MessageSquare, X } from 'lucide-react';
+import { AnimatePresence, motion } from 'motion/react';
 import { useEffect, useState } from 'react';
 import { ChatPanel } from '@/components/match/chat-panel';
 import { Button } from '@/components/ui/button';
-import {
-    Sheet,
-    SheetContent,
-    SheetDescription,
-    SheetHeader,
-    SheetTitle,
-} from '@/components/ui/sheet';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { useT } from '@/lib/i18n';
+import { cn } from '@/lib/utils';
 import type { ChatMessage, MatchPlayer } from '@/types';
 
 interface MobileChatTriggerProps {
@@ -27,15 +22,23 @@ interface MobileChatTriggerProps {
     onDismiss: (correlationId: string) => void;
     uploadProgress: number | null;
     /**
-     * Override the default `lg:hidden` visibility. Team-play lobby (B.2)
-     * passes an empty string so the FAB stays visible at every viewport —
-     * the 4-block center column replaced the desktop chat aside there.
+     * Override the default `lg:hidden` visibility. Team-play lobby passes
+     * an empty string so the FAB stays visible at every viewport — the
+     * 4-block center column replaced the desktop chat aside there.
      */
     containerClassName?: string;
 }
 
-/** Mobile FAB + bottom sheet for match chat. Unread = `messages.length`
- *  delta since last open — no per-message read state. */
+/**
+ * Floating chat — FAB pinned bottom-right, click to expand a compact
+ * 380×480 chat card anchored to the same corner. No full-screen Sheet:
+ * the lobby layout's center column already dominates the page, so the
+ * chat needs to feel like a peripheral surface, not a takeover.
+ *
+ * Unread = `messages.length` delta since last open — no per-message read
+ * state. Banner-driven focus event (`stakly:focus-chat`) auto-pops the
+ * card open + re-fires once the inner input is mounted.
+ */
 export function MobileChatTrigger({
     messages,
     viewerId,
@@ -55,14 +58,14 @@ export function MobileChatTrigger({
     const [seenCount, setSeenCount] = useState(messages.length);
     const isMobile = useIsMobile();
 
-    const handleOpenChange = (next: boolean) => {
+    const setOpenState = (next: boolean) => {
         setOpen(next);
-        setSeenCount(messages.length);
+
+        if (next) {
+            setSeenCount(messages.length);
+        }
     };
 
-    // Banner "Post evidence in chat" dispatches a window event. On mobile we
-    // pop the sheet open and re-fire once the inner ChatInput has mounted so
-    // its own listener can focus the textarea. `open` guard breaks the loop.
     useEffect(() => {
         if (!isMobile) {
             return;
@@ -73,8 +76,7 @@ export function MobileChatTrigger({
                 return;
             }
 
-            setOpen(true);
-            setSeenCount(messages.length);
+            setOpenState(true);
 
             window.setTimeout(() => {
                 window.dispatchEvent(new CustomEvent('stakly:focus-chat'));
@@ -84,30 +86,102 @@ export function MobileChatTrigger({
         window.addEventListener('stakly:focus-chat', handler);
 
         return () => window.removeEventListener('stakly:focus-chat', handler);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [isMobile, open, messages.length]);
 
     const unreadCount = open ? 0 : Math.max(0, messages.length - seenCount);
 
     return (
         <div className={containerClassName ?? 'lg:hidden'}>
-            <Sheet open={open} onOpenChange={handleOpenChange}>
+            <div className="fixed right-4 bottom-4 z-40 flex flex-col items-end gap-3">
+                <AnimatePresence>
+                    {open && (
+                        <motion.div
+                            key="chat-card"
+                            initial={{
+                                opacity: 0,
+                                y: 20,
+                                scale: 0.95,
+                            }}
+                            animate={{ opacity: 1, y: 0, scale: 1 }}
+                            exit={{ opacity: 0, y: 20, scale: 0.95 }}
+                            transition={{
+                                type: 'spring',
+                                damping: 24,
+                                stiffness: 280,
+                            }}
+                            style={{ transformOrigin: 'bottom right' }}
+                            className="flex h-[min(520px,80vh)] w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-2xl border border-border/60 bg-card shadow-2xl sm:w-[380px]"
+                            role="dialog"
+                            aria-label={t('Match chat')}
+                        >
+                            <header className="flex items-center justify-between gap-3 border-b border-border/60 bg-card/95 px-4 py-3">
+                                <div className="min-w-0">
+                                    <div className="font-display text-sm font-semibold text-foreground">
+                                        {t('Match chat')}
+                                    </div>
+                                    <div className="truncate text-[11px] text-muted-foreground">
+                                        {t(
+                                            'Messages are part of the dispute record.',
+                                        )}
+                                    </div>
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={() => setOpenState(false)}
+                                    aria-label={t('Close chat')}
+                                    className="inline-flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-primary/10 hover:text-foreground"
+                                >
+                                    <X className="size-4" aria-hidden="true" />
+                                </button>
+                            </header>
+
+                            <div className="min-h-0 flex-1">
+                                <ChatPanel
+                                    messages={messages}
+                                    viewerId={viewerId}
+                                    creator={creator}
+                                    taker={taker}
+                                    participants={participants}
+                                    isReadOnly={isReadOnly}
+                                    isPending={isPending}
+                                    onSend={onSend}
+                                    onRetry={onRetry}
+                                    onDismiss={onDismiss}
+                                    uploadProgress={uploadProgress}
+                                    bare
+                                />
+                            </div>
+                        </motion.div>
+                    )}
+                </AnimatePresence>
+
                 <Button
                     type="button"
                     variant="gradient"
                     size="pill"
-                    onClick={() => handleOpenChange(true)}
+                    onClick={() => setOpenState(!open)}
                     aria-label={
-                        unreadCount > 0
-                            ? t('Open match chat — :count unread', {
-                                  count: unreadCount,
-                              })
-                            : t('Open match chat')
+                        open
+                            ? t('Close chat')
+                            : unreadCount > 0
+                              ? t('Open match chat — :count unread', {
+                                    count: unreadCount,
+                                })
+                              : t('Open match chat')
                     }
-                    className="fixed right-4 bottom-4 z-40 shadow-lg"
+                    className={cn(
+                        'shadow-lg transition-transform',
+                        open && 'rotate-0',
+                    )}
                 >
-                    <MessageSquare className="size-4" />
-                    <span>{t('Chat')}</span>
-                    {unreadCount > 0 && (
+                    {open ? (
+                        <X className="size-4" aria-hidden="true" />
+                    ) : (
+                        <MessageSquare className="size-4" aria-hidden="true" />
+                    )}
+                    <span>{open ? t('Close') : t('Chat')}</span>
+                    {!open && unreadCount > 0 && (
                         <span
                             aria-hidden
                             className="ml-1 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-background px-1.5 text-xs font-semibold text-primary"
@@ -116,36 +190,7 @@ export function MobileChatTrigger({
                         </span>
                     )}
                 </Button>
-                <SheetContent
-                    side="bottom"
-                    className="flex h-[88vh] flex-col p-0"
-                >
-                    <SheetHeader className="border-b border-border/60">
-                        <SheetTitle>{t('Match chat')}</SheetTitle>
-                        <SheetDescription className="sr-only">
-                            {t(
-                                'Chat with your opponent. Messages are part of the dispute record.',
-                            )}
-                        </SheetDescription>
-                    </SheetHeader>
-                    <div className="min-h-0 flex-1">
-                        <ChatPanel
-                            messages={messages}
-                            viewerId={viewerId}
-                            creator={creator}
-                            taker={taker}
-                            participants={participants}
-                            isReadOnly={isReadOnly}
-                            isPending={isPending}
-                            onSend={onSend}
-                            onRetry={onRetry}
-                            onDismiss={onDismiss}
-                            uploadProgress={uploadProgress}
-                            bare
-                        />
-                    </div>
-                </SheetContent>
-            </Sheet>
+            </div>
         </div>
     );
 }

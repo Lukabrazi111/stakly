@@ -102,10 +102,7 @@ class LobbyController extends Controller
             default => ['type' => 'warning', 'message' => __('Could not leave the lobby.')],
         });
 
-        return match ($result) {
-            'left', 'creator_cancelled' => to_route('listings.index'),
-            default => back(),
-        };
+        return back();
     }
 
     public function toggleReady(Request $request, Listing $listing, ToggleReadyAction $action): RedirectResponse

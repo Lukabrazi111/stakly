@@ -1,7 +1,7 @@
 import { LayoutGrid, List } from 'lucide-react';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
-import { useT } from '@/lib/i18n';
 import type { ListingsViewMode } from '@/hooks/use-listings-view';
+import { useT } from '@/lib/i18n';
 
 interface Props {
     value: ListingsViewMode;

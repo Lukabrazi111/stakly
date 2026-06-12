@@ -1,13 +1,12 @@
 import { router, usePage } from '@inertiajs/react';
 import { useEffect, useMemo, useState } from 'react';
 import { LobbyCenterColumn } from '@/components/lobby/center/center-column';
-import { LobbyActions } from '@/components/lobby/lobby-actions';
 import { TeamSlotColumn } from '@/components/lobby/team-slot-column';
 import { MobileChatTrigger } from '@/components/match/mobile-chat-trigger';
 import { useMatchChat } from '@/hooks/use-match-chat';
 import { join, kick, leave, ready } from '@/routes/lobbies';
-import type { ChatMessage } from '@/types/match';
 import type { Lobby, LobbySide, MatchPlayer } from '@/types';
+import type { ChatMessage } from '@/types/match';
 
 const POLL_INTERVAL_MS = 5000;
 
@@ -68,6 +67,7 @@ export function TeamPlayLobbyView({ lobby, messages }: Props) {
         if (viewerId === null) {
             return;
         }
+
         setIsProcessing(true);
         router.post(
             join({ listing: lobby.id }).url,
@@ -128,7 +128,9 @@ export function TeamPlayLobbyView({ lobby, messages }: Props) {
             <div className="space-y-6">
                 {/* The headline 3-col layout — Team A | Center | Team B at
                     lg+. Below lg the columns stack so mobile reads
-                    top-to-bottom: Team A → Center blocks → Team B. */}
+                    top-to-bottom: Team A → Center blocks → Team B. The
+                    Money block hosts Ready / Leave actions for the viewer;
+                    slot cards stay display-only. */}
                 <div className="grid gap-4 lg:grid-cols-[1fr_minmax(360px,400px)_1fr] lg:items-start lg:gap-6">
                     <TeamSlotColumn
                         lobby={lobby}
@@ -136,7 +138,12 @@ export function TeamPlayLobbyView({ lobby, messages }: Props) {
                         onJoin={handleJoin}
                         onKick={handleKick}
                     />
-                    <LobbyCenterColumn lobby={lobby} />
+                    <LobbyCenterColumn
+                        lobby={lobby}
+                        onToggleReady={handleToggleReady}
+                        onLeave={handleLeave}
+                        isProcessing={isProcessing}
+                    />
                     <TeamSlotColumn
                         lobby={lobby}
                         side="b"
@@ -144,19 +151,12 @@ export function TeamPlayLobbyView({ lobby, messages }: Props) {
                         onKick={handleKick}
                     />
                 </div>
-
-                <LobbyActions
-                    lobby={lobby}
-                    onToggleReady={handleToggleReady}
-                    onLeave={handleLeave}
-                    isProcessing={isProcessing}
-                />
             </div>
 
-            {/* Chat — always FAB on the team-play lobby. The 4-block center
-                column replaces the chess-style sticky aside; coordination
-                via chat happens on demand instead of constantly visible. */}
-            {auth.user && matchId !== null && (
+            {/* Chat — FAB only when the viewer has joined. The chat is a
+                team-coordination room, not a public comment thread; browsers
+                see roster + stats but not banter. Once they join, FAB appears. */}
+            {auth.user && matchId !== null && lobby.viewer?.is_participant && (
                 <MobileChatTrigger
                     messages={chat.messages}
                     viewerId={auth.user.id}

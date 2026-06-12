@@ -32,17 +32,10 @@ export interface LobbyParticipantPayload {
         username: string;
         skill_rating: number | null;
     } | null;
-    /**
-     * Stakly-platform stats (Overall + Last 20). Null when no settled
-     * matches have been played yet, or when the resource is built outside
-     * the team-play controller path. Win-rate values are integer %s in
-     * [0, 100].
-     */
     platform_stats: {
         total_matches: number;
         win_rate: number | null;
-        last_played: number;
-        last_win_rate: number | null;
+        completion_rate_30d: number | null;
     } | null;
 }
 
