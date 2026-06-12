@@ -120,11 +120,16 @@ class Listing extends Model
      * Active Mode check + the M30 ban gate — when the owner is suspended
      * OR has toggled Inactive, none of their listings appear in the public
      * marketplace or visitor profile views.
+     *
+     * M34: also hides private listings (`is_public = false`). Those reach
+     * joiners only via `/lobbies/{invite_token}`. Direct `/listings/{id}`
+     * URLs still resolve for users who have the link.
      */
     public function scopeOnPublicMarketplace(Builder $query): Builder
     {
         return $query
             ->open()
+            ->where('is_public', true)
             ->whereHas('user', fn (Builder $q) => $q
                 ->where('is_active_mode', true)
                 ->whereNull('banned_at'),

@@ -56,4 +56,26 @@ enum Game: string
             self::Dota2 => false,
         };
     }
+
+    /**
+     * Valid `team_size` values for a listing in this game. 1 = the existing
+     * `TakeListingAction` flow (chess + legacy CS2 1v1). Values > 1 route
+     * through the M34 lobby pipeline.
+     *
+     *   Chess → [1] (no team play; native 1v1).
+     *   CS2   → [1, 5] (1 = legacy 1v1, 5 = M34 competitive 5v5 via lobby;
+     *           2v2 Wingman adds [2] in P5).
+     *   Dota2 → [1] (no Dota lobby support until M15 Dota adapter + M34
+     *           extension land).
+     *
+     * @return list<int>
+     */
+    public function allowedTeamSizes(): array
+    {
+        return match ($this) {
+            self::Chess => [1],
+            self::Cs2 => [1, 5],
+            self::Dota2 => [1],
+        };
+    }
 }

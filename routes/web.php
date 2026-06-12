@@ -6,6 +6,7 @@ use App\Http\Controllers\GameMatchController;
 use App\Http\Controllers\HomeController;
 use App\Http\Controllers\LinkImageController;
 use App\Http\Controllers\ListingController;
+use App\Http\Controllers\LobbyController;
 use App\Http\Controllers\MessageController;
 use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\PageController;
@@ -92,6 +93,15 @@ Route::prefix('{locale}')
             Route::get('/link-images/{filename}', [LinkImageController::class, 'show'])
                 ->where('filename', '[a-f0-9]{64}\.(jpg|png|webp|gif)')
                 ->name('link-images.show');
+
+            // M34 P2 — private lobby invite link. 32-char opaque token from
+            // Str::random(32). Controller resolves and redirects to the listing
+            // detail (P3 swaps to a real lobby page at this URL). Constrained
+            // to alphanumeric so a malformed segment 404s at the routing
+            // layer.
+            Route::get('/lobbies/{token}', [LobbyController::class, 'show'])
+                ->where('token', '[A-Za-z0-9]{32}')
+                ->name('lobbies.show');
         });
 
         Route::get('/listings/{listing}', [ListingController::class, 'show'])->name('listings.show');

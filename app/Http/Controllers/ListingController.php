@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Actions\Listing\CancelListingAction;
 use App\Actions\Listing\CreateListingAction;
+use App\Actions\Listing\CreateTeamPlayListingAction;
 use App\Enums\Game;
 use App\Enums\LinkedAccountProvider;
 use App\Enums\ListingStatus;
@@ -276,16 +277,24 @@ class ListingController extends Controller
      * re-check). Converted to a `ValidationException` keyed on
      * `stake_amount` so the form re-renders cleanly with field-level feedback.
      */
-    public function store(StoreListingRequest $request, CreateListingAction $action): RedirectResponse
-    {
+    public function store(
+        StoreListingRequest $request,
+        CreateListingAction $createListing,
+        CreateTeamPlayListingAction $createTeamPlayListing,
+    ): RedirectResponse {
         if (BanGuard::isBanned($request->user())) {
             Inertia::flash('toast', ['type' => 'error', 'message' => BanGuard::rejectionMessage()]);
 
             return to_route('listings.index');
         }
 
+        $data = $request->validated();
+        $isTeamPlay = (int) ($data['team_size'] ?? 1) > 1;
+
         try {
-            $result = $action->handle($request->user(), $request->validated());
+            $result = $isTeamPlay
+                ? $createTeamPlayListing->handle($request->user(), $data)
+                : $createListing->handle($request->user(), $data);
         } catch (InsufficientBalanceException) {
             throw ValidationException::withMessages([
                 'stake_amount' => __('Stake exceeds your available balance.'),
@@ -305,11 +314,17 @@ class ListingController extends Controller
             return to_route('linked-accounts.edit');
         }
 
+        if ($result === 'already_in_lobby') {
+            Inertia::flash('toast', [
+                'type' => 'info',
+                'message' => __('You\'re already in an active lobby. Leave it before creating another team-play listing.'),
+            ]);
+
+            return to_route('listings.mine');
+        }
+
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Listing created.')]);
 
-        // Redirect to the owner's management dashboard rather than the detail
-        // page — gives users a single home where they can see all their
-        // listings, toggle Active Mode, and post another.
         return to_route('listings.mine');
     }
 
