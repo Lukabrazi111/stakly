@@ -19,7 +19,7 @@ Frontend-first build. UI against real DB infrastructure + seeded fake data; back
 
 **In-flight:**
 
-- **M34 Phase 2** — Private invite links. Backend-only slice between P1's actions and P3's frontend: extend `StoreListingRequest` to accept `team_size` / `creator_side` / `is_public`, branch `ListingController::store` to `CreateTeamPlayListingAction` for team-play, hide invite-only listings from the public marketplace, add the `/lobbies/{token}` route resolving by `invite_token`. **Phase 1 shipped 2026-06-12** — 9 lobby actions (Create / Join / Leave / ToggleReady / Kick / ReadyCheck / Lock / ReadyCheckTimeout / FillTimeout) + 2 cron commands + `Pending`-consumer audit (Policy, MatchChannel, GameMatchController, usernameChangeBlockers, Filament resources, TS exhaustiveness) + 48 new tests. Phase 0 shipped 2026-06-12 (schema + models + factories + seeder + 18 tests).
+- **M34 Phase 3.1** — Unify lobby into the listing page. Frontend follow-up to P3: collapse the dedicated `/lobbies/{id}` URL into the canonical `/listings/{id}` page so users browse the marketplace and discover lobbies through the same flow they already know. Slice A adapts the listing-card on `/listings` (5v5 / 2v2 badge + fill count + "View lobby" CTA for team-play). Slice B branches the listing show page (existing 1v1 detail for chess; lobby UI block for `team_size > 1`) + `/lobbies/{id}` becomes a 301 redirect + defensive guard in `TakeListingAction` for crafted POSTs. P4 (FACEIT 5v5 verification) is next after this — without P4, locked CS2 lobbies fall to ManualReview after the 4h timeout. Phases 0–3 all shipped 2026-06-12 (1330 → 1410, +80 tests across the four phases).
 
 **Active / upcoming:**
 
@@ -28,7 +28,7 @@ Frontend-first build. UI against real DB infrastructure + seeded fake data; back
 - **M20** — Email notifications. **Spec materially shrunk**: M27 P5 already shipped the in-app preferences UI + `notification_preferences` table + 9 `PlayerNotification` classes; M30 P4 wired the `mail` channel for ban notifications. What's left = branded HTML email templates, flip `'mail'` into `via()` on the remaining PlayerNotification subclasses, production SMTP config. Realistically 2–3 days.
 - **M21** — Blacklist + safety. Block users from listings + chat, with anti-evasion considerations. Has open design questions (block semantics + multi-account evasion) — needs alignment before coding.
 - **M33** — Listing time-control contract. Make Stakly's accepted time controls (blitz / rapid / classical) explicit in the listing-creation form, surface `time_control_mismatch` as a player-facing banner on stuck matches, and optionally re-enable Slice 3d strictness behind a per-listing opt-in. Reverted from M14 on 2026-06-06 — friction (legitimate correspondence / bullet games rejected silently) outweighed the small sandbag attack surface at this stage. Revisit when launch scale or a real abuse incident makes it relevant.
-- **M34** — Team play + lobbies (production-launch dependency for CS2). Soft-join lobby model with hybrid stake-at-Ready commitment. Players join lobbies for free (no stake), chat + coordinate, toggle "Ready" to escrow their stake per-player (refundable until all Ready). Match flips to `Pending` when all Ready, lobby locks, leaving becomes a forfeit. Lobby owner can kick any participant (refunds them if they'd Ready'd). 5-min ready-check timeout when lobby reaches max soft-joined. One active lobby per user. Public listings show in marketplace; private listings via invite token URL. Skill range applied per-player. CS2 = 5v5 first; 2v2 Wingman follow-up. Chess (1v1) keeps current `TakeListingAction` flow — lobby applies only when `team_size > 1`. **Phase 0 shipped 2026-06-12**; P1 in-flight above. Detailed section below.
+- **M34** — Team play + lobbies (production-launch dependency for CS2). Soft-join lobby model with hybrid stake-at-Ready commitment. Players join lobbies for free (no stake), chat + coordinate, toggle "Ready" to escrow their stake per-player (refundable until all Ready). Match flips to `Pending` when all Ready, lobby locks, leaving becomes a forfeit. Lobby owner can kick any participant (refunds them if they'd Ready'd). 5-min ready-check timeout when lobby reaches max soft-joined. One active lobby per user. Public listings show in marketplace; private listings via invite token URL. Skill range applied per-player. CS2 = 5v5 first; 2v2 Wingman follow-up. Chess (1v1) keeps current `TakeListingAction` flow — lobby applies only when `team_size > 1`. **Phases 0–3 shipped 2026-06-12**; P3.1 in-flight above. Detailed section below.
 > Active milestone keeps a detailed task list. Future milestones expand when started. Any of this can shift — flag the change, update the doc.
 
 ---
@@ -402,26 +402,90 @@ The whole soft-join → Ready → escrow → lock pipeline. No frontend yet.
 - [x] `Pending`-consumer audit: `GameMatchPolicy::view` + `MatchChannel::join` recognize lobby participants for `LobbyFilling` matches (chat works from day 1); `GameMatchController::show` redirects `LobbyFilling` to `/listings/{listing}` until P3's lobby UI lands; `User::usernameChangeBlockers` counts `LobbyFilling` + active lobby participation as in-flight; Filament `GameMatchesTable` + `GameMatchInfolist` got the case in their exhaustive `match` expressions; TS `MatchStatus` union + `matches-format.ts` + `match/show.tsx` extended to keep `Record<MatchStatus, T>` exhaustive.
 - [x] Pest tests (`tests/Feature/Lobby/`): 48 new cases — CreateTeamPlay (5), Membership (18), ToggleReady (7), Lifecycle (6), AuditConsumer (9), Cron (3). Covers each action's happy path + every sentinel + insufficient-balance + creator-leaves-cancel + kick cooldown + ready-check timeout cancel/revert paths + lock-with-snapshots + 24h fill. Full suite: 1378 pass / 5216 assertions (1330 → 1378).
 
-**Phase 2 — Private invite links**
+**Phase 2 — Private invite links** _(shipped 2026-06-12 — commit `feat(m34-p2): private invite links + StoreListingRequest team-play fields + marketplace filter`)_
 
-Public/private toggle on listing creation + the `/lobbies/{token}` route.
+Backend-only slice between P1's actions and P3's frontend.
 
-- [ ] `StoreListingRequest` accepts `is_public` (bool). When false, server-side generates `invite_token` (`Str::random(32)`).
-- [ ] `LobbyController::show` route at `/lobbies/{token}` resolves listing by `invite_token`. 404 if token doesn't exist or listing is cancelled / locked. Bypass the "user must be in skill range" check at view time (read-only) but enforce at join time.
-- [ ] Private listings hidden from the `/listings` marketplace index (`whereNull('invite_token')` filter OR `where('is_public', true)`).
-- [ ] Tests: invite-only access, token rotation if needed, hidden-from-marketplace check.
+- [x] `Game::allowedTeamSizes()` — per-game whitelist (`Chess: [1]`, `Cs2: [1, 5]`, `Dota2: [1]`). 2v2 Wingman extends the CS2 entry to `[1, 2, 5]` in P5.
+- [x] `StoreListingRequest` accepts `team_size` / `creator_side` / `is_public`. Defaults `team_size = 1` and `is_public = true` when missing (legacy chess payloads stay valid). `creator_side` required only when `team_size > 1`. Per-game `team_size` validation in `withValidator()`.
+- [x] `ListingController::store` branches on `team_size > 1` to `CreateTeamPlayListingAction`, else existing `CreateListingAction`. New `'already_in_lobby'` sentinel → info toast + redirect to `/listings/mine`. Private listings get a 32-char `invite_token` (`Str::random(32)`) generated server-side.
+- [x] `Listing::scopeOnPublicMarketplace` extended to filter `is_public = true`. Private listings stay reachable via direct `/listings/{id}` URL for visitors who already have the link.
+- [x] `LobbyController::showByToken` at `/lobbies/{token}` resolves the invite token and redirects to the canonical `/lobbies/{listing}` URL. 404 on missing / non-Open / locked / cancelled / expired. Route renamed to `lobbies.invite`; token constrained to `[A-Za-z0-9]{32}` so a malformed segment 404s at the routing layer.
+- [x] Pest tests (`tests/Feature/Lobby/LobbyInviteLinksTest.php`): 16 cases covering validation (valid payload, missing-creator-side, bad-side, wrong-game team_size, defaults), controller branching (team_size 5 → no escrow, team_size 1 → escrow, invite_token generation), marketplace filter (public visible / private hidden / direct URL still works), and `/lobbies/{token}` resolution (valid → redirect / missing / cancelled / locked / malformed). Full suite: 1378 → 1394 (+16).
 
-**Phase 3 — Frontend lobby UI**
+**Phase 3 — Frontend lobby UI** _(shipped 2026-06-12 — commit `feat(m34-p3): lobby page + join/leave/ready/kick + chat embed`)_
 
-- [ ] `/lobbies/{listing_id}` Inertia page. Grid showing both teams' slots — filled or empty, with player name + FACEIT username + skill rating + Ready badge. Real-time updates via Reverb on `lobby:{listing_id}` channel.
-- [ ] "Join Team A / Team B" buttons gated by skill range + FACEIT-link + one-lobby-at-a-time.
-- [ ] "Ready" toggle for the current user. Disabled when insufficient balance, with "Top up to ready" copy.
-- [ ] Kick button (creator-only) on each other participant's slot.
-- [ ] Lobby chat embedded — reuses the existing chat component, scoped to the match row.
-- [ ] Countdown banner when in `ReadyChecking` state (5-min timer).
-- [ ] Empty state when no slots filled yet (creator alone in their lobby).
-- [ ] Locked state when lobby moves to Pending — shows "Match started, coordinate on FACEIT" + the lobby chat.
-- [ ] Tests: Pest Feature tests for the page rendering, route resolution. Browser smoke test deferred to the wider browser-test foundation (per M15 P3 Slice 3 note — set up once we have multiple consumers).
+- [x] `ListingPolicy` extended with `viewLobby` / `joinLobby` / `leaveLobby` / `toggleReady` / `kickFromLobby` (merged from a transient `LobbyPolicy` since both operate on `Listing`). Public listings are anyone-readable; private listings + every mutation are participant-gated.
+- [x] `LobbyController` — `show()` Inertia render, `showByToken()` token-resolve redirect (P2), `join() / leave() / toggleReady() / kick()` action endpoints. Each gated by policy + mapping action sentinels to flash toasts. Inertia render also ships the last 200 chat messages so the lobby reuses the existing match chat pipeline.
+- [x] `LobbyResource` — full payload: listing fields, roster (2 × team_size grid with filled / null slots), viewer-derived state (is_owner / is_participant / is_ready / balance / can_kick). Owner-only `invite_token` exposure.
+- [x] Routes: canonical `GET /lobbies/{listing}` public (constrained `\d+`); `GET /lobbies/{token}` renamed to `lobbies.invite`; mutation endpoints (`POST join` / `POST leave` / `POST ready` / `DELETE participants/{user}`) inside auth+verified. Wayfinder regenerated with `--with-form` so the frontend uses typed `join({listing}).url` etc.
+- [x] Frontend: `pages/lobby/show.tsx` (header + status banner + team roster + action bar + chat right rail / mobile bottom sheet, 5 s Inertia polling while in-flight). `types/lobby.ts` typed contract. Sub-components: `lobby-status-banner` (recruiting / ready_checking / locked branches), `ready-check-countdown` (live MM:SS, red+pulse in final 30 s), `team-roster` (Team A | VS | Team B layout), `slot-card` (Filled + Empty variants, identical dimensions so the grid doesn't reflow), `lobby-actions` (Ready toggle + Leave + insufficient-balance hint). Reuses Stakly's palette + glow tokens.
+- [x] `ChatPanel` + `ChatMessageBubble` + `MobileChatTrigger` got an optional `participants?: MatchPlayer[]` prop. When set, takes precedence over the 1v1 `creator + taker` for sender-to-bubble mapping. Match page unchanged; lobby passes its full live roster. Additive refactor, no existing call site touched.
+- [x] Pest tests (`tests/Feature/Lobby/LobbyPageTest.php`): 16 cases — page renders for public visitors / participants / strangers / non-team-play; redirect for locked/cancelled; invite_token owner-only exposure; all four mutation endpoints with policy gates. Full suite: 1394 → 1410 (+16). TypeScript clean (`tsc --noEmit` exit 0).
+- [ ] Real-time `lobby:{listing_id}` Reverb broadcasts — deferred. 5 s polling delivers the experience; broadcasts are a follow-up.
+
+**Phase 3.1 — Unify lobby into the listing page**
+
+Frontend follow-up to P3. P3 shipped the lobby as a separate `/lobbies/{listing}` URL — but the listing and the lobby are the same row, so the URLs should be too. Collapses lobby UI into the canonical `/listings/{id}` page so users browse the marketplace and discover lobbies through the same flow they already know. `/lobbies/{id}` survives as a 301 redirect for any links shared during P3 testing.
+
+**Slice A — Listing-card adapter on the marketplace index**
+
+The card on `/listings` doesn't know about team-play today: it shows the 1v1 "Take" CTA and the chess time-control pill even for CS2 5v5 listings. Click-through routes to `/listings/{id}` (which under Slice B will host the lobby UI).
+
+- [ ] `ListingResource` exposes `team_size`, `lobby_state`, and a fill count (`live_participant_count`) — required by the card. Eager-loaded via `withCount('lobbyParticipants', fn ($q) => $q->whereNull('kicked_at'))` so the index stays one query per page.
+- [ ] Listing-row component branches on `team_size`: the time-control pill slot renders a "5v5" / "2v2" badge for team-play; the meta row adds a "X / Y joined" chip; the CTA label flips from "Take" to "View lobby" (both still link to `/listings/{id}` — no URL change for the consumer).
+- [ ] Owner-side dashboard (`/listings/mine`) reuses the same card → owner sees their lobby fill count and "View lobby" link at a glance.
+- [ ] Tests: card payload includes the new fields, CTA label branches correctly.
+
+**Slice B — Listing show page hosts the lobby UI for team-play**
+
+- [ ] `ListingController::show` populates lobby-specific data when `team_size > 1` (roster + viewer state — i.e. the same payload `LobbyResource` produces today). Pages can either receive a nested `lobby` object or `ListingResource` absorbs the lobby fields conditionally; pick one in implementation and keep frontend types tight.
+- [ ] `pages/listings/show.tsx` branches: for `team_size = 1`, render the existing detail (creator profile + stake + Take button) — no change to chess + legacy 1v1 CS2. For `team_size > 1`, replace the "Take" action block with the lobby UI block (status banner + team roster + action bar + embedded chat). Outer shell (creator card, stake, region, languages, skill range, expires_at meta) stays identical between formats.
+
+**Lobby layout for team-play — FACEIT-grade visual ambition.** Reference image: `images-example/lobby.png` (FACEIT 5v5 lobby — sidebar Team A | center analytics column | sidebar Team B). Stakly mirrors the *structure* but the center column carries Stakly-unique info that FACEIT can't (money + trust signals), not per-map win-rate tables (too API-expensive, FACEIT does it better). Design budget for this page is "wow, this looks like a real production thing" — pink/purple gradient signature, glow tokens, motion enter/exit on roster updates, polished typography. Stakly's brand peak. Activate `ui-ux-pro-max` skill and Context7 for motion patterns before writing CSS.
+
+  Center column (sits between Team A roster on the left and Team B roster on the right; ~360–400 px wide at `lg+`, stacks below the two teams on smaller widths):
+
+  - **Block 1 — The money breakdown (HERO).** Stakly's most unique surface and the reason 10 strangers are here. Big numbers with success-green tone:
+    - Total pot: `team_size × 2 × stake_amount` USDT.
+    - Each winner's take-home: `(pot − pot × fee_rate) / team_size`.
+    - Each loser's loss: `stake_amount` (their own escrow, never returned).
+    - Platform fee: `pot × fee_rate`, muted text.
+    - For a 5v5 at $150 stake: pot $1500, winner $270 each, loser −$150, fee $150.
+    - Layout idea: split-tile with two columns ("If you win" success-green vs "If you lose" muted-foreground / destructive), the pot total stamped above as a display-font headline.
+
+  - **Block 2 — Skill matchup.** Two stat cards side-by-side, one per team:
+    - Average ELO (mean of `match_provider_snapshots.skill_rating_snapshot` for live participants on that side; falls back to `linked_accounts.skill_rating` for soft-joined slots not yet snapshotted).
+    - Min / max ELO per team (spot the outlier — 2200 in a 1500-avg team = the carry or a smurf).
+    - Delta chip between the two cards: `|avg_a − avg_b|` with color tone (≤50 green "Even match" / 50–150 amber "Mismatched" / >150 red "Stacked").
+
+  - **Block 3 — Trust signals per team.** Per-team aggregate of the M18 trust metrics each player carries:
+    - Avg completion rate (rolling 30-day) — "Team A: 94% completion".
+    - Disputes opened in last 30 days (sum across team) — flag risk.
+    - Lifetime settled matches (sum) — proxy for experience.
+    - Surface as a compact 2-row card per team. If either team has a player below 70% completion or with a recent dispute, render with `border-warning/40` so the gap is visible at a glance.
+
+  - **Block 4 — State-dependent coordination panel.** Bottom of the center column, content shifts by `lobby_state`:
+    - **Recruiting** — short message: "Waiting for X more players. Use chat to coordinate.", muted info tone.
+    - **Ready-checking** — the 5-min countdown rendered LARGE (display-font), pulse-glow in the final 30 s. Big "Click Ready up below" CTA pointing to the action bar.
+    - **Locked** — the most useful piece: a clean list of all `2 × team_size` FACEIT usernames with click-to-copy buttons, "Add each other on FACEIT and queue together as a stack" instructions, and a link to FACEIT's party invite docs. This is where players get stuck IRL; making it obvious here removes the friction.
+
+  Layout target: at `lg` and above, render `grid-cols-[1fr_minmax(360px,400px)_1fr]` for the main row (Team A | Center | Team B). Below `lg`, stack vertically: Team A → Center (collapses to a single column of the four blocks) → Team B. Mobile keeps the FAB chat trigger from P3 unchanged.
+
+  Use shared `LobbyResource` data + a thin `Listing` aggregate accessor for the center-column stats (`teamAverageElo($side)`, `teamCompletionRate($side)`, etc.) so the controller doesn't N+1 across snapshots. Stake math comes directly from `Listing` fields, no extra query.
+- [ ] `LobbyController::show` becomes a permanent `301` redirect to `route('listings.show', $listing)`. Same for `LobbyController::showByToken` — invite token resolves and redirects to the canonical listing URL instead of `lobbies.show`. Keep the route names so Wayfinder helpers don't break callers; drop the routes themselves only after the redirect has been in place for a release cycle.
+- [ ] Page polling: the listing show page picks up the 5 s `router.reload({ only: ['lobby'] })` loop when the listing is a team-play lobby in flight. Existing match show polling is unaffected.
+- [ ] **Defensive guard in `TakeListingAction`** — early-return a `'not_takeable'` sentinel for `team_size > 1` listings. The frontend branches the CTA so a real user never reaches Take on a team-play listing; the guard stops crafted POSTs from triggering a UNIQUE-constraint 500 (since the listing already has a `LobbyFilling` `GameMatch` row). `ListingController` / `GameMatchController::take` map the new sentinel to a neutral toast + redirect to `/listings/{id}`.
+- [ ] `GameMatchController::show` redirect for `LobbyFilling` matches keeps pointing to `route('listings.show')` (no change — but verify it still lands on the new lobby-aware page after the cutover).
+- [ ] Tests: show page renders the lobby UI for team-play, the listing detail for 1v1, the legacy `/lobbies/{listing}` URL redirects 301, the invite token URL redirects to the canonical listing page, `TakeListingAction` returns `'not_takeable'` for team-play listings.
+
+**Phase 3.1 — Future enhancements (deferred — not blocking the slice)**
+
+Items the lobby page should eventually have but that are scoped out of P3.1 because each one needs its own data plumbing (extra schema column / extra API call / extra cache) and the lobby ships cleanly without them. Slot into a follow-up phase once we have user demand or the data lands for another reason.
+
+- [ ] **Country flags per player.** Render a small flag next to each player's name on the roster cards. Source: FACEIT's profile payload exposes `country` (ISO-3166 two-letter) — we can pull it during `FaceitProfileClient::fetch()` and persist it on `linked_accounts.country` (new column). Frontend renders via a flag-emoji helper or an SVG flag pack. Cheap to add but requires a migration + a backfill of existing linked accounts.
+- [ ] **Per-player recent W/L form** (`W L W W L` style chips next to each player's slot card). Last 5 FACEIT matches for that player, fetched from `/players/{guid}/history?game=cs2&limit=5` and the winner field. Expensive at scale: 10 players × per-page-load = 10 FACEIT Data API calls; needs a per-player cache (1h TTL feels right) and an off-band refresher job so the lobby page itself never blocks on FACEIT. Useful as a momentum/risk signal — players on a 0-5 streak might tilt. Layout: small horizontal pill row of last-5 outcomes on each slot card, green dots for W, red for L.
+- [ ] Real-time `lobby:{listing_id}` Reverb broadcasts replacing the 5 s polling loop (already-deferred-from-P3, surfaces here so we don't lose it).
 
 **Phase 4 — FACEIT 5v5 verification extension**
 

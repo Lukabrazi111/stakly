@@ -3,6 +3,11 @@ import { Clock, Globe, Languages, Trophy } from 'lucide-react';
 import { GameChip } from '@/components/listings/game-chip';
 import { SellerTrustMeta } from '@/components/listings/seller-trust-meta';
 import { TakeButton } from '@/components/listings/take-button';
+import {
+    LobbyFillCounter,
+    LobbyStateBadge,
+    TeamSizeBadge,
+} from '@/components/listings/team-play-meta';
 import { VerifiedPlatformChip } from '@/components/listings/verified-platform-chip';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { useInitials } from '@/hooks/use-initials';
@@ -13,6 +18,7 @@ import {
     getTimeUrgency,
     timeControlLabels,
 } from '@/lib/listings-format';
+import { show as showLobby } from '@/routes/lobbies';
 import { show as showListing } from '@/routes/listings';
 import { show as userShow } from '@/routes/users';
 import type { Listing } from '@/types';
@@ -41,14 +47,25 @@ export function ListingRow({ listing }: Props) {
               ? 'text-warning'
               : 'text-muted-foreground';
 
+    const isTeamPlay = listing.team_size > 1;
+    const overlayHref = isTeamPlay
+        ? showLobby({ listing: listing.id }).url
+        : showListing({ listing: listing.id }).url;
+
     return (
         <article className="group relative flex flex-col gap-4 rounded-2xl border border-border/60 bg-card/60 p-4 transition-all duration-200 ease-out hover:-translate-y-0.5 hover:border-primary/30 hover:bg-card hover:shadow-glow-sm md:flex-row md:items-center md:gap-6 md:p-5">
-            {/* Overlay: entire row → listing detail */}
+            {/* Overlay: entire row → listing detail (chess) or lobby (team-play) */}
             <Link
-                href={showListing({ listing: listing.id }).url}
-                aria-label={t('View listing from :name', {
-                    name: listing.creator.username,
-                })}
+                href={overlayHref}
+                aria-label={
+                    isTeamPlay
+                        ? t('Open :name’s lobby', {
+                              name: listing.creator.username,
+                          })
+                        : t('View listing from :name', {
+                              name: listing.creator.username,
+                          })
+                }
                 className="absolute inset-0 rounded-2xl focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none"
             />
 
@@ -99,7 +116,11 @@ export function ListingRow({ listing }: Props) {
                 <div className="flex flex-wrap items-center gap-2 md:flex-1">
                     <GameChip game={listing.game} />
 
+                    <TeamSizeBadge teamSize={listing.team_size} />
+
                     <VerifiedPlatformChip platform={listing.platform} />
+
+                    <LobbyStateBadge state={listing.lobby_state} />
 
                     <span className="inline-flex items-center gap-1.5 rounded-full border border-border/60 bg-background/60 px-3 py-1 text-xs font-medium text-muted-foreground">
                         <Trophy className="size-3" aria-hidden="true" />
@@ -109,6 +130,8 @@ export function ListingRow({ listing }: Props) {
                             t,
                         )}
                     </span>
+
+                    {isTeamPlay && <LobbyFillCounter listing={listing} />}
 
                     {listing.time_control.map((tc) => (
                         <span

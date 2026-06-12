@@ -52,7 +52,10 @@ class ListingController extends Controller
         );
 
         $listings = QueryBuilder::for(
-            Listing::query()->onPublicMarketplace()->with(['user:id,name,username,is_active_mode', 'user.linkedAccounts']),
+            Listing::query()
+                ->onPublicMarketplace()
+                ->with(['user:id,name,username,is_active_mode', 'user.linkedAccounts'])
+                ->withCount(['lobbyParticipants as live_participant_count' => fn ($q) => $q->live()]),
         )
             ->allowedFilters(
                 AllowedFilter::exact('game')->default(Game::Chess->value),
@@ -123,6 +126,7 @@ class ListingController extends Controller
             'user.linkedAccounts',
             'gameMatch:id,listing_id,taker_user_id',
         ]);
+        $listing->loadCount(['lobbyParticipants as live_participant_count' => fn ($q) => $q->live()]);
 
         // M22 Phase 1 — seller trust on the listing detail (single-row batch).
         SellerTrust::attachTo([$listing]);
@@ -234,6 +238,7 @@ class ListingController extends Controller
 
         $query = $user->listings()
             ->with(['user:id,name,username,is_active_mode', 'user.linkedAccounts'])
+            ->withCount(['lobbyParticipants as live_participant_count' => fn ($q) => $q->live()])
             ->orderByDesc('created_at')
             ->orderByDesc('id');
 

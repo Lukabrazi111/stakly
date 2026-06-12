@@ -38,6 +38,12 @@ class ListingResource extends JsonResource
             'expires_at' => $this->expires_at->toIso8601String(),
             'status' => $this->status->value,
             'created_at' => $this->created_at?->toIso8601String(),
+            'team_size' => $this->team_size,
+            'lobby_state' => $this->lobby_state,
+            // `withCount(['lobbyParticipants as live_participant_count' =>
+            //   fn ($q) => $q->live()])` populates this on consuming queries.
+            // Falls back to 0 when not loaded so tests / partial paths don't blow up.
+            'live_participant_count' => (int) ($this->live_participant_count ?? 0),
             'creator' => [
                 'id' => $this->user->id,
                 'name' => $this->user->name,

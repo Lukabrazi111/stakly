@@ -52,6 +52,7 @@ class UserController extends Controller
                 fn ($q) => $q->open(),
                 fn ($q) => $q->onPublicMarketplace(),
             )
+            ->withCount(['lobbyParticipants as live_participant_count' => fn ($q) => $q->live()])
             ->orderByDesc('created_at')
             ->orderByDesc('id')
             ->limit(self::OPEN_LISTINGS_LIMIT)

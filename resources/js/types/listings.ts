@@ -88,6 +88,14 @@ export interface Listing {
     expires_at: string;
     status: ListingStatus;
     created_at: string | null;
+    // 1 for chess (default). > 1 for team-play listings (CS2 Wingman 2v2 / 5v5).
+    team_size: number;
+    // null for chess; one of 'recruiting' | 'ready_checking' | 'locked' |
+    // 'cancelled' for team-play. Marketplace listings only ever appear with
+    // null or 'recruiting' | 'ready_checking' (Open status filter).
+    lobby_state: string | null;
+    // Active lobby seats (kicked_at IS NULL). 0 for chess.
+    live_participant_count: number;
     creator: ListingCreator;
 }
 
