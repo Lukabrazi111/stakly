@@ -193,8 +193,8 @@ describe('marketplace hides private listings', function () {
     });
 });
 
-describe('LobbyController::show — /lobbies/{token}', function () {
-    it('redirects valid token to /listings/{id}', function () {
+describe('LobbyController::showByToken — /lobbies/{token}', function () {
+    it('redirects valid token to /lobbies/{listing}', function () {
         $user = User::factory()->active()->withFaceit()->create();
         $listing = Listing::factory()
             ->teamPlay()
@@ -210,15 +210,15 @@ describe('LobbyController::show — /lobbies/{token}', function () {
         $visitor = User::factory()->active()->create();
 
         $this->actingAs($visitor)
-            ->get(route('lobbies.show', ['locale' => 'en', 'token' => $listing->invite_token]))
-            ->assertRedirect(route('listings.show', ['locale' => 'en', 'listing' => $listing]));
+            ->get(route('lobbies.invite', ['locale' => 'en', 'token' => $listing->invite_token]))
+            ->assertRedirect(route('lobbies.show', ['locale' => 'en', 'listing' => $listing]));
     });
 
     it('404s when token does not exist', function () {
         $visitor = User::factory()->active()->create();
 
         $this->actingAs($visitor)
-            ->get(route('lobbies.show', ['locale' => 'en', 'token' => str_repeat('a', 32)]))
+            ->get(route('lobbies.invite', ['locale' => 'en', 'token' => str_repeat('a', 32)]))
             ->assertNotFound();
     });
 
@@ -231,7 +231,7 @@ describe('LobbyController::show — /lobbies/{token}', function () {
         $visitor = User::factory()->active()->create();
 
         $this->actingAs($visitor)
-            ->get(route('lobbies.show', ['locale' => 'en', 'token' => $listing->invite_token]))
+            ->get(route('lobbies.invite', ['locale' => 'en', 'token' => $listing->invite_token]))
             ->assertNotFound();
     });
 
@@ -244,7 +244,7 @@ describe('LobbyController::show — /lobbies/{token}', function () {
         $visitor = User::factory()->active()->create();
 
         $this->actingAs($visitor)
-            ->get(route('lobbies.show', ['locale' => 'en', 'token' => $listing->invite_token]))
+            ->get(route('lobbies.invite', ['locale' => 'en', 'token' => $listing->invite_token]))
             ->assertNotFound();
     });
 
@@ -252,7 +252,7 @@ describe('LobbyController::show — /lobbies/{token}', function () {
         $visitor = User::factory()->active()->create();
 
         $this->actingAs($visitor)
-            ->get(route('lobbies.show', ['locale' => 'en', 'token' => 'too-short']))
+            ->get(route('lobbies.invite', ['locale' => 'en', 'token' => 'too-short']))
             ->assertNotFound();
     });
 });

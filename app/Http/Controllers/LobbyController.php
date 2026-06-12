@@ -2,25 +2,90 @@
 
 namespace App\Http\Controllers;
 
+use App\Actions\Lobby\JoinLobbyAction;
+use App\Actions\Lobby\KickParticipantAction;
+use App\Actions\Lobby\LeaveLobbyAction;
+use App\Actions\Lobby\ToggleReadyAction;
+use App\Enums\LinkedAccountProvider;
 use App\Enums\ListingStatus;
+use App\Http\Resources\LobbyResource;
+use App\Http\Resources\MessageResource;
 use App\Models\Listing;
+use App\Models\LobbyParticipant;
+use App\Models\User;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Gate;
+use Illuminate\Validation\Rule;
+use Inertia\Inertia;
+use Inertia\Response;
 
 /**
- * M34 P2 — invite-link entry point for private (`is_public = false`) team-play
- * lobbies. Public listings reach players via the marketplace; private
- * listings reach them via this controller using an opaque 32-char token.
+ * M34 P3 — lobby page + soft-join/leave/ready/kick action endpoints.
  *
- * For P2 we resolve the token and redirect to the existing listing-detail
- * page — P3 will replace the redirect with a dedicated lobby UI at the same
- * URL.
+ * Routing shape:
+ *   GET    /lobbies/{listing}                       canonical lobby URL
+ *   GET    /lobbies/{token}                         invite token resolution
+ *   POST   /lobbies/{listing}/join                  soft-join
+ *   POST   /lobbies/{listing}/leave                 leave
+ *   POST   /lobbies/{listing}/ready                 toggle Ready
+ *   DELETE /lobbies/{listing}/participants/{user}   kick (owner only)
  *
- * 404 (not 403) on missing / expired / closed lobbies — never reveal whether
- * a token "used to exist", just whether you can act on it right now.
+ * 404 (not 403) on unauthorised view so private lobbies don't leak.
  */
 class LobbyController extends Controller
 {
-    public function show(string $token): RedirectResponse
+    /**
+     * Render the lobby page. Public listings render for any visitor;
+     * private listings only render for live participants.
+     */
+    public function show(Listing $listing): Response|RedirectResponse
+    {
+        abort_if(! $listing->isTeamPlay(), 404);
+
+        // Listings past their useful life — surface a friendly redirect to
+        // the listing detail page so the user sees the final state (won /
+        // cancelled / expired) rather than an empty lobby grid.
+        if (in_array($listing->lobby_state, ['cancelled', 'expired'], true)) {
+            return to_route('listings.show', $listing);
+        }
+
+        abort_if(Gate::denies('viewLobby', $listing), 404);
+
+        $listing->load([
+            'user:id,name,username,bio,created_at',
+            'user.linkedAccounts',
+            'lobbyParticipants.user:id,name,username',
+            'lobbyParticipants.user.linkedAccounts',
+            'gameMatch:id,listing_id,status',
+        ]);
+
+        // Lobby chat shares the existing match.{match_id} channel + Message
+        // pipeline — when the paired match exists (every team-play listing
+        // since P1's CreateTeamPlayListingAction), load the same 200-message
+        // slice the match/show page uses.
+        $messages = $listing->gameMatch === null
+            ? collect()
+            : $listing->gameMatch
+                ->messages()
+                ->with(['user:id,name,username', 'media'])
+                ->orderByDesc('id')
+                ->limit(200)
+                ->get()
+                ->reverse()
+                ->values();
+
+        return Inertia::render('lobby/show', [
+            'lobby' => (new LobbyResource($listing))->resolve(),
+            'messages' => MessageResource::collection($messages),
+        ]);
+    }
+
+    /**
+     * Resolve an invite token to its listing and redirect to the canonical
+     * lobby URL. 404 on missing / non-Open / locked / cancelled / expired.
+     */
+    public function showByToken(string $token): RedirectResponse
     {
         $listing = Listing::query()
             ->where('invite_token', $token)
@@ -34,12 +99,112 @@ class LobbyController extends Controller
             abort(404);
         }
 
-        // Locked = match already started; cancelled / expired = terminal.
-        // Recruiting + ready_checking are joinable.
         if (in_array($listing->lobby_state, ['locked', 'cancelled', 'expired'], true)) {
             abort(404);
         }
 
-        return to_route('listings.show', $listing);
+        return to_route('lobbies.show', $listing);
+    }
+
+    public function join(Request $request, Listing $listing, JoinLobbyAction $action): RedirectResponse
+    {
+        Gate::authorize('joinLobby', $listing);
+
+        $data = $request->validate([
+            'side' => ['required', 'string', Rule::in([LobbyParticipant::SIDE_A, LobbyParticipant::SIDE_B])],
+        ]);
+
+        $result = $action->handle($request->user(), $listing, $data['side']);
+
+        Inertia::flash('toast', $this->joinToast($result, $listing));
+
+        return back();
+    }
+
+    public function leave(Request $request, Listing $listing, LeaveLobbyAction $action): RedirectResponse
+    {
+        Gate::authorize('leaveLobby', $listing);
+
+        $result = $action->handle($request->user(), $listing);
+
+        Inertia::flash('toast', match ($result) {
+            'left' => ['type' => 'info', 'message' => __('You left the lobby.')],
+            'creator_cancelled' => ['type' => 'info', 'message' => __('Lobby cancelled. Any held stakes have been refunded.')],
+            'locked' => ['type' => 'warning', 'message' => __('Lobby has locked — leaving now is a forfeit.')],
+            'not_in_lobby' => ['type' => 'warning', 'message' => __('You\'re not in this lobby.')],
+            default => ['type' => 'warning', 'message' => __('Could not leave the lobby.')],
+        });
+
+        return match ($result) {
+            'left', 'creator_cancelled' => to_route('listings.index'),
+            default => back(),
+        };
+    }
+
+    public function toggleReady(Request $request, Listing $listing, ToggleReadyAction $action): RedirectResponse
+    {
+        Gate::authorize('toggleReady', $listing);
+
+        $result = $action->handle($request->user(), $listing);
+
+        Inertia::flash('toast', match ($result) {
+            'readied' => ['type' => 'success', 'message' => __('Ready — stake escrowed.')],
+            'unreadied' => ['type' => 'info', 'message' => __('Un-Ready — stake refunded.')],
+            'locked_now' => ['type' => 'success', 'message' => __('All players Ready — match starting.')],
+            'insufficient_balance' => ['type' => 'warning', 'message' => __('Top up your balance to ready up.')],
+            'locked' => ['type' => 'warning', 'message' => __('Lobby has already locked.')],
+            'not_in_lobby' => ['type' => 'warning', 'message' => __('You\'re not in this lobby.')],
+            default => ['type' => 'warning', 'message' => __('Could not update Ready state.')],
+        });
+
+        return back();
+    }
+
+    public function kick(
+        Request $request,
+        Listing $listing,
+        User $user,
+        KickParticipantAction $action,
+    ): RedirectResponse {
+        Gate::authorize('kickFromLobby', $listing);
+
+        $result = $action->handle($request->user(), $listing, $user);
+
+        Inertia::flash('toast', match ($result) {
+            'kicked' => ['type' => 'info', 'message' => __(':name removed from the lobby.', ['name' => $user->name])],
+            'not_owner' => ['type' => 'warning', 'message' => __('Only the lobby owner can kick.')],
+            'cant_kick_self' => ['type' => 'warning', 'message' => __('You can\'t kick yourself — leave the lobby to cancel it.')],
+            'target_not_in_lobby' => ['type' => 'warning', 'message' => __('That player isn\'t in the lobby.')],
+            'locked' => ['type' => 'warning', 'message' => __('Lobby has locked — kicks no longer apply.')],
+            default => ['type' => 'warning', 'message' => __('Could not kick that player.')],
+        });
+
+        return back();
+    }
+
+    /**
+     * Map the join-action sentinel to a flash toast payload. Surfaces the
+     * platform name on the `not_linked` path to give users a clear hint.
+     *
+     * @return array{type: string, message: string}
+     */
+    private function joinToast(LobbyParticipant|string $result, Listing $listing): array
+    {
+        if ($result instanceof LobbyParticipant) {
+            return ['type' => 'success', 'message' => __('Joined the lobby.')];
+        }
+
+        $platformName = LinkedAccountProvider::from($listing->platform->value)->displayName();
+
+        return match ($result) {
+            'not_team_play' => ['type' => 'warning', 'message' => __('This isn\'t a team-play listing.')],
+            'not_linked' => ['type' => 'info', 'message' => __('Link a :platform account to join.', ['platform' => $platformName])],
+            'skill_out_of_range' => ['type' => 'warning', 'message' => __('Your skill rating is outside this lobby\'s range.')],
+            'already_in_lobby' => ['type' => 'warning', 'message' => __('You\'re already in another active lobby.')],
+            'kick_cooldown' => ['type' => 'warning', 'message' => __('You can\'t rejoin this lobby right now.')],
+            'listing_unavailable' => ['type' => 'info', 'message' => __('This lobby isn\'t accepting joins.')],
+            'no_open_slots' => ['type' => 'info', 'message' => __('No open slots on that side.')],
+            default => ['type' => 'warning', 'message' => __('Could not join the lobby.')],
+        };
     }
 }

@@ -18,6 +18,8 @@ interface MobileChatTriggerProps {
     viewerId: number;
     creator: MatchPlayer;
     taker: MatchPlayer;
+    /** M34 — lobby roster (supersedes creator+taker for sender lookup). */
+    participants?: MatchPlayer[];
     isReadOnly: boolean;
     isPending: boolean;
     onSend: (content: string, file: File | null) => void;
@@ -33,6 +35,7 @@ export function MobileChatTrigger({
     viewerId,
     creator,
     taker,
+    participants,
     isReadOnly,
     isPending,
     onSend,
@@ -124,6 +127,7 @@ export function MobileChatTrigger({
                             viewerId={viewerId}
                             creator={creator}
                             taker={taker}
+                            participants={participants}
                             isReadOnly={isReadOnly}
                             isPending={isPending}
                             onSend={onSend}

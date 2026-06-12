@@ -13,6 +13,12 @@ interface ChatPanelProps {
     viewerId: number;
     creator: MatchPlayer;
     taker: MatchPlayer;
+    /**
+     * M34 — lobby chat. When set, takes precedence over creator/taker for
+     * sender-to-bubble mapping in `ChatMessageBubble`. The match-show page
+     * doesn't set this; the lobby page passes its full live roster.
+     */
+    participants?: MatchPlayer[];
     isReadOnly: boolean;
     isPending: boolean;
     onSend: (content: string, file: File | null) => void;
@@ -42,6 +48,7 @@ export function ChatPanel({
     viewerId,
     creator,
     taker,
+    participants,
     isReadOnly,
     isPending,
     onSend,
@@ -166,6 +173,7 @@ export function ChatPanel({
                             viewerId={viewerId}
                             creator={creator}
                             taker={taker}
+                            participants={participants}
                             onRetry={onRetry}
                             onDismiss={onDismiss}
                         />
