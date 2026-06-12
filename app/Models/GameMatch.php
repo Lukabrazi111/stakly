@@ -149,6 +149,33 @@ class GameMatch extends Model
     }
 
     /**
+     * Team-play sister to `snapshotProviderUserId`. Returns every {provider}
+     * GUID snapshotted for the {side} team, ordered by `slot_index` ascending
+     * so callers can address "slot 0" / "slot 1" deterministically. Null
+     * `provider_user_id` entries are filtered out (chess providers have no
+     * GUID).
+     *
+     * For 1v1 chess `side` is 'creator' / 'taker' and the array has zero or
+     * one element. For 5v5 team-play `side` is 'a' / 'b' and the array
+     * carries one entry per slot the team's players linked to {provider}.
+     *
+     * @return list<string>
+     */
+    public function snapshotProviderUserIds(string $side, LinkedAccountProvider $provider): array
+    {
+        return $this->providerSnapshots
+            ->filter(
+                fn (MatchProviderSnapshot $snapshot) => $snapshot->side === $side
+                    && $snapshot->provider === $provider
+                    && $snapshot->provider_user_id !== null,
+            )
+            ->sortBy('slot_index')
+            ->pluck('provider_user_id')
+            ->values()
+            ->all();
+    }
+
+    /**
      * Matches where $userId is creator (via listing.user_id) OR taker.
      */
     public function scopeForParticipant(Builder $query, int $userId): Builder
