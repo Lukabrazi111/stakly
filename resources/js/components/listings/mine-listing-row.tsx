@@ -7,7 +7,6 @@ import { GameChip } from '@/components/listings/game-chip';
 import {
     LobbyFillCounter,
     LobbyStateBadge,
-    TeamSizeBadge,
 } from '@/components/listings/team-play-meta';
 import { useT } from '@/lib/i18n';
 import {
@@ -78,9 +77,11 @@ export function MineListingRow({ listing }: Props) {
             {/* Mobile: two grouped rows. Desktop: wrappers collapse via
                 `md:contents` so children flow into the article's flex-row. */}
             <div className="flex items-center gap-3 md:contents">
-                <div className="pointer-events-none relative flex shrink-0 items-center gap-1.5 md:w-24">
-                    <GameChip game={listing.game} />
-                    <TeamSizeBadge teamSize={listing.team_size} />
+                <div className="pointer-events-none relative shrink-0 md:w-24">
+                    <GameChip
+                        game={listing.game}
+                        teamSize={isTeamPlay ? listing.team_size : undefined}
+                    />
                 </div>
 
                 <span

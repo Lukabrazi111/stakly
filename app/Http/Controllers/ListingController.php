@@ -54,7 +54,13 @@ class ListingController extends Controller
         $listings = QueryBuilder::for(
             Listing::query()
                 ->onPublicMarketplace()
-                ->with(['user:id,name,username,is_active_mode', 'user.linkedAccounts'])
+                ->with([
+                    'user:id,name,username,is_active_mode',
+                    'user.linkedAccounts',
+                    'lobbyParticipants' => fn ($q) => $q->live()->orderBy('joined_at'),
+                    'lobbyParticipants.user:id,name,username',
+                    'lobbyParticipants.user.media',
+                ])
                 ->withCount(['lobbyParticipants as live_participant_count' => fn ($q) => $q->live()]),
         )
             ->allowedFilters(
@@ -125,6 +131,9 @@ class ListingController extends Controller
             'user:id,name,username,is_active_mode,bio,created_at',
             'user.linkedAccounts',
             'gameMatch:id,listing_id,taker_user_id',
+            'lobbyParticipants' => fn ($q) => $q->live()->orderBy('joined_at'),
+            'lobbyParticipants.user:id,name,username',
+            'lobbyParticipants.user.media',
         ]);
         $listing->loadCount(['lobbyParticipants as live_participant_count' => fn ($q) => $q->live()]);
 
@@ -237,7 +246,13 @@ class ListingController extends Controller
             : 'listed';
 
         $query = $user->listings()
-            ->with(['user:id,name,username,is_active_mode', 'user.linkedAccounts'])
+            ->with([
+                'user:id,name,username,is_active_mode',
+                'user.linkedAccounts',
+                'lobbyParticipants' => fn ($q) => $q->live()->orderBy('joined_at'),
+                'lobbyParticipants.user:id,name,username',
+                'lobbyParticipants.user.media',
+            ])
             ->withCount(['lobbyParticipants as live_participant_count' => fn ($q) => $q->live()])
             ->orderByDesc('created_at')
             ->orderByDesc('id');

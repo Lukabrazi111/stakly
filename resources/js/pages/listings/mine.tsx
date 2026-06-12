@@ -3,12 +3,15 @@ import { Plus } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { ActiveModeToggle } from '@/components/listings/active-mode-toggle';
 import { InactiveModeBanner } from '@/components/listings/inactive-mode-banner';
+import { ListingsViewToggle } from '@/components/listings/listings-view-toggle';
+import { MineListingGridCard } from '@/components/listings/mine-listing-grid-card';
 import { MineListingRow } from '@/components/listings/mine-listing-row';
 import { MinePagination } from '@/components/listings/mine-pagination';
 import { MineTabs } from '@/components/listings/mine-tabs';
 import { PageMeta } from '@/components/site/page-meta';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
+import { useListingsView } from '@/hooks/use-listings-view';
 import PlayerHubLayout from '@/layouts/player-hub-layout';
 import { useT } from '@/lib/i18n';
 import { create as listingsCreate, mine as mineRoute } from '@/routes/listings';
@@ -27,6 +30,7 @@ export default function ListingsMine({
     const isInactive = Boolean(auth.user && !auth.user.is_active_mode);
     const atCap = activeCount >= maxActive;
     const [isLoading, setIsLoading] = useState(false);
+    const { view, setView } = useListingsView();
 
     useEffect(() => {
         const minePath = mineRoute().url;
@@ -117,37 +121,57 @@ export default function ListingsMine({
 
                 <InactiveModeBanner />
 
-                <MineTabs current={tab} />
+                <div className="flex items-center justify-between gap-3">
+                    <MineTabs current={tab} />
+                    <ListingsViewToggle value={view} onChange={setView} />
+                </div>
 
                 {!isEmpty || isLoading ? (
-                    <div className="overflow-hidden rounded-2xl border border-border/60 bg-card/40">
-                        {/* Column header — desktop only */}
-                        <div className="hidden border-b border-border/40 px-5 py-3 text-xs tracking-wide text-muted-foreground uppercase md:flex md:items-center md:gap-4">
-                            <div className="md:w-24">{t('Game')}</div>
-                            <div className="md:w-24 md:text-center">
-                                {t('Status')}
-                            </div>
-                            <div className="md:w-28">{t('Stake')}</div>
-                            <div className="flex-1">{t('Time control')}</div>
-                            <div className="md:w-24 md:text-right">
-                                {t('Expires')}
-                            </div>
-                            <div className="md:w-24 md:text-right">
-                                {t('Actions')}
-                            </div>
+                    view === 'grid' ? (
+                        <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                            {isLoading
+                                ? Array.from({
+                                      length: SKELETON_ROW_COUNT,
+                                  }).map((_, i) => <MineGridSkeleton key={i} />)
+                                : listings.data.map((listing) => (
+                                      <MineListingGridCard
+                                          key={listing.id}
+                                          listing={listing}
+                                      />
+                                  ))}
                         </div>
+                    ) : (
+                        <div className="overflow-hidden rounded-2xl border border-border/60 bg-card/40">
+                            {/* Column header — desktop only */}
+                            <div className="hidden border-b border-border/40 px-5 py-3 text-xs tracking-wide text-muted-foreground uppercase md:flex md:items-center md:gap-4">
+                                <div className="md:w-24">{t('Game')}</div>
+                                <div className="md:w-24 md:text-center">
+                                    {t('Status')}
+                                </div>
+                                <div className="md:w-28">{t('Stake')}</div>
+                                <div className="flex-1">
+                                    {t('Time control')}
+                                </div>
+                                <div className="md:w-24 md:text-right">
+                                    {t('Expires')}
+                                </div>
+                                <div className="md:w-24 md:text-right">
+                                    {t('Actions')}
+                                </div>
+                            </div>
 
-                        {isLoading
-                            ? Array.from({ length: SKELETON_ROW_COUNT }).map(
-                                  (_, i) => <MineRowSkeleton key={i} />,
-                              )
-                            : listings.data.map((listing) => (
-                                  <MineListingRow
-                                      key={listing.id}
-                                      listing={listing}
-                                  />
-                              ))}
-                    </div>
+                            {isLoading
+                                ? Array.from({
+                                      length: SKELETON_ROW_COUNT,
+                                  }).map((_, i) => <MineRowSkeleton key={i} />)
+                                : listings.data.map((listing) => (
+                                      <MineListingRow
+                                          key={listing.id}
+                                          listing={listing}
+                                      />
+                                  ))}
+                        </div>
+                    )
                 ) : (
                     <EmptyState
                         tab={tab}
@@ -211,6 +235,29 @@ function EmptyState({ tab, atCap, isInactive }: EmptyStateProps) {
                     </Link>
                 </Button>
             )}
+        </div>
+    );
+}
+
+function MineGridSkeleton() {
+    return (
+        <div
+            aria-hidden
+            className="flex h-full flex-col gap-4 rounded-2xl border border-border/60 bg-card/40 p-5"
+        >
+            <div className="flex items-center gap-1.5">
+                <Skeleton className="h-6 w-16 rounded-full" />
+                <Skeleton className="h-6 w-12 rounded-full" />
+            </div>
+            <Skeleton className="h-6 w-20 rounded-full" />
+            <div className="flex flex-wrap gap-1.5">
+                <Skeleton className="h-5 w-20 rounded-full" />
+                <Skeleton className="h-5 w-16 rounded-full" />
+            </div>
+            <div className="mt-auto flex items-end justify-between border-t border-border/40 pt-4">
+                <Skeleton className="h-7 w-20" />
+                <Skeleton className="h-4 w-14" />
+            </div>
         </div>
     );
 }

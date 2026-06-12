@@ -11,6 +11,7 @@ declare module '@inertiajs/core' {
             auth: Auth;
             sidebarOpen: boolean;
             playerSidebarCollapsed: boolean;
+            listingsViewLayout: 'rows' | 'grid';
             locale: string;
             availableLocales: LocaleMeta[];
             translations: Translations;

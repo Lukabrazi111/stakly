@@ -94,8 +94,18 @@ export interface Listing {
     // 'cancelled' for team-play. Marketplace listings only ever appear with
     // null or 'recruiting' | 'ready_checking' (Open status filter).
     lobby_state: string | null;
+    // ISO-8601 deadline for the ready-check countdown. Only non-null while
+    // `lobby_state === 'ready_checking'`.
+    lobby_ready_check_deadline: string | null;
     // Active lobby seats (kicked_at IS NULL). 0 for chess.
     live_participant_count: number;
+    // Up to 3 live participants, ordered by `joined_at`. Powers the grid-card
+    // roster avatar preview. Always present; empty for chess.
+    participant_previews: Array<{
+        username: string;
+        name: string;
+        avatar_thumb_url: string | null;
+    }>;
     creator: ListingCreator;
 }
 

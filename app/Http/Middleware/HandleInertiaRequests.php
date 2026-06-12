@@ -103,6 +103,20 @@ class HandleInertiaRequests extends Middleware
             'status' => fn () => $request->session()->get('status'),
             'sidebarOpen' => ! $request->hasCookie('sidebar_state') || $request->cookie('sidebar_state') === 'true',
             'playerSidebarCollapsed' => $request->cookie('player_sidebar_collapsed') === 'true',
+            // Listings page layout preference. Cookie set client-side on
+            // toggle change so the next SSR render matches without flash.
+            // Whitelist validation keeps a tampered cookie from poisoning
+            // the prop. Default is 'grid' — the richer surface the product
+            // is being built around (roster preview avatars, ready-check
+            // banner, etc.). Users who want the dense comparison view can
+            // toggle to rows and the choice persists via cookie.
+            'listingsViewLayout' => in_array(
+                $request->cookie('listings_view_layout'),
+                ['rows', 'grid'],
+                true,
+            )
+                ? $request->cookie('listings_view_layout')
+                : 'grid',
         ];
     }
 

@@ -1,29 +1,9 @@
 import { Users } from 'lucide-react';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { useInitials } from '@/hooks/use-initials';
 import { useT } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import type { Listing } from '@/types';
-
-interface TeamSizeBadgeProps {
-    teamSize: number;
-}
-
-/**
- * Pill marker for team-play listings. Sits next to `GameChip`. Visually
- * distinct from generic info chips via the accent purple tone so a CS2 5v5
- * lobby reads differently from a 1v1 chess match at a glance.
- */
-export function TeamSizeBadge({ teamSize }: TeamSizeBadgeProps) {
-    if (teamSize <= 1) {
-        return null;
-    }
-
-    return (
-        <span className="inline-flex items-center gap-1 rounded-full border border-accent/40 bg-accent/10 px-2.5 py-0.5 text-xs font-semibold text-accent">
-            <Users className="size-3" aria-hidden="true" />
-            {teamSize}v{teamSize}
-        </span>
-    );
-}
 
 interface LobbyFillCounterProps {
     listing: Listing;
@@ -64,6 +44,75 @@ export function LobbyFillCounter({ listing }: LobbyFillCounterProps) {
                 {filled} / {capacity}
             </span>
         </span>
+    );
+}
+
+interface RosterPreviewProps {
+    listing: Listing;
+}
+
+/**
+ * Avatar stack + fill counter + names line for team-play grid cards.
+ * Renders nothing if no participants have joined yet. The whole block is
+ * inert (`pointer-events-none`) so card clicks fall through to the
+ * absolute-overlay link.
+ */
+export function RosterPreview({ listing }: RosterPreviewProps) {
+    const t = useT();
+    const previews = listing.participant_previews;
+
+    if (previews.length === 0) {
+        return null;
+    }
+
+    const extra = Math.max(0, listing.live_participant_count - previews.length);
+    const namesText =
+        extra > 0
+            ? t(':names + :extra more', {
+                  names: previews.map((p) => p.username).join(', '),
+                  extra,
+              })
+            : previews.map((p) => p.username).join(', ');
+
+    return (
+        <div className="pointer-events-none relative flex flex-wrap items-center gap-2">
+            <div className="flex -space-x-2">
+                {previews.map((p) => (
+                    <RosterAvatar
+                        key={p.username}
+                        username={p.username}
+                        name={p.name}
+                        avatarThumbUrl={p.avatar_thumb_url}
+                    />
+                ))}
+            </div>
+            <LobbyFillCounter listing={listing} />
+            <span className="text-xs text-muted-foreground">·</span>
+            <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
+                {namesText}
+            </span>
+        </div>
+    );
+}
+
+function RosterAvatar({
+    username,
+    name,
+    avatarThumbUrl,
+}: {
+    username: string;
+    name: string;
+    avatarThumbUrl: string | null;
+}) {
+    const getInitials = useInitials();
+
+    return (
+        <Avatar className="size-7 overflow-hidden rounded-full border-2 border-card">
+            <AvatarImage src={avatarThumbUrl ?? undefined} alt={username} />
+            <AvatarFallback className="bg-gradient-primary text-[10px] font-semibold text-primary-foreground">
+                {getInitials(name)}
+            </AvatarFallback>
+        </Avatar>
     );
 }
 

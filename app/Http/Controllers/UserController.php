@@ -52,6 +52,11 @@ class UserController extends Controller
                 fn ($q) => $q->open(),
                 fn ($q) => $q->onPublicMarketplace(),
             )
+            ->with([
+                'lobbyParticipants' => fn ($q) => $q->live()->orderBy('joined_at'),
+                'lobbyParticipants.user:id,name,username',
+                'lobbyParticipants.user.media',
+            ])
             ->withCount(['lobbyParticipants as live_participant_count' => fn ($q) => $q->live()])
             ->orderByDesc('created_at')
             ->orderByDesc('id')

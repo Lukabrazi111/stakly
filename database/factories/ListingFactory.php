@@ -151,7 +151,13 @@ class ListingFactory extends Factory
 
     public function lobbyReadyChecking(): static
     {
-        return $this->state(fn () => ['lobby_state' => 'ready_checking']);
+        return $this->state(fn () => [
+            'lobby_state' => 'ready_checking',
+            // 5-minute window is the production default
+            // (`LobbyReadyCheckAction`). Tests and seeders need a non-null
+            // deadline so the grid card's countdown banner renders.
+            'lobby_ready_check_deadline' => now()->addMinutes(5),
+        ]);
     }
 
     /**

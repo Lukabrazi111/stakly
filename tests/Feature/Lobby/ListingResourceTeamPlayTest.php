@@ -129,3 +129,175 @@ describe('ListingResource exposes team-play fields', function () {
             );
     });
 });
+
+/*
+ * M34 P3.1 Slice A.2 — `participant_previews` field powers the grid card's
+ * roster avatar preview. Capped at 3, ordered by `joined_at`, kicked
+ * participants excluded, empty for chess.
+ */
+describe('ListingResource.participant_previews', function () {
+    it('is empty for chess listings', function () {
+        $chess = Listing::factory()->open()->create();
+
+        $this->get(route('listings.index', ['locale' => 'en']))
+            ->assertInertia(fn ($page) => $page
+                ->where('listings.data', fn ($listings) => collect($listings)
+                    ->contains(fn ($l) => $l['id'] === $chess->id
+                        && $l['participant_previews'] === []),
+                ),
+            );
+    });
+
+    it('caps team-play preview at 3 and orders by joined_at ascending', function () {
+        $teamPlay = Listing::factory()->teamPlay()->create([
+            'status' => ListingStatus::Open,
+            'is_public' => true,
+        ]);
+
+        // Four named users joined in known order — only the first three should
+        // appear in the preview, and in the same order.
+        $users = User::factory()
+            ->count(4)
+            ->state(new Sequence(
+                ['username' => 'first_joiner', 'name' => 'First Joiner'],
+                ['username' => 'second_joiner', 'name' => 'Second Joiner'],
+                ['username' => 'third_joiner', 'name' => 'Third Joiner'],
+                ['username' => 'fourth_joiner', 'name' => 'Fourth Joiner'],
+            ))
+            ->active()
+            ->create();
+
+        foreach ($users as $i => $user) {
+            LobbyParticipant::factory()->create([
+                'listing_id' => $teamPlay->id,
+                'user_id' => $user->id,
+                'side' => $i < 5 ? 'a' : 'b',
+                'slot_index' => $i % 5,
+                'joined_at' => now()->subMinutes(10 - $i),
+            ]);
+        }
+
+        $this->get(route('listings.index', ['locale' => 'en']).'?filter[game]=cs2')
+            ->assertInertia(fn ($page) => $page
+                ->where('listings.data', fn ($listings) => collect($listings)
+                    ->contains(function ($l) use ($teamPlay) {
+                        if ($l['id'] !== $teamPlay->id) {
+                            return false;
+                        }
+
+                        $previews = $l['participant_previews'];
+
+                        return count($previews) === 3
+                            && $previews[0]['username'] === 'first_joiner'
+                            && $previews[1]['username'] === 'second_joiner'
+                            && $previews[2]['username'] === 'third_joiner';
+                    }),
+                ),
+            );
+    });
+
+    it('excludes kicked participants from previews', function () {
+        $teamPlay = Listing::factory()->teamPlay()->create([
+            'status' => ListingStatus::Open,
+            'is_public' => true,
+        ]);
+
+        $kept = User::factory()->active()->create(['username' => 'kept_user']);
+        $kicked = User::factory()->active()->create(['username' => 'kicked_user']);
+
+        LobbyParticipant::factory()->create([
+            'listing_id' => $teamPlay->id,
+            'user_id' => $kicked->id,
+            'side' => 'a',
+            'slot_index' => 0,
+            'kicked_at' => now()->subMinute(),
+            'joined_at' => now()->subMinutes(5),
+        ]);
+        LobbyParticipant::factory()->create([
+            'listing_id' => $teamPlay->id,
+            'user_id' => $kept->id,
+            'side' => 'a',
+            'slot_index' => 0,
+            'joined_at' => now()->subMinutes(3),
+        ]);
+
+        $this->get(route('listings.index', ['locale' => 'en']).'?filter[game]=cs2')
+            ->assertInertia(fn ($page) => $page
+                ->where('listings.data', fn ($listings) => collect($listings)
+                    ->contains(function ($l) use ($teamPlay) {
+                        if ($l['id'] !== $teamPlay->id) {
+                            return false;
+                        }
+
+                        $usernames = collect($l['participant_previews'])
+                            ->pluck('username')
+                            ->all();
+
+                        return $usernames === ['kept_user'];
+                    }),
+                ),
+            );
+    });
+
+    it('exposes lobby_ready_check_deadline ISO-8601 only when ready_checking', function () {
+        $recruiting = Listing::factory()->teamPlay()->create([
+            'status' => ListingStatus::Open,
+            'is_public' => true,
+        ]);
+        $readyChecking = Listing::factory()
+            ->teamPlay()
+            ->lobbyReadyChecking()
+            ->create([
+                'status' => ListingStatus::Open,
+                'is_public' => true,
+            ]);
+
+        $this->get(route('listings.index', ['locale' => 'en']).'?filter[game]=cs2')
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->where('listings.data', function ($listings) use ($recruiting, $readyChecking) {
+                    $recruitingRow = collect($listings)->firstWhere('id', $recruiting->id);
+                    $readyCheckingRow = collect($listings)->firstWhere('id', $readyChecking->id);
+
+                    return $recruitingRow !== null
+                        && $readyCheckingRow !== null
+                        && $recruitingRow['lobby_ready_check_deadline'] === null
+                        && is_string($readyCheckingRow['lobby_ready_check_deadline'])
+                        && str_contains($readyCheckingRow['lobby_ready_check_deadline'], 'T');
+                }),
+            );
+    });
+
+    it('exposes username, name, and avatar_thumb_url shape', function () {
+        $teamPlay = Listing::factory()->teamPlay()->create([
+            'status' => ListingStatus::Open,
+            'is_public' => true,
+        ]);
+        $joiner = User::factory()->active()->create([
+            'username' => 'preview_user',
+            'name' => 'Preview User',
+        ]);
+        LobbyParticipant::factory()->create([
+            'listing_id' => $teamPlay->id,
+            'user_id' => $joiner->id,
+        ]);
+
+        $this->get(route('listings.index', ['locale' => 'en']).'?filter[game]=cs2')
+            ->assertInertia(fn ($page) => $page
+                ->where('listings.data', fn ($listings) => collect($listings)
+                    ->contains(function ($l) use ($teamPlay) {
+                        if ($l['id'] !== $teamPlay->id) {
+                            return false;
+                        }
+
+                        $preview = $l['participant_previews'][0] ?? null;
+
+                        return $preview !== null
+                            && array_keys($preview) === ['username', 'name', 'avatar_thumb_url']
+                            && $preview['username'] === 'preview_user'
+                            && $preview['name'] === 'Preview User';
+                    }),
+                ),
+            );
+    });
+});
