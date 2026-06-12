@@ -2,6 +2,7 @@
 
 namespace App\Actions\Lobby;
 
+use App\Events\LobbyUpdated;
 use App\Exceptions\InsufficientBalanceException;
 use App\Models\Listing;
 use App\Models\LobbyParticipant;
@@ -40,7 +41,7 @@ class ToggleReadyAction
     public function handle(User $user, Listing $listing): string
     {
         try {
-            return DB::transaction(function () use ($user, $listing) {
+            $sentinel = DB::transaction(function () use ($user, $listing) {
                 $locked = Listing::query()->lockForUpdate()->findOrFail($listing->id);
 
                 if ($locked->lobby_state === 'locked') {
@@ -77,6 +78,12 @@ class ToggleReadyAction
         } catch (InsufficientBalanceException) {
             return 'insufficient_balance';
         }
+
+        if (in_array($sentinel, ['readied', 'unreadied', 'locked_now'], true)) {
+            LobbyUpdated::dispatch($listing);
+        }
+
+        return $sentinel;
     }
 
     private function markReady(Listing $listing, LobbyParticipant $participant): void

@@ -2,6 +2,7 @@
 
 namespace App\Actions\Lobby;
 
+use App\Events\LobbyUpdated;
 use App\Models\Listing;
 use App\Models\LobbyParticipant;
 use App\Models\User;
@@ -78,6 +79,7 @@ class KickParticipantAction
 
         if ($sentinel === 'kicked') {
             $this->readyCheck->handle($listing->fresh());
+            LobbyUpdated::dispatch($listing);
         }
 
         return $sentinel;

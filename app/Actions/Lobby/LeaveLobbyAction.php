@@ -4,6 +4,7 @@ namespace App\Actions\Lobby;
 
 use App\Enums\ListingStatus;
 use App\Enums\MatchStatus;
+use App\Events\LobbyUpdated;
 use App\Models\Listing;
 use App\Models\LobbyParticipant;
 use App\Models\User;
@@ -76,6 +77,10 @@ class LeaveLobbyAction
             // Soft-joined count may have dropped below max — let the
             // ready-check helper demote `ready_checking` → `recruiting`.
             $this->readyCheck->handle($listing->fresh());
+        }
+
+        if ($sentinel === 'left' || $sentinel === 'creator_cancelled') {
+            LobbyUpdated::dispatch($listing);
         }
 
         return $sentinel;

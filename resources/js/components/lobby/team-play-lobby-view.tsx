@@ -1,16 +1,14 @@
 import { router, usePage } from '@inertiajs/react';
-import { useEffect, useMemo, useState } from 'react';
+import { useState } from 'react';
 import { LobbyCenterColumn } from '@/components/lobby/center/center-column';
+import { LobbyChatPanel } from '@/components/lobby/lobby-chat-panel';
+import { LobbyRealtimeSync } from '@/components/lobby/lobby-realtime-sync';
 import { TeamSlotColumn } from '@/components/lobby/team-slot-column';
-import { MobileChatTrigger } from '@/components/match/mobile-chat-trigger';
-import { useMatchChat } from '@/hooks/use-match-chat';
 import { join, kick, leave, ready } from '@/routes/lobbies';
-import type { Lobby, LobbySide, MatchPlayer } from '@/types';
+import type { Lobby, LobbySide } from '@/types';
 import type { ChatMessage } from '@/types/match';
 
-const POLL_INTERVAL_MS = 5000;
-
-const TERMINAL_STATES = new Set(['locked', 'cancelled', 'expired']);
+const LIVE_STATES = new Set(['recruiting', 'ready_checking']);
 
 interface Props {
     lobby: Lobby;
@@ -29,37 +27,16 @@ export function TeamPlayLobbyView({ lobby, messages }: Props) {
     const viewerId = auth.user?.id ?? null;
     const matchId = lobby.match_id;
 
-    // Lobby chat sits on the same Reverb channel as match chat — the paired
-    // GameMatch row exists from day 1 (M34 P1's CreateTeamPlayListingAction).
-    const chat = useMatchChat(matchId ?? 0, messages.data, viewerId);
-
-    const participants = useMemo<MatchPlayer[]>(
-        () =>
-            (
-                [...lobby.roster.a, ...lobby.roster.b].filter(
-                    (p) => p !== null,
-                ) as Array<NonNullable<Lobby['roster']['a'][number]>>
-            ).map((p) => p.user),
-        [lobby.roster],
-    );
-
-    // Polling-based real-time updates. Reverb broadcast events on
-    // `lobby:{listing_id}` are a deferred follow-up — 5 s polling delivers
-    // the experience without the broadcast plumbing.
-    useEffect(() => {
-        if (
-            lobby.lobby_state === null ||
-            TERMINAL_STATES.has(lobby.lobby_state)
-        ) {
-            return;
-        }
-
-        const id = window.setInterval(() => {
-            router.reload({ only: ['lobby'] });
-        }, POLL_INTERVAL_MS);
-
-        return () => window.clearInterval(id);
-    }, [lobby.lobby_state]);
+    // Real-time roster + state via Reverb. `LobbyRealtimeSync` subscribes
+    // to `private-lobby.{id}` and triggers `router.reload({ only: ['lobby'] })`
+    // on `.lobby.updated`. Mounted only while the lobby is live AND the
+    // viewer is authenticated (private channels require auth) — terminal
+    // states (locked / cancelled / expired) need no further updates, so
+    // unmounting tears down the WebSocket subscription cleanly.
+    const isRealtimeActive =
+        auth.user !== null &&
+        lobby.lobby_state !== null &&
+        LIVE_STATES.has(lobby.lobby_state);
 
     const [isProcessing, setIsProcessing] = useState(false);
 
@@ -114,17 +91,10 @@ export function TeamPlayLobbyView({ lobby, messages }: Props) {
         });
     };
 
-    // Pick a non-creator placeholder for the legacy `taker` prop — chat
-    // bubble lookup uses `participants` first, so this only matters when
-    // the lobby has just the creator + no one else (chat is empty anyway).
-    const placeholderTaker: MatchPlayer =
-        participants.find((p) => p.id !== lobby.creator.id) ?? lobby.creator;
-
-    const isReadOnlyChat =
-        lobby.lobby_state === 'cancelled' || lobby.lobby_state === 'expired';
-
     return (
         <>
+            {isRealtimeActive && <LobbyRealtimeSync listingId={lobby.id} />}
+
             <div className="space-y-6">
                 {/* The headline 3-col layout — Team A | Center | Team B at
                     lg+. Below lg the columns stack so mobile reads
@@ -153,25 +123,22 @@ export function TeamPlayLobbyView({ lobby, messages }: Props) {
                 </div>
             </div>
 
-            {/* Chat — FAB only when the viewer has joined. The chat is a
-                team-coordination room, not a public comment thread; browsers
-                see roster + stats but not banter. Once they join, FAB appears. */}
-            {auth.user && matchId !== null && lobby.viewer?.is_participant && (
-                <MobileChatTrigger
-                    messages={chat.messages}
-                    viewerId={auth.user.id}
-                    creator={lobby.creator}
-                    taker={placeholderTaker}
-                    participants={participants}
-                    isReadOnly={isReadOnlyChat}
-                    isPending={chat.isPending}
-                    onSend={chat.send}
-                    onRetry={chat.retry}
-                    onDismiss={chat.dismiss}
-                    uploadProgress={chat.uploadProgress}
-                    containerClassName=""
-                />
-            )}
+            {/* Chat — mounts only when the viewer has joined a slot. The
+                hook (`useMatchChat`) lives inside `LobbyChatPanel` so it
+                only subscribes to `private-match.{id}` for participants;
+                otherwise the chat channel auth would 403 non-participants
+                during `LobbyFilling`. */}
+            {auth.user &&
+                matchId !== null &&
+                viewerId !== null &&
+                lobby.viewer?.is_participant && (
+                    <LobbyChatPanel
+                        matchId={matchId}
+                        initialMessages={messages.data}
+                        viewerId={viewerId}
+                        lobby={lobby}
+                    />
+                )}
         </>
     );
 }

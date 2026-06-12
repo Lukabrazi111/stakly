@@ -3,6 +3,7 @@
 namespace App\Actions\Lobby;
 
 use App\Enums\ListingStatus;
+use App\Events\LobbyUpdated;
 use App\Models\Listing;
 use App\Models\LobbyParticipant;
 use App\Models\User;
@@ -91,6 +92,7 @@ class JoinLobbyAction
             // Re-evaluate `recruiting` ↔ `ready_checking` now that the
             // soft-joined count may have hit max.
             $this->readyCheck->handle($listing->fresh());
+            LobbyUpdated::dispatch($listing);
         }
 
         return $result;

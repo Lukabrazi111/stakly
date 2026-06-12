@@ -4,6 +4,7 @@ namespace App\Actions\Lobby;
 
 use App\Enums\ListingStatus;
 use App\Enums\MatchStatus;
+use App\Events\LobbyUpdated;
 use App\Models\Listing;
 use App\Models\LobbyParticipant;
 use App\Services\Wallet;
@@ -35,7 +36,7 @@ class LobbyReadyCheckTimeoutAction
 {
     public function handle(Listing $listing): string
     {
-        return DB::transaction(function () use ($listing) {
+        $sentinel = DB::transaction(function () use ($listing) {
             $locked = Listing::query()->lockForUpdate()->findOrFail($listing->id);
 
             if ($locked->lobby_state !== 'ready_checking') {
@@ -66,6 +67,12 @@ class LobbyReadyCheckTimeoutAction
 
             return 'reverted';
         });
+
+        if ($sentinel === 'cancelled' || $sentinel === 'reverted') {
+            LobbyUpdated::dispatch($listing);
+        }
+
+        return $sentinel;
     }
 
     /**
