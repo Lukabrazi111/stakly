@@ -123,10 +123,12 @@ function ViewerActions({
     isProcessing,
 }: ViewerActionsProps) {
     const t = useT();
-    const insufficient = !viewer.is_ready && viewer.balance < lobby.stake_amount;
+    const insufficient =
+        !viewer.is_ready && viewer.balance < lobby.stake_amount;
     const readyDisabled = isProcessing || (insufficient && !viewer.is_ready);
 
     let readyLabel: string;
+
     if (viewer.is_ready) {
         readyLabel = t('Un-Ready');
     } else if (insufficient) {

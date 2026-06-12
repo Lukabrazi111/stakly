@@ -3,8 +3,8 @@
 // - App\Http\Controllers\WalletController (per-page props shape)
 // - App\Enums\WalletTransactionType (the union below mirrors this enum)
 
-import type { Paginator } from './listings';
 import type { GameId } from '@/config/games';
+import type { Paginator } from './listings';
 
 // Mirror of App\Enums\WalletTransactionType. Sign convention applied at the
 // service layer:

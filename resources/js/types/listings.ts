@@ -5,6 +5,8 @@
 
 import type { GameId } from '@/config/games';
 import type { GameTile } from '@/types/home';
+import type { Lobby } from './lobby';
+import type { ChatMessage } from './match';
 
 export type ListingStatus = 'open' | 'taken' | 'expired' | 'cancelled';
 
@@ -170,8 +172,8 @@ export interface ListingsIndexProps {
 export interface ListingShowProps {
     listing: Listing;
     match: { id: number } | null;
-    lobby?: import('./lobby').Lobby;
-    messages?: { data: import('./match').ChatMessage[] };
+    lobby?: Lobby;
+    messages?: { data: ChatMessage[] };
 }
 
 // Props for the create-listing form. Option lists (regions / languages /

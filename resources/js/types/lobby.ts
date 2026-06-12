@@ -5,6 +5,7 @@
 
 import type { GameId } from '@/config/games';
 import type { ListingPlatform } from '@/types/listings';
+import type { ChatMessage } from './match';
 
 export type LobbySide = 'a' | 'b';
 
@@ -136,6 +137,6 @@ export interface Lobby {
 export interface LobbyShowProps {
     lobby: Lobby;
     messages: {
-        data: import('./match').ChatMessage[];
+        data: ChatMessage[];
     };
 }
