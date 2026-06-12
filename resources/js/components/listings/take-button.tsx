@@ -3,8 +3,8 @@ import { useAuthModal } from '@/components/auth/auth-modal-provider';
 import { Button } from '@/components/ui/button';
 import { useT } from '@/lib/i18n';
 import { edit as linkedAccountsEdit } from '@/routes/linked-accounts';
-import { show as showLobby } from '@/routes/lobbies';
 import { mine as listingsMine, show as showListing } from '@/routes/listings';
+import { show as showLobby } from '@/routes/lobbies';
 import type { Listing, ListingPlatform } from '@/types';
 
 const PLATFORM_LABEL: Record<ListingPlatform, string> = {
@@ -55,7 +55,12 @@ export function TakeButton({ listing, className = '' }: Props) {
     if (user.id === listing.creator.id) {
         if (isTeamPlay) {
             return (
-                <Button variant="gradient" size="pill" asChild className={className}>
+                <Button
+                    variant="gradient"
+                    size="pill"
+                    asChild
+                    className={className}
+                >
                     <Link href={showLobby({ listing: listing.id }).url}>
                         {t('View lobby')}
                     </Link>
@@ -104,7 +109,12 @@ export function TakeButton({ listing, className = '' }: Props) {
 
     if (isTeamPlay) {
         return (
-            <Button variant="gradient" size="pill" asChild className={className}>
+            <Button
+                variant="gradient"
+                size="pill"
+                asChild
+                className={className}
+            >
                 <Link href={showLobby({ listing: listing.id }).url}>
                     {t('View lobby')}
                 </Link>

@@ -18,8 +18,8 @@ import {
     getTimeUrgency,
     timeControlLabels,
 } from '@/lib/listings-format';
-import { show as showLobby } from '@/routes/lobbies';
 import { show as showListing } from '@/routes/listings';
+import { show as showLobby } from '@/routes/lobbies';
 import { show as userShow } from '@/routes/users';
 import type { Listing } from '@/types';
 

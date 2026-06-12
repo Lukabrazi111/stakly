@@ -41,8 +41,7 @@ export function FilledSlot({
                 isViewer
                     ? 'border-primary/40 bg-primary/5'
                     : 'border-border/60',
-                participant.is_ready &&
-                    'shadow-(--shadow-arena-card-glow)',
+                participant.is_ready && 'shadow-(--shadow-arena-card-glow)',
             )}
         >
             <div className="relative size-12 shrink-0">
@@ -90,10 +89,7 @@ export function FilledSlot({
             <div className="flex shrink-0 items-center gap-1.5">
                 {participant.is_ready ? (
                     <span className="inline-flex items-center gap-1 rounded-full border border-success/40 bg-success/10 px-2 py-1 text-xs font-medium text-success">
-                        <CheckCircle2
-                            className="size-3.5"
-                            aria-hidden="true"
-                        />
+                        <CheckCircle2 className="size-3.5" aria-hidden="true" />
                         {t('Ready')}
                     </span>
                 ) : (

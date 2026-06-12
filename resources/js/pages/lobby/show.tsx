@@ -32,10 +32,11 @@ export default function LobbyShow({ lobby, messages }: LobbyShowProps) {
 
     const participants = useMemo<MatchPlayer[]>(
         () =>
-            ([...lobby.roster.a, ...lobby.roster.b]
-                .filter((p) => p !== null) as Array<
-                NonNullable<Lobby['roster']['a'][number]>
-            >).map((p) => p.user),
+            (
+                [...lobby.roster.a, ...lobby.roster.b].filter(
+                    (p) => p !== null,
+                ) as Array<NonNullable<Lobby['roster']['a'][number]>>
+            ).map((p) => p.user),
         [lobby.roster],
     );
 
@@ -43,7 +44,10 @@ export default function LobbyShow({ lobby, messages }: LobbyShowProps) {
     // `lobby:{listing_id}` are a deferred follow-up — 5 s polling
     // delivers the experience without the broadcast plumbing.
     useEffect(() => {
-        if (lobby.lobby_state === null || TERMINAL_STATES.has(lobby.lobby_state)) {
+        if (
+            lobby.lobby_state === null ||
+            TERMINAL_STATES.has(lobby.lobby_state)
+        ) {
             return;
         }
 
@@ -225,4 +229,3 @@ export default function LobbyShow({ lobby, messages }: LobbyShowProps) {
         </SiteLayout>
     );
 }
-

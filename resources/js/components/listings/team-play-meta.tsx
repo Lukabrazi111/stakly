@@ -53,7 +53,10 @@ export function LobbyFillCounter({ listing }: LobbyFillCounterProps) {
 
     return (
         <span
-            className={cn('inline-flex items-center gap-1 text-xs font-medium', tone)}
+            className={cn(
+                'inline-flex items-center gap-1 text-xs font-medium',
+                tone,
+            )}
             aria-label={t(':filled of :capacity players', { filled, capacity })}
         >
             <Users className="size-3" aria-hidden="true" />

@@ -31,10 +31,13 @@ export function LobbyStatusBanner({ lobby }: Props) {
                         {t('Recruiting players')}
                     </p>
                     <p className="text-xs text-muted-foreground">
-                        {t(':filled of :max slots filled — chat to coordinate, click Ready when set.', {
-                            filled,
-                            max,
-                        })}
+                        {t(
+                            ':filled of :max slots filled — chat to coordinate, click Ready when set.',
+                            {
+                                filled,
+                                max,
+                            },
+                        )}
                     </p>
                 </div>
             </div>
@@ -49,7 +52,9 @@ export function LobbyStatusBanner({ lobby }: Props) {
                         {t('Ready check')}
                     </p>
                     <p className="text-xs text-muted-foreground">
-                        {t('All slots filled — every player must click Ready before the timer runs out, or non-Ready slots reopen.')}
+                        {t(
+                            'All slots filled — every player must click Ready before the timer runs out, or non-Ready slots reopen.',
+                        )}
                     </p>
                 </div>
                 {lobby.lobby_ready_check_deadline && (
@@ -73,7 +78,9 @@ export function LobbyStatusBanner({ lobby }: Props) {
                         {t('Match locked in')}
                     </p>
                     <p className="text-xs text-muted-foreground">
-                        {t('All stakes are escrowed. Coordinate on the platform and play your match — the result will settle automatically.')}
+                        {t(
+                            'All stakes are escrowed. Coordinate on the platform and play your match — the result will settle automatically.',
+                        )}
                     </p>
                 </div>
                 <CheckCircle2

@@ -19,7 +19,7 @@ Frontend-first build. UI against real DB infrastructure + seeded fake data; back
 
 **In-flight:**
 
-- **M34 Phase 3.1** — Unify lobby into the listing page. Frontend follow-up to P3: collapse the dedicated `/lobbies/{id}` URL into the canonical `/listings/{id}` page so users browse the marketplace and discover lobbies through the same flow they already know. Slice A adapts the listing-card on `/listings` (5v5 / 2v2 badge + fill count + "View lobby" CTA for team-play). Slice B branches the listing show page (existing 1v1 detail for chess; lobby UI block for `team_size > 1`) + `/lobbies/{id}` becomes a 301 redirect + defensive guard in `TakeListingAction` for crafted POSTs. P4 (FACEIT 5v5 verification) is next after this — without P4, locked CS2 lobbies fall to ManualReview after the 4h timeout. Phases 0–3 all shipped 2026-06-12 (1330 → 1410, +80 tests across the four phases).
+- **M34 Phase 3.1** — Unify lobby into the listing page. Frontend follow-up to P3: collapse the dedicated `/lobbies/{id}` URL into the canonical `/listings/{id}` page so users browse the marketplace and discover lobbies through the same flow they already know. **Slice A shipped 2026-06-12** — listing-card adapter on `/listings` + `/listings/mine` (5v5 / 2v2 badge, fill counter, ready-check pulse, "View lobby" CTA, +5 tests). Slice B in-flight: branches the listing show page (existing 1v1 detail for chess; FACEIT-grade lobby UI block for `team_size > 1`) + `/lobbies/{id}` becomes a 301 redirect + defensive guard in `TakeListingAction` for crafted POSTs. Slice A.2 deferred behind Slice B: user-toggleable rows ↔ grid view for the marketplace, with roster-preview avatars on team-play grid cards. P4 (FACEIT 5v5 verification) is next after Slice B — without P4, locked CS2 lobbies fall to ManualReview after the 4h timeout. Phases 0–3 all shipped 2026-06-12 (1330 → 1410, +80 tests across the four phases).
 
 **Active / upcoming:**
 
@@ -422,20 +422,33 @@ Backend-only slice between P1's actions and P3's frontend.
 - [x] Frontend: `pages/lobby/show.tsx` (header + status banner + team roster + action bar + chat right rail / mobile bottom sheet, 5 s Inertia polling while in-flight). `types/lobby.ts` typed contract. Sub-components: `lobby-status-banner` (recruiting / ready_checking / locked branches), `ready-check-countdown` (live MM:SS, red+pulse in final 30 s), `team-roster` (Team A | VS | Team B layout), `slot-card` (Filled + Empty variants, identical dimensions so the grid doesn't reflow), `lobby-actions` (Ready toggle + Leave + insufficient-balance hint). Reuses Stakly's palette + glow tokens.
 - [x] `ChatPanel` + `ChatMessageBubble` + `MobileChatTrigger` got an optional `participants?: MatchPlayer[]` prop. When set, takes precedence over the 1v1 `creator + taker` for sender-to-bubble mapping. Match page unchanged; lobby passes its full live roster. Additive refactor, no existing call site touched.
 - [x] Pest tests (`tests/Feature/Lobby/LobbyPageTest.php`): 16 cases — page renders for public visitors / participants / strangers / non-team-play; redirect for locked/cancelled; invite_token owner-only exposure; all four mutation endpoints with policy gates. Full suite: 1394 → 1410 (+16). TypeScript clean (`tsc --noEmit` exit 0).
-- [ ] Real-time `lobby:{listing_id}` Reverb broadcasts — deferred. 5 s polling delivers the experience; broadcasts are a follow-up.
+- [ ] Real---time `lobby:{listing_id}` Reverb broadcasts — deferred. 5 s polling delivers the experience; broadcasts are a follow-up.
 
 **Phase 3.1 — Unify lobby into the listing page**
 
 Frontend follow-up to P3. P3 shipped the lobby as a separate `/lobbies/{listing}` URL — but the listing and the lobby are the same row, so the URLs should be too. Collapses lobby UI into the canonical `/listings/{id}` page so users browse the marketplace and discover lobbies through the same flow they already know. `/lobbies/{id}` survives as a 301 redirect for any links shared during P3 testing.
 
-**Slice A — Listing-card adapter on the marketplace index**
+**Slice A — Listing-card adapter on the marketplace index (shipped 2026-06-12)**
 
-The card on `/listings` doesn't know about team-play today: it shows the 1v1 "Take" CTA and the chess time-control pill even for CS2 5v5 listings. Click-through routes to `/listings/{id}` (which under Slice B will host the lobby UI).
+The card on `/listings` didn't know about team-play before: it showed the 1v1 "Take" CTA and the chess time-control pill even for CS2 5v5 listings. Click-through still routes to the marketplace's existing per-game flow.
 
-- [ ] `ListingResource` exposes `team_size`, `lobby_state`, and a fill count (`live_participant_count`) — required by the card. Eager-loaded via `withCount('lobbyParticipants', fn ($q) => $q->whereNull('kicked_at'))` so the index stays one query per page.
-- [ ] Listing-row component branches on `team_size`: the time-control pill slot renders a "5v5" / "2v2" badge for team-play; the meta row adds a "X / Y joined" chip; the CTA label flips from "Take" to "View lobby" (both still link to `/listings/{id}` — no URL change for the consumer).
-- [ ] Owner-side dashboard (`/listings/mine`) reuses the same card → owner sees their lobby fill count and "View lobby" link at a glance.
-- [ ] Tests: card payload includes the new fields, CTA label branches correctly.
+- [x] `ListingResource` exposes `team_size`, `lobby_state`, and a fill count (`live_participant_count`). Eager-loaded via `withCount('lobbyParticipants', fn ($q) => $q->live())` on every consuming query (`ListingController::index|mine|show`, `HomeController::welcome`, `UserController::show`) so the index stays one query per page.
+- [x] Listing-row component branches on `team_size`: a purple `5v5` / `2v2` `TeamSizeBadge` sits next to `GameChip`; a `LobbyStateBadge` (animated amber "Ready check" pulse) renders when `lobby_state = 'ready_checking'`; a `LobbyFillCounter` ("3 / 10 players") tones from muted → warning → success as the lobby fills. CTA label flips from "Take" to "View lobby" for verified users and for the owner; "Sign in to take" → "Sign in to join" for guests; "Link FACEIT" unchanged. Row overlay link routes to `/lobbies/{listing}` for team-play (Slice B flips back to `/listings/{id}` once the listing show page hosts the lobby UI).
+- [x] Owner dashboard (`/listings/mine`) reuses the same chips; `MineListingRow` shows the `5v5` badge + fill counter + state badge for owned team-play listings, and the row overlay link → `/lobbies/{listing}` while `status = open` (locked / cancelled / settled fall back to listing detail).
+- [x] Tests (5, all green): resource payload includes the new fields on `/listings`, `/listings/mine`, `/listings/{id}`, and `/users/{username}`; kicked participants don't contribute to `live_participant_count`; chess listings keep sane defaults (`team_size=1`, `lobby_state=null`, `live_participant_count=0`).
+
+**Slice A.2 — View toggle: rows ↔ grid layout for /listings + /listings/mine**
+
+Rows are the right default for stake-comparison workflows (eBay / FACEIT / ESEA stay row-heavy for the same reason), but the team-play row from Slice A packs a lot of info — three chip mini-rows in the match column. Adds a user-toggleable grid view as an alternative card layout. Default for every game = rows; user opts in to grid; preference persists per-user in `localStorage`. Grid mode's killer feature for team-play: each card shows a small roster preview (2-3 seated player avatars + count), so a browsing user sees "Bob, Alice, +1 in" without clicking through.
+
+Sequencing: ships after Slice B (lobby in listing page) so the grid card's design language can draw on whatever we land for Slice B's center column. Sliced into its own piece because the grid card is substantial frontend work and shouldn't gate Slice B.
+
+- [ ] `ListingResource` adds a `participant_previews` field (array of up to 3 live participants `{ username, avatar_thumb_url }`) for team-play listings — empty array for chess. Eager-loaded via a `lobbyParticipants` relation hint scoped by `live()` + ordered by `joined_at` ascending; the resource slices to 3 in PHP after the relation loads. One extra relation load per page, not n+1.
+- [ ] Filter-bar toggle: rows / grid icon pair (using shadcn `ToggleGroup` skinned to Stakly defaults). Persisted to `localStorage.listings_view = 'rows' | 'grid'`. Server-rendered initial via a cookie fallback so SSR matches client and avoids layout flash.
+- [ ] New `listing-grid-card.tsx` — vertical card layout: gradient header bar (game chip + team-size badge if team-play), owner avatar + name + region, stake as display-font headline, filter chips (skill, languages), state-aware coordination strip (fill counter + ready-check badge for team-play; time-control chips for chess), CTA pinned to the card foot. Team-play grid cards include a roster preview row (2-3 small avatars + "+X more" overflow chip).
+- [ ] Grid container (`/listings` + `/listings/mine`): responsive `grid-cols-1 md:grid-cols-2 lg:grid-cols-3` when grid mode is active; rows layout otherwise. Mobile collapses to a single column → identical density to rows; the toggle remains visible so users can preview grid in a tablet split.
+- [ ] `ListingRow` + `MineListingRow` (rows layout) unchanged from Slice A — both layouts share the same Slice A primitives (`TeamSizeBadge`, `LobbyFillCounter`, `LobbyStateBadge`).
+- [ ] Tests: resource payload exposes `participant_previews` for team-play (max 3, kicked excluded, ordered by `joined_at`); empty array for chess; toggle persists across page navigations; grid card renders the roster preview for team-play and the chess-style card for `team_size = 1`.
 
 **Slice B — Listing show page hosts the lobby UI for team-play**
 

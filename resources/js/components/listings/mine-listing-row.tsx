@@ -15,8 +15,8 @@ import {
     isEndingSoon,
     timeControlLabels,
 } from '@/lib/listings-format';
-import { show as showLobby } from '@/routes/lobbies';
 import { show as showListing } from '@/routes/listings';
+import { show as showLobby } from '@/routes/lobbies';
 import type { Listing, ListingStatus } from '@/types';
 
 const STATUS_LABEL: Record<ListingStatus, string> = {
@@ -99,7 +99,9 @@ export function MineListingRow({ listing }: Props) {
 
             <div className="flex items-center gap-3 md:contents">
                 <div className="pointer-events-none relative flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
-                    {isTeamPlay && <LobbyStateBadge state={listing.lobby_state} />}
+                    {isTeamPlay && (
+                        <LobbyStateBadge state={listing.lobby_state} />
+                    )}
                     {isTeamPlay && <LobbyFillCounter listing={listing} />}
                     {listing.time_control.map((tc) => (
                         <span
