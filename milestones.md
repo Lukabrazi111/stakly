@@ -331,24 +331,34 @@ The big design decision is **when** stakes commit relative to **when** players j
 3. **Click Ready → YOUR stake escrows in that moment.** Per-player atomic, not all-10 atomic at match start. So Alice clicks Ready, her $100 escrows. Bob clicks Ready, his escrows. By the time all 10 have Ready'd, all 10 stakes are already locked — no last-second balance race.
 4. **Un-Ready (or leave) refunds your stake** until the match flips Pending. Free to change your mind mid-lobby.
 5. **All 10 Ready → match flips to `Pending`, lobby locks.** Leaving now is a forfeit (same semantics as today's 1v1 take-then-bail).
-6. **One active lobby per user at a time.** Soft-join blocks until you leave the current one. Closes the multi-lobby slot-blocking abuse.
+6. **One active lobby per user, globally across all games.** Soft-join into any team-play listing's lobby blocks if you're already a participant on any other team-play lobby (CS2, Dota 2, whatever). Closes the multi-lobby slot-blocking abuse and keeps "where am I committed" UX trivially answerable.
 7. **Ready-check timeout: 5 minutes from when lobby reaches max soft-joined.** Non-Ready players are auto-vacated, slots reopen, lobby keeps recruiting. Already-Ready players stay Ready (their stake stays escrowed; they're not penalized for being on time). Closes the "hostage taker" vector.
-8. **Lobby owner can kick.** The listing creator can remove any other participant from any slot — refunds them if they'd Ready'd, vacates their slot. Owner can't kick themselves; if they leave, the lobby cancels and all stakes refund.
-9. **Lobby fill timeout: 24h.** If the lobby never reaches max soft-joined within 24h of creation, the listing cancels and any escrowed stakes (from already-Ready'd joiners) refund.
-10. **Insufficient balance at Ready click is a silent retry-able failure.** "Top up your balance to ready up" message. Doesn't penalize the player, doesn't impact others. Same shape as today's `TakeListingAction` insufficient-balance handling.
+8. **Creator is just another participant — no implicit Ready.** The listing creator picks a slot at creation (same `creator_side` field), shows up in `lobby_participants` like everyone else, and must click Ready themselves. If the ready-check timer vacates the creator, the lobby cancels and any Ready'd participants get refunded. No asymmetric "always Ready" privilege — creator has the same skin in the game.
+9. **Lobby owner can kick — 5-minute cooldown on rejoining the same listing.** The listing creator can remove any other participant from any slot — refunds them if they'd Ready'd, vacates their slot. Kicked player can't rejoin THAT specific listing's lobby for 5 minutes (`kicked_at` stays on the `lobby_participants` row; JoinLobbyAction checks `kicked_at + 5 min > now()`). They can join other owners' lobbies immediately. After 5 min they're free to rejoin even this listing. Permanent cross-listing blocking is M21's job, not kick's. Owner can't kick themselves; if they leave voluntarily, the lobby cancels and all stakes refund.
+10. **Lobby fill timeout: 24h.** If the lobby never reaches max soft-joined within 24h of creation, the listing cancels and any escrowed stakes (from already-Ready'd joiners) refund. If the 24h hits mid-`ReadyChecking`, the listing still cancels and any in-flight Ready'd stakes refund — the timer is the listing's life, not just the recruiting phase.
+11. **Insufficient balance at Ready click is a silent retry-able failure.** "Top up your balance to ready up" message. Doesn't penalize the player, doesn't impact others. Same shape as today's `TakeListingAction` insufficient-balance handling.
 
 ### Architectural decisions
 
 - **`listings.team_size` (int, default 1).** Chess listings stay 1; CS2 = 5; 2v2 Wingman = 2; future games per their format. Drives lobby size: total participants = `2 × team_size`.
-- **New `lobby_participants` table.** Columns: `id`, `listing_id` (FK, cascade), `user_id` (FK), `side` ('a' | 'b'), `slot_index` (0..team_size-1), `is_ready` (bool), `stake_held_at` (nullable timestamp — null = soft-joined, set = stake escrowed), `joined_at`, timestamps. Unique constraint `(listing_id, side, slot_index)`. Unique constraint `(listing_id, user_id)` (one slot per user per listing).
-- **`listings.lobby_state` (enum/string).** `Recruiting` (soft-joining open) → `ReadyChecking` (5-min timer running) → `Locked` (all Ready, match Pending) → `Cancelled` / `Expired`. Drives UI affordances.
-- **`listings.lobby_owner_can_kick` (bool, default true).** Forward-compat knob for future "captain-less open lobbies" if we ever want them.
-- **Listings with `team_size > 1` skip the existing `Listing.status = Open → Taken` transition.** Instead, lifecycle is `Open` (recruiting) → match created in `Pending` (when all Ready). Existing `TakeListingAction` only handles `team_size = 1` listings; new actions handle the rest.
+- **New `lobby_participants` table.** Columns: `id`, `listing_id` (FK, cascade), `user_id` (FK, restrict-delete — they may hold escrow), `side` ('a' | 'b'), `slot_index` (smallint, 0..team_size-1), `is_ready` (bool, default false), `stake_held_at` (nullable timestamp — null = soft-joined, set = stake escrowed), `kicked_at` (nullable timestamp — set on kick so the 5-min same-listing cooldown is enforceable; row stays as audit trail, not deleted), `joined_at`, timestamps.
+    - **Partial unique indexes (Postgres-specific) so kicked rows don't poison live constraints:**
+        - `UNIQUE (listing_id, side, slot_index) WHERE kicked_at IS NULL` — only one active participant per slot; kicked rows are excluded so a new joiner can claim the freshly-vacated slot.
+        - `UNIQUE (listing_id, user_id) WHERE kicked_at IS NULL` — only one active participation per user per listing; kicked rows are excluded so the same user can rejoin (post-cooldown) without colliding with their old kicked row.
+    - **Kick mechanics:** `KickParticipantAction` UPDATEs the row to set `kicked_at = now()`, `is_ready = false`. Stake released first if Ready'd. On rejoin (after cooldown), JoinLobbyAction inserts a NEW row — old kicked row is preserved for forensics. Multiple kicked rows per (listing, user) are fine — the partial unique constraint only governs live rows.
+- **`listings.lobby_state` (varchar, nullable).** `recruiting` (soft-joining open) → `ready_checking` (5-min timer running) → `locked` (all Ready, match Pending) → `cancelled` / `expired`. Null for `team_size = 1` listings (chess flow doesn't use it). Drives UI affordances + cron sweep targeting.
+- **Listings with `team_size > 1` skip the existing `Listing.status = Open → Taken` path through `TakeListingAction`.** Instead, lifecycle is `Open` (recruiting) → match created in `LobbyFilling` at listing creation → match flips to `Pending` + listing flips to `Taken` when all Ready. Existing `TakeListingAction` keeps handling `team_size = 1` listings unchanged.
 - **Skill range is per-player (`listings.skill_min` / `skill_max`).** Each joiner's snapshotted FACEIT ELO must fall in range. Per-team averaging is explicitly rejected — lets one whale carry low-skill teammates, breaks the trust pitch.
-- **Side assignment.** Creator picks their side at listing creation (`listings.creator_side` = 'a' | 'b'). Other joiners pick at join time. Public listings expose both sides for joining; private listings expose both sides via the same invite link.
-- **Public / private toggle.** `listings.is_public` (bool). Public listings appear in `/listings`. Private listings have a unique invite token (`listings.invite_token` — opaque 32-char URL-safe) and are reachable only at `/lobbies/{invite_token}`. Token expires when the match goes Pending or the listing cancels.
+- **Side assignment.** Creator picks their side at listing creation (`listings.creator_side` = 'a' | 'b', null for team_size=1). Other joiners pick at join time. Public listings expose both sides for joining; private listings expose both sides via the same invite link.
+- **Public / private toggle.** `listings.is_public` (bool, default true). Public listings appear in `/listings`. Private listings have a unique invite token (`listings.invite_token` — opaque 32-char URL-safe, nullable + unique) and are reachable only at `/lobbies/{invite_token}`. Token expires when the match goes Pending or the listing cancels.
 - **Lobby chat reuses existing `Message` infrastructure.** Same `match_id`-keyed chat we have today, but available from the moment the match (in `LobbyFilling` state) is created — not just after Pending. Players coordinate FACEIT party invites + queue-up in chat before clicking Ready.
-- **Match-row creation timing.** Today: `TakeListingAction` creates the match when the taker takes. For lobbies: match row is created at listing creation (status = `LobbyFilling` or similar pre-Pending state) so chat works from day 1 of the lobby. Match flips to `Pending` when all Ready.
+- **Match-row created early — new `MatchStatus::LobbyFilling` case.** Today `TakeListingAction` creates the match when the taker takes; for `team_size > 1` listings the match row exists from listing creation onwards in `LobbyFilling` status, flipping to `Pending` when all Ready. Chat works from day 1 because `messages.match_id` stays the single source. Trade-off: every consumer that today assumes `status === Pending` means "match is playing" needs an explicit `LobbyFilling` carve-out. Known touchpoints to audit + gate in P1:
+    - `DispatchAutoFetchAction` — skip auto-fetch on `LobbyFilling` (don't poll providers before the match has actually started).
+    - `GameMatchPolicy::view` / `openDispute` / `requestCancellation` — `LobbyFilling` participants can view + chat, but can't dispute or request match-cancellation (lobby has its own leave / kick affordances).
+    - `GameMatchController::show` (`/matches/{match}`) — redirect `LobbyFilling` matches to `/lobbies/{listing_id}` so users always land on the right UI surface.
+    - `MatchesResolveTimeouts` cron — current sweep targets `Pending` only; `LobbyFilling` is owned by separate lobby-fill / ready-check cron commands.
+    - `User::usernameChangeBlockers()` "in-flight match" check — `LobbyFilling` counts as in-flight (money may be escrowed) just like `Pending`.
+    - `WalletTransactionResource` admin filters / sibling-entity lookups that group by match status.
 
 ### Verification flow — extending M15 P4 for 5v5
 
@@ -358,7 +368,7 @@ The existing `FaceitGameClient` already parses full 5-player rosters per faction
 - **Match-finding strategy.** Today: query creator's history, fall back to taker's. For 5v5: query the first soft-joined player on each side's history (first slot ordering). Same opposing-roster verification per candidate.
 - **Card payload extension.** Add `winning_team` ('a' | 'b') alongside / replacing `winner_user_id`. The card lists all `team_size` winning user_ids so `SettleFromCardAction` can pay each one.
 - **`SettleFromCardAction` settlement math.** Each winner gets `2 × stake − platform_fee_share` where `fee_share = (total_pot × fee_rate) / team_size`. Each loser loses their stake. Platform fee credited once.
-- **`MatchProviderSnapshot.slot_index`** — already on the schema sketch in M15 P1. Confirm column exists; otherwise add it. Stores 0..team_size-1 so settlement can map snapshot → user with team identity preserved.
+- **`MatchProviderSnapshot.slot_index`** — verified NOT yet present (M15 P1 only added `provider_user_id` + `skill_rating_snapshot`). P0 adds it as a nullable smallint. Existing chess 1v1 snapshots stay null; new lobby-locked 5v5 snapshots populate 0..team_size-1 so settlement can map snapshot → user with team identity preserved.
 
 ### Phases
 
@@ -366,22 +376,23 @@ The existing `FaceitGameClient` already parses full 5-player rosters per faction
 
 Read-only-ish foundation. No new user-facing flows; just the tables + models that everything else builds on.
 
-- [ ] Migration: `listings.team_size` (default 1), `listings.creator_side` (nullable; null for team_size=1), `listings.lobby_state` (enum/string; null for team_size=1), `listings.is_public` (bool, default true), `listings.invite_token` (nullable, unique).
-- [ ] Migration: `lobby_participants` table per the schema above.
-- [ ] Migration: `match_provider_snapshots.slot_index` if not already present.
-- [ ] `Listing` model: `lobbyParticipants()` hasMany, `isTeamPlay(): bool` helper, `lobbyOwner()` accessor.
-- [ ] `LobbyParticipant` model: relations, casts.
-- [ ] Factory + seeder updates: team_size > 1 listings + lobby_participants for dev fixtures.
-- [ ] Tests: model relations, factory states, schema constraints (unique slot, unique user-per-listing).
+- [ ] Migration: `listings.team_size` (int, default 1), `listings.creator_side` (varchar 1 nullable; null for team_size=1), `listings.lobby_state` (varchar 16 nullable; null for team_size=1; values `recruiting | ready_checking | locked | cancelled | expired`), `listings.is_public` (bool, default true), `listings.invite_token` (varchar 32 nullable + unique).
+- [ ] Migration: `lobby_participants` table per the schema above — includes `kicked_at` nullable timestamp for the 5-min same-listing rejoin cooldown.
+- [ ] Migration: add `slot_index` (smallint nullable) to `match_provider_snapshots` (verified not yet present). Existing 1v1 chess snapshots stay null on this column.
+- [ ] Add `MatchStatus::LobbyFilling` case to `App\Enums\MatchStatus`. Pure additive — every existing consumer that switches on this enum keeps compiling, but P1 audit list catches the consumers that need behavioral updates.
+- [ ] `Listing` model: `lobbyParticipants()` hasMany, `isTeamPlay(): bool` helper (`team_size > 1`), `lobbyOwner()` accessor (just the creator), `lobby_state` cast.
+- [ ] `LobbyParticipant` model: relations to `Listing` + `User`, casts (`is_ready` bool, `stake_held_at` / `kicked_at` / `joined_at` datetime).
+- [ ] Factory + seeder updates: a handful of dev CS2 team-play listings — at least one in each of `recruiting` (partially filled), `ready_checking` (mid-timer), and `locked` (all Ready, post-lock) so the marketplace + lobby UI surfaces have data to render once P3 lands.
+- [ ] Pest tests: model relations, factory states, schema constraints (unique slot, unique user-per-listing, restrict-delete on user_id with held escrow). No action-layer behavior tests yet — those land with P1 alongside the actions themselves.
 
 **Phase 1 — Backend lobby flow (actions + cron)**
 
 The whole soft-join → Ready → escrow → lock pipeline. No frontend yet.
 
-- [ ] `JoinLobbyAction` — soft-join. Validates: user not already in another lobby; skill range; FACEIT-linked; slot is open; listing's `team_size > 1`. Inserts `lobby_participants` row with `stake_held_at = null`.
+- [ ] `JoinLobbyAction` — soft-join. Validates: user not already in another team-play lobby (global single-lobby rule); skill range against snapshotted FACEIT ELO; FACEIT-linked; slot is open; listing's `team_size > 1`; no live `kicked_at` on this listing within 5 minutes (`WHERE kicked_at IS NOT NULL AND kicked_at + interval '5 min' > now()` — neutral "Can't join right now" message, no countdown leak). Inserts a new `lobby_participants` row with `stake_held_at = null`.
 - [ ] `LeaveLobbyAction` — pre-lock leave. If `is_ready`, calls `Wallet::release` to refund. Deletes the participant row.
 - [ ] `ToggleReadyAction` — flip Ready state. If going Ready → `Wallet::hold` for stake; set `is_ready = true`, `stake_held_at = now()`. If going un-Ready → `Wallet::release`; set `is_ready = false`, `stake_held_at = null`. Insufficient-balance throws same as `TakeListingAction`.
-- [ ] `KickParticipantAction` — owner-only. Validates: requesting user IS the listing creator; target user IS NOT the creator. Refunds target if Ready'd. Deletes participant row.
+- [ ] `KickParticipantAction` — owner-only. Validates: requesting user IS the listing creator; target user IS NOT the creator. Refunds target if Ready'd via `Wallet::release`. UPDATEs the participant row to set `kicked_at = now()`, `is_ready = false` (preserved as audit / cooldown anchor — partial unique index lets a new joiner claim the freed slot immediately).
 - [ ] `LobbyReadyCheckAction` — fires when lobby first reaches max soft-joined. Sets `listings.lobby_state = ReadyChecking` and stamps a deadline 5 minutes out. Re-fires on every join if lobby goes back below max.
 - [ ] `LobbyReadyCheckTimeoutAction` — runs when the 5-min deadline passes with not-everyone-Ready. Vacates non-Ready slots (no refund needed since they didn't stake). Resets `lobby_state` to `Recruiting`.
 - [ ] `LobbyLockAction` — fires when all `2 × team_size` participants are Ready. Creates `GameMatch` row in `Pending` (or transitions an existing pre-Pending match — see "Match-row creation timing" above), copies snapshots from `linked_accounts` to `match_provider_snapshots` per existing pattern + `slot_index`. Sets `listings.lobby_state = Locked` and `listings.status = Taken`.

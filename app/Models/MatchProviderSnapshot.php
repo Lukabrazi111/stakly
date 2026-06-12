@@ -25,6 +25,7 @@ class MatchProviderSnapshot extends Model
         'username',
         'provider_user_id',
         'skill_rating_snapshot',
+        'slot_index',
     ];
 
     protected function casts(): array

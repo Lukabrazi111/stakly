@@ -7,8 +7,10 @@ use App\Enums\LinkedAccountProvider;
 use App\Enums\ListingStatus;
 use App\Enums\TimeControl;
 use App\Models\Listing;
+use App\Models\LobbyParticipant;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Factories\Factory;
+use Illuminate\Support\Str;
 
 /**
  * @extends Factory<Listing>
@@ -65,6 +67,11 @@ class ListingFactory extends Factory
                 : null,
             'expires_at' => $this->faker->dateTimeBetween('+1 hour', '+72 hours'),
             'status' => ListingStatus::Open,
+            // Default to the 1v1 shape — chess listings stay here and skip
+            // the M34 lobby pipeline. Team-play tests override via
+            // ->teamPlay() which sets team_size, creator_side, lobby_state.
+            'team_size' => 1,
+            'is_public' => true,
         ];
     }
 
@@ -124,6 +131,48 @@ class ListingFactory extends Factory
     public function forChessCom(): static
     {
         return $this->state(fn () => ['platform' => LinkedAccountProvider::ChessCom]);
+    }
+
+    /**
+     * Team-play listing (M34). Defaults to a CS2 5v5 in `recruiting`. Override
+     * via chained states (`lobbyReadyChecking()`, `lobbyLocked()`, `private()`).
+     */
+    public function teamPlay(int $teamSize = 5, Game $game = Game::Cs2): static
+    {
+        return $this->forGame($game)->state(fn () => [
+            'team_size' => $teamSize,
+            'creator_side' => $this->faker->randomElement([
+                LobbyParticipant::SIDE_A,
+                LobbyParticipant::SIDE_B,
+            ]),
+            'lobby_state' => 'recruiting',
+        ]);
+    }
+
+    public function lobbyReadyChecking(): static
+    {
+        return $this->state(fn () => ['lobby_state' => 'ready_checking']);
+    }
+
+    /**
+     * Locked = all participants Ready, match has transitioned from
+     * LobbyFilling → Pending, listing.status is now Taken. Seeder is
+     * responsible for creating the matching GameMatch + snapshots.
+     */
+    public function lobbyLocked(): static
+    {
+        return $this->state(fn () => [
+            'lobby_state' => 'locked',
+            'status' => ListingStatus::Taken,
+        ]);
+    }
+
+    public function private(): static
+    {
+        return $this->state(fn () => [
+            'is_public' => false,
+            'invite_token' => Str::random(32),
+        ]);
     }
 
     /**

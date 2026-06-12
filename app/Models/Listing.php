@@ -12,6 +12,7 @@ use Illuminate\Database\Eloquent\Casts\AsEnumCollection;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class Listing extends Model
@@ -31,6 +32,11 @@ class Listing extends Model
         'language',
         'expires_at',
         'status',
+        'team_size',
+        'creator_side',
+        'lobby_state',
+        'is_public',
+        'invite_token',
     ];
 
     protected function casts(): array
@@ -45,6 +51,8 @@ class Listing extends Model
             'language' => 'array',
             'expires_at' => 'datetime',
             'status' => ListingStatus::class,
+            'team_size' => 'integer',
+            'is_public' => 'boolean',
         ];
     }
 
@@ -56,10 +64,42 @@ class Listing extends Model
     /**
      * 1:1 with the match created when this listing is taken; null while still
      * Open / Cancelled / Expired. UNIQUE FK at the DB level enforces 1:1.
+     * For team-play listings (M34) the match row is created early in
+     * `LobbyFilling` state at listing creation, so this is non-null from day 1.
      */
     public function gameMatch(): HasOne
     {
         return $this->hasOne(GameMatch::class);
+    }
+
+    /**
+     * Soft-join lobby participation rows (M34). Empty for `team_size = 1`
+     * (chess) listings — the existing TakeListingAction flow doesn't create
+     * lobby rows. The `kicked_at IS NULL` scope lives in the LobbyParticipant
+     * model as `live()` for callers that want only active participants.
+     */
+    public function lobbyParticipants(): HasMany
+    {
+        return $this->hasMany(LobbyParticipant::class);
+    }
+
+    /**
+     * True when this listing uses the M34 lobby flow rather than the chess
+     * `TakeListingAction` flow.
+     */
+    public function isTeamPlay(): bool
+    {
+        return $this->team_size > 1;
+    }
+
+    /**
+     * Lobby owner = listing creator (M34 P0). The owner is just another
+     * participant in `lobby_participants`; this accessor is purely a naming
+     * helper for the kick + cancel-on-leave guards in P1.
+     */
+    public function lobbyOwner(): BelongsTo
+    {
+        return $this->user();
     }
 
     /**

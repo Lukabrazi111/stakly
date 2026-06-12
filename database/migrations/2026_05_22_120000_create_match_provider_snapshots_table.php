@@ -65,6 +65,13 @@ return new class extends Migration
             $table->string('provider_user_id', 128)->nullable();
             $table->integer('skill_rating_snapshot')->nullable();
 
+            // M34 — slot identity within the team for team-play matches
+            // (`team_size > 1`). Stores 0..team_size-1 so SettleFromCardAction
+            // can map "which player on side A won" back to a specific Stakly
+            // user without colliding when multiple users share the same side.
+            // Null on 1v1 chess matches (side already disambiguates).
+            $table->unsignedSmallInteger('slot_index')->nullable();
+
             $table->timestamps();
 
             // One snapshot per (match, side, provider). A second insert
