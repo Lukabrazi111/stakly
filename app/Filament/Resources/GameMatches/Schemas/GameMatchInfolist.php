@@ -50,6 +50,7 @@ class GameMatchInfolist
                 TextEntry::make('status')
                     ->badge()
                     ->color(fn (MatchStatus $state): string => match ($state) {
+                        MatchStatus::LobbyFilling => 'gray',
                         MatchStatus::Pending => 'gray',
                         MatchStatus::Disputed => 'warning',
                         MatchStatus::ManualReview => 'danger',
@@ -57,6 +58,7 @@ class GameMatchInfolist
                         MatchStatus::Cancelled => 'gray',
                     })
                     ->formatStateUsing(fn (MatchStatus $state): string => match ($state) {
+                        MatchStatus::LobbyFilling => 'Lobby Filling',
                         MatchStatus::Pending => 'Pending',
                         MatchStatus::Disputed => 'Disputed',
                         MatchStatus::ManualReview => 'Manual Review',

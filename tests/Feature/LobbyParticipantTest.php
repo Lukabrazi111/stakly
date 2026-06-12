@@ -217,9 +217,9 @@ describe('match_provider_snapshots.slot_index', function () {
         expect($snapshot->slot_index)->toBe(3);
     });
 
-    it('stays null when not supplied (1v1 chess back-compat)', function () {
+    it('defaults to 0 when not supplied (1v1 chess back-compat)', function () {
         $snapshot = MatchProviderSnapshot::factory()->create();
 
-        expect($snapshot->slot_index)->toBeNull();
+        expect($snapshot->fresh()->slot_index)->toBe(0);
     });
 });

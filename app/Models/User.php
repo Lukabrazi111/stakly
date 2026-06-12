@@ -157,6 +157,23 @@ class User extends Authenticatable implements FilamentUser, HasMedia, MustVerify
     }
 
     /**
+     * M34 — the user's current team-play lobby participation, if any. Used to
+     * enforce the global single-active-lobby rule: a live (not-kicked) row on
+     * a listing whose lobby is still in flight (`recruiting`, `ready_checking`,
+     * or `locked` — the user is committed across all three until the match
+     * actually settles or cancels). Returns null when the user is free to join.
+     */
+    public function activeLobbyParticipation(): ?LobbyParticipant
+    {
+        return LobbyParticipant::query()
+            ->where('user_id', $this->id)
+            ->live()
+            ->whereHas('listing', fn ($q) => $q
+                ->whereIn('lobby_state', ['recruiting', 'ready_checking', 'locked']))
+            ->first();
+    }
+
+    /**
      * Taker side only. Creator side is reached via `$user->listings`; combined
      * "all my matches" queries use `GameMatch::scopeForParticipant` instead.
      */
@@ -232,13 +249,20 @@ class User extends Authenticatable implements FilamentUser, HasMedia, MustVerify
         $hasInFlightMatch = GameMatch::query()
             ->forParticipant($this->id)
             ->whereIn('status', [
+                MatchStatus::LobbyFilling,
                 MatchStatus::Pending,
                 MatchStatus::Disputed,
                 MatchStatus::ManualReview,
             ])
             ->exists();
 
-        if ($hasInFlightMatch) {
+        // M34: lobby participants who aren't creator OR placeholder-taker
+        // (i.e. joiners on the opposing side) still count as in-flight. The
+        // global helper hits live participations in `recruiting`,
+        // `ready_checking`, or `locked` lobbies.
+        $hasLobbyParticipation = $this->activeLobbyParticipation() !== null;
+
+        if ($hasInFlightMatch || $hasLobbyParticipation) {
             $blockers[] = 'in_flight_match';
         }
 

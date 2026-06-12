@@ -137,6 +137,33 @@ services:
             - sail
         depends_on:
             - laravel.test
+    scheduler:
+        # Long-running Laravel scheduler. Reads every `Schedule::command(...)`
+        # entry in `routes/console.php` and fires them at their configured
+        # cadence (`->everyMinute()`, `->hourly()`, etc.).
+        #
+        # `schedule:work` is the container-friendly alternative to a host-cron
+        # `* * * * * php artisan schedule:run` entry — it sleeps internally and
+        # loops, so it doesn't need a `cron` daemon installed. One process per
+        # container, matches the `queue` / `reverb` / `lichess-stream` pattern.
+        #
+        # Adding a new scheduled command? Just add a `Schedule::command(...)`
+        # line in `routes/console.php` — this container picks it up on the
+        # next minute without a restart.
+        image: 'sail-8.5/app'
+        command: 'php artisan schedule:work'
+        restart: unless-stopped
+        environment:
+            WWWUSER: '${WWWUSER}'
+            LARAVEL_SAIL: 1
+        volumes:
+            - '.:/var/www/html'
+        networks:
+            - sail
+        depends_on:
+            - laravel.test
+            - pgsql
+            - redis
     lichess-stream:
         # M16 Phase 4 — long-lived consumer of Lichess's
         # `/api/stream/games-by-users` NDJSON stream. Dispatches

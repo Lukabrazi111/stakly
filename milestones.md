@@ -19,7 +19,7 @@ Frontend-first build. UI against real DB infrastructure + seeded fake data; back
 
 **In-flight:**
 
-_None — pick the next milestone from "Active / upcoming" below._
+- **M34 Phase 1** — Backend lobby flow (actions + cron). Phase 0 shipped 2026-06-12 (schema + models + factories + seeder + 18 new Pest tests). P1 builds JoinLobby / LeaveLobby / ToggleReady / Kick / LobbyLock actions plus the 24h fill-timeout + 5-min ready-check cron sweeps, and gates the existing `Pending`-assuming consumers for the new `LobbyFilling` state. No frontend yet — P3 owns that.
 
 **Active / upcoming:**
 
@@ -28,7 +28,7 @@ _None — pick the next milestone from "Active / upcoming" below._
 - **M20** — Email notifications. **Spec materially shrunk**: M27 P5 already shipped the in-app preferences UI + `notification_preferences` table + 9 `PlayerNotification` classes; M30 P4 wired the `mail` channel for ban notifications. What's left = branded HTML email templates, flip `'mail'` into `via()` on the remaining PlayerNotification subclasses, production SMTP config. Realistically 2–3 days.
 - **M21** — Blacklist + safety. Block users from listings + chat, with anti-evasion considerations. Has open design questions (block semantics + multi-account evasion) — needs alignment before coding.
 - **M33** — Listing time-control contract. Make Stakly's accepted time controls (blitz / rapid / classical) explicit in the listing-creation form, surface `time_control_mismatch` as a player-facing banner on stuck matches, and optionally re-enable Slice 3d strictness behind a per-listing opt-in. Reverted from M14 on 2026-06-06 — friction (legitimate correspondence / bullet games rejected silently) outweighed the small sandbag attack surface at this stage. Revisit when launch scale or a real abuse incident makes it relevant.
-- **M34** — Team play + lobbies (production-launch dependency for CS2). Soft-join lobby model with hybrid stake-at-Ready commitment. Players join lobbies for free (no stake), chat + coordinate, toggle "Ready" to escrow their stake per-player (refundable until all Ready). Match flips to `Pending` when all Ready, lobby locks, leaving becomes a forfeit. Lobby owner can kick any participant (refunds them if they'd Ready'd). 5-min ready-check timeout when lobby reaches max soft-joined. One active lobby per user. Public listings show in marketplace; private listings via invite token URL. Skill range applied per-player. CS2 = 5v5 first; 2v2 Wingman follow-up. Chess (1v1) keeps current `TakeListingAction` flow — lobby applies only when `team_size > 1`. Detailed section below.
+- **M34** — Team play + lobbies (production-launch dependency for CS2). Soft-join lobby model with hybrid stake-at-Ready commitment. Players join lobbies for free (no stake), chat + coordinate, toggle "Ready" to escrow their stake per-player (refundable until all Ready). Match flips to `Pending` when all Ready, lobby locks, leaving becomes a forfeit. Lobby owner can kick any participant (refunds them if they'd Ready'd). 5-min ready-check timeout when lobby reaches max soft-joined. One active lobby per user. Public listings show in marketplace; private listings via invite token URL. Skill range applied per-player. CS2 = 5v5 first; 2v2 Wingman follow-up. Chess (1v1) keeps current `TakeListingAction` flow — lobby applies only when `team_size > 1`. **Phase 0 shipped 2026-06-12**; P1 in-flight above. Detailed section below.
 > Active milestone keeps a detailed task list. Future milestones expand when started. Any of this can shift — flag the change, update the doc.
 
 ---
@@ -372,18 +372,18 @@ The existing `FaceitGameClient` already parses full 5-player rosters per faction
 
 ### Phases
 
-**Phase 0 — Schema + lobby model**
+**Phase 0 — Schema + lobby model** _(shipped 2026-06-12 — commit `feat(m34-p0): team-play schema + lobby_participants + MatchStatus::LobbyFilling`)_
 
 Read-only-ish foundation. No new user-facing flows; just the tables + models that everything else builds on.
 
-- [ ] Migration: `listings.team_size` (int, default 1), `listings.creator_side` (varchar 1 nullable; null for team_size=1), `listings.lobby_state` (varchar 16 nullable; null for team_size=1; values `recruiting | ready_checking | locked | cancelled | expired`), `listings.is_public` (bool, default true), `listings.invite_token` (varchar 32 nullable + unique).
-- [ ] Migration: `lobby_participants` table per the schema above — includes `kicked_at` nullable timestamp for the 5-min same-listing rejoin cooldown.
-- [ ] Migration: add `slot_index` (smallint nullable) to `match_provider_snapshots` (verified not yet present). Existing 1v1 chess snapshots stay null on this column.
-- [ ] Add `MatchStatus::LobbyFilling` case to `App\Enums\MatchStatus`. Pure additive — every existing consumer that switches on this enum keeps compiling, but P1 audit list catches the consumers that need behavioral updates.
-- [ ] `Listing` model: `lobbyParticipants()` hasMany, `isTeamPlay(): bool` helper (`team_size > 1`), `lobbyOwner()` accessor (just the creator), `lobby_state` cast.
-- [ ] `LobbyParticipant` model: relations to `Listing` + `User`, casts (`is_ready` bool, `stake_held_at` / `kicked_at` / `joined_at` datetime).
-- [ ] Factory + seeder updates: a handful of dev CS2 team-play listings — at least one in each of `recruiting` (partially filled), `ready_checking` (mid-timer), and `locked` (all Ready, post-lock) so the marketplace + lobby UI surfaces have data to render once P3 lands.
-- [ ] Pest tests: model relations, factory states, schema constraints (unique slot, unique user-per-listing, restrict-delete on user_id with held escrow). No action-layer behavior tests yet — those land with P1 alongside the actions themselves.
+- [x] Migration: `listings.team_size` (int, default 1), `listings.creator_side` (varchar 1 nullable; null for team_size=1), `listings.lobby_state` (varchar 16 nullable; null for team_size=1; values `recruiting | ready_checking | locked | cancelled | expired`), `listings.is_public` (bool, default true), `listings.invite_token` (varchar 32 nullable + unique). Index on `lobby_state` for the upcoming cron sweeps.
+- [x] Migration: `lobby_participants` table — `id`, `listing_id` (cascade), `user_id` (restrict-delete), `side`, `slot_index`, `is_ready`, `stake_held_at`, `kicked_at`, `joined_at`, timestamps. Partial unique indexes (`WHERE kicked_at IS NULL`) on `(listing_id, side, slot_index)` and `(listing_id, user_id)` via `DB::statement` since Laravel's schema builder has no first-class API for partial indexes.
+- [x] Migration: added `slot_index` (smallint nullable) to `match_provider_snapshots`. Existing 1v1 chess snapshots stay null.
+- [x] Added `MatchStatus::LobbyFilling` case (`'lobby_filling'`).
+- [x] `Listing` model: `lobbyParticipants()` hasMany, `isTeamPlay()` helper, `lobbyOwner()` accessor, `team_size` + `is_public` casts, fillable updates.
+- [x] `LobbyParticipant` model: relations to `Listing` + `User`, casts (`is_ready` bool, `stake_held_at` / `kicked_at` / `joined_at` datetime), `live()` + `withinKickCooldown()` scopes, `SIDE_A` / `SIDE_B` constants.
+- [x] `ListingFactory` gains `teamPlay()`, `lobbyReadyChecking()`, `lobbyLocked()`, `private()` states. `LobbyParticipantFactory` with `sideA()` / `sideB()` / `ready()` / `kicked()` states. `ListingSeeder` produces one CS2 5v5 lobby in `recruiting` (4 participants, 2 Ready'd) + one in `ready_checking` (10 participants, 6 Ready'd). `locked` state seed waits for P1's `LobbyLockAction` (needs the match-row transition pipeline).
+- [x] Pest tests (`tests/Feature/LobbyParticipantTest.php`): 18 cases / 35 assertions covering the enum case, Listing helpers, factory states, scopes, partial-unique-index behavior (live row blocks duplicate, kicked rows exempt, slot reclaimable post-kick, user rejoin post-kick), and `slot_index` on `MatchProviderSnapshot`. Full suite stays at 1330 pass / 5082 assertions.
 
 **Phase 1 — Backend lobby flow (actions + cron)**
 

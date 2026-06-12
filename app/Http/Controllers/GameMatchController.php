@@ -8,6 +8,7 @@ use App\Actions\GameMatch\OpenDisputeAction;
 use App\Actions\GameMatch\RejectCancellationAction;
 use App\Actions\GameMatch\RequestCancellationAction;
 use App\Actions\GameMatch\TakeListingAction;
+use App\Enums\MatchStatus;
 use App\Exceptions\InsufficientBalanceException;
 use App\Http\Requests\GameMatch\IndexMatchesRequest;
 use App\Http\Requests\GameMatch\RequestCancellationRequest;
@@ -148,7 +149,7 @@ class GameMatchController extends Controller
      * job. Idempotency lives at the job layer (`ShouldBeUnique` plus
      * `alreadyPosted()`); F5-spam is harmless.
      */
-    public function show(GameMatch $match, DispatchAutoFetchAction $dispatchAutoFetch): Response
+    public function show(GameMatch $match, DispatchAutoFetchAction $dispatchAutoFetch): Response|RedirectResponse
     {
         $match->load([
             'listing:id,user_id,game,stake_amount,platform,time_control,status',
@@ -159,6 +160,14 @@ class GameMatchController extends Controller
         ]);
 
         abort_if(request()->user()->cannot('view', $match), 404);
+
+        // M34 P1 — `LobbyFilling` matches don't yet have a lobby UI (lands in
+        // P3). Redirect to the listing detail page so users see the listing
+        // they came from rather than the half-rendered match page. P3 swaps
+        // the target to `route('lobbies.show', $match->listing)`.
+        if ($match->status === MatchStatus::LobbyFilling) {
+            return to_route('listings.show', $match->listing);
+        }
 
         $dispatchAutoFetch->handle($match);
 

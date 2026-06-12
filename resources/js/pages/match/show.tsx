@@ -56,6 +56,10 @@ function cooldownRemainingFor(match: Match, viewerId: number): number {
 }
 
 const STATUS_LABEL: Record<MatchStatus, string> = {
+    // M34: LobbyFilling matches are server-redirected to /listings/{id} so
+    // this branch is unreachable in practice — included to satisfy the
+    // exhaustive Record<MatchStatus, string> contract.
+    lobby_filling: 'Lobby filling',
     pending: 'Pending — waiting for game',
     disputed: 'Disputed — under review',
     settled: 'Settled',
@@ -64,6 +68,7 @@ const STATUS_LABEL: Record<MatchStatus, string> = {
 };
 
 const STATUS_TONE: Record<MatchStatus, string> = {
+    lobby_filling: 'border-muted-foreground/40 bg-muted text-muted-foreground',
     pending: 'border-warning/40 bg-warning/10 text-warning',
     disputed: 'border-destructive/40 bg-destructive/10 text-destructive',
     settled: 'border-success/40 bg-success/10 text-success',

@@ -4,6 +4,7 @@ namespace App\Policies;
 
 use App\Enums\MatchStatus;
 use App\Models\GameMatch;
+use App\Models\LobbyParticipant;
 use App\Models\User;
 
 /**
@@ -25,11 +26,20 @@ class GameMatchPolicy
      * attachments from the dispute panel without being participants. Admins
      * resolve via Filament, not the player UI. Non-admin non-participants
      * get a 404 at the controller (not 403) to avoid leaking match existence.
+     *
+     * For `LobbyFilling` matches (M34), the participant set is the lobby
+     * roster (`lobby_participants`), not just the chess-style
+     * creator+taker pair — chat is available from day 1 of the lobby so
+     * every soft-joined player must be able to read it.
      */
     public function view(User $user, GameMatch $match): bool
     {
         if ($user->hasRole('admin')) {
             return true;
+        }
+
+        if ($match->status === MatchStatus::LobbyFilling) {
+            return $this->isLobbyParticipant($user, $match);
         }
 
         return $this->isParticipant($user, $match);
@@ -117,5 +127,21 @@ class GameMatchPolicy
     {
         return $user->id === $match->taker_user_id
             || $user->id === $match->listing->user_id;
+    }
+
+    /**
+     * Live participant on the match's listing — kicked rows excluded. M34
+     * lobby roster check; only meaningful while the match is in
+     * `LobbyFilling`. After lock, the snapshot pipeline takes over and
+     * `isParticipant` (extended via `match_provider_snapshots`) is the
+     * source of truth.
+     */
+    private function isLobbyParticipant(User $user, GameMatch $match): bool
+    {
+        return LobbyParticipant::query()
+            ->where('listing_id', $match->listing_id)
+            ->where('user_id', $user->id)
+            ->live()
+            ->exists();
     }
 }

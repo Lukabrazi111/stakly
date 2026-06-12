@@ -7,6 +7,7 @@ import type { GameId } from '@/config/games';
 import type { ListingPlatform, Paginator, TimeControl } from '@/types/listings';
 
 export type MatchStatus =
+    | 'lobby_filling'
     | 'pending'
     | 'disputed'
     | 'settled'

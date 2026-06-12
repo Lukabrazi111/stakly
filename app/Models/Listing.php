@@ -35,6 +35,7 @@ class Listing extends Model
         'team_size',
         'creator_side',
         'lobby_state',
+        'lobby_ready_check_deadline',
         'is_public',
         'invite_token',
     ];
@@ -53,6 +54,7 @@ class Listing extends Model
             'status' => ListingStatus::class,
             'team_size' => 'integer',
             'is_public' => 'boolean',
+            'lobby_ready_check_deadline' => 'datetime',
         ];
     }
 

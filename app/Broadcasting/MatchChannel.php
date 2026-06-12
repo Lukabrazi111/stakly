@@ -2,17 +2,22 @@
 
 namespace App\Broadcasting;
 
+use App\Enums\MatchStatus;
 use App\Models\GameMatch;
+use App\Models\LobbyParticipant;
 use App\Models\User;
 
 /**
- * Channel authorization for the match chat. Only the two match participants
- * (listing creator + taker) can subscribe; mirrors `GameMatchPolicy::view`.
+ * Channel authorization for the match chat. Mirrors `GameMatchPolicy::view`.
  *
- * Extracted to a named class rather than an inline closure so the auth logic
- * is directly testable without going through `/broadcasting/auth` HTTP plumbing
- * (the test broadcasting connection is `null`, whose broadcaster doesn't run
- * callbacks).
+ * Post-Pending: only the two match participants (listing creator + taker)
+ * can subscribe.
+ *
+ * `LobbyFilling` (M34): all live lobby participants can subscribe so chat
+ * works from day 1 of the lobby. Once `LobbyLockAction` flips the match
+ * to `Pending`, the regular creator/taker check applies (the lobby roster
+ * is captured in `match_provider_snapshots` and the match is now treated
+ * as a played match).
  */
 class MatchChannel
 {
@@ -22,6 +27,14 @@ class MatchChannel
 
         if ($match === null) {
             return false;
+        }
+
+        if ($match->status === MatchStatus::LobbyFilling) {
+            return LobbyParticipant::query()
+                ->where('listing_id', $match->listing_id)
+                ->where('user_id', $user->id)
+                ->live()
+                ->exists();
         }
 
         return $user->id === $match->taker_user_id

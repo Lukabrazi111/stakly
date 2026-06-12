@@ -82,6 +82,14 @@ return new class extends Migration
             // Drives UI affordances + cron sweep targeting.
             $table->string('lobby_state', 16)->nullable();
 
+            // Stamped when `lobby_state` transitions to `ready_checking`
+            // (lobby just reached max soft-joined). The 5-min cron sweep
+            // reads `WHERE lobby_state = 'ready_checking' AND
+            // lobby_ready_check_deadline < now()` to fire
+            // LobbyReadyCheckTimeoutAction. Cleared on lock, vacate, or
+            // soft-joined count dropping below max.
+            $table->timestamp('lobby_ready_check_deadline')->nullable();
+
             // Public listings appear in the /listings marketplace; private
             // listings reach players only via `/lobbies/{invite_token}`.
             $table->boolean('is_public')->default(true);
