@@ -125,7 +125,7 @@ class ListingController extends Controller
         // mirrors `LobbyController::show` eager-loads + payload so the lobby
         // view consumes the same shape it always has (LobbyResource).
         if ($listing->isTeamPlay()) {
-            return $this->showTeamPlay($listing);
+            return $this->showTeamPlay($request, $listing);
         }
 
         // `is_active_mode` is needed for the frontend's owner-inactive gate
@@ -174,7 +174,7 @@ class ListingController extends Controller
      * the React page consumes the same `LobbyResource` shape it has since
      * M34 P3.
      */
-    private function showTeamPlay(Listing $listing): Response|RedirectResponse
+    private function showTeamPlay(Request $request, Listing $listing): Response|RedirectResponse
     {
         abort_if(Gate::denies('viewLobby', $listing), 404);
 
@@ -218,19 +218,24 @@ class ListingController extends Controller
             );
         }
 
-        // Lobby chat shares the existing match.{match_id} channel + Message
-        // pipeline. Every team-play listing has a paired GameMatch row since
-        // P1's `CreateTeamPlayListingAction`, so this load is reliable.
-        $messages = $listing->gameMatch === null
-            ? collect()
-            : $listing->gameMatch
+        // Chat content is participant-only — strangers, guests, and kicked
+        // users get an empty collection. Without this gate the messages.data
+        // payload would render on the page JSON for anyone with the URL,
+        // mirroring the WebSocket subscription gate enforced on the React
+        // side. `$userIds` is the live-participant set computed above.
+        $viewer = $request->user();
+        $isLiveParticipant = $viewer !== null && in_array($viewer->id, $userIds, true);
+
+        $messages = $isLiveParticipant && $listing->gameMatch !== null
+            ? $listing->gameMatch
                 ->messages()
                 ->with(['user:id,name,username', 'media'])
                 ->orderByDesc('id')
                 ->limit(200)
                 ->get()
                 ->reverse()
-                ->values();
+                ->values()
+            : collect();
 
         return Inertia::render('listings/show', [
             'listing' => (new ListingResource($listing))->resolve(),

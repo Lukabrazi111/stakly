@@ -2,11 +2,13 @@
 
 use App\Actions\Listing\CreateTeamPlayListingAction;
 use App\Actions\Lobby\JoinLobbyAction;
+use App\Actions\Lobby\KickParticipantAction;
 use App\Enums\Game;
 use App\Enums\LinkedAccountProvider;
 use App\Enums\ListingStatus;
 use App\Models\Listing;
 use App\Models\LobbyParticipant;
+use App\Models\Message;
 use App\Models\User;
 use App\Services\Wallet;
 
@@ -103,6 +105,79 @@ describe('GET /listings/{id} (team-play lobby UI)', function () {
             ->assertInertia(fn ($page) => $page
                 ->where('lobby.invite_token', null),
             );
+    });
+});
+
+describe('GET /listings/{id} chat messages payload (team-play)', function () {
+    it('exposes messages to the listing owner (auto-soft-joined participant)', function () {
+        $listing = pageLobby();
+        Message::factory()->create([
+            'match_id' => $listing->gameMatch->id,
+            'user_id' => $listing->user_id,
+            'content' => 'Hello team',
+        ]);
+
+        $this->actingAs($listing->user)
+            ->get(route('listings.show', ['locale' => 'en', 'listing' => $listing]))
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page->has('messages.data', 1));
+    });
+
+    it('exposes messages to a live non-owner participant', function () {
+        $listing = pageLobby();
+        $joiner = pageJoiner();
+        app(JoinLobbyAction::class)->handle($joiner, $listing, LobbyParticipant::SIDE_B);
+        Message::factory()->create([
+            'match_id' => $listing->gameMatch->id,
+            'user_id' => $listing->user_id,
+        ]);
+
+        $this->actingAs($joiner)
+            ->get(route('listings.show', ['locale' => 'en', 'listing' => $listing]))
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page->has('messages.data', 1));
+    });
+
+    it('returns empty messages.data to an authed non-participant', function () {
+        $listing = pageLobby();
+        Message::factory()->create([
+            'match_id' => $listing->gameMatch->id,
+            'user_id' => $listing->user_id,
+        ]);
+        $stranger = User::factory()->active()->create();
+
+        $this->actingAs($stranger)
+            ->get(route('listings.show', ['locale' => 'en', 'listing' => $listing]))
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page->where('messages.data', []));
+    });
+
+    it('returns empty messages.data to an unauthenticated visitor', function () {
+        $listing = pageLobby();
+        Message::factory()->create([
+            'match_id' => $listing->gameMatch->id,
+            'user_id' => $listing->user_id,
+        ]);
+
+        $this->get(route('listings.show', ['locale' => 'en', 'listing' => $listing]))
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page->where('messages.data', []));
+    });
+
+    it('returns empty messages.data to a kicked former participant', function () {
+        $listing = pageLobby();
+        $kicked = pageJoiner();
+        app(JoinLobbyAction::class)->handle($kicked, $listing, LobbyParticipant::SIDE_B);
+        Message::factory()->create([
+            'match_id' => $listing->gameMatch->id,
+            'user_id' => $listing->user_id,
+        ]);
+        app(KickParticipantAction::class)->handle($listing->user, $listing, $kicked);
+
+        $this->actingAs($kicked)
+            ->get(route('listings.show', ['locale' => 'en', 'listing' => $listing]))
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page->where('messages.data', []));
     });
 });
 
