@@ -205,7 +205,11 @@ export interface ListingCreateProps {
     // the picked game.
     requirementsByGame: Record<
         GameId,
-        { providers: ListingPlatform[]; verified: boolean }
+        {
+            providers: ListingPlatform[];
+            verified: boolean;
+            allowed_team_sizes: number[];
+        }
     >;
 }
 

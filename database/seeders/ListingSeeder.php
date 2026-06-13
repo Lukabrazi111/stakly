@@ -29,13 +29,12 @@ class ListingSeeder extends Seeder
      */
     public function run(): void
     {
-        // 25 marketplace users with chess + FACEIT providers, $10k each.
-        // Bumped from 20 → 25 so the three team-play lobbies (4 + 10 + 10
-        // participants) can pull disjoint user slices without re-using
-        // anyone across lobbies — `JoinLobbyAction` rejects users already
-        // in another active lobby.
+        // 29 marketplace users with chess + FACEIT providers, $10k each.
+        // 4 + 10 + 10 fill the three 5v5 lobbies; +4 host the 2v2 Wingman
+        // lobby. Disjoint slices because `JoinLobbyAction` rejects users
+        // already in another active lobby.
         $users = User::factory()
-            ->count(25)
+            ->count(29)
             ->active()
             ->withLichess()
             ->withChessCom()
@@ -53,10 +52,11 @@ class ListingSeeder extends Seeder
             ->recycle($users)
             ->create();
 
-        // CS2 listings are 5v5 only — `Game::Cs2->allowedTeamSizes()` rejects
-        // 1v1, and the FACEIT product surface doesn't have a 1v1 mode. Those
-        // CS2 5v5 lobbies land via `seedTeamPlayLobby` below; the chess pool
-        // here is the only 1v1 marketplace content.
+        // CS2 listings are team-play only (2v2 Wingman + 5v5 competitive) —
+        // `Game::Cs2->allowedTeamSizes()` rejects 1v1 and the FACEIT product
+        // surface doesn't have a 1v1 mode. Those CS2 lobbies land via
+        // `seedTeamPlayLobby` below; the chess pool here is the only 1v1
+        // marketplace content.
 
         $openDota = Listing::factory()
             ->count(7)
@@ -119,6 +119,11 @@ class ListingSeeder extends Seeder
         $this->seedTeamPlayLobby(state: 'ready_checking', participants: $users->slice(4, 10)->values(), readyCount: 6);
         $this->seedTeamPlayLobby(state: 'locked', participants: $users->slice(14, 10)->values(), readyCount: 10);
 
+        // M34 P5 — one 2v2 Wingman lobby in recruiting (4 slots, 1 Ready'd)
+        // so the marketplace + lobby surfaces have non-5v5 team-play content
+        // to render against.
+        $this->seedTeamPlayLobby(state: 'recruiting', participants: $users->slice(24, 4)->values(), readyCount: 1, teamSize: 2);
+
         // Extra thin recruiting lobbies for marketplace volume — locked
         // lobbies hide from the public board (status=Taken) so without
         // these the CS2 tab feels sparse. Each uses a fresh creator (no
@@ -152,7 +157,7 @@ class ListingSeeder extends Seeder
      *
      * @param  Collection<int, User>  $participants
      */
-    private function seedTeamPlayLobby(string $state, Collection $participants, int $readyCount): void
+    private function seedTeamPlayLobby(string $state, Collection $participants, int $readyCount, int $teamSize = 5): void
     {
         if ($participants->isEmpty()) {
             return;
@@ -172,7 +177,7 @@ class ListingSeeder extends Seeder
             'stake_amount' => '20',
             'time_control' => [],
             'duration_hours' => 24,
-            'team_size' => 5,
+            'team_size' => $teamSize,
             'creator_side' => LobbyParticipant::SIDE_A,
             'is_public' => true,
         ]);

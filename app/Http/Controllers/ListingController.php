@@ -301,6 +301,12 @@ class ListingController extends Controller
                     ),
                     'verified' => collect($game->requiredProviders())
                         ->contains(fn (LinkedAccountProvider $provider) => $user->isVerifiedOn($provider)),
+                    // Drives the Format picker on `listings/create` — single-
+                    // element arrays render no picker (chess + Dota stay
+                    // hidden); multi-element arrays render a segmented
+                    // control. CS2 ships [5] today; flips to [2, 5] when
+                    // Wingman lands.
+                    'allowed_team_sizes' => $game->allowedTeamSizes(),
                 ],
             ])
             ->all();
@@ -437,6 +443,14 @@ class ListingController extends Controller
         }
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Listing created.')]);
+
+        // Team-play creators land on the lobby itself so they can ready up,
+        // chat, and (for private listings) grab the invite link from the
+        // owner-only banner. 1v1 creators still bounce to /listings/mine —
+        // their listing has no lobby surface.
+        if ($result instanceof Listing && $result->isTeamPlay()) {
+            return to_route('listings.show', $result);
+        }
 
         return to_route('listings.mine');
     }

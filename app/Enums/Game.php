@@ -59,12 +59,12 @@ enum Game: string
 
     /**
      * Valid `team_size` values for a listing in this game. 1 = the existing
-     * `TakeListingAction` flow (chess + legacy CS2 1v1). Values > 1 route
-     * through the M34 lobby pipeline.
+     * `TakeListingAction` flow (chess). Values > 1 route through the M34
+     * lobby pipeline.
      *
      *   Chess → [1] (no team play; native 1v1).
-     *   CS2   → [5] (FACEIT CS2 is competitive 5v5 only; no 1v1 mode on
-     *           our platform. 2v2 Wingman adds [2] in P5).
+     *   CS2   → [2, 5] (FACEIT CS2: 2v2 Wingman + 5v5 competitive, no 1v1
+     *           mode on our platform).
      *   Dota2 → [1] (no Dota lobby support until M15 Dota adapter + M34
      *           extension land).
      *
@@ -74,7 +74,7 @@ enum Game: string
     {
         return match ($this) {
             self::Chess => [1],
-            self::Cs2 => [5],
+            self::Cs2 => [2, 5],
             self::Dota2 => [1],
         };
     }
