@@ -24,7 +24,7 @@ Frontend-first build. UI against real DB infrastructure + seeded fake data; back
 
 **In-flight:**
 
-- _(none — between active phases. Next pick TBD from Active / upcoming below.)_
+- **M34 P7** — FACEIT-style lobby header bar (team leaders + mode chip + state-aware countdown + Share). Replaces the current `2 v 2 lobby` title block on the team-play lobby view and **folds the ready-check countdown out of `CoordinationPanel` into the header** so the center column doesn't duplicate it. See M34 detail section for the full phase entry.
 
 **Active / upcoming:**
 
@@ -33,7 +33,7 @@ Frontend-first build. UI against real DB infrastructure + seeded fake data; back
 - **M20** — Email notifications. **Spec materially shrunk**: M27 P5 already shipped the in-app preferences UI + `notification_preferences` table + 9 `PlayerNotification` classes; M30 P4 wired the `mail` channel for ban notifications. What's left = branded HTML email templates, flip `'mail'` into `via()` on the remaining PlayerNotification subclasses, production SMTP config. Realistically 2–3 days.
 - **M21** — Blacklist + safety. Block users from listings + chat, with anti-evasion considerations. Has open design questions (block semantics + multi-account evasion) — needs alignment before coding.
 - **M33** — Listing time-control contract. Make Stakly's accepted time controls (blitz / rapid / classical) explicit in the listing-creation form, surface `time_control_mismatch` as a player-facing banner on stuck matches, and optionally re-enable Slice 3d strictness behind a per-listing opt-in. Reverted from M14 on 2026-06-06 — friction (legitimate correspondence / bullet games rejected silently) outweighed the small sandbag attack surface at this stage. Revisit when launch scale or a real abuse incident makes it relevant.
-- **M34** — Team play + lobbies (was the CS2 production-launch dependency). Soft-join lobby model with hybrid stake-at-Ready commitment, per-player escrow at Ready, 5-min ready-check timeout, lobby-owner kick (5-min cooldown), 24h fill timeout, single-lobby-per-user rule, public marketplace + private invite-token URLs, per-player skill range. CS2 = 5v5 + 2v2 Wingman. Chess (1v1) keeps the existing `TakeListingAction` flow. **All phases shipped 2026-06-12 → 2026-06-14** (Phases 0–6 + P3.1 + P3.2). Detailed section below stays as reference; ready to move to `milestones_archived.md` on the next archive sweep.
+- **M34** — Team play + lobbies (was the CS2 production-launch dependency). Soft-join lobby model with hybrid stake-at-Ready commitment, per-player escrow at Ready, 5-min ready-check timeout, lobby-owner kick (5-min cooldown), 24h fill timeout, single-lobby-per-user rule, public marketplace + private invite-token URLs, per-player skill range. CS2 = 5v5 + 2v2 Wingman. Chess (1v1) keeps the existing `TakeListingAction` flow. **Phases 0–6 + P3.1 + P3.2 shipped 2026-06-12 → 2026-06-14.** **P7 (FACEIT-style lobby header bar) added 2026-06-14, in flight** — surfaced during dogfooding; replaces the current title block with a unified header that also folds the ready-check countdown out of the center column.
 > Active milestone keeps a detailed task list. Future milestones expand when started. Any of this can shift — flag the change, update the doc.
 
 ---
@@ -623,6 +623,40 @@ After M34 P3.2 / P5 shipped, team-play matches have **no dispute or cancellation
 
 - Real-time broadcasts on cancellation / dispute (existing `MessageSent` + `NotificationProvider` reload covers it).
 - Captain / leader role beyond what's already in M34.
+
+**Phase 7 — Lobby header bar (FACEIT-style mode / teams / countdown / share)** _(in flight 2026-06-14)_
+
+Replaces the current `2 v 2 lobby` / `5 v 5 lobby` title block on the team-play lobby view (`pages/listings/show.tsx` → `TeamPlayLobbyView`) with a unified FACEIT-style header bar. Surfaced during dogfooding — the existing title is plain text and wastes the screen real-estate above the 3-col grid. Also **folds the ready-check countdown out of `CoordinationPanel` into the header**, so the center column doesn't carry a duplicate countdown when the header is showing one for the same state.
+
+Reference: FACEIT match overview header (team_a name + leader avatar | mode chip + countdown + format label | leader avatar + team_b name + Share + 3-dots). Stakly deviates per design questions answered (see below).
+
+### Design decisions locked
+
+- **No scores.** FACEIT shows live `0 - 0` match score; we have no live-score data from FACEIT, so the zeros would lie. Drop the score columns entirely. Re-add only when (if) real-time FACEIT score streaming lands.
+- **Team labels = "Team {leaderUsername}".** Mirrors the existing `slot-card.tsx` pattern from M34 P3.1 polish round 1 (creator on creator's side, earliest `joined_at` on opposing side; falls back to `Team A / Team B` when a side is empty). Avoids inventing a "team name" concept we don't have.
+- **State-aware center countdown** — one canonical countdown that morphs with `lobby_state`:
+    - `recruiting` → listing's 24h fill timeout (`listing.expires_at`).
+    - `ready_checking` → 5-min ready-check deadline (`lobby_ready_check_deadline`). **This replaces the big countdown currently in `CoordinationPanel::ReadyCheckingPanel` — drop that block.**
+    - `locked` → 4h auto-fetch deadline (`match.created_at + 4h`); after that, `ResolveMatchTimeoutAction` flips to `ManualReview`.
+    - `cancelled` / `expired` → no countdown (terminal — show the status instead).
+- **Share button.** Copy lobby URL + toast confirmation on desktop; native Web Share API on mobile (`navigator.share` if available, fall back to copy). For private lobbies, the URL is the canonical `/listings/{id}` (the invite-token URL via `LobbyInviteBanner` stays as the owner-only banner above).
+- **No three-dots menu.** Every action that would live there already has a primary surface elsewhere (Share covers copy URL; Cancel/Leave live in Money block; Open dispute / Request cancellation live on `/matches/{id}`; "View match page →" is a CTA in `CoordinationPanel` post-lock; Report user/lobby is parked as M21 work). Revisit when M21 lands an actual abuse-report flow.
+- **Placement.** Replaces the existing title block (`<header>2 v 2 lobby</header>` + "Hosted by … · Any skill" sub-line + chips). Sits below `LobbyInviteBanner` (owner-only) and above the 3-col grid. The "Hosted by" + skill meta moves into the header too (right side of center column, small text).
+- **Lobby only.** Match page (`/matches/{id}`, `TeamMatchView` from M34 P6 Slice E) keeps its own header. Adding a second match header there would just duplicate the status badge + timer that's already in `TeamMatchView`. Revisit if you want unified visual identity across both surfaces later.
+
+### Slices (tentative)
+
+- [x] **Slice A — Resource audit + `match_deadline_at`** _(shipped 2026-06-14)_. `LobbyResource` gained `match_deadline_at` — ISO of `match.created_at + match_confirmation_timeout_hours` (gated on `MatchStatus::Pending` so the deadline only surfaces while the 4h confirmation window is ticking; null for `LobbyFilling`/recruiting/ready_checking). `ListingController::showTeamPlay` eager-load select widened by `created_at`. TS `Lobby` interface extended. +2 Pest cases (`LobbyPageTest`: null pre-lock, `match.created_at + 4h` once locked).
+- [x] **Slice B — `components/lobby/lobby-header.tsx`** _(shipped 2026-06-14)_. Pure presentational component. Left/right: leader avatar + "Team {leaderUsername}" + fill counter. Center: game · NvN · region pill + state-aware countdown (HH:MM:SS for ≥1h, M:SS for <1h; gradient-primary text for the locked match deadline, warning for ready-check, foreground for recruiting; pulses destructive in the final 30s of ready-check) + "X USDT per player" meta. Right: round Share button — uses `navigator.share` if available, falls back to copying the current URL. Terminal states (`cancelled`/`expired`) render a muted status pill instead of a countdown. Shared `pickLeader()` + `leaderLabel()` extracted to `components/lobby/lobby-leader.ts` so the slot-column and header agree on the leader-derivation rule.
+- [x] **Slice C — Wire header + drop old title + drop ReadyCheckingPanel** _(shipped 2026-06-14)_. Mounted `<LobbyHeader>` in `TeamPlayLobbyView` below the invite banner and above the 3-col grid. Deleted the old `<header>` block (`2 v 2 lobby` title + "Hosted by · skill" subline + GameChip + invite-only pill) from `pages/listings/show.tsx`'s `TeamPlayBranch`. `CoordinationPanel` shrunk to locked-only (FACEIT usernames + party-invite + "View match page →" CTA); `ReadyCheckingPanel` + `BigCountdown` deleted — the header owns ready-check countdown now.
+- [x] **Slice D — Tests + lint + Pint** _(shipped 2026-06-14)_. Slice A resource tests pin the new field across recruiting + locked states. Full suite **1521 → 1523** green (1523 tests / 6041 assertions). Pint clean. TS `tsc --noEmit` clean. Manual dogfood walk-through across the 4 live states is the user's next step.
+
+### Not in P7
+
+- Match-page header redesign (out of scope per design Q7 — `/matches/{id}` keeps its existing header).
+- Three-dots menu — parked until M21 abuse-report flow exists.
+- Live score data — depends on FACEIT real-time API integration that doesn't exist.
+- Team-name customisation (custom team names instead of "Team {leader}") — feature creep; can't see a clear win.
 
 ### Not in M34
 

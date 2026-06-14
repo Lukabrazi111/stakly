@@ -122,6 +122,12 @@ export interface Lobby {
     expires_at: string;
     created_at: string | null;
     match_id: number | null;
+    /**
+     * `match.created_at + match_confirmation_timeout_hours` — the moment
+     * `ResolveMatchTimeoutAction` flips a Pending team match to ManualReview.
+     * Powers the locked-state header countdown. Null at every pre-lock state.
+     */
+    match_deadline_at: string | null;
     creator: {
         id: number;
         name: string;

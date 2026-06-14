@@ -1,9 +1,7 @@
 import { Link } from '@inertiajs/react';
 import { ArrowRight, Check, Copy, Info, ShieldCheck } from 'lucide-react';
-import { useEffect, useState } from 'react';
 import { useClipboard } from '@/hooks/use-clipboard';
 import { useT } from '@/lib/i18n';
-import { cn } from '@/lib/utils';
 import { show as matchShow } from '@/routes/matches';
 import type { Lobby } from '@/types';
 
@@ -12,83 +10,17 @@ interface Props {
 }
 
 /**
- * State-dependent coordination panel — final block in the center column.
- * Renders only for states with substantial content:
- *   - ready_checking: big countdown + "click Ready up below" CTA hint.
- *   - locked: FACEIT username list with click-to-copy + party-invite tips.
- * Recruiting / cancelled / expired / null → nothing renders. The team-column
- * fill counters ("4 / 5") already communicate recruiting progress; no need
- * for a dedicated card to repeat it.
+ * State-dependent coordination panel — the FACEIT-username + match-page CTA
+ * block in the center column once the lobby locks. Ready-check countdown
+ * lives in `LobbyHeader` now (M34 P7), so this panel renders only for the
+ * locked state.
  */
 export function CoordinationPanel({ lobby }: Props) {
-    if (lobby.lobby_state === 'ready_checking') {
-        return <ReadyCheckingPanel lobby={lobby} />;
-    }
-
     if (lobby.lobby_state === 'locked') {
         return <LockedPanel lobby={lobby} />;
     }
 
     return null;
-}
-
-function ReadyCheckingPanel({ lobby }: Props) {
-    const t = useT();
-
-    if (lobby.lobby_ready_check_deadline === null) {
-        return null;
-    }
-
-    return (
-        <section className="rounded-2xl border border-warning/40 bg-warning/10 p-5 text-center">
-            <div className="text-[10px] font-semibold tracking-[0.18em] text-warning uppercase">
-                {t('Ready check')}
-            </div>
-            <BigCountdown deadlineIso={lobby.lobby_ready_check_deadline} />
-            <p className="mt-3 text-xs text-warning/90">
-                {t('Tap Ready up below before the timer ends.')}
-            </p>
-        </section>
-    );
-}
-
-function BigCountdown({ deadlineIso }: { deadlineIso: string }) {
-    const [remainingMs, setRemainingMs] = useState(() =>
-        Math.max(0, new Date(deadlineIso).getTime() - Date.now()),
-    );
-
-    useEffect(() => {
-        const deadline = new Date(deadlineIso).getTime();
-        const tick = () => setRemainingMs(Math.max(0, deadline - Date.now()));
-
-        tick();
-        const id = window.setInterval(tick, 1000);
-
-        return () => window.clearInterval(id);
-    }, [deadlineIso]);
-
-    if (remainingMs <= 0) {
-        return null;
-    }
-
-    const totalSeconds = Math.ceil(remainingMs / 1000);
-    const minutes = Math.floor(totalSeconds / 60);
-    const seconds = totalSeconds % 60;
-    const isFinalStretch = totalSeconds <= 30;
-
-    return (
-        <div
-            className={cn(
-                'mt-3 font-display text-6xl leading-none font-bold tabular-nums',
-                isFinalStretch
-                    ? 'animate-pulse text-destructive'
-                    : 'text-warning',
-            )}
-            aria-live="polite"
-        >
-            {minutes}:{seconds.toString().padStart(2, '0')}
-        </div>
-    );
 }
 
 function LockedPanel({ lobby }: Props) {

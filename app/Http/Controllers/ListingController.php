@@ -183,7 +183,9 @@ class ListingController extends Controller
             'user.linkedAccounts',
             'lobbyParticipants.user:id,name,username',
             'lobbyParticipants.user.linkedAccounts',
-            'gameMatch:id,listing_id,status',
+            // `created_at` powers the M34 P7 locked-state countdown in
+            // `LobbyResource::match_deadline_at` (match.created_at + N hours).
+            'gameMatch:id,listing_id,status,created_at',
         ]);
 
         // Match the marketplace + my-listings card payload so the listing

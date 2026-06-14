@@ -2,7 +2,6 @@ import { Link, router, usePage } from '@inertiajs/react';
 import { Clock, Globe, Languages, Trophy } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useState } from 'react';
-import { GameChip } from '@/components/listings/game-chip';
 import { SellerTrustMeta } from '@/components/listings/seller-trust-meta';
 import { VerifiedPlatformChip } from '@/components/listings/verified-platform-chip';
 import { TeamPlayLobbyView } from '@/components/lobby/team-play-lobby-view';
@@ -87,11 +86,6 @@ interface TeamPlayBranchProps {
 function TeamPlayBranch({ lobby, messages }: TeamPlayBranchProps) {
     const t = useT();
 
-    const skillRange =
-        lobby.skill_min !== null && lobby.skill_max !== null
-            ? `${lobby.skill_min}–${lobby.skill_max}`
-            : t('Any skill');
-
     return (
         <SiteLayout>
             <PageMeta
@@ -109,38 +103,6 @@ function TeamPlayBranch({ lobby, messages }: TeamPlayBranchProps) {
                 <div className="mb-6">
                     <BackLink fallback={listingsIndex().url} />
                 </div>
-
-                <header className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                    <div className="min-w-0">
-                        <h1 className="font-display text-3xl font-bold tracking-tight text-foreground">
-                            {t(':teamSize v :teamSize lobby', {
-                                teamSize: lobby.team_size,
-                            })}
-                        </h1>
-                        <p className="mt-1 text-sm text-muted-foreground">
-                            {t('Hosted by :name', { name: lobby.creator.name })}
-                            {lobby.region !== null && (
-                                <>
-                                    {' · '}
-                                    {lobby.region}
-                                </>
-                            )}
-                            {' · '}
-                            {skillRange}
-                        </p>
-                    </div>
-                    <div className="flex flex-wrap items-center gap-2">
-                        <GameChip
-                            game={lobby.game}
-                            teamSize={lobby.team_size}
-                        />
-                        {!lobby.is_public && (
-                            <span className="inline-flex items-center rounded-full border border-accent/40 bg-accent/10 px-3 py-1 text-xs font-medium text-accent">
-                                {t('Invite-only')}
-                            </span>
-                        )}
-                    </div>
-                </header>
 
                 <TeamPlayLobbyView lobby={lobby} messages={messages} />
             </div>

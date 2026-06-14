@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources;
 
+use App\Enums\MatchStatus;
 use App\Models\Listing;
 use App\Models\LobbyParticipant;
 use App\Models\User;
@@ -53,11 +54,36 @@ class LobbyResource extends JsonResource
             'expires_at' => $this->expires_at->toIso8601String(),
             'created_at' => $this->created_at?->toIso8601String(),
             'match_id' => $this->gameMatch?->id,
+            'match_deadline_at' => $this->matchDeadlineAt(),
             'creator' => $this->presentCreator(),
             'roster' => $this->presentRoster(),
             'viewer' => $this->presentViewer($viewer, $viewerParticipant),
             'aggregates' => $this->presentAggregates(),
         ];
+    }
+
+    /**
+     * Locked-state header countdown deadline (M34 P7). The `game_matches`
+     * row exists from listing creation in `LobbyFilling` status — only once
+     * `LobbyLockAction` flips it to `Pending` does the 4h confirmation window
+     * start ticking. Gate on `Pending` so the FE countdown lines up with the
+     * cron (`ResolveMatchTimeoutAction`) that flips a timed-out match to
+     * `ManualReview`.
+     */
+    private function matchDeadlineAt(): ?string
+    {
+        $match = $this->gameMatch;
+
+        if ($match === null
+            || $match->status !== MatchStatus::Pending
+            || $match->created_at === null
+        ) {
+            return null;
+        }
+
+        $hours = (int) config('stakly.match_confirmation_timeout_hours');
+
+        return $match->created_at->copy()->addHours($hours)->toIso8601String();
     }
 
     /**

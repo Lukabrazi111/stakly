@@ -3,6 +3,7 @@
 use App\Actions\Listing\CreateTeamPlayListingAction;
 use App\Actions\Lobby\JoinLobbyAction;
 use App\Actions\Lobby\KickParticipantAction;
+use App\Actions\Lobby\ToggleReadyAction;
 use App\Enums\Game;
 use App\Enums\LinkedAccountProvider;
 use App\Enums\ListingStatus;
@@ -178,6 +179,48 @@ describe('GET /listings/{id} chat messages payload (team-play)', function () {
             ->get(route('listings.show', ['locale' => 'en', 'listing' => $listing]))
             ->assertOk()
             ->assertInertia(fn ($page) => $page->where('messages.data', []));
+    });
+});
+
+describe('match_deadline_at on the lobby payload (M34 P7)', function () {
+    it('is null while the lobby is still recruiting', function () {
+        $listing = pageLobby();
+
+        $this->get(route('listings.show', ['locale' => 'en', 'listing' => $listing]))
+            ->assertInertia(fn ($page) => $page
+                ->where('lobby.lobby_state', 'recruiting')
+                ->where('lobby.match_deadline_at', null),
+            );
+    });
+
+    it('reflects match.created_at + match_confirmation_timeout_hours once the lobby is locked', function () {
+        $listing = pageLobby(teamSize: 2);
+        $creator = $listing->user;
+        $teammate = pageJoiner();
+        $oppB1 = pageJoiner();
+        $oppB2 = pageJoiner();
+
+        app(JoinLobbyAction::class)->handle($teammate, $listing, LobbyParticipant::SIDE_A);
+        app(JoinLobbyAction::class)->handle($oppB1, $listing, LobbyParticipant::SIDE_B);
+        app(JoinLobbyAction::class)->handle($oppB2, $listing, LobbyParticipant::SIDE_B);
+
+        app(ToggleReadyAction::class)->handle($creator, $listing);
+        app(ToggleReadyAction::class)->handle($teammate, $listing);
+        app(ToggleReadyAction::class)->handle($oppB1, $listing);
+        app(ToggleReadyAction::class)->handle($oppB2, $listing);
+
+        $listing->refresh();
+        expect($listing->lobby_state)->toBe('locked');
+
+        $hours = (int) config('stakly.match_confirmation_timeout_hours');
+        $expected = $listing->gameMatch->created_at->copy()->addHours($hours)->toIso8601String();
+
+        $this->actingAs($creator)
+            ->get(route('listings.show', ['locale' => 'en', 'listing' => $listing]))
+            ->assertInertia(fn ($page) => $page
+                ->where('lobby.lobby_state', 'locked')
+                ->where('lobby.match_deadline_at', $expected),
+            );
     });
 });
 

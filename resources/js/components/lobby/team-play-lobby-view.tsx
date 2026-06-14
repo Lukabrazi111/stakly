@@ -2,6 +2,7 @@ import { router, usePage } from '@inertiajs/react';
 import { useState } from 'react';
 import { LobbyCenterColumn } from '@/components/lobby/center/center-column';
 import { LobbyChatPanel } from '@/components/lobby/lobby-chat-panel';
+import { LobbyHeader } from '@/components/lobby/lobby-header';
 import { LobbyInviteBanner } from '@/components/lobby/lobby-invite-banner';
 import { LobbyRealtimeSync } from '@/components/lobby/lobby-realtime-sync';
 import { TeamSlotColumn } from '@/components/lobby/team-slot-column';
@@ -109,6 +110,8 @@ export function TeamPlayLobbyView({ lobby, messages }: Props) {
                 {showInviteBanner && lobby.invite_token !== null && (
                     <LobbyInviteBanner inviteToken={lobby.invite_token} />
                 )}
+
+                <LobbyHeader lobby={lobby} />
 
                 {/* The headline 3-col layout — Team A | Center | Team B at
                     lg+. Below lg the columns stack so mobile reads
