@@ -1,16 +1,21 @@
 <?php
 
 use App\Actions\GameMatch\AcceptCancellationAction;
+use App\Actions\GameMatch\Admin\AdminSettleDrawAction;
+use App\Actions\GameMatch\Admin\AdminSettleToWinnerAction;
 use App\Actions\GameMatch\OpenDisputeAction;
 use App\Actions\GameMatch\RejectCancellationAction;
 use App\Actions\GameMatch\RequestCancellationAction;
+use App\Actions\GameMatch\SettleDrawMatchAction;
 use App\Actions\Listing\CreateTeamPlayListingAction;
 use App\Actions\Lobby\JoinLobbyAction;
 use App\Actions\Lobby\ToggleReadyAction;
 use App\Broadcasting\MatchChannel;
 use App\Enums\Game;
 use App\Enums\LinkedAccountProvider;
+use App\Enums\MatchAdminResolutionAction;
 use App\Enums\MatchStatus;
+use App\Enums\WalletTransactionType;
 use App\Models\GameMatch;
 use App\Models\Listing;
 use App\Models\LobbyParticipant;
@@ -20,6 +25,7 @@ use App\Notifications\CancellationAcceptedNotification;
 use App\Notifications\CancellationRejectedNotification;
 use App\Notifications\CancellationRequestedNotification;
 use App\Notifications\DisputeOpenedNotification;
+use App\Notifications\MatchSettledNotification;
 use App\Services\Wallet;
 use Illuminate\Support\Facades\Notification;
 
@@ -601,5 +607,299 @@ describe('1v1 notification regressions — fan-out helpers degrade to the origin
         Notification::assertSentTo($creator, CancellationAcceptedNotification::class);
         Notification::assertNotSentTo($taker, CancellationAcceptedNotification::class);
         Notification::assertSentTimes(CancellationAcceptedNotification::class, 1);
+    });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Slice F — Team-aware admin settle paths (AdminSettleToWinner / Draw + SettleDraw)
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe('AdminSettleToWinnerAction on a Pending team match', function () {
+    it('settles to Team A — pays all 5 winners, posts platform fee, leaves losers debited', function () {
+        Notification::fake();
+
+        [$listing, $match, $teamA, $teamB] = p6LockedTeamMatch();
+
+        $admin = User::factory()->create();
+
+        $winningRepresentative = $teamA[0]; // slot 0
+        $beforeWinnersBalances = collect($teamA)
+            ->mapWithKeys(fn ($u) => [$u->id => (string) $u->fresh()->usdt_balance]);
+        $beforeLosersBalances = collect($teamB)
+            ->mapWithKeys(fn ($u) => [$u->id => (string) $u->fresh()->usdt_balance]);
+
+        // Sanity — every player at 400 after Ready ($500 deposit − $100 hold).
+        foreach ($beforeWinnersBalances as $b) {
+            expect($b)->toBe('400.000000');
+        }
+
+        app(AdminSettleToWinnerAction::class)->handle(
+            $match,
+            $winningRepresentative,
+            $admin,
+            MatchAdminResolutionAction::SettleToCreator,
+            'Admin call — Team A clearly won.',
+        );
+
+        // Every Team A player credited per-player payout.
+        // pot = 100 × 5 × 2 = 1000; fee = 100 (10%); winnings = 900;
+        // perPlayer = 180; slot 0 gets remainder (0 with these inputs).
+        foreach ($teamA as $winner) {
+            expect((string) $winner->fresh()->usdt_balance)
+                ->toBe('580.000000', "winner {$winner->id} should be 400 + 180");
+        }
+
+        // Losers stay debited at 400 (their stake forfeit).
+        foreach ($teamB as $loser) {
+            expect((string) $loser->fresh()->usdt_balance)->toBe('400.000000');
+        }
+
+        $match->refresh();
+        expect($match->status)->toBe(MatchStatus::Settled);
+        // Slot-0 winner stamped on game_matches.winner_user_id for legacy
+        // single-winner reads.
+        expect($match->winner_user_id)->toBe($teamA[0]->id);
+    });
+
+    it('writes per-player payout rows tagged match-payout:{match}:player-{user}', function () {
+        Notification::fake();
+
+        [, $match, $teamA] = p6LockedTeamMatch();
+        $admin = User::factory()->create();
+
+        app(AdminSettleToWinnerAction::class)->handle(
+            $match,
+            $teamA[0],
+            $admin,
+            MatchAdminResolutionAction::SettleToCreator,
+            'Test settlement.',
+        );
+
+        foreach ($teamA as $winner) {
+            $row = WalletTransaction::query()
+                ->where('reference_id', "match-payout:{$match->id}:player-{$winner->id}")
+                ->first();
+            expect($row)->not->toBeNull("expected payout row for winner {$winner->id}");
+        }
+
+        $feeRow = WalletTransaction::query()
+            ->where('reference_id', "match-fee:{$match->id}")
+            ->first();
+        expect($feeRow)->not->toBeNull();
+    });
+
+    it('fans out MatchSettledNotification — 5 winners get "won", 5 losers get "lost"', function () {
+        Notification::fake();
+
+        [, $match, $teamA, $teamB] = p6LockedTeamMatch();
+        $admin = User::factory()->create();
+
+        app(AdminSettleToWinnerAction::class)->handle(
+            $match,
+            $teamA[0],
+            $admin,
+            MatchAdminResolutionAction::SettleToCreator,
+            'Test settlement.',
+        );
+
+        foreach ($teamA as $winner) {
+            Notification::assertSentTo($winner, MatchSettledNotification::class);
+        }
+        foreach ($teamB as $loser) {
+            Notification::assertSentTo($loser, MatchSettledNotification::class);
+        }
+
+        Notification::assertSentTimes(MatchSettledNotification::class, 10);
+    });
+
+    it('settles to Team B when a side-B representative is passed', function () {
+        Notification::fake();
+
+        [, $match, $teamA, $teamB] = p6LockedTeamMatch();
+        $admin = User::factory()->create();
+
+        app(AdminSettleToWinnerAction::class)->handle(
+            $match,
+            $teamB[2], // some non-slot-0 side-B player
+            $admin,
+            MatchAdminResolutionAction::SettleToTaker,
+            'Team B wins.',
+        );
+
+        // Team B credited; team A stays debited.
+        foreach ($teamB as $winner) {
+            expect((string) $winner->fresh()->usdt_balance)->toBe('580.000000');
+        }
+        foreach ($teamA as $loser) {
+            expect((string) $loser->fresh()->usdt_balance)->toBe('400.000000');
+        }
+
+        // Slot-0 of side B got stamped as the match winner (resolveWinningRoster
+        // orders by slot_index ascending; slot 0 of side B = teamB[0]).
+        expect($match->fresh()->winner_user_id)->toBe($teamB[0]->id);
+    });
+
+    it('rejects a winner who is not a live participant', function () {
+        Notification::fake();
+
+        [, $match] = p6LockedTeamMatch();
+        $admin = User::factory()->create();
+        $outsider = User::factory()->create();
+
+        expect(fn () => app(AdminSettleToWinnerAction::class)->handle(
+            $match,
+            $outsider,
+            $admin,
+            MatchAdminResolutionAction::SettleToCreator,
+            'Test',
+        ))->toThrow(InvalidArgumentException::class);
+    });
+});
+
+describe('AdminSettleDrawAction on a Pending team match', function () {
+    it('refunds every live participant — all 10 stakes returned', function () {
+        Notification::fake();
+
+        [, $match, $teamA, $teamB] = p6LockedTeamMatch();
+        $admin = User::factory()->create();
+
+        app(AdminSettleDrawAction::class)->handle(
+            $match,
+            $admin,
+            'Both sides have conflicting evidence; refunding all is fairer.',
+        );
+
+        foreach ([...$teamA, ...$teamB] as $player) {
+            expect((string) $player->fresh()->usdt_balance)
+                ->toBe('500.000000', "player {$player->id} should be refunded back to 500");
+        }
+
+        $match->refresh();
+        expect($match->status)->toBe(MatchStatus::Settled);
+        expect($match->winner_user_id)->toBeNull(); // null winner_user_id = draw marker
+    });
+
+    it('fans out MatchSettledNotification with the draw variant to all 10', function () {
+        Notification::fake();
+
+        [, $match, $teamA, $teamB] = p6LockedTeamMatch();
+        $admin = User::factory()->create();
+
+        app(AdminSettleDrawAction::class)->handle($match, $admin, 'Draw decision.');
+
+        foreach ([...$teamA, ...$teamB] as $player) {
+            Notification::assertSentTo($player, MatchSettledNotification::class);
+        }
+
+        Notification::assertSentTimes(MatchSettledNotification::class, 10);
+    });
+});
+
+describe('SettleDrawMatchAction (auto-fetch path) on a Pending team match', function () {
+    it('refunds every live participant when called directly', function () {
+        Notification::fake();
+
+        [, $match, $teamA, $teamB] = p6LockedTeamMatch();
+
+        app(SettleDrawMatchAction::class)->handle($match);
+
+        foreach ([...$teamA, ...$teamB] as $player) {
+            expect((string) $player->fresh()->usdt_balance)->toBe('500.000000');
+        }
+
+        expect($match->fresh()->status)->toBe(MatchStatus::Settled);
+    });
+
+    it('writes per-user wallet release rows tagged match-draw:{match}:{user}', function () {
+        Notification::fake();
+
+        [, $match, $teamA, $teamB] = p6LockedTeamMatch();
+
+        app(SettleDrawMatchAction::class)->handle($match);
+
+        foreach ([...$teamA, ...$teamB] as $player) {
+            $row = WalletTransaction::query()
+                ->where('reference_id', "match-draw:{$match->id}:{$player->id}")
+                ->first();
+            expect($row)->not->toBeNull("expected draw-refund row for {$player->id}");
+            expect((string) $row->amount)->toBe('100.000000');
+        }
+    });
+
+    it('is idempotent — re-running on a Settled match no-ops', function () {
+        Notification::fake();
+
+        [, $match, $teamA, $teamB] = p6LockedTeamMatch();
+
+        app(SettleDrawMatchAction::class)->handle($match);
+        app(SettleDrawMatchAction::class)->handle($match);  // second run
+
+        foreach ([...$teamA, ...$teamB] as $player) {
+            expect((string) $player->fresh()->usdt_balance)->toBe('500.000000');
+        }
+    });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Slice F — End-to-end: dispute → admin settle → payouts fan out
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe('End-to-end: 5v5 dispute → admin settle to Team A', function () {
+    it('runs the full chain: lock → Pending → dispute → admin settle → payouts', function () {
+        Notification::fake();
+
+        // Stage 1 — locked Pending team match (helper already drives the full
+        // CreateTeamPlay → Join × 9 → Ready × 10 → Lock pipeline).
+        [, $match, $teamA, $teamB] = p6LockedTeamMatch();
+        expect($match->status)->toBe(MatchStatus::Pending);
+
+        // Stage 2 — a Team B player opens a dispute. Match flips to
+        // Disputed; everyone except opener gets DisputeOpenedNotification.
+        app(OpenDisputeAction::class)->handle($teamB[2], $match);
+        $match->refresh();
+        expect($match->status)->toBe(MatchStatus::Disputed);
+
+        // Stage 3 — admin reviews + decides Team A wins.
+        $admin = User::factory()->create();
+        app(AdminSettleToWinnerAction::class)->handle(
+            $match,
+            $teamA[0],
+            $admin,
+            MatchAdminResolutionAction::SettleToCreator,
+            'Admin call after dispute review — Team A clearly won.',
+        );
+
+        $match->refresh();
+        expect($match->status)->toBe(MatchStatus::Settled);
+
+        // Stage 4 — verify the money. All 5 Team A players paid out;
+        // all 5 Team B stay debited.
+        foreach ($teamA as $winner) {
+            expect((string) $winner->fresh()->usdt_balance)->toBe('580.000000');
+        }
+        foreach ($teamB as $loser) {
+            expect((string) $loser->fresh()->usdt_balance)->toBe('400.000000');
+        }
+
+        // Stage 5 — verify the ledger conservation.
+        //   - 10 holds of -$100 each = -$1000
+        //   - 5 payouts of +$180 each = +$900
+        //   - 1 fee credit of +$100 to the platform user
+        //   - Net: 0
+        $totalHolds = (string) WalletTransaction::query()
+            ->where('related_listing_id', $match->listing_id)
+            ->where('type', WalletTransactionType::EscrowHold)
+            ->sum('amount');
+        $totalPayouts = (string) WalletTransaction::query()
+            ->where('related_listing_id', $match->listing_id)
+            ->where('type', WalletTransactionType::Payout)
+            ->sum('amount');
+        $totalFee = (string) WalletTransaction::query()
+            ->where('related_listing_id', $match->listing_id)
+            ->where('type', WalletTransactionType::Fee)
+            ->sum('amount');
+
+        $net = bcadd(bcadd($totalHolds, $totalPayouts, 6), $totalFee, 6);
+        expect(bccomp($net, '0', 6))->toBe(0, "ledger conservation broken: net = {$net}");
     });
 });

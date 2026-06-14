@@ -172,3 +172,28 @@ test('route() positional scalar arg still works because locale fills from defaul
     // Defaults must fill {locale} BEFORE positional binding pulls into {listing}.
     expect(route('listings.show', 42, absolute: false))->toBe('/en/listings/42');
 });
+
+// ─── Livewire 3 hashed-prefix assets bypass the locale redirect ────────────
+//
+// Regression guard for the Filament admin login breakage (2026-06-14): the
+// exempt list had `'livewire'` (exact first-segment match), but Livewire 3
+// serves its asset bundle from `/livewire-{hash}/livewire.js` where the hash
+// changes per Livewire version. Without the prefix match, the asset request
+// got 301'd into `/en/livewire-{hash}/...` and 404'd, leaving the Filament
+// admin login form non-interactive (password show/hide broken, form submit
+// no-ops). Future Livewire bumps must NOT silently re-break this.
+
+test('Livewire 3 hashed asset prefix is not locale-redirected', function () {
+    // Hash is whatever Livewire installed today — middleware should match
+    // any `livewire-{anything}` first segment.
+    $this->get('/livewire-3b469bd1/livewire.js')
+        ->assertStatus(200);
+});
+
+test('Livewire hashed update endpoint is not locale-redirected', function () {
+    // Even on a non-existent hash, the path must NOT be 301'd to /en/...
+    // (404 is the right answer if the route doesn't exist; 301 to /en/ is
+    // the regression we're guarding against).
+    $response = $this->get('/livewire-doesnotexist/livewire.js');
+    expect($response->status())->not->toBe(301);
+});
