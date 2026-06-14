@@ -126,8 +126,7 @@ export function TeamMatchView({ match, messages }: TeamMatchViewProps) {
     // Always-positive potential payout for the Rosters strip — the strip
     // shows "If you win +$X" pre- and post-settle, so draws (where
     // perPlayerPayout zeroes out) shouldn't collapse the headline number.
-    const potentialWinnerPayout =
-        (pot - pot * match.fee_rate) / teamSize;
+    const potentialWinnerPayout = (pot - pot * match.fee_rate) / teamSize;
 
     // 4h auto-fetch deadline mirrors 1v1 — `ResolveMatchTimeoutAction`
     // flips stuck Pending to ManualReview at this boundary.

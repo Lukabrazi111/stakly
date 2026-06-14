@@ -27,10 +27,7 @@ export function pickTeamLeader(
  * Formats the team's display label — "Team {leaderUsername}" if a leader
  * exists, falling back to the provided generic label otherwise.
  */
-export function teamLabel(
-    roster: TeamMatchPlayer[],
-    fallback: string,
-): string {
+export function teamLabel(roster: TeamMatchPlayer[], fallback: string): string {
     const leader = pickTeamLeader(roster);
 
     return leader === null ? fallback : `Team ${leader.username}`;

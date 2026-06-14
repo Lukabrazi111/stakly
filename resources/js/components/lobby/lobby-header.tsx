@@ -159,21 +159,11 @@ function StateAwareCountdown({ lobby }: { lobby: Lobby }) {
     const state = lobby.lobby_state;
 
     if (state === 'cancelled') {
-        return (
-            <TerminalBadge
-                tone="muted"
-                label={t('Lobby cancelled')}
-            />
-        );
+        return <TerminalBadge tone="muted" label={t('Lobby cancelled')} />;
     }
 
     if (state === 'expired') {
-        return (
-            <TerminalBadge
-                tone="muted"
-                label={t('Lobby expired')}
-            />
-        );
+        return <TerminalBadge tone="muted" label={t('Lobby expired')} />;
     }
 
     if (state === 'ready_checking' && lobby.lobby_ready_check_deadline) {
@@ -259,18 +249,13 @@ function Countdown({ deadlineIso, tone, subLabel }: CountdownProps) {
     );
 }
 
-function TerminalBadge({
-    tone,
-    label,
-}: {
-    tone: 'muted';
-    label: string;
-}) {
+function TerminalBadge({ tone, label }: { tone: 'muted'; label: string }) {
     return (
         <div
             className={cn(
                 'rounded-full border px-4 py-1.5 text-xs font-semibold tracking-wide uppercase',
-                tone === 'muted' && 'border-border/60 bg-muted text-muted-foreground',
+                tone === 'muted' &&
+                    'border-border/60 bg-muted text-muted-foreground',
             )}
         >
             {label}

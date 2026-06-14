@@ -173,7 +173,10 @@ function RosterRow({
                 'flex flex-col rounded-xl border bg-card/60 px-3 py-2.5 transition-colors',
                 isWinner && 'border-success/40 bg-success/5',
                 isLoser && 'border-border/60 opacity-80',
-                !isWinner && !isLoser && isViewer && 'border-primary/40 bg-primary/5',
+                !isWinner &&
+                    !isLoser &&
+                    isViewer &&
+                    'border-primary/40 bg-primary/5',
                 !isWinner && !isLoser && !isViewer && 'border-border/60',
             )}
         >

@@ -184,10 +184,20 @@ test('route() positional scalar arg still works because locale fills from defaul
 // no-ops). Future Livewire bumps must NOT silently re-break this.
 
 test('Livewire 3 hashed asset prefix is not locale-redirected', function () {
-    // Hash is whatever Livewire installed today — middleware should match
-    // any `livewire-{anything}` first segment.
-    $this->get('/livewire-3b469bd1/livewire.js')
-        ->assertStatus(200);
+    // Middleware should match any `livewire-{anything}` first segment and
+    // skip the locale redirect. We assert the negative (no 301) rather than
+    // "returns 200" because Livewire's hashed asset only resolves once the
+    // app has been booted with Livewire registered AND served by the same
+    // app handler — on CI without the actual asset the route 404s, which
+    // is still correct middleware behaviour. The bug we're guarding is the
+    // 301 → `/en/livewire-{hash}/...` regression.
+    //
+    // Locally the asset resolves to a `BinaryFileResponse` (file streaming)
+    // which is missing the Laravel-specific `status()` method on the base
+    // response. `getStatusCode()` lives on Symfony's Response and is safe
+    // across every response type the framework might return here.
+    $response = $this->get('/livewire-3b469bd1/livewire.js');
+    expect($response->getStatusCode())->not->toBe(301);
 });
 
 test('Livewire hashed update endpoint is not locale-redirected', function () {
@@ -195,5 +205,5 @@ test('Livewire hashed update endpoint is not locale-redirected', function () {
     // (404 is the right answer if the route doesn't exist; 301 to /en/ is
     // the regression we're guarding against).
     $response = $this->get('/livewire-doesnotexist/livewire.js');
-    expect($response->status())->not->toBe(301);
+    expect($response->getStatusCode())->not->toBe(301);
 });

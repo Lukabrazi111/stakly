@@ -74,7 +74,12 @@ const EVENT_GROUPS: EventGroup[] = [
     {
         title: 'Match activity',
         description: 'Notifications about your matches in progress.',
-        events: ['listing_taken', 'team_match_started', 'match_settled', 'cancellation_requested'],
+        events: [
+            'listing_taken',
+            'team_match_started',
+            'match_settled',
+            'cancellation_requested',
+        ],
     },
     {
         title: 'Disputes & moderation',
