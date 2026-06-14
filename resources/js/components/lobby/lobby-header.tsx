@@ -41,7 +41,7 @@ export function LobbyHeader({ lobby }: Props) {
     const fillCountB = lobby.roster.b.filter((s) => s !== null).length;
 
     return (
-        <header className="relative border-b border-border/60 pt-12 pb-5 lg:px-14 lg:pt-0 lg:pb-6">
+        <header className="relative border-b border-border/60 pt-12 pb-5 lg:px-14 lg:pb-6">
             <div className="absolute top-0 right-0">
                 <ShareButton />
             </div>

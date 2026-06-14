@@ -5,7 +5,6 @@ import { ChatPanel } from '@/components/match/chat-panel';
 import { Button } from '@/components/ui/button';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { useT } from '@/lib/i18n';
-import { cn } from '@/lib/utils';
 import type { ChatMessage, MatchPlayer } from '@/types';
 
 interface MobileChatTriggerProps {
@@ -181,10 +180,7 @@ export function MobileChatTrigger({
                                 })
                               : t('Open match chat')
                     }
-                    className={cn(
-                        'relative shadow-lg transition-transform',
-                        open && 'rotate-0',
-                    )}
+                    className="relative"
                 >
                     {open ? (
                         <X className="size-4" aria-hidden="true" />
@@ -195,7 +191,7 @@ export function MobileChatTrigger({
                     {!open && unreadCount > 0 && (
                         <span
                             aria-hidden
-                            className="absolute -top-1.5 -right-1.5 inline-flex h-5 min-w-[20px] animate-pulse items-center justify-center rounded-full bg-destructive px-1.5 text-[10px] font-bold text-white tabular-nums shadow-md ring-2 ring-background"
+                            className="absolute -top-1.5 -right-1.5 inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-destructive px-1.5 text-[10px] font-bold text-white tabular-nums shadow-md ring-2 ring-background"
                         >
                             {unreadCount > 99 ? '99+' : unreadCount}
                         </span>
