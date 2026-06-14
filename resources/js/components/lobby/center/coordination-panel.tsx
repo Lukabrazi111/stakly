@@ -1,8 +1,10 @@
-import { Check, Copy, Info, ShieldCheck } from 'lucide-react';
+import { Link } from '@inertiajs/react';
+import { ArrowRight, Check, Copy, Info, ShieldCheck } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useClipboard } from '@/hooks/use-clipboard';
 import { useT } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
+import { show as matchShow } from '@/routes/matches';
 import type { Lobby } from '@/types';
 
 interface Props {
@@ -129,6 +131,20 @@ function LockedPanel({ lobby }: Props) {
             >
                 {t('How to queue together on FACEIT →')}
             </a>
+
+            {/* M34 P6 — once the lobby locks, the match is live and lives at
+                /matches/{id}. Surface the destination so players know where
+                to go for dispute / cancellation actions + the settlement
+                summary (this lobby view becomes stale post-lock). */}
+            {lobby.match_id !== null && (
+                <Link
+                    href={matchShow({ match: lobby.match_id }).url}
+                    className="mt-3 inline-flex w-full items-center justify-center gap-1.5 rounded-lg bg-success px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-success/90"
+                >
+                    {t('View match page')}
+                    <ArrowRight className="size-4" aria-hidden="true" />
+                </Link>
+            )}
         </section>
     );
 }

@@ -18,6 +18,10 @@ import { openDispute as openDisputeRoute } from '@/routes/matches';
 
 interface OpenDisputeButtonProps {
     matchId: number;
+    /** M34 P6 — drives dialog copy. 1 (default) = 1v1 wording ("your
+     *  opponent sees this"); >1 = team wording ("the other players see
+     *  this"). */
+    teamSize?: number;
 }
 
 const REASON_MAX = 1000;
@@ -30,7 +34,10 @@ const ACCEPTED_MIMES = [
 const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024;
 
 /** Report-a-problem escape hatch — flips the match to Disputed for admin review. */
-export function OpenDisputeButton({ matchId }: OpenDisputeButtonProps) {
+export function OpenDisputeButton({
+    matchId,
+    teamSize = 1,
+}: OpenDisputeButtonProps) {
     const t = useT();
     const [open, setOpen] = useState(false);
     const [reason, setReason] = useState('');
@@ -166,9 +173,13 @@ export function OpenDisputeButton({ matchId }: OpenDisputeButtonProps) {
                     <DialogHeader>
                         <DialogTitle>{t('Report a problem?')}</DialogTitle>
                         <DialogDescription>
-                            {t(
-                                'Tell us what happened and (optionally) attach a screenshot. Your stake stays in escrow while a Stakly admin reviews. Your opponent sees this reason as soon as you submit.',
-                            )}
+                            {teamSize > 1
+                                ? t(
+                                      'Tell us what happened and (optionally) attach a screenshot. All stakes stay in escrow while a Stakly admin reviews. The other players see this reason as soon as you submit.',
+                                  )
+                                : t(
+                                      'Tell us what happened and (optionally) attach a screenshot. Your stake stays in escrow while a Stakly admin reviews. Your opponent sees this reason as soon as you submit.',
+                                  )}
                         </DialogDescription>
                     </DialogHeader>
 

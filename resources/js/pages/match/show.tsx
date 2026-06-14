@@ -13,6 +13,7 @@ import { MobileChatTrigger } from '@/components/match/mobile-chat-trigger';
 import { OpenDisputeButton } from '@/components/match/open-dispute-button';
 import { RequestCancellationButton } from '@/components/match/request-cancellation-button';
 import { SettlementSummary } from '@/components/match/settlement-summary';
+import { TeamMatchView } from '@/components/match/team-match-view';
 import { WaitingForGameCard } from '@/components/match/waiting-for-game-card';
 import { useNotificationContext } from '@/components/notifications/notification-provider';
 import { BackLink } from '@/components/site/back-link';
@@ -77,6 +78,21 @@ const STATUS_TONE: Record<MatchStatus, string> = {
 };
 
 export default function MatchShow({ match, messages }: MatchShowProps) {
+    // M34 P6 — team matches branch to the team-aware view (separate
+    // header, roster, pot math, settlement summary). 1v1 chess keeps
+    // the existing page below untouched.
+    if (match.listing.team_size > 1) {
+        return (
+            <SiteLayout>
+                <TeamMatchView match={match} messages={messages} />
+            </SiteLayout>
+        );
+    }
+
+    return <ChessMatchShow match={match} messages={messages} />;
+}
+
+function ChessMatchShow({ match, messages }: MatchShowProps) {
     const t = useT();
     const { auth } = usePage().props;
 

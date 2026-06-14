@@ -35,11 +35,16 @@ interface RequestCancellationButtonProps {
     /** Positive number while mid-cooldown after a rejected request;
      *  0/undefined → enabled. */
     cooldownMinutesRemaining?: number;
+    /** M34 P6 — drives dialog copy. 1 (default) = 1v1 wording ("both
+     *  stakes / your opponent"); >1 = team wording ("all stakes / the
+     *  opposing team"). */
+    teamSize?: number;
 }
 
 export function RequestCancellationButton({
     matchId,
     cooldownMinutesRemaining,
+    teamSize = 1,
 }: RequestCancellationButtonProps) {
     const t = useT();
     const [open, setOpen] = useState(false);
@@ -126,9 +131,13 @@ export function RequestCancellationButton({
                             {t('Request to cancel match')}
                         </DialogTitle>
                         <DialogDescription>
-                            {t(
-                                "Both stakes will be refunded if your opponent accepts. If they decline, the match continues and you'll wait 30 minutes before you can request again.",
-                            )}
+                            {teamSize > 1
+                                ? t(
+                                      "All stakes will be refunded if any player on the opposing team accepts. If they decline, the match continues and you'll wait 30 minutes before you can request again.",
+                                  )
+                                : t(
+                                      "Both stakes will be refunded if your opponent accepts. If they decline, the match continues and you'll wait 30 minutes before you can request again.",
+                                  )}
                         </DialogDescription>
                     </DialogHeader>
 
