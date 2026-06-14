@@ -291,6 +291,7 @@ export function TeamMatchView({ match, messages }: TeamMatchViewProps) {
                             stakeEach={match.listing.stake_amount}
                             winnerPayout={potentialWinnerPayout}
                             loserLoss={match.listing.stake_amount}
+                            feeRate={match.fee_rate}
                             platform={match.listing.platform}
                         />
 

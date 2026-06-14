@@ -1,5 +1,5 @@
 import { Crown, Frown } from 'lucide-react';
-import { MatchDetailsStrip } from '@/components/match/match-details-strip';
+import { MatchDetailsTrigger } from '@/components/match/match-details-strip';
 import { useInitials } from '@/hooks/use-initials';
 import { useT } from '@/lib/i18n';
 import { teamLabel } from '@/lib/team-leader';
@@ -24,6 +24,7 @@ interface TeamRostersProps {
     stakeEach: number;
     winnerPayout: number;
     loserLoss: number;
+    feeRate: number;
     platform: ListingPlatform;
 }
 
@@ -45,30 +46,33 @@ export function TeamRosters({
     stakeEach,
     winnerPayout,
     loserLoss,
+    feeRate,
     platform,
 }: TeamRostersProps) {
     const t = useT();
 
     return (
         <section className="mb-6 rounded-2xl border border-border/60 bg-card/60 p-5">
-            <header className="mb-4 flex items-center justify-between">
-                <h2 className="font-display text-base font-semibold text-foreground">
-                    {t('Rosters')}
-                </h2>
-                {winningTeam !== null && (
-                    <span className="text-[10px] font-semibold tracking-wider text-success uppercase">
-                        {t('Settled')}
-                    </span>
-                )}
+            <header className="mb-5 flex items-center justify-between gap-3">
+                <div className="flex min-w-0 items-center gap-3">
+                    <h2 className="font-display text-base font-semibold text-foreground">
+                        {t('Rosters')}
+                    </h2>
+                    {winningTeam !== null && (
+                        <span className="text-[10px] font-semibold tracking-wider text-success uppercase">
+                            {t('Settled')}
+                        </span>
+                    )}
+                </div>
+                <MatchDetailsTrigger
+                    pot={pot}
+                    stakeEach={stakeEach}
+                    winnerPayout={winnerPayout}
+                    loserLoss={loserLoss}
+                    feeRate={feeRate}
+                    platform={platform}
+                />
             </header>
-
-            <MatchDetailsStrip
-                pot={pot}
-                stakeEach={stakeEach}
-                winnerPayout={winnerPayout}
-                loserLoss={loserLoss}
-                platform={platform}
-            />
 
             <div className="grid gap-5 sm:grid-cols-2">
                 <TeamColumn
