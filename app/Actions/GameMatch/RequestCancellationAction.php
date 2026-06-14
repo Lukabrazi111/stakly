@@ -7,7 +7,9 @@ use App\Enums\MatchStatus;
 use App\Models\GameMatch;
 use App\Models\User;
 use App\Notifications\CancellationRequestedNotification;
+use App\Services\MatchParticipants;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Notification;
 
 /**
  * Step 1 of the mutual cancellation flow: one participant proposes to call the match off.
@@ -48,10 +50,11 @@ class RequestCancellationAction
 
         if ($result === 'requested') {
             $fresh = $match->fresh(['listing.user', 'taker']);
-            $opponent = $fresh->listing->user_id === $requester->id
-                ? $fresh->taker
-                : $fresh->listing->user;
-            $opponent->notify(new CancellationRequestedNotification($fresh, $requester));
+            $opposingTeam = MatchParticipants::opposing($fresh, $requester);
+
+            if ($opposingTeam->isNotEmpty()) {
+                Notification::send($opposingTeam, new CancellationRequestedNotification($fresh, $requester));
+            }
         }
 
         return $result;

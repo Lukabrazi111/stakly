@@ -22,7 +22,7 @@ Frontend-first build. UI against real DB infrastructure + seeded fake data; back
 
 **In-flight:**
 
-- _(none — between active phases. Next pick TBD from Active / upcoming below.)_
+- **M34 P6** — dispute + cancellation for team matches. Backend Actions + policy are 1v1-shaped (`AcceptCancellationAction` refunds only 2 stakes; `isParticipant` only checks creator/taker); frontend match page is 1v1-shaped; team-play players have no path to dispute or request cancellation after lobby lock. See M34 detail section for the phase entry + open design questions.
 
 **Active / upcoming:**
 
@@ -31,7 +31,7 @@ Frontend-first build. UI against real DB infrastructure + seeded fake data; back
 - **M20** — Email notifications. **Spec materially shrunk**: M27 P5 already shipped the in-app preferences UI + `notification_preferences` table + 9 `PlayerNotification` classes; M30 P4 wired the `mail` channel for ban notifications. What's left = branded HTML email templates, flip `'mail'` into `via()` on the remaining PlayerNotification subclasses, production SMTP config. Realistically 2–3 days.
 - **M21** — Blacklist + safety. Block users from listings + chat, with anti-evasion considerations. Has open design questions (block semantics + multi-account evasion) — needs alignment before coding.
 - **M33** — Listing time-control contract. Make Stakly's accepted time controls (blitz / rapid / classical) explicit in the listing-creation form, surface `time_control_mismatch` as a player-facing banner on stuck matches, and optionally re-enable Slice 3d strictness behind a per-listing opt-in. Reverted from M14 on 2026-06-06 — friction (legitimate correspondence / bullet games rejected silently) outweighed the small sandbag attack surface at this stage. Revisit when launch scale or a real abuse incident makes it relevant.
-- **M34** — Team play + lobbies (was the CS2 production-launch dependency). Soft-join lobby model with hybrid stake-at-Ready commitment, per-player escrow at Ready, 5-min ready-check timeout, lobby-owner kick (5-min cooldown), 24h fill timeout, single-lobby-per-user rule, public marketplace + private invite-token URLs, per-player skill range. CS2 = 5v5 + 2v2 Wingman. Chess (1v1) keeps the existing `TakeListingAction` flow. **All phases shipped 2026-06-12 → 2026-06-13** (Phases 0–5 + P3.1 with 3 polish rounds + P3.2). Detailed section below stays as reference; ready to move to `milestones_archived.md` on the next archive sweep.
+- **M34** — Team play + lobbies (was the CS2 production-launch dependency). Soft-join lobby model with hybrid stake-at-Ready commitment, per-player escrow at Ready, 5-min ready-check timeout, lobby-owner kick (5-min cooldown), 24h fill timeout, single-lobby-per-user rule, public marketplace + private invite-token URLs, per-player skill range. CS2 = 5v5 + 2v2 Wingman. Chess (1v1) keeps the existing `TakeListingAction` flow. **Phases 0–5 + P3.1 + P3.2 shipped 2026-06-12 → 2026-06-13.** **P6 (team-match dispute + cancellation) added 2026-06-14, in flight** — gap surfaced during architecture review; archive deferred until P6 ships.
 > Active milestone keeps a detailed task list. Future milestones expand when started. Any of this can shift — flag the change, update the doc.
 
 ---
@@ -577,6 +577,52 @@ Discovered during the slice scoping that the create form was functionally broken
 Total across Phase 5: +9 Pest tests (1468 → 1477). All 4 CI gates clean.
 
 **CS2 lobbies now fully creatable through the public UI in both 5v5 and 2v2 modes.** M34 fully shipped.
+
+**Phase 6 — Dispute + cancellation for team matches** _(in flight 2026-06-14)_
+
+After M34 P3.2 / P5 shipped, team-play matches have **no dispute or cancellation affordances once the lobby locks**, AND the existing backend Actions are 1v1-shaped. The frontend `match/show.tsx` page has the buttons but renders broken UI for `team_size > 1`. M34 launched without this so CS2 lobbies could be created and settled end-to-end on the happy path; closing the gap is the last remaining team-play work before CS2 launch.
+
+**Gaps the slice must close:**
+
+- Frontend lobby view (`team-play-lobby-view.tsx`) has zero dispute / cancellation buttons.
+- Frontend match page (`pages/match/show.tsx`) renders team matches with 1v1-shaped UI: `pot = stake × 2` (should be `× team_size × 2`), `creator/taker` binary roles, single-winner messaging, no team rosters.
+- Backend `GameMatchPolicy::isParticipant()` only checks `taker_user_id || listing.user_id` — team members other than the creator can't dispute or accept-cancel under the current gate.
+- Backend `AcceptCancellationAction::refundBothStakes()` releases only 2 stakes — for a 5v5, 8 players' escrow is forfeit and the conservation invariant breaks (`sum(refunds) ≠ sum(holds)`).
+- Backend `OpenDisputeAction::notifyOpponent()` and `RequestCancellationAction` / `Accept` / `Reject` notify only one player on each side — team-mates get no signal.
+- `GameMatchResource` ships `creator` + `taker` only; team rosters aren't on the wire for the frontend to render.
+
+**Design questions to resolve before coding** _(recommendations inline — confirm or pick differently)_:
+
+1. **Surface for Pending team matches.** Today `/matches/{id}` is the post-lock destination, but the page is 1v1-shaped. Two paths:
+    - **A.** Make `/matches/{id}` team-aware — build team rosters / team pot / "your team won" UX on the existing page. Cleaner separation (listing = lobby phase, match = post-lock), bigger frontend lift.
+    - **B.** Keep team matches at `/listings/{id}` post-lock — extend `team-play-lobby-view.tsx` with a Pending-state UI. Faster, but conflates lobby + match surfaces; polling / settlement summary / banners would need duplicates.
+    - **Recommendation: A.** The match page already owns post-lock semantics (polling, settlement summary, banners, FAQ); the lobby is the wrong place to host them. Cost is real, but architecturally honest.
+2. **Who can request cancellation?** Any participant, or captain-only? **Recommendation: any participant** — matches 1v1 semantics, no coordination bottleneck. Other team has to accept anyway.
+3. **Who accepts cancellation?** One opposing-team member, or unanimous? **Recommendation: one opposing-team member** — same as 1v1; faster; no AFK deadlock. Risk: a single team-mate could greenlight a cancel that costs their team a winnable match. Worst case is social, not financial (everyone refunded). Flag if you'd prefer unanimous.
+4. **Who can open a dispute?** **Recommendation: any participant** — no reason to gate differently from 1v1.
+5. **Notification fan-out.**
+    - Cancellation requested → every opposing-team participant.
+    - Cancellation accepted → every participant (refund signal for all).
+    - Cancellation rejected → original requester only (1v1 semantics).
+    - Dispute opened → every participant on both teams.
+6. **Cooldown.** 30-min rejection cooldown stays per-player (current `cancellation_requested_by` keying just works). If team-relay-request becomes an abuse vector, tighten later.
+
+### Slices
+
+- [x] **Slice A — Policy + channel** _(shipped 2026-06-14)_. `GameMatchPolicy::isParticipant()` branches on `Listing::isTeamPlay()` and reads the live `LobbyParticipant` roster (`kicked_at IS NULL`) for team matches in any status — `LobbyFilling` / `Pending` / `Disputed` / `ManualReview` / `Settled` / `Cancelled` share one check. New `canRespondToCancellation` gate blocks the requester's team-mates from accepting on the team's behalf (preserves mutual-cancellation premise). `MatchChannel::join` mirrors the policy. `GameMatchController` listing column whitelist gained `team_size` so the policy doesn't N+1 / get null. **Source of truth picked: live `LobbyParticipant` over `MatchProviderSnapshot`** — direct `user_id`, already eager-loaded by most match queries; snapshots key on username + per-(side, slot, provider) which is heavier for an existence check.
+- [x] **Slice B — `AcceptCancellationAction` refund fan-out** _(shipped 2026-06-14)_. Branches on `isTeamPlay()`. Team path iterates `LobbyParticipant::live()->whereNotNull('stake_held_at')` and `Wallet::release` per user with idempotency ref `cancel-refund:{match_id}:{user_id}`. 1v1 path unchanged (legacy refs `cancel-refund-creator/taker:{match}`). Dropped the draft's in-action conservation assertion — Wallet's row-lock + negative-balance throw already prevents the failure modes a check would catch; tests assert end-to-end balance restoration.
+- [x] **Slice A + B tests** _(shipped 2026-06-14)_. `tests/Feature/GameMatch/TeamMatchDisputeCancellationTest.php`, +18 cases / +144 assertions. Policy gates (8 cases incl. same-team-accept block), `MatchChannel` mirror (3 cases), refund fan-out (4 cases incl. kicked-skip + idempotency + per-user ref shape), HTTP wiring (2 cases), 1v1 regression (1 case). Full suite **1477 → 1495** all green.
+- [x] **Slice C — Notification fan-out** _(shipped 2026-06-14)_. New `App\Services\MatchParticipants` helper (mirrors `SellerTrust` / `ParticipantStats` primitive-service pattern) with `all()` / `opposing()` / `allExcept()` static methods so the 4 Actions don't drift on participant-resolution logic. `OpenDisputeAction` → fan out to every participant except opener (9 of 10 on 5v5). `RequestCancellationAction` → fan out to opposing team only (5 of 10). `AcceptCancellationAction` → fan out to every participant except accepter (9 of 10 — refund signal needs to reach everyone). `RejectCancellationAction` unchanged (only original requester, per design Q#5). +7 Pest cases (4 team-fan-out + 3 1v1 regressions); full suite **1495 → 1502** all green.
+- [ ] **Slice D — `GameMatchResource` team rosters.** New `team_a` / `team_b` blocks shipping live participant lists (`{username, name, avatar_thumb_url, slot_index, is_winner?}`); `creator` / `taker` retained for chess back-compat. Eager-load `lobbyParticipants.user.media` in `GameMatchController::show` so the resource doesn't N+1 on avatars.
+- [ ] **Slice E — Team-aware `match/show.tsx` + lobby → match navigation.** `pages/match/show.tsx` branches on `match.listing.team_size > 1` to a `TeamMatchView` (or refactors existing page). Team rosters render, pot math corrects (`stake × team_size × 2`), settlement summary shows winning team + per-player payout, cancellation banners reframe ("Team X requested to cancel"), `RequestCancellationButton` + `OpenDisputeButton` enabled for any live participant. **Also: post-lock lobby view needs a "View match" CTA / auto-redirect** so locked-lobby viewers reach `/matches/{id}` instead of staring at a stale lobby UI (gap surfaced during Slice A+B dogfooding).
+- [ ] **Slice F — End-to-end + dogfooding.** Real e2e: 5v5 lobby → lock → Pending → one player opens dispute → admin resolves to Team A wins → payouts fan out. Plus 5v5 cancellation end-to-end (request → accept → all 10 refunded). Plus a manual walk-through to catch UX gaps. Plus audit whether `SettleDrawMatchAction` + `AdminSettleToWinnerAction` + `AdminSettleDrawAction` need team-aware updates (flagged in "Not in P6" — may need to absorb here or split).
+
+### Not in P6
+
+- Real-time broadcasts on cancellation / dispute (existing `MessageSent` + `NotificationProvider` reload covers it).
+- Captain / leader role beyond what's already in M34.
+- Admin-side team-aware settlement flow — `AdminSettleToWinnerAction` / `AdminSettleDrawAction` may need updates for team matches (they currently route through 1v1 `SettleMatchAction` / `SettleDrawMatchAction`, not `SettleTeamMatchAction`). If gaps surface during P6, raise as a separate phase (P7 or M34 follow-up). Audit during Slice F.
+- `SettleDrawMatchAction` team-aware update — auto-fetch draw path already branches via `SettleFromCardAction`, but the action itself might be 1v1-shaped. Audit during P6; if it needs work, absorb into Slice B or split.
 
 ### Not in M34
 

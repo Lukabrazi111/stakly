@@ -13,8 +13,10 @@ use App\Models\GameMatch;
 use App\Models\Message;
 use App\Models\User;
 use App\Notifications\DisputeOpenedNotification;
+use App\Services\MatchParticipants;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Notification;
 
 /**
  * Player-triggered escalation during the Pending window. Match flips to `Disputed`
@@ -73,7 +75,7 @@ class OpenDisputeAction
         if ($opened) {
             $fresh = $match->fresh(['listing.user', 'taker']);
             $this->notifyAdminsOfDispute($fresh);
-            $this->notifyOpponent($fresh, $user);
+            $this->notifyParticipantsOfDispute($fresh, $user);
 
             $this->runFastPathIfEnabled($fresh);
         }
@@ -133,13 +135,22 @@ class OpenDisputeAction
         MessageSent::dispatch($message);
     }
 
-    private function notifyOpponent(GameMatch $match, User $opener): void
+    /**
+     * Fan out to every live participant on both teams, excluding the
+     * opener (they triggered it — no self-notification). For 1v1 that's
+     * the single opponent; for team play it's the opener's 4 team-mates
+     * + the full opposing 5 (so the entire match knows admin review is
+     * incoming and can post evidence in chat).
+     */
+    private function notifyParticipantsOfDispute(GameMatch $match, User $opener): void
     {
-        $opponent = $match->listing->user_id === $opener->id
-            ? $match->taker
-            : $match->listing->user;
+        $recipients = MatchParticipants::allExcept($match, $opener);
 
-        $opponent->notify(new DisputeOpenedNotification($match, $opener));
+        if ($recipients->isEmpty()) {
+            return;
+        }
+
+        Notification::send($recipients, new DisputeOpenedNotification($match, $opener));
     }
 
     private function flipToDisputed(GameMatch $match, User $opener): void
