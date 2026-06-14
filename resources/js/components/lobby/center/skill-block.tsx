@@ -7,35 +7,12 @@ interface Props {
     skill: LobbyAggregates['skill'];
 }
 
-const DELTA_TONE_CLASS: Record<
-    NonNullable<LobbyAggregates['skill']['delta_tone']>,
-    { border: string; bg: string; text: string; label: string }
-> = {
-    even: {
-        border: 'border-success/40',
-        bg: 'bg-success/10',
-        text: 'text-success',
-        label: 'Even',
-    },
-    mismatched: {
-        border: 'border-warning/40',
-        bg: 'bg-warning/10',
-        text: 'text-warning',
-        label: 'Mismatched',
-    },
-    stacked: {
-        border: 'border-destructive/40',
-        bg: 'bg-destructive/10',
-        text: 'text-destructive',
-        label: 'Stacked',
-    },
-};
-
 /**
- * Skill matchup block. Avg ELO per side with min/max + a delta chip in
- * the middle. The chip tone tiers (≤50 even, ≤150 mismatched, >150 stacked)
- * are decided server-side in `LobbyResource::presentAggregates`, so the
- * frontend doesn't re-derive.
+ * Skill matchup block. Avg ELO per side with min/max + a neutral `VS` label
+ * in the middle. Earlier iterations carried a colored delta tier chip
+ * (Even / Mismatched / Stacked); dropped per design feedback in favor of a
+ * cleaner separator. Backend still computes `delta` / `delta_tone` for
+ * potential future re-introduction.
  */
 export function SkillBlock({ skill }: Props) {
     const t = useT();
@@ -54,7 +31,7 @@ export function SkillBlock({ skill }: Props) {
 
             <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-3">
                 <TeamSkillCard label={t('Team A')} skill={skill.a} alignRight />
-                <DeltaChip delta={skill.delta} tone={skill.delta_tone} t={t} />
+                <VsLabel />
                 <TeamSkillCard label={t('Team B')} skill={skill.b} />
             </div>
         </section>
@@ -93,50 +70,15 @@ function TeamSkillCard({ label, skill, alignRight }: TeamSkillCardProps) {
     );
 }
 
-interface DeltaChipProps {
-    delta: number | null;
-    tone: LobbyAggregates['skill']['delta_tone'];
-    t: ReturnType<typeof useT>;
-}
-
-function DeltaChip({ delta, tone, t }: DeltaChipProps) {
-    if (delta === null || tone === null) {
-        return (
-            <span
-                className="inline-flex items-center rounded-full border border-border/60 bg-card/80 px-2.5 py-1 text-[10px] font-medium tracking-wide text-muted-foreground uppercase"
-                aria-hidden="true"
-            >
-                {t('VS')}
-            </span>
-        );
-    }
-
-    const c = DELTA_TONE_CLASS[tone];
+function VsLabel() {
+    const t = useT();
 
     return (
-        <div
-            className={cn(
-                'flex flex-col items-center rounded-xl border px-3 py-2',
-                c.border,
-                c.bg,
-            )}
+        <span
+            className="inline-flex items-center rounded-full border border-border/60 bg-card/80 px-2.5 py-1 text-[10px] font-medium tracking-wide text-muted-foreground uppercase"
+            aria-hidden="true"
         >
-            <span
-                className={cn(
-                    'font-display text-base leading-none font-bold tabular-nums',
-                    c.text,
-                )}
-            >
-                {delta}
-            </span>
-            <span
-                className={cn(
-                    'mt-1 text-[9px] font-semibold tracking-wider uppercase',
-                    c.text,
-                )}
-            >
-                {t(c.label)}
-            </span>
-        </div>
+            {t('vs')}
+        </span>
     );
 }

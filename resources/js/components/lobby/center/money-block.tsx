@@ -145,7 +145,7 @@ function ViewerActions({
     });
 
     return (
-        <div className="mt-4 grid grid-cols-2 gap-3 border-t border-border/40 pt-4">
+        <div className="mt-4 grid grid-cols-2 gap-3">
             <Button
                 type="button"
                 variant="default"
