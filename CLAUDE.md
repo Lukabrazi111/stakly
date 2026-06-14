@@ -239,8 +239,9 @@ What we're working on right now. Not a commitment — decisions are revisitable 
 - **Game**: chess only (via chess.com / Lichess APIs).
 - **Format**: 1v1.
 - **Currency**: USDT.
-- **Chain**: TRC20 (Tron USDT) is the planned starting chain; BEP20 (BSC USDT) is the obvious next add. Chain integration (M9) is paused pending a crypto-payment-gateway specialist.
-- **Solo developer**, so flag bigger asks before building (cost / surface area), but don't refuse on scope grounds — surface tradeoffs and let the user decide.
+- **Chain**: TRC20 (Tron USDT) is the planned starting chain. M9 chain integration will use **NowPayments** as the payment gateway (deposits + withdrawals via their custodial API + webhooks); not wired yet.
+- **Platform fee**: `config('stakly.platform_fee_rate')` is currently flat. A tier mechanic (by stake size / rating / fill time / etc.) is **under discussion** — not decided yet; revisit with the user before assuming any particular structure (relevant when M28 fees page or fee logic changes come up).
+- **Solo developer.**
 
 ## Stack & Dev Environment
 
@@ -255,11 +256,11 @@ What we're working on right now. Not a commitment — decisions are revisitable 
 
 - **Listings board, not an order book.** Filterable marketplace (game, stake range, skill range, region), not price-time matching.
 - **Stake is escrowed at listing creation**, not at match. This prevents bait-listings and makes match start instant. Refund on listing expiry.
-- **Outcome verification is API-driven end to end.** Players link their chess.com / Lichess account at signup with verified ownership (bio-code challenge). After a match, a scheduled job queries the provider's API, finds the game by linked username + timestamp, and posts a system-message result card to chat; settlement auto-fires from the card. There is no "I confirm I won" step — the API is the source of truth, not a tiebreaker. Either player can open a dispute (wrong result, or no card has appeared); dispute resolution re-queries the API and either auto-settles on a confirmed result or routes to admin ManualReview. A timeout on Pending matches with no API result also routes to ManualReview. Screenshots + manual admin resolution are last-resort only — never the primary mechanism.
+- **Outcome verification is API-driven end to end.** Players link their chess.com / Lichess account at signup with verified ownership (bio-code challenge). A scheduled job queries the provider's API after a match, finds the game by username + timestamp, and posts a system-message result card to chat; settlement auto-fires from the card. The API is the source of truth — no "I confirm I won" step. Disputes (wrong result, or missing card) re-query the API and either auto-settle or route to admin `ManualReview`. Pending matches that time out without an API result also route to `ManualReview`. Screenshots + manual resolution are last-resort.
 - **All financial state lives in a Postgres ledger.** The chain is the rail; the database is the source of truth. Every state transition (deposit, escrow, refund, payout, fee) is an immutable ledger entry. Money operations must be transactional and idempotent.
-- **Auth UX — modal-only for entry points, pages for destinations, URL-driven.** Login, register, and forgot-password are presented exclusively as a single shadcn `Dialog` triggered via `useAuthModal()` (context mounted at `app.tsx` root, modal rendered inside `SiteLayout` because it needs Inertia's `usePage`). **The `?auth=login|register|forgot-password` query param is the source of truth for modal state** — opening writes the param (pushState the first time, replaceState on view-swap), closing removes it (replaceState), and the provider listens to `popstate` so back-button/manual-URL-clearing closes or restores the modal accordingly. Fortify view callbacks for these three surfaces redirect to `/?auth=*` — there are **no** `/login`, `/register`, or `/forgot-password` page components. Reset-password, verify-email, two-factor-challenge, and confirm-password remain **page-only** because users land on them from email links or post-auth redirects, where there's nothing to overlay.
+- **Auth UX — modal-only for entry points, pages for destinations, URL-driven.** Login, register, forgot-password are exclusively a shadcn `Dialog` triggered via `useAuthModal()` (provider in `app.tsx`, modal rendered in `SiteLayout`). The `?auth=login|register|forgot-password` query param is the source of truth for modal state; the provider syncs with `popstate` so back-button works. Fortify view callbacks for these three redirect to `/?auth=*` — there are **no** `/login`, `/register`, `/forgot-password` page components. Reset-password, verify-email, two-factor-challenge, confirm-password remain **page-only** (users land there from email links / post-auth redirects).
 - **Fortify is the auth foundation.** TOTP 2FA is already wired. SMS OTP, email OTP, magic links, passkeys, and social login are all reachable as extensions (custom columns + middleware + provider) — not active today, easy to add later.
-- **Three animation systems, each with a specific job.** (1) **CSS transitions** (`transition-colors`, `hover:shadow-glow-sm`) for hover/focus/simple state changes — never wrap clickable elements in `motion.*` just for hover. (2) **`tw-animate-css`** (`data-[state=open]:animate-in fade-in-0`) for Radix/shadcn primitives where state is controlled by `data-state` — Sheet, Dialog, Popover, Tooltip. Don't fight Radix by replacing these with motion; we'd lose focus management, scroll-lock, and a11y. (3) **`motion`** (`AnimatePresence`, `motion.div layout`, spring physics) for our own React-state-driven animations: enter/exit, layout/size animation, sequenced reveals. The auth modal uses motion correctly; future cases like animated listing cards (M3), match flow state reveals (M6), and wallet success states (M7) should also use motion.
+- **Three animation systems.** (1) **CSS transitions** (`transition-colors`, `hover:shadow-glow-sm`) for hover/focus/simple state changes — never wrap clickables in `motion.*` just for hover. (2) **`tw-animate-css`** (`data-[state=open]:animate-in fade-in-0`) for Radix/shadcn primitives driven by `data-state` (Sheet, Dialog, Popover, Tooltip) — don't replace with motion or we lose focus management + scroll-lock + a11y. (3) **`motion`** (`AnimatePresence`, `motion.div layout`, spring physics) for React-state-driven enter/exit, layout, sequenced reveals.
 
 ## Visual System
 
@@ -278,20 +279,18 @@ The pink→purple gradient is the visual signature. Apply *sparingly* — 2-3 gr
 
 - `bg-gradient-primary` — gradient background (CTAs, hero accents)
 - `text-gradient-primary` — gradient-filled text (display headlines)
-- `shadow-glow` / `shadow-glow-sm` — magenta glow halos (hover/focus/selected). Currently tuned to a soft `0 0 18px -7px` so they read as a subtle haze, not a block of color.
-- `border-glow` — magenta border with inner glow. Used for **static** decorative borders where softness is right (auth modal, profile dropdown, link-account banner). Not for interactive "selected" states — those want a full-saturation `border-primary` instead, since `border-glow`'s semi-transparent fuchsia reads too softly as an active-selection cue.
+- `shadow-glow` / `shadow-glow-sm` — magenta glow halos for hover/focus/selected. Tuned soft (`0 0 18px -7px`) so they read as haze, not a block.
+- `border-glow` — magenta border with inner glow. **Static decoration only** (auth modal, profile dropdown, link-account banner). For interactive selected states, use solid `border-primary` — `border-glow` reads too softly as an active cue.
 
 ### Shadow tokens (CSS variables)
 
-Component-specific shadow values live as CSS variables in `:root, .dark` in `app.css`, then are referenced inline via `shadow-[var(--token-name)]` (box-shadow) or `[text-shadow:var(--token-name)]` (text-shadow). This keeps shadow tuning centralized in one file. Current tokens:
+Component-specific shadow values live as CSS variables in `:root, .dark` in `app.css`, referenced inline via `shadow-[var(--token-name)]` or `[text-shadow:var(--token-name)]`. Tune by editing the variables. When bumping a glow for a specific surface, **add a new variable** — don't edit the global utility (would leak to 15+ consumers).
 
-- `--shadow-button-glow` / `--shadow-button-glow-hover` — used by the `gradient` button variant. The gradient button references both inline (`shadow-[var(--shadow-button-glow)] hover:shadow-[var(--shadow-button-glow-hover)]`). Tune button glow by editing the variables, not the component.
-- `--shadow-arena-card-glow` — beefier halo used by the homepage `GameSelector` tiles on hover + selected. Kept separate from the global `shadow-glow` so the arena-card treatment doesn't leak to listings rows / wallet cards / avatars / chat link cards / auth inputs (15+ consumers). Lesson: when bumping a glow for a specific surface, **add a new component-specific variable**, don't edit the global utility.
-- `--text-shadow-glow` — soft white text-shadow used by the `ghost` button variant on hover. Implemented as a layered text-shadow (tight bright inner + wider outer) at full white. Mirrors the gradient button's halo concept but applied to letterforms instead of the button box.
+- `--shadow-button-glow` / `--shadow-button-glow-hover` — used by the `gradient` button variant.
+- `--shadow-arena-card-glow` — beefier halo for the homepage `GameSelector` tiles (hover + selected).
+- `--text-shadow-glow` — soft white text-shadow used by the `ghost` button variant on hover.
 
-**Ghost button hover convention:** ghost variants in Stakly use **text-shadow** (white text glow) on hover, NOT `bg-accent`/`bg-muted` like default shadcn. This was an intentional deviation — purple-background hover felt heavy on the dark theme. If you need a ghost-like button with the original `bg-accent` hover (e.g. sidebar nav items, dropdown menu items), introduce a new variant rather than reverting the global `ghost`.
-
-When adding a new component-specific shadow, prefer this pattern over inline arbitrary values like `shadow-[0_0_24px_...]` — keep design tokens in `app.css`.
+**Ghost button hover:** Stakly ghost variants use white **text-shadow** on hover, NOT `bg-accent`/`bg-muted`. If you need bg-accent hover (sidebar nav, dropdown items), introduce a new variant — don't revert the global `ghost`.
 
 ### Fonts
 
@@ -304,97 +303,84 @@ When adding a new component-specific shadow, prefer this pattern over inline arb
 - Avoid hard right angles on top-level UI; soften with at least `rounded-md`.
 - Glow is for interactive states (hover/selected/focus), not static — overuse kills the meaning.
 - No character art for now. Hero uses gradient + typography + abstract atmosphere. Avatars are initials or generated.
-- **Every new UI must fit the Stakly design — including shadcn primitives.** Defaults like `bg-accent` (saturated purple `#a855f7`) for hover, `bg-muted` for hover, and chunky `ring-[3px] ring-ring/50` focus glows are *not* Stakly — they leak the upstream shadcn palette. When adding a new shadcn component, immediately Stakly-skin it at the source (`components/ui/<name>.tsx`):
-  - Hover/focus bg → **`bg-primary/10`** (translucent pink wash), not `bg-accent` or `bg-muted`.
-  - Selected/active state → **`bg-primary/15 text-foreground border-primary/40`**, not `bg-accent`.
-  - Hovered icon color → **`hover:[&_svg]:!text-primary`** (note the `!` — needed because shadcn's icon descendant selectors have higher specificity than ours; without `!` they don't take effect).
-  - Focus ring → **`ring-2 ring-primary/25 border-primary/40`**, not `ring-[3px] ring-ring/50`. The chunky default reads as a bug.
-  - Surface backgrounds for inputs/triggers/cards → **`bg-card/60`** or `bg-card/95` with `border-border/60`, not raw `bg-transparent` over the page background.
-  - Radius → match the surrounding context; mostly `rounded-md` or `rounded-xl` for popovers / sheets / dropdown content.
-- The above defaults are already applied to `select.tsx`, `input.tsx`, `toggle.tsx`, `dropdown-menu.tsx`, `popover.tsx`. New shadcn components must match.
-- If a per-usage override is needed (e.g. a specific component wants a `bg-destructive/10` Log-out hover), apply it at the call site — but never re-introduce `bg-accent`/`bg-muted` as a hover default at the primitive level.
+- **Stakly-skin shadcn primitives at the source (`components/ui/<name>.tsx`)**, not per-call. Defaults like `bg-accent`/`bg-muted` hover and chunky `ring-[3px] ring-ring/50` focus rings leak upstream shadcn palette. Replace with:
+  - Hover/focus bg → **`bg-primary/10`** (translucent pink wash)
+  - Selected/active → **`bg-primary/15 text-foreground border-primary/40`**
+  - Hovered icon color → **`hover:[&_svg]:!text-primary`** (the `!` is needed; shadcn's icon selectors have higher specificity)
+  - Focus ring → **`ring-2 ring-primary/25 border-primary/40`**
+  - Surface bg for inputs/triggers/cards → **`bg-card/60`** or `bg-card/95` with `border-border/60`
+  - Radius → match context; `rounded-md` or `rounded-xl` for popovers / sheets / dropdowns
+- Per-usage overrides are fine (e.g. `bg-destructive/10` Log-out hover at the call site), but never re-introduce `bg-accent`/`bg-muted` as a primitive-level hover default.
 
-### M1 design references + decisions
+### Site layout + catalog conventions
 
-Layout reference for the homepage and broader site flow is **mmrangels.com**. Screenshots live in `images-examples/` at the project root. Stakly mirrors the *structure* (sticky header → marquee → hero → game selector row → listings + filters → listing detail with two-column profile + booking widget) but **diverges on visual identity**: Stakly is a skill platform, not a hire-a-girl-gamer platform, so we keep the dark + pink/purple gradient palette, drop the character-art-driven hero, and the listing detail in M4 frames a competitive opponent listing rather than a service-hire.
+Layout reference is **mmrangels.com** (screenshots in `images-examples/`). Stakly mirrors the structure (sticky header → marquee → hero → game selector → listings + filters → listing detail with two-column profile + booking widget) but diverges on identity — dark pink/purple gradient palette, typography-only hero with radial gradients + blurred glow blobs (no character art), competitive opponent framing on listing detail.
 
-**M1 hero direction:** typography-only, no character art. Atmospheric background = radial gradients + blurred glow blobs. Could revisit later if a polish pass calls for it; for now, type does the work.
-
-**GameSelector catalog (M24):** the tile list is DB-backed via `App\Models\Game` (admin-managed at `/admin/games`), not a hardcoded React array. `App\Enums\Game` remains the backend identity for games with real integration; admin can add `ComingSoon` display tiles for games not in the enum, but flipping one `Active` still requires adding the enum case in code. Visual rules unchanged: tiles look identical regardless of status (same dimensions, same poster treatment) + small "Soon" badge for non-Active — don't dim them, don't lock them visually. **Chess is the only Active game today.** Selected tile uses solid `border-primary` + `shadow-[var(--shadow-arena-card-glow)]`, NOT the `border-glow` utility (too soft as an active-selection cue).
+**GameSelector catalog:** tile list is DB-backed via `App\Models\Game` (admin at `/admin/games`), not a hardcoded array. `App\Enums\Game` is the backend identity for games with real integration; admin can add `ComingSoon` display tiles without an enum case, but flipping one `Active` requires the enum addition. Tiles look identical regardless of status — small "Soon" badge for non-Active, don't dim or lock visually. **Chess is the only Active game today.** Selected tile uses solid `border-primary` + `shadow-[var(--shadow-arena-card-glow)]`, NOT `border-glow`.
 
 ### Design assistance — `ui-ux-pro-max` skill
 
-For any frontend / UI design work — building or reviewing pages, picking layouts, choosing typography, animation timings, accessibility checks, component composition — **activate the `ui-ux-pro-max` skill**. It contains a curated database of styles, palettes, font pairings, charts, and UX rules (accessibility, touch targets, performance, layout, animation) prioritized by impact.
-
-When to activate:
-- Designing a new page, section, or component (e.g. Hero, GameSelector, listing card).
-- Reviewing existing UI for accessibility, layout, typography, or interaction issues.
-- Choosing animation durations, spacing scales, or interactive states.
-- Any time the user asks to "design", "build", "improve", or "review" UI.
-
-The skill complements — does not replace — Stakly's visual system above (dark-only, pink→purple gradient, pill shapes, glow on interactive states). Use it to inform decisions *within* the Stakly design system rather than overriding it; flag if a suggestion meaningfully diverges so we can decide together.
+For any UI design work (building, reviewing, layout, typography, animation timing, accessibility, component composition), **activate the `ui-ux-pro-max` skill**. It complements Stakly's visual system above — use it to inform decisions within the design system, not override it. Flag meaningful divergences.
 
 ## Component Folder Convention
 
-Components live in `resources/js/components/` and are organized by **domain**, not by type. Starter-kit components (`app-*`, `nav-*`, `user-*`, `two-factor-*`, `breadcrumbs`, `heading`, `input-error`, etc.) stay at the root of `components/` — don't reorganize them; they're well-known to anyone familiar with the Laravel React starter and the prefix system already groups them logically.
+Components in `resources/js/components/` are organized by **domain**, not by type. Starter-kit components (`app-*`, `nav-*`, `user-*`, `two-factor-*`, `breadcrumbs`, `heading`, `input-error`) stay at the root — don't reorganize.
 
-**New Stakly-specific code goes into a domain subfolder.** Current and planned folders:
+**New Stakly code goes into a domain subfolder:**
 
-- `components/ui/` — shadcn primitives (untouched, don't add domain code here)
-- `components/site/` — public site shell: `site-header`, `site-footer`, `marquee-strip`, `mobile-menu`
-- `components/home/` — homepage sections (M1): `hero`, `game-selector`, `how-it-works`
-- `components/auth/` — auth forms + modal infrastructure (M2): `login-form`, `register-form`, `forgot-password-form`, `auth-modal`, `auth-modal-provider` (URL-driven). Modal-only — there are no entry-point auth page components.
-- `components/listings/` — listings index (M3): listing card, filters, etc.
-- `components/listing-detail/` — listing detail page (M4): two-column profile + booking widget
-- `components/match/` — match flow (M6)
-- `components/wallet/` — wallet UI (M7)
+- `components/ui/` — shadcn primitives (don't add domain code)
+- `components/site/` — public site shell (`site-header`, `site-footer`, `marquee-strip`, `mobile-menu`)
+- `components/home/` — homepage sections
+- `components/auth/` — auth forms + modal infrastructure (modal-only)
+- `components/listings/` — listings index
+- `components/listing-detail/` — listing detail page
+- `components/match/` — match flow
+- `components/wallet/` — wallet UI
 
-**Rule of thumb:** if a component is shared across multiple Stakly domains (e.g. a generic `Stat` card used on profile + listing detail + dashboard), put it in `components/shared/` rather than copying it. If a component is only used in one domain, keep it in that domain's folder.
-
-Imports always use the alias path: `@/components/home/hero`, not relative paths.
+Shared across multiple domains → `components/shared/`. Imports use the alias path (`@/components/home/hero`), not relative.
 
 ## Frontend-First Approach
 
-While business logic (matchmaking, escrow, payouts) is still being designed, build the UI against **real database infrastructure with seeded fake data** — not hardcoded route-closure props.
+Build UI against **real DB infrastructure with seeded fake data**, not hardcoded route-closure props. For each entity:
 
-For each entity that has a UI:
+1. Migration (`sail artisan make:migration ...`).
+2. Model + factory (`sail artisan make:model -mf ...`).
+3. Seeder with realistic, varied data (edge cases: empty lists, long names, very high stakes).
+4. Controller returning data via `Inertia::render(...)`.
+5. React page component.
 
-1. Create the migration (`sail artisan make:migration ...`).
-2. Create the model + factory (`sail artisan make:model -mf ...`).
-3. Create a seeder that produces realistic, varied fake data (lots of items, varied states, edge cases like empty lists, long names, very high stakes, etc.).
-4. Create a controller (or simple route + Eloquent query) that returns the data via `Inertia::render(...)`.
-5. Build the React page component to render it.
+When real backend logic lands, only the controller changes — data shape, frontend, routes are already wired.
 
-Why this over hardcoded props: when real backend logic lands, only the controller logic changes — the data shape, frontend, and routes are already wired. Seeders also let us test edge cases (empty states, pagination, filtering with lots of records) trivially.
-
-Conventions for this phase:
-- **Define a TypeScript interface for each page's props** in `resources/js/types/` (or co-located with the page). The interface is the contract between backend and frontend.
-- Re-run `sail artisan migrate:fresh --seed` when schema or seed data changes.
-- Don't build a Storybook or component library — ship full pages.
-- Design references will come from the user (screenshots, links). Wait for them before designing visuals; do not invent UX.
+- **Define a TypeScript interface for each page's props** in `resources/js/types/` (or co-located). The interface is the FE↔BE contract.
+- Re-run `sail artisan migrate:fresh --seed` when schema or seeds change.
+- Don't build Storybook — ship full pages.
+- Design references come from the user (screenshots, links). Wait for them; do not invent UX.
 
 ## Library / Documentation Lookups
 
-- **Use Context7 PROACTIVELY, not on request.** The instant you're about to write or edit code that uses a library / framework / API — Filament 5, Inertia v3, Laravel 13, Tailwind v4, React 19, Pest 4, Fortify, Wayfinder, shadcn/ui, OR any installed third-party package — call `mcp__context7__resolve-library-id` then `mcp__context7__query-docs` BEFORE committing to an API shape. Don't wait to be reminded. Don't rely on training data even when confident — versions move fast and the current docs are the source of truth. This rule applies even when subclassing, extending a package, or wiring two packages together — verify the contract you're depending on.
-- For installed Laravel-ecosystem packages, Boost's `search-docs` is a complementary quick lookup; Context7 remains the authoritative source. Use both where the topic warrants.
-- When citing docs in an answer, mention the version retrieved.
-- Narrow carve-out: skip Context7 only for pure-language work (PHP / TypeScript syntax) with no framework surface, or for edits where you verified the exact same API in the same session via Context7 already. When in doubt, query.
+- **Use Context7 PROACTIVELY.** Before writing/editing code that uses any library/framework/API, call `mcp__context7__resolve-library-id` then `mcp__context7__query-docs`. Don't rely on training data even when confident — versions move fast. Applies to subclassing, extending, or wiring packages together.
+- Boost's `search-docs` is a quick complementary lookup for installed Laravel packages; Context7 remains authoritative.
+- Cite the doc version when answering.
+- Skip Context7 only for pure-language syntax (PHP / TypeScript) with no framework surface, or when you verified the same API earlier in this session.
 
 ## Conventions for AI Assistance
 
-- **Default to production-grade. Do not trim scope on "solo dev" or "pre-launch" grounds.** Stakly is being built to production standards from day one. When choosing between a simpler-but-weaker option and a more-correct-but-bigger one, lead with the more-correct option. Recommendations should mirror what would ship to real users at real scale — security, UX, audit, performance. Surface trade-offs honestly so the user can decide, but never bias toward less rigor because "solo dev today" or "pre-launch." If a milestone "Not in" item is justified on solo-dev / pre-launch grounds, that's a code smell — rephrase the rationale in terms of the actual technical reason it can wait (different milestone, downstream dependency, etc.) or include it.
-- **Proactively surface suggestions, improvements, and security/abuse concerns *before* building.** Don't silently apply the safest defaults — call out non-obvious design choices, alternatives, and trade-offs so we can decide together. Especially for: input validation, pagination caps, sort/filter whitelists, exposing data via API resources, auth/access boundaries, rate limiting, and anything that touches money or user PII. A two-sentence "I'd do X because Y, alternative is Z — okay?" is the right shape; don't over-explain. If you spot a security issue mid-implementation, stop and flag it rather than patching silently.
-- **Flag bigger asks, don't refuse them.** If a request implies team matches, Dota 2 support, multi-chain, or non-USDT currencies, surface the additional surface area (schema changes, abuse surface, time cost) so we can weigh it together. Don't auto-reject on scope grounds.
-- **Don't add Solidity, smart-contract escrow, or wallet-connect flows without explicit go-ahead.** The current custody model is custodial-by-database. Switching to non-custodial escrow is a real architectural change — surface the tradeoffs if the topic comes up; don't quietly start building it.
-- **Chain integration (M9) is paused pending a crypto-payment-gateway specialist.** No chain provider, custody model, or key-storage strategy is committed yet. Until that work resumes: `users.tron_address` is populated by `App\Support\MockTronAddress` (placeholder, not on-chain), the wallet deposit page shows that mock address, and `WalletController::withdrawStore` short-circuits with a notice toast (no ledger write). Don't introduce chain SDKs, signing libraries, webhook endpoints, or key-storage code without explicit go-ahead. The internal ledger (`wallet_transactions` + `App\Services\Wallet`) is provider-agnostic and stays as the source of truth regardless of which provider is eventually chosen.
-- **No financial code without tests.** Deposit watchers, escrow, payout, fee calculation, refund — every path needs feature tests. Use Pest. The starter kit's `RefreshDatabase` trait works fine against the Sail Postgres.
-- **All money writes go through `App\Services\Wallet`.** `users.usdt_balance` and `wallet_transactions` rows are written ONLY by Wallet service methods (`deposit`, `withdraw`, `hold`, `release`, `payout`, `fee`). Never write the balance column directly from controllers, seeders, migrations, factories, or tinker — direct writes break the balance ↔ ledger invariant `users.usdt_balance == SUM(wallet_transactions.amount)` (asserted in `WalletTest.php`). Platform rake credits the seeded `is_platform = true` user via `Wallet::fee(...)`, not a nullable `user_id`. Idempotency: every Wallet call accepts an optional `reference_id` — repeat calls with the same reference return the existing row silently (no-op).
-- **Money math is BCMath strings, not floats.** Pass amounts as positive strings (`'100'`, `'100.000000'`) — the Wallet service applies the sign per `WalletTransactionType` (credits positive, debits negative). Internal arithmetic uses `bcadd` / `bcsub` / `bccomp` at scale 6 to match Tron USDT precision and the `decimal(18, 6)` columns. PHP `+` / `-` / `<` on money values is forbidden. Floats only appear at the API resource boundary (e.g. `(float) $this->stake_amount` in `ListingResource`) where the frontend needs a JSON number.
-- **No production payout code without a dispute resolution flow.** If a feature lets money leave the platform, the dispute path must exist.
-- **Do not raise jurisdiction, licensing, legal, or regulatory concerns.** The user handles all legal/regulatory matters; stay in engineering scope. The exception is a **technical** confirming question: when asked to integrate a real chain wallet, confirm we are still on testnet/dev posture (that is a technical clarifying question, not a legal one).
-- **Migrations while there are no real users**: edit existing migration files directly and use `sail artisan migrate:fresh`. Once there's real user data on a deployed instance, switch to incremental "add_X_columns_to_Y_table.php" migrations. The flip happens when we deploy somewhere users can sign up, not on any version label.
-- **Wayfinder regen via artisan needs `--with-form`.** Vite's wayfinder plugin (configured `formVariants: true` in `vite.config.ts`) generates `.form` accessors automatically on `npm run dev` / `npm run build`. The standalone `vendor/bin/sail artisan wayfinder:generate` defaults to NO form variants and silently breaks any `<Form>` spreading `.form()` — always pass `--with-form` when regenerating via artisan, or just use `npm run build`.
-- **Performance is always a concern, not a backlog item.** Optimization habits — eager-loading related models, queueing external API calls (chess.com, Lichess, future chain provider, etc.), caching slow-changing reads, code-splitting routes, enabling SSR — must be baked into the initial implementation, not deferred as "polish later." This is not premature optimization or speculative abstraction; it's about writing the code we're already writing in a way that doesn't accumulate performance debt. If a query / controller / page is about to ship with a known issue ("we'll cache it later," "we'll queue it later," "fix the N+1 later"), flag it and fix it before the work is called done.
-- **Self-throttle every outbound third-party API call.** Apply client-side rate limiting on every integration we make to someone else's service — chess.com, Lichess, FACEIT, future chain provider, mail provider, anywhere we call out. Use Laravel's `RateLimiter::for(...)` + `RateLimited` job middleware. Pick a conservative request-per-minute cap that sits well below any reasonable guess of the provider's actual limit (default **30 req/min** when the real limit isn't documented), put the cap in `config/services.php` so it's tunable without code change. Layer this with: 429 response-header handling via the existing `RateLimitHeaderParser` (`Retry-After` / `X-RateLimit-Reset`), AND a per-provider `ProviderCircuitBreaker` so a sudden provider outage doesn't melt the queue. **Why:** a production 429 trips the circuit breaker, which means settlement freezes for *every* Pending match in that provider's pipeline until the breaker recloses. A 3-minute settlement-latency burst during a busy moment is the much-better failure mode than total settlement freezing. New external integrations must ship with all three pieces (self-throttle + 429 handling + circuit breaker) baked in, not retrofitted.
-- **High-stakes-milestone mode.** When the user flags work as important / critical / high-stakes / money-touching — OR when the work itself touches the Wallet service, settlement / escrow / payout, dispute resolution, the outcome pipeline (auto-fetch jobs / `GameApi` adapters / system card schema), webhook receivers, OAuth flows, key/secret storage, admin impersonation, or any new third-party API integration — switch into a stricter collaboration mode. Don't ship a slice the same session a meaningful question was open at the start. Run Context7 + `search-docs` + the relevant skill (`pest-testing`, `laravel-best-practices`, `ui-ux-pro-max`) on every API / library touchpoint, even known ones — versions move and the current docs are the source of truth. Surface every non-trivial default (pagination caps, retry budgets, idempotency keys, time windows, exposed fields, error-classification rules, anti-abuse gates) for explicit user sign-off rather than assuming. Walk through the attacker view at every new endpoint, queued job, or external call — webhook auth, replay protection, rate limits, scope leaks, identity confusion, race conditions, snapshot drift — and call them out even when the mitigation is "nothing yet because X". Prefer interruption to wrong assumption: ask freely, the user prefers that to silent guessing.
-- **Comments are scarce and small.** Default to no comments. Add one only when the WHY is non-obvious — hidden constraints, subtle invariants, library gotchas, surprising behavior. Skip task tags ("M27 Phase 2", "Slice X"), docblocks on self-explanatory props or methods, callsite references ("used by X"), and historical context ("we tried Y first"). Those belong in commit messages, not files — they rot. When a comment is warranted, one short line beats a paragraph.
+- **Update `milestones.md` BEFORE coding.** Every new work item starts as a phase entry (e.g. `M34 P6 — dispute / cancellation buttons in team lobby`) in `milestones.md` — add the phase line + Goal + scope FIRST, then write code. Mark phase status as work progresses; archive to `milestones_archived.md` when done. The doc is how the user tracks done vs. left — silent work is invisible. If a request doesn't fit any existing milestone, propose where it goes (new phase under an active milestone, or a new milestone) and confirm with the user before starting.
+- **Default to production-grade.** Don't trim scope on "solo dev" / "pre-launch" grounds. Lead with the more-correct option; surface trade-offs honestly. If a milestone defers something on solo-dev grounds, rephrase the rationale as the actual technical reason (different milestone, downstream dependency) or include it.
+- **Choose tech on merit, not speed-to-ship.** If the better-fit infrastructure already exists, default to it. Concrete cases: **Reverb broadcasting over polling** for any live state (lobby, chat, notifications, match) — already wired; **DB-backed seeded data** over hardcoded route-closure props; **Action classes** over inline controller logic; **Wallet service** over any direct balance write; **Form Requests** over inline `$request->validate(...)` for non-trivial input; **framework primitives** (cache tags, queue middleware, policy gates) over hand-rolled. Watch out for "ship it simple" / "6 lines vs 60" / "revisit later" — usually wrong framing. If the shortcut is truly right (one-shot, throwaway), surface it explicitly.
+- **Proactively surface suggestions, improvements, security/abuse concerns *before* building.** Don't silently pick the safest default — flag non-obvious design choices in 2 sentences ("I'd do X because Y, alt is Z — okay?"). Especially for: input validation, pagination caps, sort/filter whitelists, API resources, auth/access boundaries, rate limiting, money, PII. If you spot a security issue mid-implementation, stop and flag.
+- **Flag bigger asks, don't refuse them.** Team matches, Dota 2, multi-chain, non-USDT — surface the added surface area (schema, abuse, time) so we can weigh together. No scope-grounds rejection.
+- **Don't add Solidity, smart-contract escrow, or wallet-connect flows without explicit go-ahead.** Current model is custodial-by-database; switching is a real architectural change.
+- **Chain integration (M9) — NowPayments selected as the payment gateway; not wired yet.** Until then: `users.tron_address` is populated by `App\Support\MockTronAddress` (placeholder, not on-chain), the deposit page shows the mock address, and `WalletController::withdrawStore` short-circuits with a notice toast (no ledger write). No NowPayments client / webhook receiver / API-key wiring without explicit go-ahead. (Provider is custodial — they hold keys; our side will be API client + webhook receiver only. No Solidity / on-chain signing / key-storage code.) The internal ledger (`wallet_transactions` + `App\Services\Wallet`) is provider-agnostic and stays as source of truth.
+- **No financial code without tests.** Deposit watchers, escrow, payout, fee, refund — every path needs Pest feature tests. `RefreshDatabase` works against Sail Postgres.
+- **All money writes go through `App\Services\Wallet`.** `users.usdt_balance` and `wallet_transactions` are written ONLY by Wallet methods (`deposit`, `withdraw`, `hold`, `release`, `payout`, `fee`). Never write the balance directly from controllers, seeders, migrations, factories, or tinker — breaks the invariant `users.usdt_balance == SUM(wallet_transactions.amount)` (asserted in `WalletTest.php`). Platform rake credits the seeded `is_platform = true` user via `Wallet::fee(...)`, not a nullable `user_id`. Idempotency: every Wallet call accepts an optional `reference_id` — repeats return the existing row silently.
+- **Money math is BCMath strings, not floats.** Pass amounts as positive strings (`'100'`, `'100.000000'`) — Wallet applies sign per `WalletTransactionType`. Internal arithmetic uses `bcadd` / `bcsub` / `bccomp` at scale 6 (matches Tron USDT + `decimal(18, 6)`). PHP `+` / `-` / `<` on money is forbidden. Floats only at the API resource boundary (e.g. `(float) $this->stake_amount` in `ListingResource`).
+- **No production payout code without a dispute resolution flow.** If money can leave the platform, the dispute path must exist.
+- **Do not raise jurisdiction, licensing, legal, regulatory concerns.** The user handles all legal matters; stay in engineering scope. Exception: when asked to integrate a real chain wallet, confirm we're still on testnet/dev (technical clarifying question, not legal).
+- **Migrations while there are no real users:** edit existing migration files directly and `sail artisan migrate:fresh`. Once a deployed instance has real users, switch to incremental "add_X_columns_to_Y_table.php" migrations.
+- **Wayfinder regen via artisan needs `--with-form`.** Vite's wayfinder plugin generates `.form` accessors automatically on `npm run dev` / `npm run build`. `vendor/bin/sail artisan wayfinder:generate` defaults to NO form variants and silently breaks `<Form>` spreading `.form()`. Always pass `--with-form` when using artisan, or just use `npm run build`.
+- **Performance is always a concern.** Eager-load related models, queue external API calls, cache slow reads, code-split routes, enable SSR — baked into initial implementation, not deferred. If a query/controller/page is about to ship with a known issue ("we'll cache it later," "fix the N+1 later"), flag and fix before calling it done.
+- **Self-throttle every outbound third-party API call.** Apply client-side rate limiting on every external integration (chess.com, Lichess, FACEIT, future chain provider, mail). Use `RateLimiter::for(...)` + `RateLimited` job middleware. Conservative per-minute cap (default **30 req/min** when the real limit is undocumented) in `config/services.php`. Layer with: 429 handling via `RateLimitHeaderParser` (`Retry-After` / `X-RateLimit-Reset`) AND a per-provider `ProviderCircuitBreaker`. **Why:** a production 429 trips the breaker, freezing settlement for every Pending match in that provider's pipeline until it recloses. A 3-min latency burst beats total settlement freeze. New integrations ship with all three (throttle + 429 + breaker), not retrofit.
+- **High-stakes-milestone mode.** When the user flags work as critical / money-touching — OR when the work touches Wallet, settlement / escrow / payout, dispute resolution, the outcome pipeline (auto-fetch jobs / `GameApi` adapters / system card schema), webhook receivers, OAuth, key/secret storage, admin impersonation, or any new third-party integration — switch to stricter mode. Don't ship a slice the same session a meaningful question was open at the start. Run Context7 + `search-docs` + relevant skill on every API touchpoint, even known ones. Surface every non-trivial default (pagination caps, retry budgets, idempotency keys, time windows, exposed fields, error classification, anti-abuse) for explicit sign-off. Walk through the attacker view at every endpoint, job, or external call — webhook auth, replay, rate limits, scope leaks, identity confusion, races, snapshot drift — and call them out even if the mitigation is "nothing yet because X". Prefer interruption to wrong assumption.
+- **Comments are scarce and small.** Default to no comments. Add one only when the WHY is non-obvious (hidden constraints, subtle invariants, library gotchas, surprising behavior). Skip task tags, docblocks on self-explanatory props, callsite references, historical context — those belong in commit messages, not files. One short line beats a paragraph.
+- **Wrap up tasks human-first.** When a task / slice finishes, lead with 2–3 plain-language sentences about what changed in product terms (what users can do now, what's safer, what's fixed) — not a files-changed dump. Keep the commit title + a brief manual test plan; skip the verbose files-list + design-choices sections (that detail belongs in the milestone entry, not the end-of-task message).

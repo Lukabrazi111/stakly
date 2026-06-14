@@ -4,6 +4,7 @@ namespace App\Policies;
 
 use App\Enums\MatchStatus;
 use App\Models\GameMatch;
+use App\Models\LobbyParticipant;
 use App\Models\User;
 
 /**
@@ -65,7 +66,10 @@ class GameMatchPolicy
 
     /**
      * Blocks the requester from accepting their own request — direct POSTs
-     * bypassing the UI would otherwise let them self-cancel.
+     * bypassing the UI would otherwise let them self-cancel. For team
+     * matches (M34 P6), also blocks the requester's team-mates from
+     * accepting on their team's behalf, preserving the mutual-cancellation
+     * premise (one team requests, the *other* team accepts).
      */
     public function acceptCancellation(User $user, GameMatch $match): bool
     {
@@ -91,7 +95,15 @@ class GameMatchPolicy
             return false;
         }
 
-        return $match->cancellation_requested_by !== $user->id;
+        if ($match->cancellation_requested_by === $user->id) {
+            return false;
+        }
+
+        if ($match->listing->isTeamPlay()) {
+            return ! $this->onSameTeamAs($user, $match->cancellation_requested_by, $match);
+        }
+
+        return true;
     }
 
     private function isInCooldown(User $user, GameMatch $match): bool
@@ -110,12 +122,67 @@ class GameMatchPolicy
     }
 
     /**
+     * Team matches (M34) — participation is the live lobby roster
+     * (`kicked_at IS NULL`). The roster is preserved as `lobby_participants`
+     * past lock, so this single check works for `LobbyFilling`, `Pending`,
+     * `Disputed`, `ManualReview`, `Settled`, and `Cancelled` alike.
+     *
+     * 1v1 matches — the classic creator + taker pair.
+     *
      * Triggers a `listing` query if not eager-loaded — controllers should
-     * `with(['listing'])` when authorizing in a list context.
+     * `with(['listing'])` (column whitelist must include `team_size`) when
+     * authorizing in a list context.
      */
     private function isParticipant(User $user, GameMatch $match): bool
     {
+        if ($match->listing->isTeamPlay()) {
+            return $this->isLiveLobbyParticipant($user, $match);
+        }
+
         return $user->id === $match->taker_user_id
             || $user->id === $match->listing->user_id;
+    }
+
+    private function isLiveLobbyParticipant(User $user, GameMatch $match): bool
+    {
+        return LobbyParticipant::query()
+            ->where('listing_id', $match->listing_id)
+            ->where('user_id', $user->id)
+            ->live()
+            ->exists();
+    }
+
+    /**
+     * True if `$userId` and `$otherUserId` are both live participants on
+     * the same side of the lobby. Used to block a team-mate of the
+     * cancellation requester from accepting on the team's behalf.
+     *
+     * Returns false on any data anomaly (either user missing from the live
+     * roster) — fails closed so the policy errs toward forbidding the
+     * action rather than allowing a same-team accept by accident.
+     */
+    private function onSameTeamAs(User $user, ?int $otherUserId, GameMatch $match): bool
+    {
+        if ($otherUserId === null) {
+            return false;
+        }
+
+        $userSide = $this->lobbySideOf($user->id, $match);
+        $otherSide = $this->lobbySideOf($otherUserId, $match);
+
+        if ($userSide === null || $otherSide === null) {
+            return false;
+        }
+
+        return $userSide === $otherSide;
+    }
+
+    private function lobbySideOf(int $userId, GameMatch $match): ?string
+    {
+        return LobbyParticipant::query()
+            ->where('listing_id', $match->listing_id)
+            ->where('user_id', $userId)
+            ->live()
+            ->value('side');
     }
 }

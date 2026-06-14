@@ -30,3 +30,17 @@ Schedule::command('matches:resolve-timeouts')
 Schedule::command('stakly:auto-fetch-pending')
     ->everyFiveMinutes()
     ->withoutOverlapping();
+
+// M34 P1 — ready-check timeout sweep. 5-min deadline needs sub-5-min
+// cadence; per-minute keeps the timer feeling responsive. The action is
+// row-locked + state-guarded so back-to-back runs on the same listing
+// no-op safely.
+Schedule::command('lobbies:sweep-ready-check-timeouts')
+    ->everyMinute()
+    ->withoutOverlapping();
+
+// M34 P1 — 24h listing-fill timeout. Hourly cadence is plenty for a 24h
+// timer; mirrors `listings:expire`'s posture for the non-team-play case.
+Schedule::command('lobbies:sweep-fill-timeouts')
+    ->hourly()
+    ->withoutOverlapping();

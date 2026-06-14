@@ -27,6 +27,7 @@ interface Props {
 const ICONS: Record<NotificationEventType, LucideIcon> = {
     listing_taken: Swords,
     listing_expired: Clock,
+    team_match_started: Swords,
     match_settled: Trophy,
     match_manual_review: ShieldAlert,
     dispute_opened: AlertTriangle,
@@ -40,9 +41,8 @@ const ICONS: Record<NotificationEventType, LucideIcon> = {
 
 export function NotificationCard({ notification, onMarkRead }: Props) {
     const t = useT();
-    const Icon = notification.event_type
-        ? ICONS[notification.event_type]
-        : Swords;
+    const Icon =
+        (notification.event_type && ICONS[notification.event_type]) || Swords;
     const isRead = notification.read_at !== null;
 
     return (

@@ -2,54 +2,45 @@
 
 namespace Database\Seeders;
 
+use App\Actions\Listing\CreateTeamPlayListingAction;
+use App\Actions\Lobby\JoinLobbyAction;
+use App\Actions\Lobby\ToggleReadyAction;
 use App\Enums\Game;
+use App\Enums\LinkedAccountProvider;
 use App\Models\Listing;
 use App\Models\LobbyParticipant;
 use App\Models\User;
 use App\Services\Wallet;
 use Illuminate\Database\Seeder;
+use Illuminate\Support\Collection;
 
 class ListingSeeder extends Seeder
 {
     /**
-     * Seed 50 listings spread across 20 creators (so power users own multiple
-     * listings — closer to a real marketplace where the same names recur).
+     * Seed 50+ marketplace listings + three team-play lobbies (recruiting /
+     * ready_checking / locked) so every surface on `/listings` and the
+     * team-play `/listings/{id}` page has data to render against.
      *
-     * Distribution: 40 open / 5 taken / 3 expired / 2 ending-soon. Status
-     * variety lets us verify `scopeOpen` filters correctly and "ending soon"
-     * sort surfaces the right rows.
-     *
-     * The 40 open listings are split across the three Active games (Chess
-     * via chess.com/Lichess; CS2 via FACEIT; Dota 2 via Steam) so the
-     * per-game tabs strip + filter gating on `/listings` is testable
-     * end-to-end. CS2 + Dota 2 stand in as M15 placeholders — see
-     * `App\Enums\Game` and `App\Enums\LinkedAccountProvider` notes.
+     * Marketplace users get ALL three linked providers (chess.com, Lichess,
+     * FACEIT) so the same pool can host chess + CS2 listings + populate
+     * team-play lobbies. Trust signals on the lobby page flow from
+     * `MatchHistorySeeder` (runs after this seeder, queried fresh at
+     * page-view time).
      */
     public function run(): void
     {
-        // `->active()` so the seeded marketplace dataset is publicly visible
-        // out-of-the-box — column default is `false`, so without this every
-        // seeded listing would be hidden by `scopeOnPublicMarketplace`.
-        //
-        // `->withLichess()->withChessCom()` so seeded users pass the M8
-        // Phase 5 Slice B platform-specific take + create gates on BOTH
-        // platforms. The seeded `ListingFactory` randomises `platform`
-        // 50/50, so every seeded user must be able to participate on either
-        // side to keep the dev marketplace fully takeable. Unique-slug
-        // auto-generation in the `withLichess()` / `withChessCom()`
-        // factory states handles per-row DB uniqueness on the
-        // `users.{provider}_username` columns.
+        // 29 marketplace users with chess + FACEIT providers, $10k each.
+        // 4 + 10 + 10 fill the three 5v5 lobbies; +4 host the 2v2 Wingman
+        // lobby. Disjoint slices because `JoinLobbyAction` rejects users
+        // already in another active lobby.
         $users = User::factory()
-            ->count(20)
+            ->count(29)
             ->active()
             ->withLichess()
             ->withChessCom()
+            ->withFaceit()
             ->create();
 
-        // Every marketplace user starts with $10,000 — comfortable headroom
-        // so the open/taken listing holds below never trip
-        // InsufficientBalanceException. Via the service to keep ledger +
-        // `usdt_balance` in sync. Idempotent: re-running won't double-credit.
         foreach ($users as $user) {
             Wallet::deposit($user, '10000', reference: "seed:dev-deposit:{$user->id}");
         }
@@ -61,12 +52,11 @@ class ListingSeeder extends Seeder
             ->recycle($users)
             ->create();
 
-        $openCs2 = Listing::factory()
-            ->count(8)
-            ->open()
-            ->forGame(Game::Cs2)
-            ->recycle($users)
-            ->create();
+        // CS2 listings are team-play only (2v2 Wingman + 5v5 competitive) —
+        // `Game::Cs2->allowedTeamSizes()` rejects 1v1 and the FACEIT product
+        // surface doesn't have a 1v1 mode. Those CS2 lobbies land via
+        // `seedTeamPlayLobby` below; the chess pool here is the only 1v1
+        // marketplace content.
 
         $openDota = Listing::factory()
             ->count(7)
@@ -75,7 +65,7 @@ class ListingSeeder extends Seeder
             ->recycle($users)
             ->create();
 
-        $open = $openChess->concat($openCs2)->concat($openDota);
+        $open = $openChess->concat($openDota);
 
         $taken = Listing::factory()
             ->count(5)
@@ -112,8 +102,6 @@ class ListingSeeder extends Seeder
             ->recycle($users)
             ->create();
 
-        // ending-soon listings are still Open (just with short expiry) — also
-        // need the escrow held.
         $endingSoon->each(function (Listing $listing) {
             Wallet::hold(
                 user: $listing->user,
@@ -124,92 +112,93 @@ class ListingSeeder extends Seeder
             );
         });
 
-        // M34 P0 — team-play CS2 lobbies. One in each in-flight lobby_state
-        // so the marketplace + future lobby UI have data to render against.
-        // `locked` is not seeded here because creating the paired
-        // `GameMatch` + snapshots in `LobbyFilling` → `Pending` properly is
-        // P1's job (LobbyLockAction). Seeded participants get FACEIT links
-        // on-the-fly via `->withFaceit()` since the existing 20 users only
-        // have chess providers.
-        $this->seedTeamPlayLobby(state: 'recruiting', readyCount: 2, softJoinedCount: 2);
-        $this->seedTeamPlayLobby(state: 'ready_checking', readyCount: 6, softJoinedCount: 4);
+        // M34 P3.1 — three CS2 5v5 lobbies, one per visible state, so the
+        // team-play `/listings/{id}` page is fully testable. Participants
+        // pulled in disjoint slices so no user is in two lobbies at once.
+        $this->seedTeamPlayLobby(state: 'recruiting', participants: $users->slice(0, 4)->values(), readyCount: 2);
+        $this->seedTeamPlayLobby(state: 'ready_checking', participants: $users->slice(4, 10)->values(), readyCount: 6);
+        $this->seedTeamPlayLobby(state: 'locked', participants: $users->slice(14, 10)->values(), readyCount: 10);
+
+        // M34 P5 — one 2v2 Wingman lobby in recruiting (4 slots, 1 Ready'd)
+        // so the marketplace + lobby surfaces have non-5v5 team-play content
+        // to render against.
+        $this->seedTeamPlayLobby(state: 'recruiting', participants: $users->slice(24, 4)->values(), readyCount: 1, teamSize: 2);
+
+        // Extra thin recruiting lobbies for marketplace volume — locked
+        // lobbies hide from the public board (status=Taken) so without
+        // these the CS2 tab feels sparse. Each uses a fresh creator (no
+        // joiners) so the `JoinLobbyAction`'s already-in-lobby guard
+        // doesn't reject anyone from the slices above.
+        $extraCreators = User::factory()
+            ->count(3)
+            ->active()
+            ->withLichess()
+            ->withChessCom()
+            ->withFaceit()
+            ->create();
+        foreach ($extraCreators as $creator) {
+            $this->seedTeamPlayLobby(
+                state: 'recruiting',
+                participants: collect([$creator]),
+                readyCount: 0,
+            );
+        }
     }
 
     /**
-     * Seed a single CS2 5v5 lobby in the given lobby_state. Creator is
-     * always slot 0 on their side (per M34's "creator picks slot at
-     * creation" rule). Ready'd participants get a real `Wallet::hold` so
-     * the seeded ledger balances.
+     * Seed a single team-play lobby in the given state via the production
+     * actions (Create → Join → ToggleReady). Going through the actions
+     * means the paired GameMatch, MatchProviderSnapshots, Wallet holds,
+     * and lobby state transitions all wire up correctly without ad-hoc
+     * factory plumbing.
+     *
+     * `state` only documents intent — the resulting lobby_state is whatever
+     * the actions produce given the number of joins / Ready toggles.
+     *
+     * @param  Collection<int, User>  $participants
      */
-    private function seedTeamPlayLobby(string $state, int $readyCount, int $softJoinedCount): void
+    private function seedTeamPlayLobby(string $state, Collection $participants, int $readyCount, int $teamSize = 5): void
     {
-        $totalParticipants = $readyCount + $softJoinedCount;
-
-        $participants = User::factory()
-            ->count($totalParticipants)
-            ->active()
-            ->withFaceit()
-            ->create();
-
-        foreach ($participants as $user) {
-            Wallet::deposit($user, '10000', reference: "seed:dev-deposit:team-play:{$user->id}");
+        if ($participants->isEmpty()) {
+            return;
         }
 
         $creator = $participants->first();
 
-        $factory = Listing::factory()->teamPlay(teamSize: 5)->for($creator);
-
-        if ($state === 'ready_checking') {
-            $factory = $factory->lobbyReadyChecking();
+        // Top up so Ready holds can't trip InsufficientBalanceException.
+        // Idempotent reference per-user keeps reruns safe.
+        foreach ($participants as $user) {
+            Wallet::deposit($user, '5000', reference: "seed:team-play-topup:{$user->id}");
         }
 
-        $listing = $factory->create();
+        $listing = app(CreateTeamPlayListingAction::class)->handle($creator, [
+            'game' => Game::Cs2->value,
+            'platform' => LinkedAccountProvider::Faceit->value,
+            'stake_amount' => '20',
+            'time_control' => [],
+            'duration_hours' => 24,
+            'team_size' => $teamSize,
+            'creator_side' => LobbyParticipant::SIDE_A,
+            'is_public' => true,
+        ]);
 
-        $creatorSide = $listing->creator_side;
-        $opposingSide = $creatorSide === LobbyParticipant::SIDE_A
-            ? LobbyParticipant::SIDE_B
-            : LobbyParticipant::SIDE_A;
+        // The creator is auto-soft-joined; the rest of the pool joins
+        // alternating sides for balance (Joiner 0 → side B, joiner 1 →
+        // side A, etc.) so both teams populate evenly.
+        $joiners = $participants->slice(1)->values();
+        foreach ($joiners as $index => $user) {
+            $side = $index % 2 === 0
+                ? LobbyParticipant::SIDE_B
+                : LobbyParticipant::SIDE_A;
 
-        // Slot assignment: creator = slot 0 on their picked side. Other
-        // ready'd participants fill the remaining slots round-robin across
-        // both sides; soft-joined fill the rest.
-        $slotsBySide = [
-            LobbyParticipant::SIDE_A => 0,
-            LobbyParticipant::SIDE_B => 0,
-        ];
-        $stakeAmount = (string) $listing->stake_amount;
+            app(JoinLobbyAction::class)->handle($user, $listing, $side);
+        }
 
-        foreach ($participants as $index => $user) {
-            // Creator → their side. Remaining → alternate sides.
-            $side = $index === 0
-                ? $creatorSide
-                : ($index % 2 === 0 ? $creatorSide : $opposingSide);
-
-            $slotIndex = $slotsBySide[$side];
-            $slotsBySide[$side]++;
-
-            $isReady = $index < $readyCount;
-
-            LobbyParticipant::create([
-                'listing_id' => $listing->id,
-                'user_id' => $user->id,
-                'side' => $side,
-                'slot_index' => $slotIndex,
-                'is_ready' => $isReady,
-                'stake_held_at' => $isReady ? now()->subMinutes(2) : null,
-                'kicked_at' => null,
-                'joined_at' => now()->subMinutes(5),
-            ]);
-
-            if ($isReady) {
-                Wallet::hold(
-                    user: $user,
-                    amount: $stakeAmount,
-                    listing: $listing,
-                    reference: "seed:lobby-ready:{$listing->id}:{$user->id}",
-                    description: 'Seed: stake escrowed on Ready.',
-                );
-            }
+        // Ready up the requested headcount. Once all slots Ready up the
+        // ToggleReadyAction's downstream LobbyReadyCheckAction flips the
+        // state to 'locked' + transitions the paired match to Pending.
+        foreach ($participants->take($readyCount) as $user) {
+            app(ToggleReadyAction::class)->handle($user, $listing);
         }
     }
 }

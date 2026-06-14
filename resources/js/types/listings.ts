@@ -5,6 +5,8 @@
 
 import type { GameId } from '@/config/games';
 import type { GameTile } from '@/types/home';
+import type { Lobby } from './lobby';
+import type { ChatMessage } from './match';
 
 export type ListingStatus = 'open' | 'taken' | 'expired' | 'cancelled';
 
@@ -88,6 +90,24 @@ export interface Listing {
     expires_at: string;
     status: ListingStatus;
     created_at: string | null;
+    // 1 for chess (default). > 1 for team-play listings (CS2 Wingman 2v2 / 5v5).
+    team_size: number;
+    // null for chess; one of 'recruiting' | 'ready_checking' | 'locked' |
+    // 'cancelled' for team-play. Marketplace listings only ever appear with
+    // null or 'recruiting' | 'ready_checking' (Open status filter).
+    lobby_state: string | null;
+    // ISO-8601 deadline for the ready-check countdown. Only non-null while
+    // `lobby_state === 'ready_checking'`.
+    lobby_ready_check_deadline: string | null;
+    // Active lobby seats (kicked_at IS NULL). 0 for chess.
+    live_participant_count: number;
+    // Up to 3 live participants, ordered by `joined_at`. Powers the grid-card
+    // roster avatar preview. Always present; empty for chess.
+    participant_previews: Array<{
+        username: string;
+        name: string;
+        avatar_thumb_url: string | null;
+    }>;
     creator: ListingCreator;
 }
 
@@ -143,9 +163,17 @@ export interface ListingsIndexProps {
 // viewer is a participant (creator or taker). For non-participants and
 // non-taken listings the controller sends `null` — the frontend uses its
 // presence as the sole gate for the "View match →" link.
+//
+// M34 P3.1 Slice B.1 — `lobby` + `messages` arrive only when the listing is
+// team-play (`team_size > 1`). Their presence signals the page should render
+// the lobby UI instead of the chess detail view. Chess listings keep the
+// `match` column populated for participants; team-play listings ignore it
+// in favour of `lobby.match_id`.
 export interface ListingShowProps {
     listing: Listing;
     match: { id: number } | null;
+    lobby?: Lobby;
+    messages?: { data: ChatMessage[] };
 }
 
 // Props for the create-listing form. Option lists (regions / languages /
@@ -177,7 +205,11 @@ export interface ListingCreateProps {
     // the picked game.
     requirementsByGame: Record<
         GameId,
-        { providers: ListingPlatform[]; verified: boolean }
+        {
+            providers: ListingPlatform[];
+            verified: boolean;
+            allowed_team_sizes: number[];
+        }
     >;
 }
 

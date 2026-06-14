@@ -1,13 +1,16 @@
 import { router } from '@inertiajs/react';
 import { useEffect, useState } from 'react';
 import { ListingFiltersBar } from '@/components/listings/listing-filters-bar';
+import { ListingGridCard } from '@/components/listings/listing-grid-card';
 import { ListingPagination } from '@/components/listings/listing-pagination';
 import { ListingRow } from '@/components/listings/listing-row';
 import { ListingRowSkeleton } from '@/components/listings/listing-row-skeleton';
 import { ListingsGameTabs } from '@/components/listings/listings-game-tabs';
+import { ListingsViewToggle } from '@/components/listings/listings-view-toggle';
 import { PageMeta } from '@/components/site/page-meta';
 import { BGPattern } from '@/components/ui/bg-pattern';
 import type { GameId } from '@/config/games';
+import { useListingsView } from '@/hooks/use-listings-view';
 import SiteLayout from '@/layouts/site-layout';
 import { useT } from '@/lib/i18n';
 import { buildListingsQuery } from '@/lib/listings-query';
@@ -24,6 +27,7 @@ export default function ListingsIndex({
 }: ListingsIndexProps) {
     const t = useT();
     const [isLoading, setIsLoading] = useState(false);
+    const { view, setView } = useListingsView();
 
     const selectedGame = games.data.find((g) => g.slug === filters.game);
     const isComingSoonGame = selectedGame?.status === 'coming_soon';
@@ -102,19 +106,22 @@ export default function ListingsIndex({
                 />
 
                 <div className="mx-auto max-w-5xl px-4 py-10 md:px-6 md:py-14">
-                    <header className="mb-8">
-                        <h1 className="font-display text-3xl font-bold tracking-tight md:text-4xl">
-                            {t('Listings')}
-                        </h1>
-                        <p className="mt-2 text-sm text-muted-foreground">
-                            {t('Find an opponent and stake your skill.')}{' '}
-                            <span className="text-foreground/70">
-                                {listings.meta.total}{' '}
-                                {listings.meta.total === 1
-                                    ? t('open')
-                                    : t('matching')}
-                            </span>
-                        </p>
+                    <header className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+                        <div>
+                            <h1 className="font-display text-3xl font-bold tracking-tight md:text-4xl">
+                                {t('Listings')}
+                            </h1>
+                            <p className="mt-2 text-sm text-muted-foreground">
+                                {t('Find an opponent and stake your skill.')}{' '}
+                                <span className="text-foreground/70">
+                                    {listings.meta.total}{' '}
+                                    {listings.meta.total === 1
+                                        ? t('open')
+                                        : t('matching')}
+                                </span>
+                            </p>
+                        </div>
+                        <ListingsViewToggle value={view} onChange={setView} />
                     </header>
 
                     <div className="mb-5">
@@ -146,6 +153,15 @@ export default function ListingsIndex({
                                   )
                                 : t('No listings match your filters yet.')}
                         </p>
+                    ) : view === 'grid' ? (
+                        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                            {listings.data.map((listing) => (
+                                <ListingGridCard
+                                    key={listing.id}
+                                    listing={listing}
+                                />
+                            ))}
+                        </div>
                     ) : (
                         <div className="flex flex-col gap-3">
                             {/* Desktop-only column header strip. Widths mirror

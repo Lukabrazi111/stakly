@@ -1,11 +1,14 @@
 <?php
 
+use App\Actions\Listing\CreateTeamPlayListingAction;
+use App\Enums\Game;
 use App\Enums\LinkedAccountProvider;
 use App\Enums\ListingStatus;
 use App\Enums\MatchStatus;
 use App\Enums\WalletTransactionType;
 use App\Models\GameMatch;
 use App\Models\Listing;
+use App\Models\LobbyParticipant;
 use App\Models\User;
 use App\Models\WalletTransaction;
 use App\Services\Wallet;
@@ -543,4 +546,43 @@ test('taker hold uses exact BCMath precision matching the listing stake', functi
     // Exact BCMath equality at scale 6 — no float drift on awkward stake values.
     expect(bccomp($hold->amount, '-123.450000', 6))->toBe(0)
         ->and(bccomp((string) $taker->fresh()->usdt_balance, '376.550000', 6))->toBe(0);
+});
+
+/*
+ * M34 P3.1 Slice B.1 — team-play guard. The frontend branches the CTA so
+ * real users never reach this endpoint for `team_size > 1` listings; the
+ * guard exists to keep a crafted POST from hitting the UNIQUE-constraint
+ * 500 (team-play listings already have a `LobbyFilling` GameMatch row).
+ */
+test('taking a team-play listing returns not_takeable — no match write, neutral redirect', function () {
+    User::factory()->state(['is_platform' => true])->create();
+
+    $creator = User::factory()->active()->withFaceit()->create();
+    Wallet::deposit($creator, '1000', reference: "test:teamplay-create:{$creator->id}");
+
+    $listing = app(CreateTeamPlayListingAction::class)->handle($creator, [
+        'game' => Game::Cs2->value,
+        'platform' => LinkedAccountProvider::Faceit->value,
+        'stake_amount' => '100',
+        'time_control' => [],
+        'duration_hours' => 24,
+        'team_size' => 5,
+        'creator_side' => LobbyParticipant::SIDE_A,
+        'is_public' => true,
+    ]);
+
+    $taker = User::factory()->active()->withFaceit()->create();
+    Wallet::deposit($taker, '500', reference: "test:teamplay-taker:{$taker->id}");
+
+    // Match row already exists from the team-play create flow (LobbyFilling).
+    $existingMatchId = $listing->gameMatch->id;
+
+    $this->actingAs($taker)
+        ->post(route('listings.take', ['locale' => 'en', 'listing' => $listing]))
+        ->assertRedirect(route('listings.show', ['locale' => 'en', 'listing' => $listing]));
+
+    // No second match row created, no taker hold landed.
+    expect(GameMatch::query()->where('listing_id', $listing->id)->count())->toBe(1);
+    expect(GameMatch::query()->where('listing_id', $listing->id)->value('id'))->toBe($existingMatchId);
+    expect(bccomp((string) $taker->fresh()->usdt_balance, '500.000000', 6))->toBe(0);
 });

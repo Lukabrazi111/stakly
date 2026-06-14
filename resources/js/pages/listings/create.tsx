@@ -79,6 +79,21 @@ function defaultGameFor(
     return (cs2?.slug ?? active[0]?.slug ?? 'chess') as GameId;
 }
 
+function formatTeamSizeLabel(teamSize: number): string {
+    return `${teamSize}v${teamSize}`;
+}
+
+// Default to the largest = the game's "headline" mode (5v5 for CS2 once
+// Wingman adds [2, 5]). Server contract guarantees a non-empty list, but
+// the empty fallback keeps a partial Inertia hydration from crashing the
+// form.
+function defaultTeamSizeFor(allowedSizes: number[]): number {
+    return allowedSizes.length > 0 ? Math.max(...allowedSizes) : 1;
+}
+
+const SEGMENTED_ITEM_CLASS =
+    'h-12 rounded-xl border border-border/60 data-[state=on]:border-primary data-[state=on]:bg-primary/10 data-[state=on]:text-foreground';
+
 export default function ListingsCreate({
     balance,
     regions,
@@ -99,6 +114,11 @@ export default function ListingsCreate({
         requirementsByGame,
         linkedPlatforms,
     );
+    const initialAllowedTeamSizes = requirementsByGame[initialGame]
+        ?.allowed_team_sizes ?? [1];
+    const initialTeamSize = defaultTeamSizeFor(initialAllowedTeamSizes);
+    const initialCreatorSide: 'a' | 'b' | null =
+        initialTeamSize > 1 ? 'a' : null;
 
     const { data, setData, post, processing, errors } = useForm<{
         game: GameId;
@@ -110,6 +130,9 @@ export default function ListingsCreate({
         region: string;
         language: string[];
         duration_hours: number;
+        team_size: number;
+        creator_side: 'a' | 'b' | null;
+        is_public: boolean;
     }>({
         game: initialGame,
         platform: initialPlatform,
@@ -120,11 +143,15 @@ export default function ListingsCreate({
         region: regions[0] ?? 'Global',
         language: [],
         duration_hours: durations.includes(24) ? 24 : (durations[0] ?? 24),
+        team_size: initialTeamSize,
+        creator_side: initialCreatorSide,
+        is_public: true,
     });
 
     const requirements = requirementsByGame[data.game];
     const isGameVerified = requirements?.verified ?? false;
     const requiredProviders = requirements?.providers ?? [];
+    const allowedTeamSizes = requirements?.allowed_team_sizes ?? [1];
 
     const linkedChessProviders = linkedPlatforms.filter(isChessProvider);
     const showChessPlatformPicker =
@@ -151,6 +178,10 @@ export default function ListingsCreate({
             requirementsByGame,
             linkedPlatforms,
         );
+        const nextAllowedTeamSizes = requirementsByGame[next]
+            ?.allowed_team_sizes ?? [1];
+        const nextTeamSize = defaultTeamSizeFor(nextAllowedTeamSizes);
+        const nextCreatorSide: 'a' | 'b' | null = nextTeamSize > 1 ? 'a' : null;
 
         setData((prev) => ({
             ...prev,
@@ -165,6 +196,18 @@ export default function ListingsCreate({
             // backend stores null instead of a stale `['blitz']` placeholder
             // on CS2 / future-game listings.
             time_control: next === 'chess' ? prev.time_control : [],
+            // M34 — reset team_size + creator_side to the new game's defaults.
+            // is_public is the creator's choice and persists across switches.
+            team_size: nextTeamSize,
+            creator_side: nextCreatorSide,
+        }));
+    };
+
+    const handleTeamSizeChange = (next: number) => {
+        setData((prev) => ({
+            ...prev,
+            team_size: next,
+            creator_side: next > 1 ? (prev.creator_side ?? 'a') : null,
         }));
     };
 
@@ -300,6 +343,78 @@ export default function ListingsCreate({
                                             </p>
                                         </div>
                                     </div>
+                                </FormSection>
+                            )}
+
+                            {allowedTeamSizes.length > 1 && (
+                                <FormSection title={t('Format')}>
+                                    <ToggleGroup
+                                        type="single"
+                                        value={String(data.team_size)}
+                                        onValueChange={(value) => {
+                                            if (value === '') {
+                                                return;
+                                            }
+
+                                            handleTeamSizeChange(Number(value));
+                                        }}
+                                        className="grid grid-cols-2 gap-2"
+                                    >
+                                        {allowedTeamSizes.map((size) => (
+                                            <ToggleGroupItem
+                                                key={size}
+                                                value={String(size)}
+                                                className={SEGMENTED_ITEM_CLASS}
+                                            >
+                                                {formatTeamSizeLabel(size)}
+                                            </ToggleGroupItem>
+                                        ))}
+                                    </ToggleGroup>
+                                    <p className="mt-2 text-xs text-muted-foreground">
+                                        {data.team_size === 1
+                                            ? t('Direct 1v1 match — no lobby.')
+                                            : t(
+                                                  'Team lobby — pick your side, recruit teammates, ready up together.',
+                                              )}
+                                    </p>
+                                    <InputError message={errors.team_size} />
+                                </FormSection>
+                            )}
+
+                            {data.team_size > 1 && (
+                                <FormSection title={t('Your side')}>
+                                    <ToggleGroup
+                                        type="single"
+                                        value={data.creator_side ?? 'a'}
+                                        onValueChange={(value) => {
+                                            if (
+                                                value === 'a' ||
+                                                value === 'b'
+                                            ) {
+                                                setData('creator_side', value);
+                                            }
+                                        }}
+                                        className="grid grid-cols-2 gap-2"
+                                    >
+                                        <ToggleGroupItem
+                                            value="a"
+                                            className={SEGMENTED_ITEM_CLASS}
+                                        >
+                                            {t('Team A')}
+                                        </ToggleGroupItem>
+                                        <ToggleGroupItem
+                                            value="b"
+                                            className={SEGMENTED_ITEM_CLASS}
+                                        >
+                                            {t('Team B')}
+                                        </ToggleGroupItem>
+                                    </ToggleGroup>
+                                    <p className="mt-2 text-xs text-muted-foreground">
+                                        {t(
+                                            "You'll be auto-joined to slot 1 of this team. Teammates join the empty slots from the lobby page.",
+                                        )}
+                                    </p>
+                                    <InputError message={errors.creator_side} />
                                 </FormSection>
                             )}
 
@@ -468,6 +583,46 @@ export default function ListingsCreate({
                                 </div>
                             </FormSection>
 
+                            <FormSection title={t('Visibility')}>
+                                <ToggleGroup
+                                    type="single"
+                                    value={
+                                        data.is_public ? 'public' : 'private'
+                                    }
+                                    onValueChange={(value) => {
+                                        if (value === 'public') {
+                                            setData('is_public', true);
+                                        } else if (value === 'private') {
+                                            setData('is_public', false);
+                                        }
+                                    }}
+                                    className="grid grid-cols-2 gap-2"
+                                >
+                                    <ToggleGroupItem
+                                        value="public"
+                                        className={SEGMENTED_ITEM_CLASS}
+                                    >
+                                        {t('Public')}
+                                    </ToggleGroupItem>
+                                    <ToggleGroupItem
+                                        value="private"
+                                        className={SEGMENTED_ITEM_CLASS}
+                                    >
+                                        {t('Private')}
+                                    </ToggleGroupItem>
+                                </ToggleGroup>
+                                <p className="mt-2 text-xs text-muted-foreground">
+                                    {data.is_public
+                                        ? t(
+                                              'Listed in the marketplace for anyone matching your skill range.',
+                                          )
+                                        : t(
+                                              'Hidden from the marketplace — only people with your invite link can see it.',
+                                          )}
+                                </p>
+                                <InputError message={errors.is_public} />
+                            </FormSection>
+
                             <FormSection title={t('Listing expires after')}>
                                 <div className="space-y-2">
                                     <Select
@@ -522,7 +677,9 @@ export default function ListingsCreate({
                                 >
                                     {processing
                                         ? t('Creating…')
-                                        : t('Create listing')}
+                                        : data.team_size > 1
+                                          ? t('Open lobby')
+                                          : t('Create listing')}
                                 </Button>
                             </div>
                         </>

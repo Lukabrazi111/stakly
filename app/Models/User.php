@@ -157,6 +157,43 @@ class User extends Authenticatable implements FilamentUser, HasMedia, MustVerify
     }
 
     /**
+     * M34 — the user's current team-play lobby participation, if any. Used to
+     * enforce the global single-active-lobby rule.
+     *
+     * "Active" = a live (not-kicked) participant row on a listing whose lobby
+     * is still in flight (`recruiting`, `ready_checking`, or `locked`) AND
+     * — for the `locked` branch — whose underlying match has not yet hit a
+     * terminal status. `lobby_state` stays `locked` even after Settled /
+     * ManualReview / Cancelled, so the lobby_state check alone would lock the
+     * user out of joining new lobbies forever once a match finishes (M34 P7
+     * follow-up bug).
+     *
+     * Terminal match statuses (Settled, ManualReview, Cancelled) release the
+     * user. `Disputed` keeps them locked — the dispute is an active engagement
+     * (evidence gathering in chat) where joining a parallel lobby would
+     * fragment attention. `Pending` and `LobbyFilling` are obviously active.
+     */
+    public function activeLobbyParticipation(): ?LobbyParticipant
+    {
+        $terminalMatchStatuses = [
+            MatchStatus::Settled->value,
+            MatchStatus::ManualReview->value,
+            MatchStatus::Cancelled->value,
+        ];
+
+        return LobbyParticipant::query()
+            ->where('user_id', $this->id)
+            ->live()
+            ->whereHas('listing', fn ($q) => $q
+                ->whereIn('lobby_state', ['recruiting', 'ready_checking', 'locked'])
+                ->where(fn ($q) => $q
+                    ->whereIn('lobby_state', ['recruiting', 'ready_checking'])
+                    ->orWhereDoesntHave('gameMatch', fn ($m) => $m
+                        ->whereIn('status', $terminalMatchStatuses))))
+            ->first();
+    }
+
+    /**
      * Taker side only. Creator side is reached via `$user->listings`; combined
      * "all my matches" queries use `GameMatch::scopeForParticipant` instead.
      */
@@ -232,13 +269,20 @@ class User extends Authenticatable implements FilamentUser, HasMedia, MustVerify
         $hasInFlightMatch = GameMatch::query()
             ->forParticipant($this->id)
             ->whereIn('status', [
+                MatchStatus::LobbyFilling,
                 MatchStatus::Pending,
                 MatchStatus::Disputed,
                 MatchStatus::ManualReview,
             ])
             ->exists();
 
-        if ($hasInFlightMatch) {
+        // M34: lobby participants who aren't creator OR placeholder-taker
+        // (i.e. joiners on the opposing side) still count as in-flight. The
+        // global helper hits live participations in `recruiting`,
+        // `ready_checking`, or `locked` lobbies.
+        $hasLobbyParticipation = $this->activeLobbyParticipation() !== null;
+
+        if ($hasInFlightMatch || $hasLobbyParticipation) {
             $blockers[] = 'in_flight_match';
         }
 

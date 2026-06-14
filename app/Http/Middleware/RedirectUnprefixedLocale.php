@@ -129,7 +129,22 @@ class RedirectUnprefixedLocale
 
         $firstSegment = explode('/', $path)[0];
 
-        return in_array($firstSegment, self::EXEMPT_FIRST_SEGMENTS, true);
+        if (in_array($firstSegment, self::EXEMPT_FIRST_SEGMENTS, true)) {
+            return true;
+        }
+
+        // Livewire 3 serves its asset bundle under a cache-busted prefix
+        // (`/livewire-{hash}/livewire.js`, `/livewire-{hash}/update`, etc.).
+        // The hash changes per Livewire version so an exact match on
+        // `livewire` won't catch it — match the prefix instead. Without
+        // this, the Filament admin login page's Livewire JS gets 301'd to
+        // `/en/livewire-{hash}/...` and 404s, leaving the form
+        // non-interactive (password show/hide broken, submit no-ops).
+        if (str_starts_with($firstSegment, 'livewire-')) {
+            return true;
+        }
+
+        return false;
     }
 
     /**

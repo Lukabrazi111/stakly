@@ -32,6 +32,7 @@ export function TakeButton({ listing, className = '' }: Props) {
     const { auth } = usePage().props;
     const { openLogin } = useAuthModal();
     const user = auth.user;
+    const isTeamPlay = listing.team_size > 1;
 
     if (!user) {
         return (
@@ -42,12 +43,30 @@ export function TakeButton({ listing, className = '' }: Props) {
                 onClick={openLogin}
                 className={className}
             >
-                {t('Sign in to take')}
+                {isTeamPlay ? t('Sign in to join') : t('Sign in to take')}
             </Button>
         );
     }
 
+    // Owner of a team-play listing routes to the lobby (where coordination
+    // + cancel-via-leave live) instead of `/listings/mine`. The chess-style
+    // "Manage" affordance still applies to 1v1 listings.
     if (user.id === listing.creator.id) {
+        if (isTeamPlay) {
+            return (
+                <Button
+                    variant="gradient"
+                    size="pill"
+                    asChild
+                    className={className}
+                >
+                    <Link href={showListing({ listing: listing.id }).url}>
+                        {t('View lobby')}
+                    </Link>
+                </Button>
+            );
+        }
+
         return (
             <Button
                 variant="outline"
@@ -82,6 +101,21 @@ export function TakeButton({ listing, className = '' }: Props) {
                     {t('Link :platform', {
                         platform: PLATFORM_LABEL[listing.platform],
                     })}
+                </Link>
+            </Button>
+        );
+    }
+
+    if (isTeamPlay) {
+        return (
+            <Button
+                variant="gradient"
+                size="pill"
+                asChild
+                className={className}
+            >
+                <Link href={showListing({ listing: listing.id }).url}>
+                    {t('View lobby')}
                 </Link>
             </Button>
         );

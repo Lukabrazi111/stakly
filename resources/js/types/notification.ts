@@ -1,6 +1,7 @@
 export type NotificationEventType =
     | 'listing_taken'
     | 'listing_expired'
+    | 'team_match_started'
     | 'match_settled'
     | 'match_manual_review'
     | 'dispute_opened'

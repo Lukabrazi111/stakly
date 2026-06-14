@@ -13,6 +13,7 @@ import { MobileChatTrigger } from '@/components/match/mobile-chat-trigger';
 import { OpenDisputeButton } from '@/components/match/open-dispute-button';
 import { RequestCancellationButton } from '@/components/match/request-cancellation-button';
 import { SettlementSummary } from '@/components/match/settlement-summary';
+import { TeamMatchView } from '@/components/match/team-match-view';
 import { WaitingForGameCard } from '@/components/match/waiting-for-game-card';
 import { useNotificationContext } from '@/components/notifications/notification-provider';
 import { BackLink } from '@/components/site/back-link';
@@ -20,6 +21,7 @@ import { PageMeta } from '@/components/site/page-meta';
 import { useMatchChat } from '@/hooks/use-match-chat';
 import SiteLayout from '@/layouts/site-layout';
 import { useT } from '@/lib/i18n';
+import { isMatchChatReadOnly } from '@/lib/match-chat-readonly';
 import { show as listingShow } from '@/routes/listings';
 import type { Match, MatchShowProps, MatchStatus } from '@/types';
 
@@ -56,6 +58,10 @@ function cooldownRemainingFor(match: Match, viewerId: number): number {
 }
 
 const STATUS_LABEL: Record<MatchStatus, string> = {
+    // M34: LobbyFilling matches are server-redirected to /listings/{id} so
+    // this branch is unreachable in practice — included to satisfy the
+    // exhaustive Record<MatchStatus, string> contract.
+    lobby_filling: 'Lobby filling',
     pending: 'Pending — waiting for game',
     disputed: 'Disputed — under review',
     settled: 'Settled',
@@ -64,6 +70,7 @@ const STATUS_LABEL: Record<MatchStatus, string> = {
 };
 
 const STATUS_TONE: Record<MatchStatus, string> = {
+    lobby_filling: 'border-muted-foreground/40 bg-muted text-muted-foreground',
     pending: 'border-warning/40 bg-warning/10 text-warning',
     disputed: 'border-destructive/40 bg-destructive/10 text-destructive',
     settled: 'border-success/40 bg-success/10 text-success',
@@ -72,6 +79,21 @@ const STATUS_TONE: Record<MatchStatus, string> = {
 };
 
 export default function MatchShow({ match, messages }: MatchShowProps) {
+    // M34 P6 — team matches branch to the team-aware view (separate
+    // header, roster, pot math, settlement summary). 1v1 chess keeps
+    // the existing page below untouched.
+    if (match.listing.team_size > 1) {
+        return (
+            <SiteLayout>
+                <TeamMatchView match={match} messages={messages} />
+            </SiteLayout>
+        );
+    }
+
+    return <ChessMatchShow match={match} messages={messages} />;
+}
+
+function ChessMatchShow({ match, messages }: MatchShowProps) {
     const t = useT();
     const { auth } = usePage().props;
 
@@ -82,10 +104,7 @@ export default function MatchShow({ match, messages }: MatchShowProps) {
     // channel auth callback). viewerId feeds the hook's optimistic-UI
     // injection so the sender sees their own bubble immediately.
     const chat = useMatchChat(match.id, messages.data, auth.user?.id ?? null);
-    const chatIsReadOnly =
-        match.status === 'settled' ||
-        match.status === 'manual_review' ||
-        match.status === 'cancelled';
+    const chatIsReadOnly = isMatchChatReadOnly(match.status);
 
     const isCreator = auth.user?.id === match.creator.id;
     const opponent = isCreator ? match.taker : match.creator;

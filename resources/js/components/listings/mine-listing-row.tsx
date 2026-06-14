@@ -4,6 +4,10 @@ import type { ReactNode } from 'react';
 import { useState } from 'react';
 import { CancelListingDialog } from '@/components/listings/cancel-listing-dialog';
 import { GameChip } from '@/components/listings/game-chip';
+import {
+    LobbyFillCounter,
+    LobbyStateBadge,
+} from '@/components/listings/team-play-meta';
 import { useT } from '@/lib/i18n';
 import {
     formatTimeRemaining,
@@ -38,6 +42,10 @@ export function MineListingRow({ listing }: Props) {
     const [cancelOpen, setCancelOpen] = useState(false);
 
     const canCancel = listing.status === 'open';
+    const isTeamPlay = listing.team_size > 1;
+    // Single canonical destination since Slice B.1 collapsed
+    // `/lobbies/{listing}` into `/listings/{listing}` for team-play.
+    const overlayHref = showListing({ listing: listing.id }).url;
 
     const openCancelDialog = (event: React.MouseEvent<HTMLButtonElement>) => {
         event.preventDefault();
@@ -51,16 +59,23 @@ export function MineListingRow({ listing }: Props) {
     return (
         <article className="group relative flex flex-col gap-2 border-t border-border/40 px-4 py-4 transition-colors duration-200 ease-out first:border-t-0 hover:bg-primary/5 md:flex-row md:items-center md:gap-4 md:px-5">
             <Link
-                href={showListing({ listing: listing.id }).url}
+                href={overlayHref}
                 className="absolute inset-0 rounded-lg focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none"
-                aria-label={t('View listing #:id', { id: listing.id })}
+                aria-label={
+                    isTeamPlay
+                        ? t('Open lobby #:id', { id: listing.id })
+                        : t('View listing #:id', { id: listing.id })
+                }
             />
 
             {/* Mobile: two grouped rows. Desktop: wrappers collapse via
                 `md:contents` so children flow into the article's flex-row. */}
             <div className="flex items-center gap-3 md:contents">
                 <div className="pointer-events-none relative shrink-0 md:w-24">
-                    <GameChip game={listing.game} />
+                    <GameChip
+                        game={listing.game}
+                        teamSize={isTeamPlay ? listing.team_size : undefined}
+                    />
                 </div>
 
                 <span
@@ -79,6 +94,10 @@ export function MineListingRow({ listing }: Props) {
 
             <div className="flex items-center gap-3 md:contents">
                 <div className="pointer-events-none relative flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
+                    {isTeamPlay && (
+                        <LobbyStateBadge state={listing.lobby_state} />
+                    )}
+                    {isTeamPlay && <LobbyFillCounter listing={listing} />}
                     {listing.time_control.map((tc) => (
                         <span
                             key={tc}

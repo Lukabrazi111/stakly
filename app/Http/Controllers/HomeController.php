@@ -30,7 +30,14 @@ class HomeController extends Controller
         $featured = $activeGameSlugs
             ->flatMap(fn (string $slug) => Listing::query()
                 ->onPublicMarketplace()
-                ->with(['user:id,name,username,is_active_mode', 'user.linkedAccounts'])
+                ->with([
+                    'user:id,name,username,is_active_mode',
+                    'user.linkedAccounts',
+                    'lobbyParticipants' => fn ($q) => $q->live()->orderBy('joined_at'),
+                    'lobbyParticipants.user:id,name,username',
+                    'lobbyParticipants.user.media',
+                ])
+                ->withCount(['lobbyParticipants as live_participant_count' => fn ($q) => $q->live()])
                 ->where('game', $slug)
                 ->orderBy('expires_at')
                 ->orderByDesc('id')

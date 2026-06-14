@@ -4,7 +4,9 @@ namespace App\Models;
 
 use App\Enums\LinkedAccountProvider;
 use App\Enums\MatchStatus;
+use App\Observers\GameMatchObserver;
 use Database\Factories\GameMatchFactory;
+use Illuminate\Database\Eloquent\Attributes\ObservedBy;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -18,6 +20,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * Named `GameMatch` because `match` is a PHP reserved keyword post-8.0; all
  * references follow the `GameMatch*` / `gameMatch()` convention.
  */
+#[ObservedBy(GameMatchObserver::class)]
 class GameMatch extends Model
 {
     /** @use HasFactory<GameMatchFactory> */
@@ -146,6 +149,33 @@ class GameMatch extends Model
                     && $snapshot->provider === $provider,
             )
             ?->provider_user_id;
+    }
+
+    /**
+     * Team-play sister to `snapshotProviderUserId`. Returns every {provider}
+     * GUID snapshotted for the {side} team, ordered by `slot_index` ascending
+     * so callers can address "slot 0" / "slot 1" deterministically. Null
+     * `provider_user_id` entries are filtered out (chess providers have no
+     * GUID).
+     *
+     * For 1v1 chess `side` is 'creator' / 'taker' and the array has zero or
+     * one element. For 5v5 team-play `side` is 'a' / 'b' and the array
+     * carries one entry per slot the team's players linked to {provider}.
+     *
+     * @return list<string>
+     */
+    public function snapshotProviderUserIds(string $side, LinkedAccountProvider $provider): array
+    {
+        return $this->providerSnapshots
+            ->filter(
+                fn (MatchProviderSnapshot $snapshot) => $snapshot->side === $side
+                    && $snapshot->provider === $provider
+                    && $snapshot->provider_user_id !== null,
+            )
+            ->sortBy('slot_index')
+            ->pluck('provider_user_id')
+            ->values()
+            ->all();
     }
 
     /**

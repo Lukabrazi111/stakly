@@ -65,18 +65,22 @@ return new class extends Migration
             $table->string('provider_user_id', 128)->nullable();
             $table->integer('skill_rating_snapshot')->nullable();
 
-            // M34 — slot identity within the team for team-play matches
-            // (`team_size > 1`). Stores 0..team_size-1 so SettleFromCardAction
-            // can map "which player on side A won" back to a specific Stakly
-            // user without colliding when multiple users share the same side.
-            // Null on 1v1 chess matches (side already disambiguates).
-            $table->unsignedSmallInteger('slot_index')->nullable();
+            // M34 — slot identity within the team. Stores 0..team_size-1.
+            // For 1v1 chess matches, slot_index = 0 (only one player per
+            // side). For team-play, distinct per side player. Defaulted to 0
+            // so the chess flow (`TakeListingAction::snapshotProviderAccounts`)
+            // doesn't need to be aware of the column — the team-play flow
+            // (`LobbyLockAction`) overrides explicitly.
+            $table->unsignedSmallInteger('slot_index')->default(0);
 
             $table->timestamps();
 
-            // One snapshot per (match, side, provider). A second insert
-            // for the same triple should be a conflict, not a duplicate.
-            $table->unique(['match_id', 'side', 'provider']);
+            // One snapshot per (match, side, slot, provider). Extended from
+            // M8's (match_id, side, provider) to include slot_index so
+            // M34's 5v5 case (multiple players on the same side) doesn't
+            // collide. For chess 1v1 matches where slot_index defaults to 0,
+            // the original (match, side, provider) uniqueness still holds.
+            $table->unique(['match_id', 'side', 'slot_index', 'provider']);
 
             // Lookup "all matches involving this provider username" —
             // useful for admin / abuse review surfaces (M12 onward) without

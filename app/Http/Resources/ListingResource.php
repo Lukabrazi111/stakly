@@ -38,6 +38,30 @@ class ListingResource extends JsonResource
             'expires_at' => $this->expires_at->toIso8601String(),
             'status' => $this->status->value,
             'created_at' => $this->created_at?->toIso8601String(),
+            'team_size' => $this->team_size,
+            'lobby_state' => $this->lobby_state,
+            // Deadline for the lobby's ready-check window. Drives the grid
+            // card's amber "Ready check · MM:SS" top banner. Null whenever
+            // `lobby_state !== 'ready_checking'`.
+            'lobby_ready_check_deadline' => $this->lobby_ready_check_deadline?->toIso8601String(),
+            // `withCount(['lobbyParticipants as live_participant_count' =>
+            //   fn ($q) => $q->live()])` populates this on consuming queries.
+            // Falls back to 0 when not loaded so tests / partial paths don't blow up.
+            'live_participant_count' => (int) ($this->live_participant_count ?? 0),
+            // Up to 3 live participants, ordered by `joined_at`. Powers the
+            // grid-card roster avatar preview (Slice A.2). Empty for chess
+            // and for any query that didn't eager-load `lobbyParticipants`.
+            'participant_previews' => $this->relationLoaded('lobbyParticipants')
+                ? $this->lobbyParticipants
+                    ->take(3)
+                    ->map(fn ($p) => [
+                        'username' => $p->user->username,
+                        'name' => $p->user->name,
+                        'avatar_thumb_url' => $p->user->avatar_thumb_url,
+                    ])
+                    ->values()
+                    ->all()
+                : [],
             'creator' => [
                 'id' => $this->user->id,
                 'name' => $this->user->name,

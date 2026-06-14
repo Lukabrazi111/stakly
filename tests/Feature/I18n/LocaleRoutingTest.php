@@ -172,3 +172,38 @@ test('route() positional scalar arg still works because locale fills from defaul
     // Defaults must fill {locale} BEFORE positional binding pulls into {listing}.
     expect(route('listings.show', 42, absolute: false))->toBe('/en/listings/42');
 });
+
+// ─── Livewire 3 hashed-prefix assets bypass the locale redirect ────────────
+//
+// Regression guard for the Filament admin login breakage (2026-06-14): the
+// exempt list had `'livewire'` (exact first-segment match), but Livewire 3
+// serves its asset bundle from `/livewire-{hash}/livewire.js` where the hash
+// changes per Livewire version. Without the prefix match, the asset request
+// got 301'd into `/en/livewire-{hash}/...` and 404'd, leaving the Filament
+// admin login form non-interactive (password show/hide broken, form submit
+// no-ops). Future Livewire bumps must NOT silently re-break this.
+
+test('Livewire 3 hashed asset prefix is not locale-redirected', function () {
+    // Middleware should match any `livewire-{anything}` first segment and
+    // skip the locale redirect. We assert the negative (no 301) rather than
+    // "returns 200" because Livewire's hashed asset only resolves once the
+    // app has been booted with Livewire registered AND served by the same
+    // app handler — on CI without the actual asset the route 404s, which
+    // is still correct middleware behaviour. The bug we're guarding is the
+    // 301 → `/en/livewire-{hash}/...` regression.
+    //
+    // Locally the asset resolves to a `BinaryFileResponse` (file streaming)
+    // which is missing the Laravel-specific `status()` method on the base
+    // response. `getStatusCode()` lives on Symfony's Response and is safe
+    // across every response type the framework might return here.
+    $response = $this->get('/livewire-3b469bd1/livewire.js');
+    expect($response->getStatusCode())->not->toBe(301);
+});
+
+test('Livewire hashed update endpoint is not locale-redirected', function () {
+    // Even on a non-existent hash, the path must NOT be 301'd to /en/...
+    // (404 is the right answer if the route doesn't exist; 301 to /en/ is
+    // the regression we're guarding against).
+    $response = $this->get('/livewire-doesnotexist/livewire.js');
+    expect($response->getStatusCode())->not->toBe(301);
+});

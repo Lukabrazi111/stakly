@@ -6,6 +6,7 @@ use App\Http\Controllers\GameMatchController;
 use App\Http\Controllers\HomeController;
 use App\Http\Controllers\LinkImageController;
 use App\Http\Controllers\ListingController;
+use App\Http\Controllers\LobbyController;
 use App\Http\Controllers\MessageController;
 use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\PageController;
@@ -92,7 +93,36 @@ Route::prefix('{locale}')
             Route::get('/link-images/{filename}', [LinkImageController::class, 'show'])
                 ->where('filename', '[a-f0-9]{64}\.(jpg|png|webp|gif)')
                 ->name('link-images.show');
+
+            // M34 P3 — lobby mutating endpoints. Auth-gated; the action layer
+            // enforces business rules (skill range, single-lobby, etc.) and
+            // returns sentinels mapped to toasts by the controller.
+            Route::post('/lobbies/{listing}/join', [LobbyController::class, 'join'])
+                ->name('lobbies.join');
+            Route::post('/lobbies/{listing}/leave', [LobbyController::class, 'leave'])
+                ->name('lobbies.leave');
+            Route::post('/lobbies/{listing}/ready', [LobbyController::class, 'toggleReady'])
+                ->name('lobbies.ready');
+            Route::delete('/lobbies/{listing}/participants/{user}', [LobbyController::class, 'kick'])
+                ->name('lobbies.kick');
+
+            // M34 P2 — private lobby invite link. 32-char opaque token from
+            // Str::random(32). Resolves and redirects to the canonical
+            // `/lobbies/{listing}` URL. Token routing is constrained to
+            // exactly 32 alphanumerics so it never collides with the numeric
+            // `{listing}` route below.
+            Route::get('/lobbies/{token}', [LobbyController::class, 'showByToken'])
+                ->where('token', '[A-Za-z0-9]{32}')
+                ->name('lobbies.invite');
         });
+
+        // M34 P3 — canonical public lobby page. Outside auth so unauth
+        // visitors can browse public lobbies (private ones gate inside the
+        // controller). Numeric constraint so this doesn't shadow the
+        // invite-token route above.
+        Route::get('/lobbies/{listing}', [LobbyController::class, 'show'])
+            ->where('listing', '\d+')
+            ->name('lobbies.show');
 
         Route::get('/listings/{listing}', [ListingController::class, 'show'])->name('listings.show');
 

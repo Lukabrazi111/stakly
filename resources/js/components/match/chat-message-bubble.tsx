@@ -35,6 +35,14 @@ interface ChatMessageBubbleProps {
     viewerId: number;
     creator: MatchPlayer;
     taker: MatchPlayer;
+    /**
+     * M34 — when set, takes precedence over `creator`/`taker` for sender
+     * lookup. Lobby chat (LobbyFilling matches) has up to `team_size × 2`
+     * participants, not just the 1v1 pair; the lobby page passes its full
+     * roster here. Existing match/show.tsx keeps using creator+taker
+     * without change.
+     */
+    participants?: MatchPlayer[];
     /** Invoked from the failed-bubble footer; no-op for server-sourced messages. */
     onRetry: (correlationId: string) => void;
     onDismiss: (correlationId: string) => void;
@@ -45,6 +53,7 @@ export function ChatMessageBubble({
     viewerId,
     creator,
     taker,
+    participants,
     onRetry,
     onDismiss,
 }: ChatMessageBubbleProps) {
@@ -69,7 +78,9 @@ export function ChatMessageBubble({
     }
 
     const isOwn = message.user_id === viewerId;
-    const sender = message.user_id === creator.id ? creator : taker;
+    const sender =
+        participants?.find((p) => p.id === message.user_id) ??
+        (message.user_id === creator.id ? creator : taker);
 
     const isDisputeOpening = message.attachments.some(
         (attachment): attachment is ChatDisputeOpeningAttachment =>

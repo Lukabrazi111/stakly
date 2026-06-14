@@ -52,13 +52,14 @@ class MatchHistorySeeder extends Seeder
 
         // Pool of marketplace users who already have $10k + linked
         // accounts + active mode (set up by ListingSeeder). Exclude
-        // platform + admin + testuser.
+        // platform + admin + testuser. Ordered by id so the index-based
+        // skill tier cycle in `profileFor()` is deterministic across reruns.
         $marketplace = User::query()
             ->where('is_platform', false)
             ->where('is_active_mode', true)
             ->where('username', '!=', 'testuser')
             ->whereDoesntHave('roles', fn ($q) => $q->where('name', 'admin'))
-            ->limit(20)
+            ->orderBy('id')
             ->get();
 
         if ($marketplace->count() < 4) {

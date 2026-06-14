@@ -57,6 +57,7 @@ class GameMatchesTable
                 TextColumn::make('status')
                     ->badge()
                     ->color(fn (MatchStatus $state): string => match ($state) {
+                        MatchStatus::LobbyFilling => 'gray',
                         MatchStatus::Pending => 'gray',
                         MatchStatus::Disputed => 'warning',
                         MatchStatus::ManualReview => 'danger',
@@ -64,6 +65,7 @@ class GameMatchesTable
                         MatchStatus::Cancelled => 'gray',
                     })
                     ->formatStateUsing(fn (MatchStatus $state): string => match ($state) {
+                        MatchStatus::LobbyFilling => 'Lobby Filling',
                         MatchStatus::Pending => 'Pending',
                         MatchStatus::Disputed => 'Disputed',
                         MatchStatus::ManualReview => 'Manual Review',
@@ -90,6 +92,7 @@ class GameMatchesTable
                 SelectFilter::make('status')
                     ->multiple()
                     ->options([
+                        MatchStatus::LobbyFilling->value => 'Lobby Filling',
                         MatchStatus::Pending->value => 'Pending',
                         MatchStatus::Disputed->value => 'Disputed',
                         MatchStatus::ManualReview->value => 'Manual Review',

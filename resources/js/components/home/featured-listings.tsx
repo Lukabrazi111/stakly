@@ -1,7 +1,7 @@
 import { Link } from '@inertiajs/react';
 import { ArrowRight, Sparkles } from 'lucide-react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
-import { ListingCard } from '@/components/listings/listing-card';
+import { ListingGridCard } from '@/components/listings/listing-grid-card';
 import { index as listingsIndex } from '@/routes/listings';
 import type { Listing } from '@/types';
 
@@ -87,7 +87,7 @@ export function FeaturedListings({
                                               }
                                     }
                                 >
-                                    <ListingCard listing={listing} />
+                                    <ListingGridCard listing={listing} />
                                 </motion.div>
                             ))}
                         </div>

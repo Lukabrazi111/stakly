@@ -4,6 +4,7 @@ import type { ReactNode } from 'react';
 import { useState } from 'react';
 import { SellerTrustMeta } from '@/components/listings/seller-trust-meta';
 import { VerifiedPlatformChip } from '@/components/listings/verified-platform-chip';
+import { TeamPlayLobbyView } from '@/components/lobby/team-play-lobby-view';
 import { VerificationChip } from '@/components/profile/verification-chip';
 import { BackLink } from '@/components/site/back-link';
 import { PageMeta } from '@/components/site/page-meta';
@@ -60,7 +61,61 @@ const STATUS_TONE: Record<ListingStatus, string> = {
     cancelled: 'border-destructive/40 bg-destructive/10 text-destructive',
 };
 
-export default function ListingShow({ listing, match }: ListingShowProps) {
+export default function ListingShow({
+    listing,
+    match,
+    lobby,
+    messages,
+}: ListingShowProps) {
+    // M34 P3.1 Slice B.1 — team-play listings render the lobby UI on the
+    // canonical listing URL. Controller sends `lobby` + `messages` only when
+    // `team_size > 1`, so presence of `lobby` is the discriminator. The
+    // chess branch below remains untouched (decoupled UI surfaces).
+    if (lobby && messages) {
+        return <TeamPlayBranch lobby={lobby} messages={messages} />;
+    }
+
+    return <ChessBranch listing={listing} match={match} />;
+}
+
+interface TeamPlayBranchProps {
+    lobby: NonNullable<ListingShowProps['lobby']>;
+    messages: NonNullable<ListingShowProps['messages']>;
+}
+
+function TeamPlayBranch({ lobby, messages }: TeamPlayBranchProps) {
+    const t = useT();
+
+    return (
+        <SiteLayout>
+            <PageMeta
+                title={t(':teamSize v :teamSize lobby — :stake USDT', {
+                    teamSize: lobby.team_size,
+                    stake: lobby.stake_amount.toFixed(0),
+                })}
+                description={t('Team-play lobby for :stake USDT.', {
+                    stake: lobby.stake_amount.toFixed(0),
+                })}
+                noindex
+            />
+
+            <div className="mx-auto max-w-7xl px-4 py-10 md:px-6 md:py-14">
+                <div className="mb-6">
+                    <BackLink fallback={listingsIndex().url} />
+                </div>
+
+                <TeamPlayLobbyView lobby={lobby} messages={messages} />
+            </div>
+        </SiteLayout>
+    );
+}
+
+interface ChessBranchProps {
+    listing: ListingShowProps['listing'];
+    match: ListingShowProps['match'];
+}
+
+function ChessBranch({ listing, match }: ChessBranchProps) {
     const t = useT();
     const getInitials = useInitials();
     const { auth } = usePage().props;
