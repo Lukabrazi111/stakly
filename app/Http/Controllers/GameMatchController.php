@@ -166,6 +166,12 @@ class GameMatchController extends Controller
             'taker:id,name,username',
             'winner:id,name,username',
             'providerSnapshots',
+            // M34 P6 — team rosters for `GameMatchResource::team_a` /
+            // `team_b`. Cheap for 1v1 (empty collection); essential for
+            // team play to avoid N+1 on the avatar accessor.
+            'listing.lobbyParticipants' => fn ($q) => $q->orderBy('side')->orderBy('slot_index'),
+            'listing.lobbyParticipants.user:id,name,username',
+            'listing.lobbyParticipants.user.media',
         ]);
 
         abort_if(request()->user()->cannot('view', $match), 404);

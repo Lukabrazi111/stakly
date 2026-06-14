@@ -2,7 +2,9 @@
 
 namespace App\Http\Resources;
 
+use App\Enums\MatchStatus;
 use App\Models\GameMatch;
+use App\Models\LobbyParticipant;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -12,6 +14,20 @@ use Illuminate\Http\Resources\Json\JsonResource;
  *
  * Authorization to even reach this resource is enforced upstream
  * (`GameMatchPolicy::view`); this resource trusts the caller has access.
+ *
+ * 1v1 chess — `creator` + `taker` carry the two participants; `team_a` /
+ * `team_b` / `winning_team` are omitted (frontend branches on
+ * `listing.team_size === 1`).
+ *
+ * Team play (M34 P6) — `team_a` + `team_b` carry the live lobby rosters
+ * keyed by `slot_index`; `winning_team` resolves once the match is
+ * Settled. `taker` is still emitted (= creator, per
+ * `CreateTeamPlayListingAction`'s NOT-NULL workaround) for back-compat
+ * but is meaningless on the team-play path. Rosters require
+ * `lobbyParticipants.user.media` to be eager-loaded in the calling
+ * controller — `mergeWhen` short-circuits when the relation isn't
+ * loaded so list contexts (e.g. `/matches`) aren't forced to pay the
+ * eager-load cost on every row.
  *
  * @mixin GameMatch
  */
@@ -41,6 +57,9 @@ class GameMatchResource extends JsonResource
                     ->map(fn ($tc) => $tc->value)
                     ->values()
                     ->all(),
+                // Drives the frontend branch between 1v1 chess UI
+                // (creator/taker) and team-play UI (rosters).
+                'team_size' => $this->listing->team_size,
             ],
             'creator' => [
                 'id' => $this->listing->user->id,
@@ -94,6 +113,70 @@ class GameMatchResource extends JsonResource
                 'opened_by_id' => $this->dispute_opened_by,
                 'opened_at' => $this->dispute_opened_at?->toIso8601String(),
             ],
+            // Team-play rosters — present only when the listing is team
+            // play AND the controller eager-loaded the relation. List
+            // contexts that don't need rosters skip the eager-load and
+            // omit these fields entirely.
+            ...$this->teamRosterFields(),
         ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function teamRosterFields(): array
+    {
+        if (! $this->listing->isTeamPlay()) {
+            return [];
+        }
+
+        if (! $this->listing->relationLoaded('lobbyParticipants')) {
+            return [];
+        }
+
+        return [
+            'team_a' => $this->buildRoster(LobbyParticipant::SIDE_A),
+            'team_b' => $this->buildRoster(LobbyParticipant::SIDE_B),
+            'winning_team' => $this->resolveWinningTeam(),
+        ];
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    private function buildRoster(string $side): array
+    {
+        return $this->listing->lobbyParticipants
+            ->filter(fn (LobbyParticipant $p) => $p->kicked_at === null && $p->side === $side)
+            ->sortBy('slot_index')
+            ->values()
+            ->map(fn (LobbyParticipant $p) => [
+                'user_id' => $p->user_id,
+                'username' => $p->user->username,
+                'name' => $p->user->name,
+                'avatar_thumb_url' => $p->user->avatar_thumb_url,
+                'slot_index' => (int) $p->slot_index,
+            ])
+            ->all();
+    }
+
+    /**
+     * Returns the winning side ('a' or 'b') once the match is Settled,
+     * derived by looking up the side of the `winner_user_id` in the
+     * already-eager-loaded `lobbyParticipants` collection. Returns null
+     * for non-Settled matches or when the winner isn't on the roster
+     * (defensive — shouldn't happen since SettleTeamMatchAction picks
+     * the winner from the live roster).
+     */
+    private function resolveWinningTeam(): ?string
+    {
+        if ($this->status !== MatchStatus::Settled || $this->winner_user_id === null) {
+            return null;
+        }
+
+        $winnerRow = $this->listing->lobbyParticipants
+            ->firstWhere('user_id', $this->winner_user_id);
+
+        return $winnerRow?->side;
     }
 }

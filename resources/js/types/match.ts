@@ -33,6 +33,22 @@ export interface MatchListing {
     // indicator + drives the M16 Pending action card copy.
     platform: ListingPlatform;
     time_control: TimeControl[];
+    // M34 — drives the frontend branch between 1v1 chess UI (creator +
+    // taker) and team-play UI (team rosters). 1 for chess, 2 for Wingman,
+    // 5 for CS2 5v5.
+    team_size: number;
+}
+
+// M34 P6 — one live roster entry on a team-play match. Mirrors
+// `App\Http\Resources\GameMatchResource::buildRoster()`. Kicked
+// participants are filtered out by the resource — frontend only sees
+// the live set.
+export interface TeamMatchPlayer {
+    user_id: number;
+    username: string;
+    name: string;
+    avatar_thumb_url: string | null;
+    slot_index: number;
 }
 
 // M16 — snapshotted external-account handles scoped to the listing's
@@ -82,6 +98,14 @@ export interface Match {
     created_at: string | null;
     cancellation: MatchCancellation;
     dispute: MatchDispute;
+    // M34 P6 — team rosters and winning side. Present only when the
+    // listing is team play AND the controller eager-loaded the lobby
+    // participants (list contexts like `/matches` skip the eager-load
+    // and these fields are absent from the payload). Frontend checks
+    // `listing.team_size > 1 && team_a` to branch into TeamMatchView.
+    team_a?: TeamMatchPlayer[];
+    team_b?: TeamMatchPlayer[];
+    winning_team?: 'a' | 'b' | null;
 }
 
 // Chat messages on a match. Mirrors `App\Http\Resources\MessageResource` AND
