@@ -1,9 +1,11 @@
 import { Crown, Frown } from 'lucide-react';
+import { MatchDetailsStrip } from '@/components/match/match-details-strip';
 import { useInitials } from '@/hooks/use-initials';
 import { useT } from '@/lib/i18n';
 import { teamLabel } from '@/lib/team-leader';
 import { cn } from '@/lib/utils';
 import type { TeamMatchPlayer } from '@/types';
+import type { ListingPlatform } from '@/types/listings';
 
 interface TeamRostersProps {
     teamA: TeamMatchPlayer[];
@@ -14,6 +16,15 @@ interface TeamRostersProps {
     winningTeam: 'a' | 'b' | null;
     /** Viewer's user id — drives the "(you)" badge next to their slot. */
     viewerId: number | null;
+    /** Money + verification cells rendered as a strip at the top of the
+     *  card. Closes the gap left when the lobby's Money block disappears
+     *  post-lock — the team match page would otherwise have nowhere to
+     *  surface Pot / Stake / payout / settlement source. */
+    pot: number;
+    stakeEach: number;
+    winnerPayout: number;
+    loserLoss: number;
+    platform: ListingPlatform;
 }
 
 /**
@@ -30,6 +41,11 @@ export function TeamRosters({
     teamB,
     winningTeam,
     viewerId,
+    pot,
+    stakeEach,
+    winnerPayout,
+    loserLoss,
+    platform,
 }: TeamRostersProps) {
     const t = useT();
 
@@ -45,6 +61,14 @@ export function TeamRosters({
                     </span>
                 )}
             </header>
+
+            <MatchDetailsStrip
+                pot={pot}
+                stakeEach={stakeEach}
+                winnerPayout={winnerPayout}
+                loserLoss={loserLoss}
+                platform={platform}
+            />
 
             <div className="grid gap-5 sm:grid-cols-2">
                 <TeamColumn

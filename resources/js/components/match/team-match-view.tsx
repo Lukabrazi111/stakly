@@ -123,6 +123,11 @@ export function TeamMatchView({ match, messages }: TeamMatchViewProps) {
     const fee = isDraw ? 0 : pot * match.fee_rate;
     const perPlayerPayout = isDraw ? 0 : (pot - fee) / teamSize;
     const perPlayerRefund = match.listing.stake_amount;
+    // Always-positive potential payout for the Rosters strip — the strip
+    // shows "If you win +$X" pre- and post-settle, so draws (where
+    // perPlayerPayout zeroes out) shouldn't collapse the headline number.
+    const potentialWinnerPayout =
+        (pot - pot * match.fee_rate) / teamSize;
 
     // 4h auto-fetch deadline mirrors 1v1 — `ResolveMatchTimeoutAction`
     // flips stuck Pending to ManualReview at this boundary.
@@ -283,6 +288,11 @@ export function TeamMatchView({ match, messages }: TeamMatchViewProps) {
                             teamB={teamB}
                             winningTeam={match.winning_team ?? null}
                             viewerId={viewerId}
+                            pot={pot}
+                            stakeEach={match.listing.stake_amount}
+                            winnerPayout={potentialWinnerPayout}
+                            loserLoss={match.listing.stake_amount}
+                            platform={match.listing.platform}
                         />
 
                         <div className="mt-6">

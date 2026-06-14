@@ -26,6 +26,7 @@ Frontend-first build. UI against real DB infrastructure + seeded fake data; back
 
 - **M34 P7** — FACEIT-style lobby header bar (team leaders + mode chip + state-aware countdown + Share). Replaces the current `2 v 2 lobby` title block on the team-play lobby view and **folds the ready-check countdown out of `CoordinationPanel` into the header** so the center column doesn't duplicate it. See M34 detail section for the full phase entry.
 - **M34 P8** — Team match-page polish (roster card parity with lobby `slot-card.tsx`) + "Team {leader}" labels on match page + lobby-lock notification with sound preference. See M34 detail section.
+- **M34 P9** — Match-details metadata strip inside the team match-page `Rosters` card. Pot / Stake-per-player / If-you-win / If-you-lose / Verified-via-FACEIT condensed into a single horizontal row at the top of the Rosters block. Closes the gap where the lobby's Money block disappears post-lock and the team match page has no money / verification info. See M34 detail section.
 
 **Active / upcoming:**
 
@@ -668,6 +669,28 @@ Surfaced during dogfooding: the match-page `Rosters` block built fast during P6 
 - [x] **Slice A — Match-page roster polish** _(shipped 2026-06-14)_. `GameMatchResource::buildRoster` extended with `skill_rating` (snapshot from `linkedAccounts` on the listing's platform) + `platform_stats` block (`total_matches` / `win_rate` / `completion_rate_30d`). `GameMatchController::show` eager-loads `linkedAccounts` and batches `SellerTrust::forBatch` + `ParticipantStats::forBatch` over the live roster (mirrors `ListingController::showTeamPlay`). `team-rosters.tsx` rebuilt to mirror lobby `slot-card.tsx`: size-10 avatar + leader crown on slot 0, name + platform handle, rating chip, three-cell stats line, viewer pink tint, winner/loser color treatment. TS `TeamMatchPlayer` extended. +1 Pest assertion on `TeamMatchResourceTest`.
 - [x] **Slice B — "Team {leader}" labels on match page** _(shipped 2026-06-14)_. New shape-agnostic `lib/team-leader.ts` exporting `pickTeamLeader()` + `teamLabel()` over `TeamMatchPlayer`. Slot 0 is the leader by backend convention (creator on creator's side, earliest joiner on opposing side). Wired into `team-rosters.tsx` column headers, `team-settlement-summary.tsx` winning-team label, and the match-page hero "You're on :team" subline. Column header style switched from `uppercase tracking-[0.18em]` to `font-display tracking-wide` (mixed case) so usernames stay readable. 1v1 chess unaffected.
 - [x] **Slice C — Lobby-lock notification + sound preference** _(shipped 2026-06-14)_. New `TeamMatchStartedNotification` extending `PlayerNotification`. Dispatched from `LobbyLockAction` to every locked-in participant via `MatchParticipants::all($match)` once the lock transaction commits (a rollback does not broadcast). Registered as a configurable event type with sound-default ON (matches `listing_taken`'s rationale — high-attention moment, money already staked). `/settings/notifications` page exposes the new toggle in the "Match activity" group. +2 Pest cases in `ToggleReadyTest` pinning the fan-out + the no-fire on a non-final Ready. Full suite **1531 → 1533** green.
+
+**Phase 9 — Match-details strip inside Rosters card** _(in flight 2026-06-14)_
+
+Surfaced during dogfooding: the lobby's Money block (pot / stake / win-or-lose payouts / platform fee) disappears at lock, and the team match page has zero money or verification info anywhere. Adding a compact horizontal strip at the top of the `Rosters` card so the viewer can see the key match-economics + verification source at a glance without scrolling back to the lobby URL (which is anyway a separate page).
+
+### Design decisions locked
+
+- **Strip, not card.** Integrated into the existing Rosters card as its first child. A separate card would add a sixth top-level section to an already-long team page.
+- **Fields (4):** Pot · Stake per player · "If you win" (+$X) · "If you lose" (−$X). Gradient text on the win number to mirror the lobby's Money block visual. Platform fee NOT surfaced — it's already baked into the "If you win" payout; an extra row repeats the same dollars.
+- **Verification chip** on the right — `Verified via FACEIT` with the success-tone shield, identical to chess's `MatchInfoCard` verification row. Reads as "settlement source", not visual decoration.
+- **Mobile** — strip wraps from one row → two: money cells on top row, verification chip on its own row below.
+- **No "Opponent" cell** — the team rosters directly below already enumerate every opponent; a single "Opponent" name would be misleading.
+- **No "Time control" cell** — irrelevant for CS2 / Wingman; no analog.
+
+### Slices
+
+- [x] **Slice A — `MatchDetailsStrip` component + wire into `TeamRosters`** _(shipped 2026-06-14)_. New pure-presentational `components/match/match-details-strip.tsx` rendered as the first child of `TeamRosters` (just under the section header, above the team columns). Four money cells (Pot · Stake · `+$X` if you win · `−$X` if you lose) — gradient text on the win number, destructive text on the lose number — plus a success-tone "Verified via FACEIT" chip on the right (own row on mobile). `team-match-view.tsx` computes a separate `potentialWinnerPayout = (pot - pot * fee_rate) / teamSize` so draws don't collapse the headline number to $0 in the strip. No backend change. TS clean, all 48 GameMatch tests green.
+
+### Not in P9
+
+- Adding a similar strip to the 1v1 chess match page — chess already has its own `MatchInfoCard` (right rail on desktop). The team page lacks an info card surface to begin with, hence this strip lives only on the team path.
+- Dispute / cancellation status surfacing — already lives at the top of the team page (banners + status pill).
 
 ### Not in M34
 
