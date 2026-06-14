@@ -158,18 +158,38 @@ class User extends Authenticatable implements FilamentUser, HasMedia, MustVerify
 
     /**
      * M34 — the user's current team-play lobby participation, if any. Used to
-     * enforce the global single-active-lobby rule: a live (not-kicked) row on
-     * a listing whose lobby is still in flight (`recruiting`, `ready_checking`,
-     * or `locked` — the user is committed across all three until the match
-     * actually settles or cancels). Returns null when the user is free to join.
+     * enforce the global single-active-lobby rule.
+     *
+     * "Active" = a live (not-kicked) participant row on a listing whose lobby
+     * is still in flight (`recruiting`, `ready_checking`, or `locked`) AND
+     * — for the `locked` branch — whose underlying match has not yet hit a
+     * terminal status. `lobby_state` stays `locked` even after Settled /
+     * ManualReview / Cancelled, so the lobby_state check alone would lock the
+     * user out of joining new lobbies forever once a match finishes (M34 P7
+     * follow-up bug).
+     *
+     * Terminal match statuses (Settled, ManualReview, Cancelled) release the
+     * user. `Disputed` keeps them locked — the dispute is an active engagement
+     * (evidence gathering in chat) where joining a parallel lobby would
+     * fragment attention. `Pending` and `LobbyFilling` are obviously active.
      */
     public function activeLobbyParticipation(): ?LobbyParticipant
     {
+        $terminalMatchStatuses = [
+            MatchStatus::Settled->value,
+            MatchStatus::ManualReview->value,
+            MatchStatus::Cancelled->value,
+        ];
+
         return LobbyParticipant::query()
             ->where('user_id', $this->id)
             ->live()
             ->whereHas('listing', fn ($q) => $q
-                ->whereIn('lobby_state', ['recruiting', 'ready_checking', 'locked']))
+                ->whereIn('lobby_state', ['recruiting', 'ready_checking', 'locked'])
+                ->where(fn ($q) => $q
+                    ->whereIn('lobby_state', ['recruiting', 'ready_checking'])
+                    ->orWhereDoesntHave('gameMatch', fn ($m) => $m
+                        ->whereIn('status', $terminalMatchStatuses))))
             ->first();
     }
 

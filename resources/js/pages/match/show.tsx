@@ -21,6 +21,7 @@ import { PageMeta } from '@/components/site/page-meta';
 import { useMatchChat } from '@/hooks/use-match-chat';
 import SiteLayout from '@/layouts/site-layout';
 import { useT } from '@/lib/i18n';
+import { isMatchChatReadOnly } from '@/lib/match-chat-readonly';
 import { show as listingShow } from '@/routes/listings';
 import type { Match, MatchShowProps, MatchStatus } from '@/types';
 
@@ -103,10 +104,7 @@ function ChessMatchShow({ match, messages }: MatchShowProps) {
     // channel auth callback). viewerId feeds the hook's optimistic-UI
     // injection so the sender sees their own bubble immediately.
     const chat = useMatchChat(match.id, messages.data, auth.user?.id ?? null);
-    const chatIsReadOnly =
-        match.status === 'settled' ||
-        match.status === 'manual_review' ||
-        match.status === 'cancelled';
+    const chatIsReadOnly = isMatchChatReadOnly(match.status);
 
     const isCreator = auth.user?.id === match.creator.id;
     const opponent = isCreator ? match.taker : match.creator;

@@ -54,6 +54,7 @@ class LobbyResource extends JsonResource
             'expires_at' => $this->expires_at->toIso8601String(),
             'created_at' => $this->created_at?->toIso8601String(),
             'match_id' => $this->gameMatch?->id,
+            'match_status' => $this->gameMatch?->status->value,
             'match_deadline_at' => $this->matchDeadlineAt(),
             'creator' => $this->presentCreator(),
             'roster' => $this->presentRoster(),

@@ -4,7 +4,9 @@ namespace App\Models;
 
 use App\Enums\LinkedAccountProvider;
 use App\Enums\MatchStatus;
+use App\Observers\GameMatchObserver;
 use Database\Factories\GameMatchFactory;
+use Illuminate\Database\Eloquent\Attributes\ObservedBy;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -18,6 +20,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * Named `GameMatch` because `match` is a PHP reserved keyword post-8.0; all
  * references follow the `GameMatch*` / `gameMatch()` convention.
  */
+#[ObservedBy(GameMatchObserver::class)]
 class GameMatch extends Model
 {
     /** @use HasFactory<GameMatchFactory> */

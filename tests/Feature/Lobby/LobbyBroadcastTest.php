@@ -10,7 +10,9 @@ use App\Actions\Lobby\ToggleReadyAction;
 use App\Broadcasting\LobbyChannel;
 use App\Enums\Game;
 use App\Enums\LinkedAccountProvider;
+use App\Enums\MatchStatus;
 use App\Events\LobbyUpdated;
+use App\Models\GameMatch;
 use App\Models\Listing;
 use App\Models\LobbyParticipant;
 use App\Models\User;
@@ -329,6 +331,57 @@ describe('LobbyFillTimeoutAction', function () {
         $result = app(LobbyFillTimeoutAction::class)->handle($listing);
 
         expect($result)->toBe('noop');
+        Event::assertNotDispatched(LobbyUpdated::class);
+    });
+});
+
+/*
+ * M34 P7 follow-up — match-status changes on a team-play lobby fire
+ * LobbyUpdated via `GameMatchObserver`, so the lobby page's Coord-pulse
+ * color + chat read-only gate + header countdown refresh live without a
+ * manual reload. 1v1 (chess) matches skip the broadcast — no lobby
+ * channel listening.
+ */
+describe('GameMatchObserver', function () {
+    it('dispatches LobbyUpdated when a team-play match status changes', function () {
+        $listing = broadcastLobby();
+        $match = $listing->gameMatch;
+        $match->update(['status' => MatchStatus::Pending]);
+
+        Event::fake([LobbyUpdated::class]);
+
+        $match->update(['status' => MatchStatus::Settled]);
+
+        Event::assertDispatched(
+            LobbyUpdated::class,
+            fn (LobbyUpdated $event) => $event->listing->is($listing),
+        );
+    });
+
+    it('does not dispatch when only non-status fields change', function () {
+        $listing = broadcastLobby();
+        $match = $listing->gameMatch;
+        $match->update(['status' => MatchStatus::Pending]);
+
+        Event::fake([LobbyUpdated::class]);
+
+        $match->update(['winner_user_id' => $listing->user_id]);
+
+        Event::assertNotDispatched(LobbyUpdated::class);
+    });
+
+    it('does not dispatch for 1v1 (chess) match status changes', function () {
+        $listing = Listing::factory()->open()->create(); // team_size = 1
+        $match = GameMatch::factory()->create([
+            'listing_id' => $listing->id,
+            'taker_user_id' => User::factory()->active()->create()->id,
+            'status' => MatchStatus::Pending,
+        ]);
+
+        Event::fake([LobbyUpdated::class]);
+
+        $match->update(['status' => MatchStatus::Settled]);
+
         Event::assertNotDispatched(LobbyUpdated::class);
     });
 });

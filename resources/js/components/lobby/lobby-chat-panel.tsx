@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { MobileChatTrigger } from '@/components/match/mobile-chat-trigger';
 import { useMatchChat } from '@/hooks/use-match-chat';
+import { isMatchChatReadOnly } from '@/lib/match-chat-readonly';
 import type { Lobby, MatchPlayer } from '@/types';
 import type { ChatMessage } from '@/types/match';
 
@@ -47,8 +48,15 @@ export function LobbyChatPanel({
     const placeholderTaker: MatchPlayer =
         participants.find((p) => p.id !== lobby.creator.id) ?? lobby.creator;
 
+    // Lock the chat when the lobby OR the underlying match has hit a
+    // terminal state. Lobby-level: cancelled / expired (pre-lock dead
+    // ends). Match-level: settled / manual_review / cancelled (per
+    // `isMatchChatReadOnly`). `disputed` deliberately stays open — the
+    // chat IS the evidence record.
     const isReadOnly =
-        lobby.lobby_state === 'cancelled' || lobby.lobby_state === 'expired';
+        lobby.lobby_state === 'cancelled' ||
+        lobby.lobby_state === 'expired' ||
+        isMatchChatReadOnly(lobby.match_status);
 
     return (
         <MobileChatTrigger

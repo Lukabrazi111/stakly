@@ -95,6 +95,88 @@ describe('JoinLobbyAction', function () {
         expect($result)->toBe('already_in_lobby');
     });
 
+    /*
+     * M34 P7 follow-up — the single-lobby rule used to lock users out of new
+     * lobbies forever once a match Settled / ManualReview'd / Cancelled,
+     * because `lobby_state` stays `locked` after terminal match transitions.
+     * `activeLobbyParticipation` now treats terminal match statuses as
+     * released; pinning the three states + the still-active `Disputed` case.
+     */
+    it('allows joining a new lobby after the previous match settled', function () {
+        $first = freshLobby(teamSize: 2);
+        $joiner = freshJoiner();
+        app(JoinLobbyAction::class)->handle($joiner, $first, LobbyParticipant::SIDE_B);
+        $first->update(['lobby_state' => 'locked']);
+        $first->gameMatch->update(['status' => MatchStatus::Settled]);
+
+        $second = freshLobby(teamSize: 2);
+
+        $result = app(JoinLobbyAction::class)
+            ->handle($joiner, $second, LobbyParticipant::SIDE_A);
+
+        expect($result)->toBeInstanceOf(LobbyParticipant::class);
+    });
+
+    it('allows joining a new lobby after the previous match was cancelled', function () {
+        $first = freshLobby(teamSize: 2);
+        $joiner = freshJoiner();
+        app(JoinLobbyAction::class)->handle($joiner, $first, LobbyParticipant::SIDE_B);
+        $first->update(['lobby_state' => 'locked']);
+        $first->gameMatch->update(['status' => MatchStatus::Cancelled]);
+
+        $second = freshLobby(teamSize: 2);
+
+        $result = app(JoinLobbyAction::class)
+            ->handle($joiner, $second, LobbyParticipant::SIDE_A);
+
+        expect($result)->toBeInstanceOf(LobbyParticipant::class);
+    });
+
+    it('allows joining a new lobby while a previous match is in ManualReview', function () {
+        $first = freshLobby(teamSize: 2);
+        $joiner = freshJoiner();
+        app(JoinLobbyAction::class)->handle($joiner, $first, LobbyParticipant::SIDE_B);
+        $first->update(['lobby_state' => 'locked']);
+        $first->gameMatch->update(['status' => MatchStatus::ManualReview]);
+
+        $second = freshLobby(teamSize: 2);
+
+        $result = app(JoinLobbyAction::class)
+            ->handle($joiner, $second, LobbyParticipant::SIDE_A);
+
+        expect($result)->toBeInstanceOf(LobbyParticipant::class);
+    });
+
+    it('still blocks while the previous match is Pending (locked, in 4h window)', function () {
+        $first = freshLobby(teamSize: 2);
+        $joiner = freshJoiner();
+        app(JoinLobbyAction::class)->handle($joiner, $first, LobbyParticipant::SIDE_B);
+        $first->update(['lobby_state' => 'locked']);
+        $first->gameMatch->update(['status' => MatchStatus::Pending]);
+
+        $second = freshLobby(teamSize: 2);
+
+        $result = app(JoinLobbyAction::class)
+            ->handle($joiner, $second, LobbyParticipant::SIDE_A);
+
+        expect($result)->toBe('already_in_lobby');
+    });
+
+    it('still blocks while the previous match is Disputed', function () {
+        $first = freshLobby(teamSize: 2);
+        $joiner = freshJoiner();
+        app(JoinLobbyAction::class)->handle($joiner, $first, LobbyParticipant::SIDE_B);
+        $first->update(['lobby_state' => 'locked']);
+        $first->gameMatch->update(['status' => MatchStatus::Disputed]);
+
+        $second = freshLobby(teamSize: 2);
+
+        $result = app(JoinLobbyAction::class)
+            ->handle($joiner, $second, LobbyParticipant::SIDE_A);
+
+        expect($result)->toBe('already_in_lobby');
+    });
+
     it('rejects with "kick_cooldown" when joiner was kicked within 5 min', function () {
         $listing = freshLobby();
         $joiner = freshJoiner();

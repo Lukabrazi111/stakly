@@ -5,7 +5,7 @@
 
 import type { GameId } from '@/config/games';
 import type { ListingPlatform } from '@/types/listings';
-import type { ChatMessage } from './match';
+import type { ChatMessage, MatchStatus } from './match';
 
 export type LobbySide = 'a' | 'b';
 
@@ -122,6 +122,12 @@ export interface Lobby {
     expires_at: string;
     created_at: string | null;
     match_id: number | null;
+    /**
+     * Live status of the underlying GameMatch. Drives the Coord-tab
+     * notification ping color in `LobbyCenterColumn`. Null when no match
+     * exists yet (defensive — matches are created with the listing).
+     */
+    match_status: MatchStatus | null;
     /**
      * `match.created_at + match_confirmation_timeout_hours` — the moment
      * `ResolveMatchTimeoutAction` flips a Pending team match to ManualReview.

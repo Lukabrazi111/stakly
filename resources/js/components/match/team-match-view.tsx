@@ -19,6 +19,7 @@ import { BackLink } from '@/components/site/back-link';
 import { PageMeta } from '@/components/site/page-meta';
 import { useMatchChat } from '@/hooks/use-match-chat';
 import { useT } from '@/lib/i18n';
+import { isMatchChatReadOnly } from '@/lib/match-chat-readonly';
 import { show as listingShow } from '@/routes/listings';
 import type { Match, MatchStatus, TeamMatchPlayer } from '@/types';
 import type { ChatMessage } from '@/types/match';
@@ -94,10 +95,7 @@ export function TeamMatchView({ match, messages }: TeamMatchViewProps) {
     }, [viewerId, teamA, teamB]);
 
     const chat = useMatchChat(match.id, messages.data, viewerId);
-    const chatIsReadOnly =
-        match.status === 'settled' ||
-        match.status === 'manual_review' ||
-        match.status === 'cancelled';
+    const chatIsReadOnly = isMatchChatReadOnly(match.status);
 
     // M16 hand-off — auto-fetched card in chat means settlement is moments
     // away (the polling loop catches Settled on the next tick).

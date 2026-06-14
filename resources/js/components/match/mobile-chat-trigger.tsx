@@ -66,6 +66,17 @@ export function MobileChatTrigger({
         }
     };
 
+    // While the chat is open, every new message (sent by the viewer OR
+    // received via Reverb) bumps `seenCount` to stay in sync with
+    // `messages.length`. Without this, closing the chat after sending
+    // would surface the viewer's own messages as "unread" (since
+    // `seenCount` is only set on open).
+    useEffect(() => {
+        if (open) {
+            setSeenCount(messages.length);
+        }
+    }, [open, messages.length]);
+
     useEffect(() => {
         if (!isMobile) {
             return;
@@ -171,7 +182,7 @@ export function MobileChatTrigger({
                               : t('Open match chat')
                     }
                     className={cn(
-                        'shadow-lg transition-transform',
+                        'relative shadow-lg transition-transform',
                         open && 'rotate-0',
                     )}
                 >
@@ -184,7 +195,7 @@ export function MobileChatTrigger({
                     {!open && unreadCount > 0 && (
                         <span
                             aria-hidden
-                            className="ml-1 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-background px-1.5 text-xs font-semibold text-primary"
+                            className="absolute -top-1.5 -right-1.5 inline-flex h-5 min-w-[20px] animate-pulse items-center justify-center rounded-full bg-destructive px-1.5 text-[10px] font-bold text-white tabular-nums shadow-md ring-2 ring-background"
                         >
                             {unreadCount > 99 ? '99+' : unreadCount}
                         </span>

@@ -10,7 +10,11 @@ import { join, kick, leave, ready } from '@/routes/lobbies';
 import type { Lobby, LobbySide } from '@/types';
 import type { ChatMessage } from '@/types/match';
 
-const LIVE_STATES = new Set(['recruiting', 'ready_checking']);
+// Locked is live too — match-status flips (settle / dispute / cancel /
+// timeout) fire `LobbyUpdated` via `GameMatchObserver`, which the
+// Reverb listener picks up to refresh the Coord pulse + chat-lock +
+// header countdown live without a manual reload.
+const LIVE_STATES = new Set(['recruiting', 'ready_checking', 'locked']);
 
 interface Props {
     lobby: Lobby;
