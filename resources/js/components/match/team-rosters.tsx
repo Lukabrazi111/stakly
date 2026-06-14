@@ -1,5 +1,7 @@
 import { Crown, Frown } from 'lucide-react';
+import { useInitials } from '@/hooks/use-initials';
 import { useT } from '@/lib/i18n';
+import { teamLabel } from '@/lib/team-leader';
 import { cn } from '@/lib/utils';
 import type { TeamMatchPlayer } from '@/types';
 
@@ -15,11 +17,13 @@ interface TeamRostersProps {
 }
 
 /**
- * Compact roster display for the team-aware match show page. Two columns
- * (Team A | Team B) on desktop, stacked on mobile. Slot order from the
- * resource (already sorted by slot_index ascending). Avatar + name + the
- * "you" badge if it's the viewer; winner crown / loser frown when the
- * match is Settled.
+ * Roster display for the team-aware match show page. Two columns (Team A
+ * | Team B) on desktop, stacked on mobile. Cards mirror the lobby's
+ * `slot-card.tsx` shape (avatar + name + platform handle on top row,
+ * rating chip right, Matches / Win rate / Completion-30d stats line
+ * across the bottom) so the visual language stays consistent between
+ * lobby → match-page. Leader crown sits on slot 0 of each side; winner
+ * crown appears once the match Settles.
  */
 export function TeamRosters({
     teamA,
@@ -42,20 +46,16 @@ export function TeamRosters({
                 )}
             </header>
 
-            <div className="grid gap-4 sm:grid-cols-[1fr_auto_1fr] sm:items-start">
+            <div className="grid gap-5 sm:grid-cols-2">
                 <TeamColumn
-                    label={t('Team A')}
+                    label={teamLabel(teamA, t('Team A'))}
                     players={teamA}
                     isWinner={winningTeam === 'a'}
                     isLoser={winningTeam === 'b'}
                     viewerId={viewerId}
                 />
-                <div
-                    aria-hidden="true"
-                    className="hidden self-stretch border-l border-border/40 sm:block"
-                />
                 <TeamColumn
-                    label={t('Team B')}
+                    label={teamLabel(teamB, t('Team B'))}
                     players={teamB}
                     isWinner={winningTeam === 'b'}
                     isLoser={winningTeam === 'a'}
@@ -81,33 +81,35 @@ function TeamColumn({
     isLoser,
     viewerId,
 }: TeamColumnProps) {
+    const t = useT();
+
     return (
         <div>
             <div
                 className={cn(
-                    'mb-2 flex items-center justify-between gap-2',
+                    'mb-2 flex items-center justify-between gap-2 px-1',
                     isWinner && 'text-success',
                     isLoser && 'text-muted-foreground',
                 )}
             >
-                <span className="text-[10px] font-semibold tracking-wider uppercase">
+                <span className="truncate font-display text-sm font-semibold tracking-wide">
                     {label}
                 </span>
                 {isWinner && (
-                    <span className="inline-flex items-center gap-1 text-[10px] font-semibold tracking-wider text-success uppercase">
+                    <span className="inline-flex shrink-0 items-center gap-1 text-[10px] font-semibold tracking-wider text-success uppercase">
                         <Crown className="size-3" aria-hidden="true" />
-                        {/* Localised label kept in sibling component via useT() — header span is decorative only */}
+                        {t('Winner')}
                     </span>
                 )}
                 {isLoser && (
                     <Frown
-                        className="size-3 text-muted-foreground"
+                        className="size-3 shrink-0 text-muted-foreground"
                         aria-hidden="true"
                     />
                 )}
             </div>
 
-            <ul className="space-y-1.5">
+            <ul className="space-y-2">
                 {players.map((player) => (
                     <RosterRow
                         key={player.user_id}
@@ -115,6 +117,7 @@ function TeamColumn({
                         isWinner={isWinner}
                         isLoser={isLoser}
                         isViewer={player.user_id === viewerId}
+                        isLeader={player.slot_index === 0}
                     />
                 ))}
             </ul>
@@ -127,67 +130,140 @@ interface RosterRowProps {
     isWinner: boolean;
     isLoser: boolean;
     isViewer: boolean;
+    isLeader: boolean;
 }
 
-function RosterRow({ player, isWinner, isLoser, isViewer }: RosterRowProps) {
+function RosterRow({
+    player,
+    isWinner,
+    isLoser,
+    isViewer,
+    isLeader,
+}: RosterRowProps) {
     const t = useT();
-    const initials = getInitials(player.name);
+    const getInitials = useInitials();
 
     return (
         <li
             className={cn(
-                'flex items-center gap-2.5 rounded-lg border bg-background/40 px-2.5 py-1.5',
-                isWinner && 'border-success/30 bg-success/5',
-                isLoser && 'border-border/40',
-                !isWinner && !isLoser && 'border-border/40',
+                'flex flex-col rounded-xl border bg-card/60 px-3 py-2.5 transition-colors',
+                isWinner && 'border-success/40 bg-success/5',
+                isLoser && 'border-border/60 opacity-80',
+                !isWinner && !isLoser && isViewer && 'border-primary/40 bg-primary/5',
+                !isWinner && !isLoser && !isViewer && 'border-border/60',
             )}
         >
-            {player.avatar_thumb_url ? (
-                <img
-                    src={player.avatar_thumb_url}
-                    alt={player.name}
-                    className="size-7 shrink-0 rounded-full border border-border/40 object-cover"
-                />
-            ) : (
-                <span className="inline-flex size-7 shrink-0 items-center justify-center rounded-full bg-gradient-primary text-[10px] font-bold text-white">
-                    {initials}
-                </span>
-            )}
-
-            <div className="min-w-0 flex-1">
-                <p className="truncate text-xs font-medium text-foreground">
-                    {player.name}
-                    {isViewer && (
-                        <span className="ml-1.5 text-[10px] font-semibold tracking-wider text-primary uppercase">
-                            {t('(you)')}
+            <div className="flex items-center gap-3">
+                <div className="relative size-10 shrink-0">
+                    {player.avatar_thumb_url ? (
+                        <img
+                            src={player.avatar_thumb_url}
+                            alt={player.name}
+                            className="size-10 rounded-full object-cover"
+                        />
+                    ) : (
+                        <div className="flex size-10 items-center justify-center rounded-full bg-gradient-primary text-sm font-semibold text-white">
+                            {getInitials(player.name)}
+                        </div>
+                    )}
+                    {isLeader && (
+                        <span
+                            title={t('Team leader')}
+                            className="absolute -top-1 -right-1 flex size-4 items-center justify-center rounded-full bg-accent text-background"
+                        >
+                            <Crown className="size-2.5" aria-hidden="true" />
                         </span>
                     )}
-                </p>
-                <p className="truncate text-[10px] text-muted-foreground">
-                    @{player.username}
-                </p>
+                </div>
+
+                <div className="flex min-w-0 flex-1 flex-col">
+                    <span className="truncate text-sm font-semibold text-foreground">
+                        {isViewer ? t('You') : player.name}
+                    </span>
+                    <span className="truncate font-mono text-[11px] text-muted-foreground">
+                        @{player.username}
+                    </span>
+                </div>
+
+                {player.skill_rating !== null && (
+                    <span className="shrink-0 rounded-md bg-muted/70 px-2 py-0.5 font-display text-sm font-bold text-foreground tabular-nums">
+                        {player.skill_rating}
+                    </span>
+                )}
+
+                {isWinner && (
+                    <Crown
+                        className="size-4 shrink-0 text-success"
+                        aria-label={t('Winner')}
+                    />
+                )}
             </div>
 
-            {isWinner && (
-                <Crown
-                    className="size-3.5 shrink-0 text-success"
-                    aria-label={t('Winner')}
-                />
-            )}
+            <StatsLine stats={player.platform_stats} />
         </li>
     );
 }
 
-function getInitials(name: string): string {
-    const parts = name.trim().split(/\s+/);
+interface StatsLineProps {
+    stats: TeamMatchPlayer['platform_stats'];
+}
 
-    if (parts.length === 0) {
-        return '?';
+function StatsLine({ stats }: StatsLineProps) {
+    const t = useT();
+
+    if (stats === null || stats.total_matches === 0) {
+        return (
+            <div className="mt-2 border-t border-border/40 pt-1.5 text-[10px] text-muted-foreground/60">
+                {t('No matches yet')}
+            </div>
+        );
     }
 
-    if (parts.length === 1) {
-        return parts[0].slice(0, 2).toUpperCase();
-    }
+    return (
+        <div className="mt-2 grid grid-cols-3 gap-2 border-t border-border/40 pt-1.5">
+            <StatCell
+                label={t('Matches')}
+                value={String(stats.total_matches)}
+            />
+            <StatCell
+                label={t('Win rate')}
+                value={stats.win_rate === null ? '—' : `${stats.win_rate}%`}
+                align="center"
+            />
+            <StatCell
+                label={t('Completion 30d')}
+                value={
+                    stats.completion_rate_30d === null
+                        ? '—'
+                        : `${stats.completion_rate_30d}%`
+                }
+                align="right"
+            />
+        </div>
+    );
+}
 
-    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+interface StatCellProps {
+    label: string;
+    value: string;
+    align?: 'left' | 'center' | 'right';
+}
+
+function StatCell({ label, value, align = 'left' }: StatCellProps) {
+    return (
+        <div
+            className={cn(
+                'flex min-w-0 flex-col',
+                align === 'center' && 'items-center text-center',
+                align === 'right' && 'items-end text-right',
+            )}
+        >
+            <span className="text-[9px] tracking-wider text-muted-foreground/70 uppercase">
+                {label}
+            </span>
+            <span className="font-display text-xs font-semibold text-foreground tabular-nums">
+                {value}
+            </span>
+        </div>
+    );
 }

@@ -42,6 +42,10 @@ const EVENT_META: Record<string, EventMeta> = {
         label: 'Listing taken',
         description: 'Someone took your listing — match is starting.',
     },
+    team_match_started: {
+        label: 'Team match started',
+        description: 'All players Ready up — your team match is now live.',
+    },
     match_settled: {
         label: 'Match settled',
         description: 'Your match resolved — won, lost, or draw.',
@@ -70,7 +74,7 @@ const EVENT_GROUPS: EventGroup[] = [
     {
         title: 'Match activity',
         description: 'Notifications about your matches in progress.',
-        events: ['listing_taken', 'match_settled', 'cancellation_requested'],
+        events: ['listing_taken', 'team_match_started', 'match_settled', 'cancellation_requested'],
     },
     {
         title: 'Disputes & moderation',

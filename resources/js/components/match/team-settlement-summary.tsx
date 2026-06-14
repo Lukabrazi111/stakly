@@ -2,6 +2,8 @@ import { Handshake, Trophy } from 'lucide-react';
 import { motion, useReducedMotion } from 'motion/react';
 import type { ReactNode } from 'react';
 import { useT } from '@/lib/i18n';
+import { teamLabel } from '@/lib/team-leader';
+import type { TeamMatchPlayer } from '@/types/match';
 
 interface TeamSettlementSummaryProps {
     /** Total pot = stake × team_size × 2. */
@@ -20,6 +22,9 @@ interface TeamSettlementSummaryProps {
     /** Which side the viewer is on; null = viewer is not a participant
      *  (admin viewing, etc). */
     viewerTeam: 'a' | 'b' | null;
+    /** Team rosters — drive the "Team {leader_username}" winning label. */
+    teamA: TeamMatchPlayer[];
+    teamB: TeamMatchPlayer[];
     /** Skip the fade-up when landing on an already-settled match. */
     animateEntrance?: boolean;
 }
@@ -40,6 +45,8 @@ export function TeamSettlementSummary({
     perPlayerRefund,
     winningTeam,
     viewerTeam,
+    teamA,
+    teamB,
     animateEntrance = true,
 }: TeamSettlementSummaryProps) {
     const t = useT();
@@ -87,7 +94,10 @@ export function TeamSettlementSummary({
     }
 
     const iAmWinner = viewerTeam !== null && viewerTeam === winningTeam;
-    const winningTeamLabel = winningTeam === 'a' ? t('Team A') : t('Team B');
+    const winningTeamLabel = teamLabel(
+        winningTeam === 'a' ? teamA : teamB,
+        winningTeam === 'a' ? t('Team A') : t('Team B'),
+    );
 
     return (
         <motion.section

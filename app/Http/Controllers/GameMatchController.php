@@ -18,6 +18,8 @@ use App\Http\Resources\GameMatchResource;
 use App\Http\Resources\MessageResource;
 use App\Models\GameMatch;
 use App\Models\Listing;
+use App\Services\ParticipantStats;
+use App\Services\SellerTrust;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\ValidationException;
@@ -172,9 +174,46 @@ class GameMatchController extends Controller
             'listing.lobbyParticipants' => fn ($q) => $q->orderBy('side')->orderBy('slot_index'),
             'listing.lobbyParticipants.user:id,name,username',
             'listing.lobbyParticipants.user.media',
+            // M34 P8 Slice A — `linkedAccounts` feeds the per-player skill
+            // rating in the rich roster cards. Cheap for 1v1 (no roster).
+            'listing.lobbyParticipants.user.linkedAccounts',
         ]);
 
         abort_if(request()->user()->cannot('view', $match), 404);
+
+        // M34 P8 Slice A — batch attach `seller_trust` + `platform_stats`
+        // to each roster user so `GameMatchResource::platformStatsFor`
+        // reads the attributes without N+1. Mirrors the lobby's
+        // `ListingController::showTeamPlay` pattern. No-ops for 1v1
+        // (empty roster) and for non-team-play matches generally.
+        if ($match->listing->isTeamPlay() && $match->listing->relationLoaded('lobbyParticipants')) {
+            $userIds = $match->listing->lobbyParticipants
+                ->whereNull('kicked_at')
+                ->pluck('user_id')
+                ->unique()
+                ->values()
+                ->all();
+
+            if (count($userIds) > 0) {
+                $trust = SellerTrust::forBatch($userIds);
+                $stats = ParticipantStats::forBatch($userIds);
+
+                foreach ($match->listing->lobbyParticipants as $participant) {
+                    if ($participant->kicked_at !== null) {
+                        continue;
+                    }
+
+                    $participant->user->setAttribute(
+                        'seller_trust',
+                        $trust[$participant->user_id] ?? ['rate_30d' => null, 'settled_lifetime' => 0],
+                    );
+                    $participant->user->setAttribute(
+                        'platform_stats',
+                        $stats[$participant->user_id] ?? null,
+                    );
+                }
+            }
+        }
 
         // M34 P1 — `LobbyFilling` matches don't yet have a lobby UI (lands in
         // P3). Redirect to the listing detail page so users see the listing

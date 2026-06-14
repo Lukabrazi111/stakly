@@ -5,6 +5,7 @@ namespace App\Http\Resources;
 use App\Enums\MatchStatus;
 use App\Models\GameMatch;
 use App\Models\LobbyParticipant;
+use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -156,8 +157,58 @@ class GameMatchResource extends JsonResource
                 'name' => $p->user->name,
                 'avatar_thumb_url' => $p->user->avatar_thumb_url,
                 'slot_index' => (int) $p->slot_index,
+                // M34 P8 Slice A — per-player trust + skill payload powering
+                // the rich roster cards on the match page. Mirrors the
+                // lobby's slot-card stats line. Nullable: controller may
+                // skip the batched aggregations on hot list-context calls,
+                // in which case the attributes are absent and we ship null.
+                'skill_rating' => $this->skillRatingFor($p->user),
+                'platform_stats' => $this->platformStatsFor($p->user),
             ])
             ->all();
+    }
+
+    /**
+     * Snapshot of the user's skill rating on the listing's platform. Null
+     * when the linked account isn't loaded or rating isn't populated
+     * (chess providers don't snapshot ratings yet).
+     */
+    private function skillRatingFor(User $user): ?int
+    {
+        if (! $user->relationLoaded('linkedAccounts')) {
+            return null;
+        }
+
+        $link = $user->linkedAccounts
+            ->firstWhere('provider.value', $this->listing->platform->value);
+
+        return $link?->skill_rating;
+    }
+
+    /**
+     * Trust + match-history aggregates attached by the controller via
+     * `SellerTrust::forBatch` + `ParticipantStats::forBatch`. Null when
+     * the controller didn't batch (list contexts), so the FE renders a
+     * "No matches yet" placeholder rather than crashing.
+     *
+     * @return array{total_matches: int, win_rate: int|null, completion_rate_30d: int|null}|null
+     */
+    private function platformStatsFor(User $user): ?array
+    {
+        $stats = $user->getAttribute('platform_stats');
+        $trust = $user->getAttribute('seller_trust');
+
+        if ($stats === null) {
+            return null;
+        }
+
+        return [
+            'total_matches' => (int) ($stats['total_matches'] ?? 0),
+            'win_rate' => $stats['win_rate'] ?? null,
+            'completion_rate_30d' => $trust === null
+                ? null
+                : ($trust['rate_30d'] ?? null),
+        ];
     }
 
     /**

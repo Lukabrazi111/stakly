@@ -25,6 +25,7 @@ Frontend-first build. UI against real DB infrastructure + seeded fake data; back
 **In-flight:**
 
 - **M34 P7** — FACEIT-style lobby header bar (team leaders + mode chip + state-aware countdown + Share). Replaces the current `2 v 2 lobby` title block on the team-play lobby view and **folds the ready-check countdown out of `CoordinationPanel` into the header** so the center column doesn't duplicate it. See M34 detail section for the full phase entry.
+- **M34 P8** — Team match-page polish (roster card parity with lobby `slot-card.tsx`) + "Team {leader}" labels on match page + lobby-lock notification with sound preference. See M34 detail section.
 
 **Active / upcoming:**
 
@@ -657,6 +658,16 @@ Reference: FACEIT match overview header (team_a name + leader avatar | mode chip
 - Three-dots menu — parked until M21 abuse-report flow exists.
 - Live score data — depends on FACEIT real-time API integration that doesn't exist.
 - Team-name customisation (custom team names instead of "Team {leader}") — feature creep; can't see a clear win.
+
+**Phase 8 — Team match-page polish + lobby-lock notification** _(in flight 2026-06-14)_
+
+Surfaced during dogfooding: the match-page `Rosters` block built fast during P6 Slice E reads bland next to the lobby's polished `slot-card.tsx`; team labels still read "Team A" / "Team B" instead of "Team {leader}"; and there's no notification when the lobby locks → match starts. Three slices.
+
+### Slices (tentative)
+
+- [x] **Slice A — Match-page roster polish** _(shipped 2026-06-14)_. `GameMatchResource::buildRoster` extended with `skill_rating` (snapshot from `linkedAccounts` on the listing's platform) + `platform_stats` block (`total_matches` / `win_rate` / `completion_rate_30d`). `GameMatchController::show` eager-loads `linkedAccounts` and batches `SellerTrust::forBatch` + `ParticipantStats::forBatch` over the live roster (mirrors `ListingController::showTeamPlay`). `team-rosters.tsx` rebuilt to mirror lobby `slot-card.tsx`: size-10 avatar + leader crown on slot 0, name + platform handle, rating chip, three-cell stats line, viewer pink tint, winner/loser color treatment. TS `TeamMatchPlayer` extended. +1 Pest assertion on `TeamMatchResourceTest`.
+- [x] **Slice B — "Team {leader}" labels on match page** _(shipped 2026-06-14)_. New shape-agnostic `lib/team-leader.ts` exporting `pickTeamLeader()` + `teamLabel()` over `TeamMatchPlayer`. Slot 0 is the leader by backend convention (creator on creator's side, earliest joiner on opposing side). Wired into `team-rosters.tsx` column headers, `team-settlement-summary.tsx` winning-team label, and the match-page hero "You're on :team" subline. Column header style switched from `uppercase tracking-[0.18em]` to `font-display tracking-wide` (mixed case) so usernames stay readable. 1v1 chess unaffected.
+- [x] **Slice C — Lobby-lock notification + sound preference** _(shipped 2026-06-14)_. New `TeamMatchStartedNotification` extending `PlayerNotification`. Dispatched from `LobbyLockAction` to every locked-in participant via `MatchParticipants::all($match)` once the lock transaction commits (a rollback does not broadcast). Registered as a configurable event type with sound-default ON (matches `listing_taken`'s rationale — high-attention moment, money already staked). `/settings/notifications` page exposes the new toggle in the "Match activity" group. +2 Pest cases in `ToggleReadyTest` pinning the fan-out + the no-fire on a non-final Ready. Full suite **1531 → 1533** green.
 
 ### Not in M34
 

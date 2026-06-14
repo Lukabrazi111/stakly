@@ -37,12 +37,14 @@ test('edit returns merged preferences for configurable events', function () {
         ->assertSuccessful()
         ->assertInertia(fn ($page) => $page
             ->component('settings/notifications', false)
-            ->has('preferences', 5)
+            ->has('preferences', 6)
             ->where('preferences.listing_taken.in_app', true)
             ->where('preferences.listing_taken.sound', true)
+            ->where('preferences.team_match_started.in_app', true)
+            ->where('preferences.team_match_started.sound', true)
             ->where('preferences.match_settled.sound', false)
             ->has('mandatoryEventTypes')
-            ->has('configurableEventTypes', 5)
+            ->has('configurableEventTypes', 6)
             ->has('soundChoices', 4)
             ->where('notificationSound', 'classic'));
 });

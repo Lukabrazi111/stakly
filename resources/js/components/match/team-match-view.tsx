@@ -20,6 +20,7 @@ import { PageMeta } from '@/components/site/page-meta';
 import { useMatchChat } from '@/hooks/use-match-chat';
 import { useT } from '@/lib/i18n';
 import { isMatchChatReadOnly } from '@/lib/match-chat-readonly';
+import { teamLabel } from '@/lib/team-leader';
 import { show as listingShow } from '@/routes/listings';
 import type { Match, MatchStatus, TeamMatchPlayer } from '@/types';
 import type { ChatMessage } from '@/types/match';
@@ -203,9 +204,13 @@ export function TeamMatchView({ match, messages }: TeamMatchViewProps) {
                                 </h1>
                                 <p className="mt-1 text-sm text-muted-foreground">
                                     {viewerTeam === 'a' &&
-                                        t("You're on Team A.")}
+                                        t("You're on :team.", {
+                                            team: teamLabel(teamA, t('Team A')),
+                                        })}
                                     {viewerTeam === 'b' &&
-                                        t("You're on Team B.")}
+                                        t("You're on :team.", {
+                                            team: teamLabel(teamB, t('Team B')),
+                                        })}
                                     {viewerTeam === null &&
                                         t('Spectator view.')}
                                 </p>
@@ -266,6 +271,8 @@ export function TeamMatchView({ match, messages }: TeamMatchViewProps) {
                                     perPlayerRefund={perPlayerRefund}
                                     winningTeam={match.winning_team ?? null}
                                     viewerTeam={viewerTeam}
+                                    teamA={teamA}
+                                    teamB={teamB}
                                     animateEntrance={settledCardShouldAnimate}
                                 />
                             </div>

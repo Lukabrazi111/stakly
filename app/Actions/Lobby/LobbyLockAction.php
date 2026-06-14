@@ -6,7 +6,10 @@ use App\Enums\ListingStatus;
 use App\Enums\MatchStatus;
 use App\Models\Listing;
 use App\Models\MatchProviderSnapshot;
+use App\Notifications\TeamMatchStartedNotification;
+use App\Services\MatchParticipants;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Notification;
 
 /**
  * Locks a fully-Ready'd lobby. Transitions:
@@ -31,11 +34,11 @@ class LobbyLockAction
 {
     public function handle(Listing $listing): void
     {
-        DB::transaction(function () use ($listing) {
+        $didLock = DB::transaction(function () use ($listing) {
             $locked = Listing::query()->lockForUpdate()->findOrFail($listing->id);
 
             if ($locked->lobby_state === 'locked') {
-                return;
+                return false;
             }
 
             $locked->load(['gameMatch', 'lobbyParticipants.user.linkedAccounts']);
@@ -43,7 +46,43 @@ class LobbyLockAction
             $this->populateSnapshots($locked);
             $this->markListingTaken($locked);
             $this->promoteMatchToPending($locked);
+
+            return true;
         });
+
+        if ($didLock) {
+            $this->notifyAllParticipants($listing);
+        }
+    }
+
+    /**
+     * Fan out `TeamMatchStartedNotification` to every locked-in participant
+     * (creator + opponents — 4 on Wingman 2v2, 10 on CS2 5v5). Dispatched
+     * AFTER the transaction commits so a rollback doesn't broadcast a
+     * "your match started" notification for a match that never actually
+     * locked. `MatchParticipants::all()` reads the live `LobbyParticipant`
+     * roster (kicked_at IS NULL).
+     */
+    private function notifyAllParticipants(Listing $listing): void
+    {
+        $fresh = Listing::query()
+            ->with(['gameMatch.listing', 'lobbyParticipants.user'])
+            ->find($listing->id);
+
+        if ($fresh?->gameMatch === null) {
+            return;
+        }
+
+        $participants = MatchParticipants::all($fresh->gameMatch);
+
+        if ($participants->isEmpty()) {
+            return;
+        }
+
+        Notification::send(
+            $participants,
+            new TeamMatchStartedNotification($fresh->gameMatch),
+        );
     }
 
     /**

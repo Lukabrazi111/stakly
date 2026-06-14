@@ -28,6 +28,7 @@ abstract class PlayerNotification extends Notification implements ShouldQueue
     public const EVENT_TYPES = [
         'listing_taken',
         'listing_expired',
+        'team_match_started',
         'match_settled',
         'match_manual_review',
         'dispute_opened',
@@ -42,6 +43,7 @@ abstract class PlayerNotification extends Notification implements ShouldQueue
     /** Subset exposed in the /settings/notifications UI. The rest always fire (no opt-out). */
     public const CONFIGURABLE_EVENT_TYPES = [
         'listing_taken',
+        'team_match_started',
         'match_settled',
         'match_manual_review',
         'dispute_opened',
@@ -61,6 +63,7 @@ abstract class PlayerNotification extends Notification implements ShouldQueue
     /** Events whose per-event Sound preference defaults to ON. */
     public const SOUND_DEFAULT_EVENT_TYPES = [
         'listing_taken',
+        'team_match_started',
     ];
 
     /**

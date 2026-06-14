@@ -97,10 +97,22 @@ describe('GET /matches/{match} for a 5v5 team match', function () {
         expect($payload['team_a'])->toHaveCount(5);
         expect($payload['team_b'])->toHaveCount(5);
 
-        // Each entry has the canonical shape.
+        // Each entry has the canonical shape (M34 P8 Slice A extends the
+        // shape with skill_rating + platform_stats for the rich roster
+        // cards on the match page).
         foreach ($payload['team_a'] as $entry) {
-            expect($entry)->toHaveKeys(['user_id', 'username', 'name', 'avatar_thumb_url', 'slot_index']);
+            expect($entry)->toHaveKeys([
+                'user_id', 'username', 'name', 'avatar_thumb_url', 'slot_index',
+                'skill_rating', 'platform_stats',
+            ]);
         }
+
+        // platform_stats is attached by the controller (SellerTrust +
+        // ParticipantStats batches). Non-null shape on a Pending team
+        // match page visit.
+        expect($payload['team_a'][0]['platform_stats'])->toHaveKeys([
+            'total_matches', 'win_rate', 'completion_rate_30d',
+        ]);
 
         // Order by slot_index ascending (slot 0, 1, 2, 3, 4).
         $aSlots = array_column($payload['team_a'], 'slot_index');

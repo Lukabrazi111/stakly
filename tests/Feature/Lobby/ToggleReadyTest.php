@@ -11,7 +11,9 @@ use App\Models\Listing;
 use App\Models\LobbyParticipant;
 use App\Models\MatchProviderSnapshot;
 use App\Models\User;
+use App\Notifications\TeamMatchStartedNotification;
 use App\Services\Wallet;
+use Illuminate\Support\Facades\Notification;
 
 /*
  * M34 P1 — ToggleReadyAction + the all-Ready → LobbyLockAction transition.
@@ -191,4 +193,57 @@ it('rejects toggling Ready on an already-locked lobby', function () {
     $result = app(ToggleReadyAction::class)->handle($listing->user, $listing);
 
     expect($result)->toBe('locked');
+});
+
+/*
+ * M34 P8 Slice C — fan out `TeamMatchStartedNotification` to every locked-in
+ * participant once the lobby actually locks. Pre-lock ready toggles, mid-flow
+ * un-readies, and re-runs on an already-locked listing must NOT re-broadcast.
+ */
+describe('TeamMatchStartedNotification dispatch', function () {
+    it('notifies every locked-in participant when the final Ready locks the lobby', function () {
+        $listing = newTeamPlay(teamSize: 2);
+        $creator = $listing->user;
+        $teammateA = newFundedPlayer();
+        $oppB1 = newFundedPlayer();
+        $oppB2 = newFundedPlayer();
+
+        app(JoinLobbyAction::class)->handle($teammateA, $listing, LobbyParticipant::SIDE_A);
+        app(JoinLobbyAction::class)->handle($oppB1, $listing, LobbyParticipant::SIDE_B);
+        app(JoinLobbyAction::class)->handle($oppB2, $listing, LobbyParticipant::SIDE_B);
+        app(ToggleReadyAction::class)->handle($creator, $listing);
+        app(ToggleReadyAction::class)->handle($teammateA, $listing);
+        app(ToggleReadyAction::class)->handle($oppB1, $listing);
+
+        Notification::fake();
+
+        // Last Ready locks the lobby and fans out.
+        app(ToggleReadyAction::class)->handle($oppB2, $listing);
+
+        Notification::assertSentTo($creator, TeamMatchStartedNotification::class);
+        Notification::assertSentTo($teammateA, TeamMatchStartedNotification::class);
+        Notification::assertSentTo($oppB1, TeamMatchStartedNotification::class);
+        Notification::assertSentTo($oppB2, TeamMatchStartedNotification::class);
+    });
+
+    it('does not fan out on a non-final Ready click', function () {
+        $listing = newTeamPlay(teamSize: 2);
+        $creator = $listing->user;
+        $teammateA = newFundedPlayer();
+        $oppB1 = newFundedPlayer();
+        $oppB2 = newFundedPlayer();
+
+        app(JoinLobbyAction::class)->handle($teammateA, $listing, LobbyParticipant::SIDE_A);
+        app(JoinLobbyAction::class)->handle($oppB1, $listing, LobbyParticipant::SIDE_B);
+        app(JoinLobbyAction::class)->handle($oppB2, $listing, LobbyParticipant::SIDE_B);
+
+        Notification::fake();
+
+        // Only three Ready clicks — lobby stays in ready_checking, no lock.
+        app(ToggleReadyAction::class)->handle($creator, $listing);
+        app(ToggleReadyAction::class)->handle($teammateA, $listing);
+        app(ToggleReadyAction::class)->handle($oppB1, $listing);
+
+        Notification::assertNothingSent();
+    });
 });

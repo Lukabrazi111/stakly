@@ -49,6 +49,16 @@ export interface TeamMatchPlayer {
     name: string;
     avatar_thumb_url: string | null;
     slot_index: number;
+    // M34 P8 Slice A — per-player skill + trust payload powering the rich
+    // roster cards on the match page. Both nullable: skill is null when
+    // the linked account has no rating; platform_stats is null when the
+    // controller skipped the batched aggregations (list contexts).
+    skill_rating: number | null;
+    platform_stats: {
+        total_matches: number;
+        win_rate: number | null;
+        completion_rate_30d: number | null;
+    } | null;
 }
 
 // M16 — snapshotted external-account handles scoped to the listing's
