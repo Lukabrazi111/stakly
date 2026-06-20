@@ -5,7 +5,7 @@ namespace App\Actions\Fortify;
 use App\Concerns\PasswordValidationRules;
 use App\Concerns\ProfileValidationRules;
 use App\Models\User;
-use App\Support\MockTronAddress;
+use App\Services\Payments\PaymentGateway;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
@@ -34,7 +34,16 @@ class CreateNewUser implements CreatesNewUsers
             'password' => $this->passwordRules(),
         ], $this->profileMessages())->validate();
 
-        return $this->createWithUniqueUsername($input);
+        $user = $this->createWithUniqueUsername($input);
+
+        // Provision the deposit address through the active gateway driver
+        // (mock locally, real custodial provider once wired) instead of minting
+        // a mock here — keeps the mock-vs-real seam in one config-driven place.
+        // Resolved from the container so the no-arg `new CreateNewUser` used in
+        // tests and by Fortify keeps working.
+        app(PaymentGateway::class)->ensureDepositAccount($user);
+
+        return $user;
     }
 
     /**
@@ -83,10 +92,9 @@ class CreateNewUser implements CreatesNewUsers
                 'username' => $username,
                 'email' => $input['email'],
                 'password' => $input['password'],
-                'tron_address' => MockTronAddress::generate(),
             ]));
         } catch (QueryException $e) {
-            if ($this->isUsernameCollision($e) || $this->isTronAddressCollision($e)) {
+            if ($this->isUsernameCollision($e)) {
                 return null;
             }
 
@@ -120,12 +128,5 @@ class CreateNewUser implements CreatesNewUsers
         $isUniqueViolation = in_array((string) $e->getCode(), ['23505', '23000'], true);
 
         return $isUniqueViolation && str_contains($e->getMessage(), 'username');
-    }
-
-    private function isTronAddressCollision(QueryException $e): bool
-    {
-        $isUniqueViolation = in_array((string) $e->getCode(), ['23505', '23000'], true);
-
-        return $isUniqueViolation && str_contains($e->getMessage(), 'tron_address');
     }
 }

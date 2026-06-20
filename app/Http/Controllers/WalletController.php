@@ -7,6 +7,7 @@ use App\Http\Requests\Wallet\IndexHistoryRequest;
 use App\Http\Requests\Wallet\WithdrawRequest;
 use App\Http\Resources\WalletTransactionResource;
 use App\Models\WalletTransaction;
+use App\Services\Payments\PaymentGateway;
 use App\Services\Wallet;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -46,16 +47,20 @@ class WalletController extends Controller
 
     /**
      * Deposit page: shows the user's TRC20 address + QR (rendered client-side
-     * by `qrcode.react` in Phase 4). v1 addresses are mocks — real HD-derived
-     * addresses replace them at the pre-launch chain integration gate.
+     * by `qrcode.react`). The address is resolved through the active
+     * `PaymentGateway` driver — `MockGateway` locally, a real custodial
+     * provider once wired. The call is idempotent, so it doubles as lazy
+     * provisioning for any user without an address yet.
      */
     public function deposit(Request $request): Response
     {
         $user = $request->user();
         abort_if($user->is_platform, 403);
 
+        $account = app(PaymentGateway::class)->ensureDepositAccount($user);
+
         return Inertia::render('wallet/deposit', [
-            'tronAddress' => $user->tron_address,
+            'tronAddress' => $account->address,
         ]);
     }
 
