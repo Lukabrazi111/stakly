@@ -1,5 +1,6 @@
 import { Link } from '@inertiajs/react';
 import { ProfileMatchRow } from '@/components/profile/profile-match-row';
+import { useT } from '@/lib/i18n';
 import { index as listingsIndex } from '@/routes/listings';
 import type { Match } from '@/types';
 
@@ -14,23 +15,30 @@ export function MatchHistorySection({
     profileUserId,
     isOwnProfile,
 }: Props) {
+    const t = useT();
+
     if (matches.length === 0) {
         return (
             <div className="rounded-xl border border-dashed border-border/60 bg-card/40 p-8 text-center">
                 <p className="text-sm font-medium text-foreground">
-                    {isOwnProfile ? 'No matches yet' : 'No settled matches yet'}
+                    {isOwnProfile
+                        ? t('No matches yet')
+                        : t('No settled matches yet')}
                 </p>
                 <p className="mx-auto mt-1 max-w-prose text-xs text-muted-foreground">
                     {isOwnProfile
-                        ? 'Take a listing to record your first match.'
-                        : 'Resolved matches will appear here as they complete.'}
+                        ? t('Take a listing to record your first match.')
+                        : t(
+                              'Resolved matches will appear here as they complete.',
+                          )}
                 </p>
                 {isOwnProfile && (
                     <Link
                         href={listingsIndex().url}
                         className="mt-4 inline-flex text-sm font-medium text-primary transition-colors hover:text-primary/80"
                     >
-                        Browse the marketplace <span aria-hidden="true">→</span>
+                        {t('Browse the marketplace')}{' '}
+                        <span aria-hidden="true">→</span>
                     </Link>
                 )}
             </div>

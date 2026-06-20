@@ -6,7 +6,7 @@ use App\Enums\LinkedAccountProvider;
 use App\Events\MessageSent;
 use App\Models\GameMatch;
 use App\Models\Message;
-use App\Services\Provider\Exceptions\ProviderUnavailableException;
+use App\Services\Provider\Exceptions\ProviderError;
 use App\Services\Provider\LichessGameClient;
 use App\Services\Provider\LichessGameResult;
 use Illuminate\Bus\Queueable;
@@ -19,26 +19,11 @@ use Illuminate\Support\Facades\Log;
 use Throwable;
 
 /**
- * Resolves a pasted Lichess game URL to a chat evidence card (M8 Phase 4
- * paste path). Dispatched by `SendMessageAction` for each Lichess game ID
- * extracted from a chat message; non-Lichess URLs continue through the
- * generic `FetchLinkMetadataJob`.
+ * Resolves a pasted Lichess game URL to a chat evidence card (paste path).
+ * Cross-checks player usernames against snapshots; unverified cards still render
+ * with the badge dropped (chat sees the game existed but can't confirm participants).
  *
- * Pipeline:
- *   1. Fetch the game via `LichessGameClient::fetchGame()`.
- *   2. Cross-check the game's two player usernames against the match's
- *      snapshotted Lichess usernames (`game_matches.{side}_lichess_username`,
- *      captured at match creation per the "snapshot, don't link"
- *      architectural decision — a mid-match unlink can't strip the anchor).
- *   3. Append a `type: 'game_card'` entry to `attachments_json`, with
- *      `verified: true` only when both sides match (one creator, one
- *      taker, in either color). An unverified card still renders — the
- *      chat sees the game existed, the missing badge signals "we can't
- *      confirm this is between the two players in this match."
- *   4. Re-broadcast `MessageSent` so the bubble swaps in place.
- *
- * Failures are logged and swallowed. A missing card is acceptable; a
- * thrown job lands in failed-jobs forever and clutters the queue.
+ * Failures are logged + swallowed — missing card is acceptable, a thrown job clutters failed-jobs forever.
  */
 class FetchLichessGameMetadataJob implements ShouldQueueAfterCommit
 {
@@ -57,7 +42,7 @@ class FetchLichessGameMetadataJob implements ShouldQueueAfterCommit
     {
         try {
             $game = $client->fetchGame($this->gameId);
-        } catch (ProviderUnavailableException $e) {
+        } catch (ProviderError $e) {
             Log::info('Lichess game fetch failed (provider unavailable)', [
                 'message_id' => $this->message->id,
                 'game_id' => $this->gameId,
@@ -76,9 +61,7 @@ class FetchLichessGameMetadataJob implements ShouldQueueAfterCommit
         }
 
         if ($game === null) {
-            // 404 → user pasted a URL that doesn't resolve. Silent skip;
-            // the chat bubble just shows the bare URL since we routed past
-            // FetchLinkMetadataJob for Lichess URLs.
+            // 404 → user pasted a non-existent game URL. Silent skip; bare URL still renders.
             return;
         }
 
@@ -88,7 +71,6 @@ class FetchLichessGameMetadataJob implements ShouldQueueAfterCommit
             return;
         }
 
-        // Eager-load the snapshot rows for the cross-check.
         $match->loadMissing('providerSnapshots');
 
         $this->appendEntryAndRebroadcast($this->buildEntry($game, $match));
@@ -119,11 +101,8 @@ class FetchLichessGameMetadataJob implements ShouldQueueAfterCommit
     }
 
     /**
-     * Verified iff BOTH game players' Lichess usernames map onto the match's
-     * snapshotted handles (one creator, one taker, in either color).
-     * Case-insensitive comparison: Lichess canonicalises usernames as
-     * lowercase server-side, but `players.{color}.user.name` preserves the
-     * user's case.
+     * Verified iff BOTH players map onto the snapshotted handles (one creator, one taker, either color).
+     * Case-insensitive — `players.{color}.user.name` preserves the user's case display.
      */
     private static function isVerifiedByMatch(LichessGameResult $game, GameMatch $match): bool
     {
@@ -146,9 +125,8 @@ class FetchLichessGameMetadataJob implements ShouldQueueAfterCommit
     }
 
     /**
-     * Append the card entry under a row lock so a concurrent job (e.g. an
-     * auto-fetch firing close to a paste) can't lose entries via
-     * read-modify-write race on the JSON column.
+     * Row lock prevents read-modify-write race on the JSON column when a concurrent job
+     * (e.g. auto-fetch firing close to a paste) appends entries.
      *
      * @param  array<string, mixed>  $entry
      */

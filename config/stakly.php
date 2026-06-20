@@ -46,6 +46,26 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Dispute fast-path (M14 Slice 4a)
+    |--------------------------------------------------------------------------
+    |
+    | When true, `OpenDisputeAction` invokes `ResolveDisputeAction` synchronously
+    | right after flipping the match to Disputed. Skips the wait for the next
+    | auto-fetch cron tick and lets the API arbitrate immediately on a player
+    | "Report a problem" click.
+    |
+    | Gated to chess matches (`game === Game::Chess`) — FACEIT / OpenDota / Riot
+    | adapters land in M15 and will widen the gate then.
+    |
+    | Default off until M14 Phase 1's `PipelineHealth` widget shows ~2 weeks of
+    | stable auto-fetch (Slice 4b checkpoint).
+    |
+    */
+
+    'dispute_fast_path_enabled' => (bool) env('STAKLY_DISPUTE_FAST_PATH_ENABLED', false),
+
+    /*
+    |--------------------------------------------------------------------------
     | Match confirmation timeout (hours)
     |--------------------------------------------------------------------------
     |
@@ -93,5 +113,37 @@ return [
     */
 
     'link_verification_ttl_minutes' => (int) env('STAKLY_LINK_VERIFICATION_TTL_MINUTES', 15),
+
+    /*
+    |--------------------------------------------------------------------------
+    | Supported locales
+    |--------------------------------------------------------------------------
+    |
+    | Public-site i18n (M26 Phase 4). Every locale listed here is a valid
+    | URL prefix (`/en/`, `/ka/`, `/ru/`) and a candidate Inertia shared
+    | translation bag sourced from `lang/{locale}.json`. `default_locale`
+    | is the redirect target when no cookie / prefix is present and the
+    | fallback for missing CMS rows.
+    |
+    | `locales_meta` carries the native label shown by the LocaleSwitcher
+    | (Slice C) and the BCP-47 region pair used by `og:locale` on each
+    | page (en→en_US, ka→ka_GE, ru→ru_RU).
+    |
+    | Adding a locale: list it here, drop a `lang/{locale}.json` (can be
+    | empty — Laravel falls back to the key), and the routing layer +
+    | switcher pick it up. Filament admin is intentionally English-only
+    | and not affected.
+    |
+    */
+
+    'default_locale' => env('STAKLY_DEFAULT_LOCALE', 'en'),
+
+    'locales' => ['en', 'ka', 'ru'],
+
+    'locales_meta' => [
+        'en' => ['native_label' => 'English', 'og_locale' => 'en_US'],
+        'ka' => ['native_label' => 'ქართული', 'og_locale' => 'ka_GE'],
+        'ru' => ['native_label' => 'Русский', 'og_locale' => 'ru_RU'],
+    ],
 
 ];

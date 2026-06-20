@@ -10,13 +10,18 @@ use Illuminate\Support\Facades\Schema;
  * Riot, Steam, OpenDota, etc.) can each slot in as a new `provider` enum
  * value without widening the `users` table again.
  *
- * Two UNIQUE constraints encode the matchmaking-trust invariants:
- *   - (user_id, provider)     — a Stakly user has at most one verified
- *                                account per external provider.
- *   - (provider, username)    — an external account belongs to at most
- *                                one Stakly user; duplicate verify
- *                                attempts hit this and are translated to
- *                                a friendly error by VerifyLinkedAccountAction.
+ * Three UNIQUE constraints encode the matchmaking-trust invariants:
+ *   - (user_id, provider)          — a Stakly user has at most one verified
+ *                                     account per external provider.
+ *   - (provider, username)         — display handle belongs to at most one
+ *                                     Stakly user; duplicate verify attempts
+ *                                     hit this and are translated to a
+ *                                     friendly error by VerifyLinkedAccountAction.
+ *   - (provider, provider_user_id) — same invariant on the provider's stable
+ *                                     ID (M15: FACEIT guid, Steam ID, Riot
+ *                                     PUUID). NULL for chess providers;
+ *                                     Postgres allows duplicate NULLs in
+ *                                     multi-column uniques so they coexist.
  *
  * `verified_at` exists because we only insert rows after the bio-code
  * verification completes — pending state lives in `pending_verifications`,
@@ -36,11 +41,19 @@ return new class extends Migration
             $table->foreignId('user_id')->constrained()->cascadeOnDelete();
             $table->string('provider', 16);
             $table->string('username', 64);
+            // M15 — stable per-provider identifier (FACEIT guid, Steam ID,
+            // Riot PUUID). Nullable: chess providers identify by username only.
+            $table->string('provider_user_id', 128)->nullable();
+            // M15 — cached current skill rating (Faceit ELO, future MMR,
+            // chess rating once a refresh cron exists). Nullable until the
+            // provider's adapter populates it.
+            $table->integer('skill_rating')->nullable();
             $table->timestamp('verified_at');
             $table->timestamps();
 
             $table->unique(['user_id', 'provider']);
             $table->unique(['provider', 'username']);
+            $table->unique(['provider', 'provider_user_id']);
         });
     }
 

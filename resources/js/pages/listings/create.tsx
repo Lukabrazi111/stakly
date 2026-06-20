@@ -1,7 +1,12 @@
-import { Head, Link, useForm, usePage } from '@inertiajs/react';
-import { AlertCircle, Crown, Link2 } from 'lucide-react';
+import { Link, useForm } from '@inertiajs/react';
+import { AlertCircle, Link2 } from 'lucide-react';
 import type { ReactNode } from 'react';
 import InputError from '@/components/input-error';
+import { ChessFormatFilter } from '@/components/listings/chess-format-filter';
+import { ChessSkillRangeFilter } from '@/components/listings/chess-skill-range-filter';
+import { Cs2SkillRangeFilter } from '@/components/listings/cs2-skill-range-filter';
+import { GamePicker } from '@/components/listings/game-picker';
+import { PageMeta } from '@/components/site/page-meta';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -13,7 +18,9 @@ import {
     SelectValue,
 } from '@/components/ui/select';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
+import type { GameId } from '@/config/games';
 import SiteLayout from '@/layouts/site-layout';
+import { useT } from '@/lib/i18n';
 import { edit as linkedAccountsEdit } from '@/routes/linked-accounts';
 import {
     index as listingsIndex,
@@ -21,17 +28,71 @@ import {
     store as storeListing,
 } from '@/routes/listings';
 import type { ListingCreateProps, ListingPlatform, TimeControl } from '@/types';
+import type { GameTile } from '@/types/home';
 
-const PLATFORM_LABEL: Record<ListingPlatform, string> = {
+const PROVIDER_LABEL: Record<ListingPlatform, string> = {
     chess_com: 'chess.com',
     lichess: 'Lichess',
+    faceit: 'FACEIT',
+    steam: 'Steam',
 };
 
-const TIME_CONTROL_OPTIONS: ReadonlyArray<[TimeControl, string]> = [
-    ['blitz', 'Blitz'],
-    ['rapid', 'Rapid'],
-    ['classical', 'Classical'],
-];
+type ChessProvider = Extract<ListingPlatform, 'chess_com' | 'lichess'>;
+
+function isChessProvider(platform: ListingPlatform): platform is ChessProvider {
+    return platform === 'chess_com' || platform === 'lichess';
+}
+
+/**
+ * Picks a sensible default platform for a game: prefer one the user is already
+ * verified on, else fall back to the first provider the game requires.
+ */
+function defaultPlatformForGame(
+    game: GameId,
+    requirementsByGame: ListingCreateProps['requirementsByGame'],
+    linkedPlatforms: ListingPlatform[],
+): ListingPlatform {
+    const providers = requirementsByGame[game]?.providers ?? [];
+    const linked = providers.find((p) => linkedPlatforms.includes(p));
+
+    return linked ?? providers[0] ?? 'chess_com';
+}
+
+function defaultGameFor(
+    games: readonly GameTile[],
+    requirementsByGame: ListingCreateProps['requirementsByGame'],
+): GameId {
+    const active = games.filter((g) => g.status === 'active');
+
+    const verified = active.find(
+        (g) => requirementsByGame[g.slug as GameId]?.verified,
+    );
+
+    if (verified) {
+        return verified.slug as GameId;
+    }
+
+    // Nothing linked yet — push toward CS2 (newer integration) when it's in
+    // the active catalog. Falls back to the first active game otherwise.
+    const cs2 = active.find((g) => g.slug === 'cs2');
+
+    return (cs2?.slug ?? active[0]?.slug ?? 'chess') as GameId;
+}
+
+function formatTeamSizeLabel(teamSize: number): string {
+    return `${teamSize}v${teamSize}`;
+}
+
+// Default to the largest = the game's "headline" mode (5v5 for CS2 once
+// Wingman adds [2, 5]). Server contract guarantees a non-empty list, but
+// the empty fallback keeps a partial Inertia hydration from crashing the
+// form.
+function defaultTeamSizeFor(allowedSizes: number[]): number {
+    return allowedSizes.length > 0 ? Math.max(...allowedSizes) : 1;
+}
+
+const SEGMENTED_ITEM_CLASS =
+    'h-12 rounded-xl border border-border/60 data-[state=on]:border-primary data-[state=on]:bg-primary/10 data-[state=on]:text-foreground';
 
 export default function ListingsCreate({
     balance,
@@ -41,18 +102,26 @@ export default function ListingsCreate({
     activeListingsCount,
     maxActiveListings,
     linkedPlatforms,
+    games,
+    requirementsByGame,
 }: ListingCreateProps) {
-    const { auth } = usePage().props;
-    const hasChessLink = Boolean(auth.user?.has_chess_link);
+    const t = useT();
     const atCap = activeListingsCount >= maxActiveListings;
-    // Default the picker to the user's first verified platform (chess.com
-    // comes first because it's alphabetically lower; either is fine when
-    // only one is linked). When both providers are linked, render the picker.
-    const defaultPlatform: ListingPlatform = linkedPlatforms[0] ?? 'chess_com';
-    const showPlatformPicker = linkedPlatforms.length > 1;
+
+    const initialGame = defaultGameFor(games.data, requirementsByGame);
+    const initialPlatform = defaultPlatformForGame(
+        initialGame,
+        requirementsByGame,
+        linkedPlatforms,
+    );
+    const initialAllowedTeamSizes = requirementsByGame[initialGame]
+        ?.allowed_team_sizes ?? [1];
+    const initialTeamSize = defaultTeamSizeFor(initialAllowedTeamSizes);
+    const initialCreatorSide: 'a' | 'b' | null =
+        initialTeamSize > 1 ? 'a' : null;
 
     const { data, setData, post, processing, errors } = useForm<{
-        game: string;
+        game: GameId;
         platform: ListingPlatform;
         stake_amount: string;
         skill_min: string;
@@ -61,88 +130,104 @@ export default function ListingsCreate({
         region: string;
         language: string[];
         duration_hours: number;
+        team_size: number;
+        creator_side: 'a' | 'b' | null;
+        is_public: boolean;
     }>({
-        game: 'chess',
-        platform: defaultPlatform,
+        game: initialGame,
+        platform: initialPlatform,
         stake_amount: '',
         skill_min: '',
         skill_max: '',
-        time_control: ['blitz'],
+        time_control: initialGame === 'chess' ? ['blitz'] : [],
         region: regions[0] ?? 'Global',
         language: [],
         duration_hours: durations.includes(24) ? 24 : (durations[0] ?? 24),
+        team_size: initialTeamSize,
+        creator_side: initialCreatorSide,
+        is_public: true,
     });
+
+    const requirements = requirementsByGame[data.game];
+    const isGameVerified = requirements?.verified ?? false;
+    const requiredProviders = requirements?.providers ?? [];
+    const allowedTeamSizes = requirements?.allowed_team_sizes ?? [1];
+
+    const linkedChessProviders = linkedPlatforms.filter(isChessProvider);
+    const showChessPlatformPicker =
+        data.game === 'chess' && linkedChessProviders.length > 1;
 
     const stakeNumber =
         data.stake_amount === '' ? 0 : Number(data.stake_amount);
     const balanceNumber = Number(balance);
     const exceedsBalance = stakeNumber > balanceNumber;
-    const hasTimeControl = data.time_control.length > 0;
+    const hasTimeControl =
+        data.game !== 'chess' || data.time_control.length > 0;
     const canSubmit =
         !processing &&
         !atCap &&
         !exceedsBalance &&
+        isGameVerified &&
         data.stake_amount !== '' &&
         stakeNumber > 0 &&
         hasTimeControl;
 
-    // Linked-account gate (M8 Phase 5). The viewer hit this page without a
-    // verified chess provider → swap the form for a notice card. Server
-    // re-checks in `CreateListingAction` so a hand-crafted POST also fails.
-    if (!hasChessLink) {
-        return (
-            <SiteLayout>
-                <Head title="Create a listing" />
-
-                <div className="mx-auto max-w-2xl px-4 py-10 md:py-14">
-                    <header className="mb-8">
-                        <h1 className="font-display text-3xl font-bold tracking-tight md:text-4xl">
-                            Create a listing
-                        </h1>
-                        <p className="mt-2 text-sm text-muted-foreground">
-                            One more step before you can post on the
-                            marketplace.
-                        </p>
-                    </header>
-
-                    <div className="flex flex-col items-start gap-4 rounded-2xl border border-border/60 bg-card p-6">
-                        <div className="inline-flex size-10 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                            <Link2 className="size-5" aria-hidden="true" />
-                        </div>
-                        <div className="flex flex-col gap-1">
-                            <h2 className="font-display text-xl font-bold tracking-tight">
-                                Link a chess account first
-                            </h2>
-                            <p className="text-sm leading-relaxed text-muted-foreground">
-                                Stakly verifies match outcomes against your
-                                chess.com or Lichess account. Link one to post
-                                listings and take matches — it takes about a
-                                minute.
-                            </p>
-                        </div>
-                        <Button variant="gradient" size="pill" asChild>
-                            <Link href={linkedAccountsEdit().url}>
-                                Link chess.com or Lichess
-                            </Link>
-                        </Button>
-                    </div>
-                </div>
-            </SiteLayout>
+    const handleGameChange = (next: GameId) => {
+        const platform = defaultPlatformForGame(
+            next,
+            requirementsByGame,
+            linkedPlatforms,
         );
-    }
+        const nextAllowedTeamSizes = requirementsByGame[next]
+            ?.allowed_team_sizes ?? [1];
+        const nextTeamSize = defaultTeamSizeFor(nextAllowedTeamSizes);
+        const nextCreatorSide: 'a' | 'b' | null = nextTeamSize > 1 ? 'a' : null;
+
+        setData((prev) => ({
+            ...prev,
+            game: next,
+            platform,
+            // Cross-game skill metric semantics differ (chess Elo vs FACEIT
+            // ELO). Reset on switch so a value entered for one game doesn't
+            // get reinterpreted for the other.
+            skill_min: '',
+            skill_max: '',
+            // `time_control` is chess-only — clear when switching away so the
+            // backend stores null instead of a stale `['blitz']` placeholder
+            // on CS2 / future-game listings.
+            time_control: next === 'chess' ? prev.time_control : [],
+            // M34 — reset team_size + creator_side to the new game's defaults.
+            // is_public is the creator's choice and persists across switches.
+            team_size: nextTeamSize,
+            creator_side: nextCreatorSide,
+        }));
+    };
+
+    const handleTeamSizeChange = (next: number) => {
+        setData((prev) => ({
+            ...prev,
+            team_size: next,
+            creator_side: next > 1 ? (prev.creator_side ?? 'a') : null,
+        }));
+    };
 
     return (
         <SiteLayout>
-            <Head title="Create a listing" />
+            <PageMeta
+                title={t('Create a listing')}
+                description={t('Post a new staking listing.')}
+                noindex
+            />
 
             <div className="mx-auto max-w-2xl px-4 py-10 md:py-14">
                 <header className="mb-8">
                     <h1 className="font-display text-3xl font-bold tracking-tight md:text-4xl">
-                        Create a listing
+                        {t('Create a listing')}
                     </h1>
                     <p className="mt-2 text-sm text-muted-foreground">
-                        Set your terms — opponents will pick yours from the
-                        marketplace.
+                        {t(
+                            'Set your terms — opponents will pick yours from the marketplace.',
+                        )}
                     </p>
                 </header>
 
@@ -157,18 +242,19 @@ export default function ListingsCreate({
                         />
                         <div className="flex-1">
                             <p className="text-sm font-medium text-foreground">
-                                You&apos;re at the {maxActiveListings}-listing
-                                cap
+                                {t("You're at the :max-listing cap", {
+                                    max: maxActiveListings,
+                                })}
                             </p>
                             <p className="mt-0.5 text-sm text-muted-foreground">
-                                Cancel one of your active listings (Open or
-                                Paused) before creating another, or wait for one
-                                to settle.{' '}
+                                {t(
+                                    'Cancel one of your active listings (Open or Paused) before creating another, or wait for one to settle.',
+                                )}{' '}
                                 <Link
                                     href={listingsMine().url}
                                     className="font-medium text-primary underline-offset-2 transition-colors hover:text-primary/80 hover:underline"
                                 >
-                                    Go to My listings →
+                                    {t('Go to My listings →')}
                                 </Link>
                             </p>
                         </div>
@@ -182,289 +268,460 @@ export default function ListingsCreate({
                     }}
                     className="space-y-8"
                 >
-                    {/* Game (chess only in v1) */}
-                    <FormSection title="Game">
-                        <div className="flex items-center gap-3 rounded-xl border border-glow p-4">
-                            <div className="inline-flex size-10 items-center justify-center rounded-lg bg-gradient-primary">
-                                <Crown className="size-5 text-primary-foreground" />
-                            </div>
-                            <div>
-                                <div className="font-semibold text-foreground">
-                                    Chess
-                                </div>
-                                <div className="text-xs text-muted-foreground">
-                                    More games coming soon.
-                                </div>
-                            </div>
-                        </div>
+                    <FormSection title={t('Game')}>
+                        <GamePicker
+                            games={games.data}
+                            selected={data.game}
+                            onSelect={handleGameChange}
+                            requirementsByGame={requirementsByGame}
+                        />
+                        <InputError message={errors.game} />
                     </FormSection>
 
-                    {/* Platform — shown only when the user has both providers
-                        verified. Auto-selected to the only-linked one
-                        otherwise (silent). */}
-                    {showPlatformPicker && (
-                        <FormSection title="Platform">
-                            <ToggleGroup
-                                type="single"
-                                value={data.platform}
-                                onValueChange={(value) => {
-                                    if (
-                                        value === 'chess_com' ||
-                                        value === 'lichess'
-                                    ) {
-                                        setData('platform', value);
-                                    }
-                                }}
-                                className="grid grid-cols-2 gap-2"
-                            >
-                                {linkedPlatforms.map((p) => (
-                                    <ToggleGroupItem
-                                        key={p}
-                                        value={p}
-                                        className="h-12 rounded-xl border border-border/60 data-[state=on]:border-primary data-[state=on]:bg-primary/10 data-[state=on]:text-foreground"
+                    {!isGameVerified ? (
+                        <LinkGateNotice requiredProviders={requiredProviders} />
+                    ) : (
+                        <>
+                            {showChessPlatformPicker && (
+                                <FormSection title={t('Platform')}>
+                                    <ToggleGroup
+                                        type="single"
+                                        value={data.platform}
+                                        onValueChange={(value) => {
+                                            if (
+                                                isChessProvider(
+                                                    value as ListingPlatform,
+                                                )
+                                            ) {
+                                                setData(
+                                                    'platform',
+                                                    value as ListingPlatform,
+                                                );
+                                            }
+                                        }}
+                                        className="grid grid-cols-2 gap-2"
                                     >
-                                        {PLATFORM_LABEL[p]}
-                                    </ToggleGroupItem>
-                                ))}
-                            </ToggleGroup>
-                            <p className="mt-2 text-xs text-muted-foreground">
-                                Match outcome will be verified against{' '}
-                                {PLATFORM_LABEL[data.platform]}.
-                            </p>
-                            <InputError message={errors.platform} />
-                        </FormSection>
-                    )}
-
-                    {/* Stake */}
-                    <FormSection title="Stake">
-                        <div className="space-y-2">
-                            <Label htmlFor="stake_amount">Amount in USDT</Label>
-                            <div className="relative">
-                                <Input
-                                    id="stake_amount"
-                                    name="stake_amount"
-                                    type="number"
-                                    inputMode="decimal"
-                                    min={1}
-                                    max={100000}
-                                    placeholder="100"
-                                    value={data.stake_amount}
-                                    onChange={(e) =>
-                                        setData('stake_amount', e.target.value)
-                                    }
-                                    className="pr-16"
-                                    aria-invalid={exceedsBalance || undefined}
-                                />
-                                <span className="pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 text-sm font-medium text-muted-foreground">
-                                    USDT
-                                </span>
-                            </div>
-                            <div className="text-xs text-muted-foreground">
-                                Available:{' '}
-                                <span
-                                    className={
-                                        exceedsBalance
-                                            ? 'font-medium text-destructive'
-                                            : 'font-medium text-foreground'
-                                    }
-                                >
-                                    ${balanceNumber.toFixed(2)} USDT
-                                </span>
-                            </div>
-                            {exceedsBalance && (
-                                <p className="text-xs text-destructive">
-                                    Stake exceeds your available balance.
-                                </p>
-                            )}
-                            <InputError message={errors.stake_amount} />
-                        </div>
-                    </FormSection>
-
-                    {/* Match preferences */}
-                    <FormSection title="Match preferences">
-                        <div className="space-y-5">
-                            <div className="space-y-2">
-                                <Label>Time control</Label>
-                                <ToggleGroup
-                                    type="multiple"
-                                    variant="outline"
-                                    value={data.time_control}
-                                    onValueChange={(value) =>
-                                        setData(
-                                            'time_control',
-                                            value as TimeControl[],
-                                        )
-                                    }
-                                    className="flex flex-wrap"
-                                >
-                                    {TIME_CONTROL_OPTIONS.map(
-                                        ([value, label]) => (
+                                        {linkedChessProviders.map((p) => (
                                             <ToggleGroupItem
-                                                key={value}
-                                                value={value}
-                                                className="rounded-full px-5 py-2"
+                                                key={p}
+                                                value={p}
+                                                className="h-12 rounded-xl border border-border/60 data-[state=on]:border-primary data-[state=on]:bg-primary/10 data-[state=on]:text-foreground"
                                             >
-                                                {label}
+                                                {PROVIDER_LABEL[p]}
                                             </ToggleGroupItem>
-                                        ),
-                                    )}
-                                </ToggleGroup>
-                                <p className="text-xs text-muted-foreground">
-                                    Pick at least one — the opponent picks which
-                                    to play.
-                                </p>
-                                <InputError message={errors.time_control} />
-                            </div>
+                                        ))}
+                                    </ToggleGroup>
+                                    <p className="mt-2 text-xs text-muted-foreground">
+                                        {t(
+                                            'Match outcome will be verified against :platform.',
+                                            {
+                                                platform:
+                                                    PROVIDER_LABEL[
+                                                        data.platform
+                                                    ],
+                                            },
+                                        )}
+                                    </p>
+                                    <InputError message={errors.platform} />
+                                </FormSection>
+                            )}
 
-                            <div className="space-y-2">
-                                <Label>Skill range (Elo)</Label>
-                                <div className="flex items-center gap-3">
-                                    <Input
-                                        type="number"
-                                        min={0}
-                                        max={3500}
-                                        placeholder="Any min"
-                                        value={data.skill_min}
-                                        onChange={(e) =>
-                                            setData('skill_min', e.target.value)
+                            {data.game === 'cs2' && (
+                                <FormSection title={t('Platform')}>
+                                    <div className="flex items-center gap-3 rounded-xl border border-border/60 bg-card/60 p-4">
+                                        <span className="inline-flex size-9 items-center justify-center rounded-lg bg-primary/15 text-sm font-bold text-primary">
+                                            F
+                                        </span>
+                                        <div className="space-y-0.5">
+                                            <div className="font-semibold text-foreground">
+                                                FACEIT
+                                            </div>
+                                            <p className="text-xs text-muted-foreground">
+                                                {t(
+                                                    'Match outcome will be verified against FACEIT.',
+                                                )}
+                                            </p>
+                                        </div>
+                                    </div>
+                                </FormSection>
+                            )}
+
+                            {allowedTeamSizes.length > 1 && (
+                                <FormSection title={t('Format')}>
+                                    <ToggleGroup
+                                        type="single"
+                                        value={String(data.team_size)}
+                                        onValueChange={(value) => {
+                                            if (value === '') {
+                                                return;
+                                            }
+
+                                            handleTeamSizeChange(Number(value));
+                                        }}
+                                        className="grid grid-cols-2 gap-2"
+                                    >
+                                        {allowedTeamSizes.map((size) => (
+                                            <ToggleGroupItem
+                                                key={size}
+                                                value={String(size)}
+                                                className={SEGMENTED_ITEM_CLASS}
+                                            >
+                                                {formatTeamSizeLabel(size)}
+                                            </ToggleGroupItem>
+                                        ))}
+                                    </ToggleGroup>
+                                    <p className="mt-2 text-xs text-muted-foreground">
+                                        {data.team_size === 1
+                                            ? t('Direct 1v1 match — no lobby.')
+                                            : t(
+                                                  'Team lobby — pick your side, recruit teammates, ready up together.',
+                                              )}
+                                    </p>
+                                    <InputError message={errors.team_size} />
+                                </FormSection>
+                            )}
+
+                            {data.team_size > 1 && (
+                                <FormSection title={t('Your side')}>
+                                    <ToggleGroup
+                                        type="single"
+                                        value={data.creator_side ?? 'a'}
+                                        onValueChange={(value) => {
+                                            if (
+                                                value === 'a' ||
+                                                value === 'b'
+                                            ) {
+                                                setData('creator_side', value);
+                                            }
+                                        }}
+                                        className="grid grid-cols-2 gap-2"
+                                    >
+                                        <ToggleGroupItem
+                                            value="a"
+                                            className={SEGMENTED_ITEM_CLASS}
+                                        >
+                                            {t('Team A')}
+                                        </ToggleGroupItem>
+                                        <ToggleGroupItem
+                                            value="b"
+                                            className={SEGMENTED_ITEM_CLASS}
+                                        >
+                                            {t('Team B')}
+                                        </ToggleGroupItem>
+                                    </ToggleGroup>
+                                    <p className="mt-2 text-xs text-muted-foreground">
+                                        {t(
+                                            "You'll be auto-joined to slot 1 of this team. Teammates join the empty slots from the lobby page.",
+                                        )}
+                                    </p>
+                                    <InputError message={errors.creator_side} />
+                                </FormSection>
+                            )}
+
+                            <FormSection title={t('Stake')}>
+                                <div className="space-y-2">
+                                    <Label htmlFor="stake_amount">
+                                        {t('Amount in USDT')}
+                                    </Label>
+                                    <div className="relative">
+                                        <Input
+                                            id="stake_amount"
+                                            name="stake_amount"
+                                            type="number"
+                                            inputMode="decimal"
+                                            min={1}
+                                            max={100000}
+                                            placeholder="100"
+                                            value={data.stake_amount}
+                                            onChange={(e) =>
+                                                setData(
+                                                    'stake_amount',
+                                                    e.target.value,
+                                                )
+                                            }
+                                            className="pr-16"
+                                            aria-invalid={
+                                                exceedsBalance || undefined
+                                            }
+                                        />
+                                        <span className="pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 text-sm font-medium text-muted-foreground">
+                                            USDT
+                                        </span>
+                                    </div>
+                                    <div className="text-xs text-muted-foreground">
+                                        {t('Available:')}{' '}
+                                        <span
+                                            className={
+                                                exceedsBalance
+                                                    ? 'font-medium text-destructive'
+                                                    : 'font-medium text-foreground'
+                                            }
+                                        >
+                                            ${balanceNumber.toFixed(2)} USDT
+                                        </span>
+                                    </div>
+                                    {exceedsBalance && (
+                                        <p className="text-xs text-destructive">
+                                            {t(
+                                                'Stake exceeds your available balance.',
+                                            )}
+                                        </p>
+                                    )}
+                                    <InputError message={errors.stake_amount} />
+                                </div>
+                            </FormSection>
+
+                            <FormSection title={t('Match preferences')}>
+                                <div className="space-y-5">
+                                    {data.game === 'chess' && (
+                                        <>
+                                            <ChessFormatFilter
+                                                value={data.time_control}
+                                                onChange={(next) =>
+                                                    setData(
+                                                        'time_control',
+                                                        next,
+                                                    )
+                                                }
+                                                error={errors.time_control}
+                                            />
+                                            <ChessSkillRangeFilter
+                                                min={data.skill_min}
+                                                max={data.skill_max}
+                                                onMinChange={(next) =>
+                                                    setData('skill_min', next)
+                                                }
+                                                onMaxChange={(next) =>
+                                                    setData('skill_max', next)
+                                                }
+                                                errors={{
+                                                    min: errors.skill_min,
+                                                    max: errors.skill_max,
+                                                }}
+                                            />
+                                        </>
+                                    )}
+
+                                    {data.game === 'cs2' && (
+                                        <Cs2SkillRangeFilter
+                                            min={data.skill_min}
+                                            max={data.skill_max}
+                                            onMinChange={(next) =>
+                                                setData('skill_min', next)
+                                            }
+                                            onMaxChange={(next) =>
+                                                setData('skill_max', next)
+                                            }
+                                            errors={{
+                                                min: errors.skill_min,
+                                                max: errors.skill_max,
+                                            }}
+                                        />
+                                    )}
+                                </div>
+                            </FormSection>
+
+                            <FormSection title={t('Audience')}>
+                                <div className="space-y-5">
+                                    <div className="space-y-2">
+                                        <Label htmlFor="region">
+                                            {t('Region')}
+                                        </Label>
+                                        <Select
+                                            value={data.region}
+                                            onValueChange={(value) =>
+                                                setData('region', value)
+                                            }
+                                        >
+                                            <SelectTrigger
+                                                id="region"
+                                                className="w-full"
+                                            >
+                                                <SelectValue />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                {regions.map((region) => (
+                                                    <SelectItem
+                                                        key={region}
+                                                        value={region}
+                                                    >
+                                                        {region}
+                                                    </SelectItem>
+                                                ))}
+                                            </SelectContent>
+                                        </Select>
+                                        <InputError message={errors.region} />
+                                    </div>
+                                    <div className="space-y-2">
+                                        <Label>{t('Languages')}</Label>
+                                        <ToggleGroup
+                                            type="multiple"
+                                            variant="outline"
+                                            value={data.language}
+                                            onValueChange={(value) =>
+                                                setData('language', value)
+                                            }
+                                            className="flex flex-wrap"
+                                        >
+                                            {languages.map((lang) => (
+                                                <ToggleGroupItem
+                                                    key={lang}
+                                                    value={lang}
+                                                    className="rounded-full px-4 py-2"
+                                                >
+                                                    {lang}
+                                                </ToggleGroupItem>
+                                            ))}
+                                        </ToggleGroup>
+                                        <p className="text-xs text-muted-foreground">
+                                            {t(
+                                                'Pick one or more, or leave empty for any language.',
+                                            )}
+                                        </p>
+                                        <InputError message={errors.language} />
+                                    </div>
+                                </div>
+                            </FormSection>
+
+                            <FormSection title={t('Visibility')}>
+                                <ToggleGroup
+                                    type="single"
+                                    value={
+                                        data.is_public ? 'public' : 'private'
+                                    }
+                                    onValueChange={(value) => {
+                                        if (value === 'public') {
+                                            setData('is_public', true);
+                                        } else if (value === 'private') {
+                                            setData('is_public', false);
                                         }
-                                        className="flex-1"
-                                        aria-label="Minimum Elo"
-                                    />
-                                    <span className="text-xs text-muted-foreground">
-                                        to
-                                    </span>
-                                    <Input
-                                        type="number"
-                                        min={0}
-                                        max={3500}
-                                        placeholder="Any max"
-                                        value={data.skill_max}
-                                        onChange={(e) =>
-                                            setData('skill_max', e.target.value)
+                                    }}
+                                    className="grid grid-cols-2 gap-2"
+                                >
+                                    <ToggleGroupItem
+                                        value="public"
+                                        className={SEGMENTED_ITEM_CLASS}
+                                    >
+                                        {t('Public')}
+                                    </ToggleGroupItem>
+                                    <ToggleGroupItem
+                                        value="private"
+                                        className={SEGMENTED_ITEM_CLASS}
+                                    >
+                                        {t('Private')}
+                                    </ToggleGroupItem>
+                                </ToggleGroup>
+                                <p className="mt-2 text-xs text-muted-foreground">
+                                    {data.is_public
+                                        ? t(
+                                              'Listed in the marketplace for anyone matching your skill range.',
+                                          )
+                                        : t(
+                                              'Hidden from the marketplace — only people with your invite link can see it.',
+                                          )}
+                                </p>
+                                <InputError message={errors.is_public} />
+                            </FormSection>
+
+                            <FormSection title={t('Listing expires after')}>
+                                <div className="space-y-2">
+                                    <Select
+                                        value={String(data.duration_hours)}
+                                        onValueChange={(value) =>
+                                            setData(
+                                                'duration_hours',
+                                                Number(value),
+                                            )
                                         }
-                                        className="flex-1"
-                                        aria-label="Maximum Elo"
+                                    >
+                                        <SelectTrigger className="w-full">
+                                            <SelectValue />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            {durations.map((hours) => (
+                                                <SelectItem
+                                                    key={hours}
+                                                    value={String(hours)}
+                                                >
+                                                    {hours === 1
+                                                        ? t('1 hour')
+                                                        : t(':hours hours', {
+                                                              hours,
+                                                          })}
+                                                </SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
+                                    <p className="text-xs text-muted-foreground">
+                                        {t(
+                                            'The listing auto-expires if nobody takes it. Your stake is refunded automatically.',
+                                        )}
+                                    </p>
+                                    <InputError
+                                        message={errors.duration_hours}
                                     />
                                 </div>
-                                <p className="text-xs text-muted-foreground">
-                                    Leave blank to match any skill.
-                                </p>
-                                <InputError message={errors.skill_min} />
-                                <InputError message={errors.skill_max} />
-                            </div>
-                        </div>
-                    </FormSection>
+                            </FormSection>
 
-                    {/* Audience */}
-                    <FormSection title="Audience">
-                        <div className="space-y-5">
-                            <div className="space-y-2">
-                                <Label htmlFor="region">Region</Label>
-                                <Select
-                                    value={data.region}
-                                    onValueChange={(value) =>
-                                        setData('region', value)
-                                    }
+                            <div className="flex items-center justify-between gap-3 pt-2">
+                                <Button type="button" variant="ghost" asChild>
+                                    <Link href={listingsIndex().url}>
+                                        {t('Cancel')}
+                                    </Link>
+                                </Button>
+                                <Button
+                                    type="submit"
+                                    variant="gradient"
+                                    size="pill"
+                                    disabled={!canSubmit}
                                 >
-                                    <SelectTrigger
-                                        id="region"
-                                        className="w-full"
-                                    >
-                                        <SelectValue />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        {regions.map((region) => (
-                                            <SelectItem
-                                                key={region}
-                                                value={region}
-                                            >
-                                                {region}
-                                            </SelectItem>
-                                        ))}
-                                    </SelectContent>
-                                </Select>
-                                <InputError message={errors.region} />
+                                    {processing
+                                        ? t('Creating…')
+                                        : data.team_size > 1
+                                          ? t('Open lobby')
+                                          : t('Create listing')}
+                                </Button>
                             </div>
-                            <div className="space-y-2">
-                                <Label>Languages</Label>
-                                <ToggleGroup
-                                    type="multiple"
-                                    variant="outline"
-                                    value={data.language}
-                                    onValueChange={(value) =>
-                                        setData('language', value)
-                                    }
-                                    className="flex flex-wrap"
-                                >
-                                    {languages.map((lang) => (
-                                        <ToggleGroupItem
-                                            key={lang}
-                                            value={lang}
-                                            className="rounded-full px-4 py-2"
-                                        >
-                                            {lang}
-                                        </ToggleGroupItem>
-                                    ))}
-                                </ToggleGroup>
-                                <p className="text-xs text-muted-foreground">
-                                    Pick one or more, or leave empty for any
-                                    language.
-                                </p>
-                                <InputError message={errors.language} />
-                            </div>
-                        </div>
-                    </FormSection>
-
-                    {/* Duration */}
-                    <FormSection title="Listing expires after">
-                        <div className="space-y-2">
-                            <Select
-                                value={String(data.duration_hours)}
-                                onValueChange={(value) =>
-                                    setData('duration_hours', Number(value))
-                                }
-                            >
-                                <SelectTrigger className="w-full">
-                                    <SelectValue />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    {durations.map((hours) => (
-                                        <SelectItem
-                                            key={hours}
-                                            value={String(hours)}
-                                        >
-                                            {hours === 1
-                                                ? '1 hour'
-                                                : `${hours} hours`}
-                                        </SelectItem>
-                                    ))}
-                                </SelectContent>
-                            </Select>
-                            <p className="text-xs text-muted-foreground">
-                                The listing auto-expires if nobody takes it.
-                                Your stake is refunded automatically.
-                            </p>
-                            <InputError message={errors.duration_hours} />
-                        </div>
-                    </FormSection>
-
-                    <div className="flex items-center justify-between gap-3 pt-2">
-                        <Button type="button" variant="ghost" asChild>
-                            <Link href={listingsIndex().url}>Cancel</Link>
-                        </Button>
-                        <Button
-                            type="submit"
-                            variant="gradient"
-                            size="pill"
-                            disabled={!canSubmit}
-                        >
-                            {processing ? 'Creating…' : 'Create listing'}
-                        </Button>
-                    </div>
+                        </>
+                    )}
                 </form>
             </div>
         </SiteLayout>
+    );
+}
+
+interface LinkGateNoticeProps {
+    requiredProviders: ListingPlatform[];
+}
+
+function LinkGateNotice({ requiredProviders }: LinkGateNoticeProps) {
+    const t = useT();
+    const providerNames = requiredProviders
+        .map((p) => PROVIDER_LABEL[p] ?? p)
+        .join(t(' or '));
+
+    return (
+        <div className="flex flex-col items-start gap-4 rounded-2xl border border-border/60 bg-card p-6">
+            <div className="inline-flex size-10 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                <Link2 className="size-5" aria-hidden="true" />
+            </div>
+            <div className="flex flex-col gap-1">
+                <h2 className="font-display text-xl font-bold tracking-tight">
+                    {t('Link :provider to post', { provider: providerNames })}
+                </h2>
+                <p className="text-sm leading-relaxed text-muted-foreground">
+                    {t(
+                        'We verify match outcomes through your linked account. Linking :provider lets you post and take listings on this game — about a minute of setup.',
+                        { provider: providerNames },
+                    )}
+                </p>
+            </div>
+            <Button variant="gradient" size="pill" asChild>
+                <Link href={linkedAccountsEdit().url}>
+                    {t('Link :provider', { provider: providerNames })}
+                </Link>
+            </Button>
+        </div>
     );
 }
 

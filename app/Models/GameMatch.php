@@ -4,7 +4,9 @@ namespace App\Models;
 
 use App\Enums\LinkedAccountProvider;
 use App\Enums\MatchStatus;
+use App\Observers\GameMatchObserver;
 use Database\Factories\GameMatchFactory;
+use Illuminate\Database\Eloquent\Attributes\ObservedBy;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -15,21 +17,19 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * A 1v1 match between the listing's creator and a taker. Match metadata only —
  * money flows through `App\Services\Wallet` against the related listing.
  *
- * Class is named `GameMatch` (not `Match`) because `match` is a PHP reserved
- * keyword post-8.0. All references to the model — controllers, policies,
- * relations — follow the `GameMatch*` / `gameMatch()` naming convention.
+ * Named `GameMatch` because `match` is a PHP reserved keyword post-8.0; all
+ * references follow the `GameMatch*` / `gameMatch()` convention.
  */
+#[ObservedBy(GameMatchObserver::class)]
 class GameMatch extends Model
 {
     /** @use HasFactory<GameMatchFactory> */
     use HasFactory;
 
     /**
-     * Two valid `side` values on `match_provider_snapshots`. Kept as string
-     * constants (not a PHP enum) because there's no business logic on the
-     * value beyond "creator vs taker" and we don't want to import an enum
-     * just to read a single snapshot row. Promote to an enum if a future
-     * team-match shape introduces additional roles.
+     * `side` values on `match_provider_snapshots`. String constants (not an
+     * enum) because no business logic hangs off the value. Promote to enum if
+     * a future team-match shape introduces additional roles.
      */
     public const SIDE_CREATOR = 'creator';
 
@@ -86,21 +86,15 @@ class GameMatch extends Model
         return $this->belongsTo(User::class, 'dispute_opened_by');
     }
 
-    /**
-     * Chat history (M8 Phase 2). Append-only — ordered by id (= insert order
-     * thanks to bigserial). Composite `(match_id, id)` index on `messages`
-     * keeps the per-match lookup cheap.
-     */
     public function messages(): HasMany
     {
         return $this->hasMany(Message::class, 'match_id');
     }
 
     /**
-     * Snapshot of each player's verified external accounts at match
-     * creation time (M8 Phase 4). Populated by `TakeListingAction`. Read by
-     * the smart-link enrichment jobs + auto-fetch jobs + `SettleFromCardAction`
-     * (M16) for winner-to-user mapping. See `App\Models\MatchProviderSnapshot`.
+     * Snapshot of each player's verified external accounts at match creation.
+     * Populated by `TakeListingAction`; read by the smart-link enrichment jobs,
+     * auto-fetch jobs, and `SettleFromCardAction` for winner-to-user mapping.
      */
     public function providerSnapshots(): HasMany
     {
@@ -108,9 +102,8 @@ class GameMatch extends Model
     }
 
     /**
-     * Admin resolution audit rows (M12 Phase 2). Append-only; one row per
-     * admin click on Settle to Creator / Settle to Taker / Settle as Draw.
-     * Ordered oldest → newest so the chronology renders top-down.
+     * Append-only admin resolution audit. Ordered oldest → newest so the
+     * chronology renders top-down.
      */
     public function adminResolutions(): HasMany
     {
@@ -118,15 +111,19 @@ class GameMatch extends Model
     }
 
     /**
-     * Lookup helper for the smart-link jobs: "what username did the
-     * {side} player verify for {provider} at match creation?" Returns
-     * null when no snapshot exists for that slot — caller treats that as
-     * "this side isn't linked for this provider."
-     *
-     * Reads from the loaded `providerSnapshots` collection if it's
-     * already eager-loaded; otherwise triggers a lazy load (one query).
-     * Job handlers call `loadMissing('providerSnapshots')` at entry to
-     * keep call-site code clean.
+     * Append-only auto-fetch attempt audit. Ordered oldest → newest so the
+     * Filament timeline reads chronologically.
+     */
+    public function autoFetchAttempts(): HasMany
+    {
+        return $this->hasMany(MatchAutoFetchAttempt::class, 'match_id')->oldest();
+    }
+
+    /**
+     * "What username did the {side} player verify for {provider} at match
+     * creation?" Returns null when no snapshot exists (this side isn't linked
+     * for this provider). Job handlers `loadMissing('providerSnapshots')` at
+     * entry; falls back to lazy load otherwise.
      */
     public function snapshotUsername(string $side, LinkedAccountProvider $provider): ?string
     {
@@ -139,9 +136,50 @@ class GameMatch extends Model
     }
 
     /**
-     * Matches where $userId is either the creator (via listing.user_id) or
-     * the taker. Used by the /matches index page so a player sees both sides
-     * of their participation in one list.
+     * "What stable provider-side ID did the {side} player verify for
+     * {provider}?" — FACEIT player GUID, Steam ID, Riot PUUID (text). Null
+     * for chess providers (chess.com / Lichess use username as the
+     * stable identifier; `provider_user_id` is nullable on snapshots).
+     */
+    public function snapshotProviderUserId(string $side, LinkedAccountProvider $provider): ?string
+    {
+        return $this->providerSnapshots
+            ->first(
+                fn (MatchProviderSnapshot $snapshot) => $snapshot->side === $side
+                    && $snapshot->provider === $provider,
+            )
+            ?->provider_user_id;
+    }
+
+    /**
+     * Team-play sister to `snapshotProviderUserId`. Returns every {provider}
+     * GUID snapshotted for the {side} team, ordered by `slot_index` ascending
+     * so callers can address "slot 0" / "slot 1" deterministically. Null
+     * `provider_user_id` entries are filtered out (chess providers have no
+     * GUID).
+     *
+     * For 1v1 chess `side` is 'creator' / 'taker' and the array has zero or
+     * one element. For 5v5 team-play `side` is 'a' / 'b' and the array
+     * carries one entry per slot the team's players linked to {provider}.
+     *
+     * @return list<string>
+     */
+    public function snapshotProviderUserIds(string $side, LinkedAccountProvider $provider): array
+    {
+        return $this->providerSnapshots
+            ->filter(
+                fn (MatchProviderSnapshot $snapshot) => $snapshot->side === $side
+                    && $snapshot->provider === $provider
+                    && $snapshot->provider_user_id !== null,
+            )
+            ->sortBy('slot_index')
+            ->pluck('provider_user_id')
+            ->values()
+            ->all();
+    }
+
+    /**
+     * Matches where $userId is creator (via listing.user_id) OR taker.
      */
     public function scopeForParticipant(Builder $query, int $userId): Builder
     {

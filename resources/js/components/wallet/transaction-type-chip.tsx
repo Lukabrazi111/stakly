@@ -7,6 +7,7 @@ import {
     Undo2,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
+import { useT } from '@/lib/i18n';
 import type { WalletTransactionType } from '@/types';
 
 interface TypeMeta {
@@ -15,11 +16,8 @@ interface TypeMeta {
     classes: string;
 }
 
-// Semantic colors per transaction type. Confirmed in M7 design pass:
-//   - Credits that complete (Deposit / Payout / EscrowRelease) → success green
-//   - Escrow Hold → warning amber (paused, not gone — important for at-a-glance)
-//   - Withdrawal → destructive red (money leaving)
-//   - Fee → muted (informational, not actionable)
+// Semantic colors: completed credits → success, escrow hold → warning,
+// withdrawal → destructive, fee → muted.
 const TYPE_META: Record<WalletTransactionType, TypeMeta> = {
     deposit: {
         label: 'Deposit',
@@ -58,6 +56,7 @@ interface Props {
 }
 
 export function TransactionTypeChip({ type }: Props) {
+    const t = useT();
     const { label, icon: Icon, classes } = TYPE_META[type];
 
     return (
@@ -65,7 +64,7 @@ export function TransactionTypeChip({ type }: Props) {
             className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium ${classes}`}
         >
             <Icon className="size-3" />
-            {label}
+            {t(label)}
         </span>
     );
 }

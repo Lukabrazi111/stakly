@@ -60,6 +60,60 @@ test('open disputes stat surfaces oldest dispute age', function () {
         ->assertSeeText('Oldest:');
 });
 
+// ─── Aging disputes stat (M27 P4 SLA surface) ──────────────────────────────
+
+test('aging disputes stat shows zero + No aging disputes when queue is fresh', function () {
+    [, , , $fresh] = pendingMatch();
+    $fresh->update(['status' => MatchStatus::Disputed, 'dispute_opened_at' => now()->subHours(2)]);
+
+    Livewire::test(OpsOverview::class)
+        ->assertSuccessful()
+        ->assertSeeText('Aging disputes (≥6h)')
+        ->assertSeeText('No aging disputes');
+});
+
+test('aging disputes stat counts only disputes older than 6h', function () {
+    // 2h old — not counted.
+    [, , , $fresh] = pendingMatch();
+    $fresh->update(['status' => MatchStatus::Disputed, 'dispute_opened_at' => now()->subHours(2)]);
+
+    // 7h old — counted.
+    [, , , $aging] = pendingMatch();
+    $aging->update(['status' => MatchStatus::Disputed, 'dispute_opened_at' => now()->subHours(7)]);
+
+    // 8h old — counted.
+    [, , , $aging2] = pendingMatch();
+    $aging2->update(['status' => MatchStatus::Disputed, 'dispute_opened_at' => now()->subHours(8)]);
+
+    Livewire::test(OpsOverview::class)
+        ->assertSuccessful()
+        ->assertSeeText('Aging disputes (≥6h)')
+        ->assertSeeText('2 between 6h–12h');
+});
+
+test('aging disputes stat flags 12h+ entries with over-12h description', function () {
+    [, , , $critical] = pendingMatch();
+    $critical->update(['status' => MatchStatus::Disputed, 'dispute_opened_at' => now()->subHours(14)]);
+
+    Livewire::test(OpsOverview::class)
+        ->assertSuccessful()
+        ->assertSeeText('1 over 12h');
+});
+
+test('aging disputes stat falls back to updated_at for ManualReview-from-timeout matches', function () {
+    // No dispute_opened_at (timeout-routed MR), updated_at 8h ago.
+    [, , , $timeoutMR] = pendingMatch();
+    $timeoutMR->forceFill([
+        'status' => MatchStatus::ManualReview,
+        'dispute_opened_at' => null,
+        'updated_at' => now()->subHours(8),
+    ])->save();
+
+    Livewire::test(OpsOverview::class)
+        ->assertSuccessful()
+        ->assertSeeText('1 between 6h–12h');
+});
+
 // ─── Matches today stat ────────────────────────────────────────────────────
 
 test('matches today stat counts only matches created today', function () {

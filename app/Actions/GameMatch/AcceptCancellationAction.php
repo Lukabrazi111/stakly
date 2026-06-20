@@ -6,44 +6,28 @@ use App\Actions\Message\PostSystemMessageAction;
 use App\Enums\ListingStatus;
 use App\Enums\MatchStatus;
 use App\Models\GameMatch;
+use App\Models\LobbyParticipant;
 use App\Models\User;
+use App\Notifications\CancellationAcceptedNotification;
+use App\Services\MatchParticipants;
 use App\Services\Wallet;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Notification;
 
 /**
- * Step 2 of the M10 mutual cancellation flow: the *other* participant
- * accepts the pending request. Match flips Pending → Cancelled, both
- * stakes refunded via `Wallet::release`, listing flips Taken → Cancelled.
- * Symmetric with `SettleDrawMatchAction`'s refund-both pattern — no
- * platform fee, no winner, no record impact.
+ * Step 2 of the mutual cancellation flow: the opponent accepts the pending request.
+ * Match flips Pending → Cancelled, every escrowed stake is refunded, listing flips
+ * Taken → Cancelled.
  *
- * Returns:
- *   - `'cancelled'`              — match cancelled, refunds posted.
- *   - `'already_cancelled'`      — idempotent re-call after a prior accept
- *                                  already flipped the match (covers double-
- *                                  click / retry). No-op, no second refund
- *                                  (Wallet idempotency keys would short-
- *                                  circuit anyway).
- *   - `'race_lost'`              — match was no longer Pending by the time
- *                                  our lock acquired (settled / disputed /
- *                                  another resolution path ran first).
- *   - `'request_missing'`        — no open request to accept. Controller
- *                                  toast: "There's no open request."
- *   - `'self_accept_forbidden'`  — defensive: the requester themselves
- *                                  tried to accept their own request.
- *                                  Policy gates this upstream; the Action
- *                                  guards it again so a bypass-policy
- *                                  caller (artisan, future webhook) can't
- *                                  self-resolve.
+ * 1v1 — refunds creator + taker.
+ * Team play (M34 P6) — fan-out across every live `lobby_participants` row that
+ * holds escrow (`kicked_at IS NULL AND stake_held_at IS NOT NULL`). Wallet's
+ * row-lock + negative-balance throw guards conservation; tests assert
+ * end-to-end balance restoration.
  *
- * Conservation per cancelled match:
- *   `-A_stake + -B_stake + +A_release + +B_release = 0`
- *
- * Audit invariant: `confirmed_outcome` columns are NOT cleared. If Alice
- * had clicked Won before the cancel, the historical record of her claim
- * survives — useful for forensics if a dispute about the cancellation
- * itself arises later. The terminal `Cancelled` status prevents these
- * columns from being acted on (status guard in `confirm` policy).
+ * Returns: `'cancelled'`, `'already_cancelled'` (idempotent re-call), `'race_lost'`
+ * (no longer Pending), `'request_missing'` (no open request), or `'self_accept_forbidden'`
+ * (requester tried to self-accept — policy gates upstream; this guards bypass-policy callers).
  */
 class AcceptCancellationAction
 {
@@ -53,7 +37,7 @@ class AcceptCancellationAction
 
     public function handle(User $accepter, GameMatch $match): string
     {
-        return DB::transaction(function () use ($match, $accepter) {
+        $result = DB::transaction(function () use ($match, $accepter) {
             $locked = GameMatch::query()->lockForUpdate()->findOrFail($match->id);
 
             if ($locked->status === MatchStatus::Cancelled) {
@@ -74,7 +58,7 @@ class AcceptCancellationAction
 
             $locked->load('listing.user', 'taker');
 
-            $this->refundBothStakes($locked);
+            $this->refundEveryStake($locked);
             $this->markMatchCancelled($locked);
             $this->markListingCancelled($locked);
 
@@ -87,16 +71,40 @@ class AcceptCancellationAction
 
             return 'cancelled';
         });
+
+        if ($result === 'cancelled') {
+            $fresh = $match->fresh(['listing.user', 'taker']);
+
+            // Notify every participant except the accepter (they did it).
+            // For 1v1 that's the original requester only; for team play
+            // it's the requester + their 4 team-mates + the accepter's 4
+            // team-mates — everyone needs the refund-done signal.
+            $recipients = MatchParticipants::allExcept($fresh, $accepter);
+
+            if ($recipients->isNotEmpty()) {
+                Notification::send($recipients, new CancellationAcceptedNotification($fresh, $accepter));
+            }
+        }
+
+        return $result;
+    }
+
+    private function refundEveryStake(GameMatch $match): void
+    {
+        if ($match->listing->isTeamPlay()) {
+            $this->refundTeamStakes($match);
+
+            return;
+        }
+
+        $this->refund1v1Stakes($match);
     }
 
     /**
-     * Same refund shape as `SettleDrawMatchAction::refundBothStakes`. The
-     * cancellation-specific reference strings keep this idempotent
-     * independently of any other refund path that might touch the same
-     * match (defense in depth — there shouldn't be one, but the Wallet
-     * idempotency contract is the safety net).
+     * Cancellation-specific reference strings keep refunds idempotent independently of any
+     * other refund path that might touch the same match (Wallet idempotency is the safety net).
      */
-    private function refundBothStakes(GameMatch $match): void
+    private function refund1v1Stakes(GameMatch $match): void
     {
         $stake = (string) $match->listing->stake_amount;
 
@@ -117,6 +125,37 @@ class AcceptCancellationAction
         );
     }
 
+    /**
+     * Team-match fan-out — refunds every live lobby participant that has
+     * escrow held. Kicked rows are skipped (their stake was released at
+     * kick time per `KickParticipantAction`); soft-joined-but-not-Ready
+     * rows are skipped (no escrow to release).
+     *
+     * Per-user idempotency ref `cancel-refund:{match_id}:{user_id}`
+     * — survives partial-failure retries without double-refunding.
+     */
+    private function refundTeamStakes(GameMatch $match): void
+    {
+        $stake = (string) $match->listing->stake_amount;
+
+        $participants = LobbyParticipant::query()
+            ->where('listing_id', $match->listing_id)
+            ->live()
+            ->whereNotNull('stake_held_at')
+            ->with('user')
+            ->get();
+
+        foreach ($participants as $participant) {
+            Wallet::release(
+                user: $participant->user,
+                amount: $stake,
+                listing: $match->listing,
+                reference: "cancel-refund:{$match->id}:{$participant->user_id}",
+                description: 'Mutual cancellation — team stake refunded.',
+            );
+        }
+    }
+
     private function markMatchCancelled(GameMatch $match): void
     {
         $match->update([
@@ -126,11 +165,9 @@ class AcceptCancellationAction
     }
 
     /**
-     * Listing flips Taken → Cancelled. Creator can create a fresh listing
-     * if they want to keep playing — re-opening this listing isn't on the
-     * table (UNIQUE constraint on `game_matches.listing_id` means one
-     * listing → at most one match ever; reopening would let a second
-     * match land on the historical record).
+     * Flip Taken → Cancelled (not back to Open) — UNIQUE on `game_matches.listing_id`
+     * means one listing → at most one match ever; reopening would let a second match
+     * land on the historical record.
      */
     private function markListingCancelled(GameMatch $match): void
     {

@@ -1,6 +1,7 @@
 import { Link, usePage } from '@inertiajs/react';
 import { useAuthModal } from '@/components/auth/auth-modal-provider';
 import { Button } from '@/components/ui/button';
+import { useT } from '@/lib/i18n';
 import { edit as linkedAccountsEdit } from '@/routes/linked-accounts';
 import { mine as listingsMine, show as showListing } from '@/routes/listings';
 import type { Listing, ListingPlatform } from '@/types';
@@ -8,45 +9,31 @@ import type { Listing, ListingPlatform } from '@/types';
 const PLATFORM_LABEL: Record<ListingPlatform, string> = {
     chess_com: 'chess.com',
     lichess: 'Lichess',
+    // M15 placeholders — CS2/Dota listings are dev-seed only today; the
+    // Link-X-to-take CTA they render isn't actionable (no FACEIT/Steam
+    // verification flow exists), but it shouldn't crash the chip either.
+    faceit: 'FACEIT',
+    steam: 'Steam',
 };
 
 interface Props {
     listing: Listing;
-    /**
-     * Applied to the outer rendered element. The Take CTA's shape varies
-     * by branch (gradient pill, outline pill, or owner chip + Manage row),
-     * so the layout class lives at the call site (e.g. `w-full md:w-auto`
-     * in the row, `relative mt-auto w-full` in the featured card).
-     */
     className?: string;
 }
 
 /**
- * Take CTA for the listings marketplace surfaces — `listing-row.tsx` +
- * `listing-card.tsx` (M22 Phase 3). Telegraphs eligibility at scan time
- * so the viewer doesn't waste clicks discovering a gate on the detail page.
- *
- * Four branches:
- *   - **Guest viewer** — gradient pill "Sign in to take" that opens the
- *     auth modal in place (no full-page nav).
- *   - **Owner** of the listing — outline pill "Manage" linking to
- *     /listings/mine. The action label is enough; no explicit "Your
- *     listing" label needed since the owner already knows.
- *   - **Authed but wrong-platform-verified** — outline pill "Link
- *     {platform}" linking to /settings/linked-accounts.
- *   - **Eligible** — gradient pill "Take" linking to the listing detail
- *     page where the full Take dialog + balance check lives.
- *
- * NOT used by `listings/show.tsx` — the detail page has additional
- * eligibility branches (balance check, owner-inactive, confirm dialog)
- * that don't compress into a single shared component.
+ * Take CTA for listings marketplace surfaces. Branches: guest → "Sign in to
+ * take" (opens modal); owner → "Manage"; authed wrong-platform → "Link
+ * {platform}"; eligible → "Take". NOT used by `listings/show.tsx`, which
+ * has additional eligibility branches.
  */
 export function TakeButton({ listing, className = '' }: Props) {
+    const t = useT();
     const { auth } = usePage().props;
     const { openLogin } = useAuthModal();
     const user = auth.user;
+    const isTeamPlay = listing.team_size > 1;
 
-    // Guest first — early-return narrows `user` to non-null for the rest.
     if (!user) {
         return (
             <Button
@@ -56,16 +43,30 @@ export function TakeButton({ listing, className = '' }: Props) {
                 onClick={openLogin}
                 className={className}
             >
-                Sign in to take
+                {isTeamPlay ? t('Sign in to join') : t('Sign in to take')}
             </Button>
         );
     }
 
+    // Owner of a team-play listing routes to the lobby (where coordination
+    // + cancel-via-leave live) instead of `/listings/mine`. The chess-style
+    // "Manage" affordance still applies to 1v1 listings.
     if (user.id === listing.creator.id) {
-        // Outline pill at the same size as the Take button so the owner's
-        // row column matches the width + height of ordinary-Take rows.
-        // The owner doesn't need a "Your listing" label — they already
-        // know; the action button is enough.
+        if (isTeamPlay) {
+            return (
+                <Button
+                    variant="gradient"
+                    size="pill"
+                    asChild
+                    className={className}
+                >
+                    <Link href={showListing({ listing: listing.id }).url}>
+                        {t('View lobby')}
+                    </Link>
+                </Button>
+            );
+        }
+
         return (
             <Button
                 variant="outline"
@@ -73,17 +74,22 @@ export function TakeButton({ listing, className = '' }: Props) {
                 asChild
                 className={`rounded-full ${className}`.trim()}
             >
-                <Link href={listingsMine().url}>Manage</Link>
+                <Link href={listingsMine().url}>{t('Manage')}</Link>
             </Button>
         );
     }
 
-    if (!user.linked_platforms.includes(listing.platform)) {
-        // Just "Link {platform}", not "Link {platform} to take" — the
-        // platform chip already carries the "match plays on X" signal,
-        // and the row + card right-column width reads cleaner when the
-        // label is short. Goal is implicit (clicking this button takes
-        // you to /settings/linked-accounts).
+    // `linked_platforms` is chess-only by design (FACEIT/Steam linking is
+    // M15 work). For CS2/Dota listings the `.includes()` always returns
+    // false → the chip renders the (non-actionable) "Link FACEIT to take"
+    // CTA, which is correct: these listings aren't takeable today. The
+    // widening cast is purely to satisfy TS — runtime semantics are
+    // identical (a chess-only array can't contain `faceit`/`steam`).
+    if (
+        !(user.linked_platforms as readonly ListingPlatform[]).includes(
+            listing.platform,
+        )
+    ) {
         return (
             <Button
                 variant="outline"
@@ -92,7 +98,24 @@ export function TakeButton({ listing, className = '' }: Props) {
                 className={`rounded-full ${className}`.trim()}
             >
                 <Link href={linkedAccountsEdit().url}>
-                    Link {PLATFORM_LABEL[listing.platform]}
+                    {t('Link :platform', {
+                        platform: PLATFORM_LABEL[listing.platform],
+                    })}
+                </Link>
+            </Button>
+        );
+    }
+
+    if (isTeamPlay) {
+        return (
+            <Button
+                variant="gradient"
+                size="pill"
+                asChild
+                className={className}
+            >
+                <Link href={showListing({ listing: listing.id }).url}>
+                    {t('View lobby')}
                 </Link>
             </Button>
         );
@@ -100,7 +123,9 @@ export function TakeButton({ listing, className = '' }: Props) {
 
     return (
         <Button variant="gradient" size="pill" asChild className={className}>
-            <Link href={showListing(listing.id).url}>Take</Link>
+            <Link href={showListing({ listing: listing.id }).url}>
+                {t('Take')}
+            </Link>
         </Button>
     );
 }

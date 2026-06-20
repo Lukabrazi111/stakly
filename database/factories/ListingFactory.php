@@ -7,8 +7,10 @@ use App\Enums\LinkedAccountProvider;
 use App\Enums\ListingStatus;
 use App\Enums\TimeControl;
 use App\Models\Listing;
+use App\Models\LobbyParticipant;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Factories\Factory;
+use Illuminate\Support\Str;
 
 /**
  * @extends Factory<Listing>
@@ -65,6 +67,11 @@ class ListingFactory extends Factory
                 : null,
             'expires_at' => $this->faker->dateTimeBetween('+1 hour', '+72 hours'),
             'status' => ListingStatus::Open,
+            // Default to the 1v1 shape — chess listings stay here and skip
+            // the M34 lobby pipeline. Team-play tests override via
+            // ->teamPlay() which sets team_size, creator_side, lobby_state.
+            'team_size' => 1,
+            'is_public' => true,
         ];
     }
 
@@ -124,5 +131,83 @@ class ListingFactory extends Factory
     public function forChessCom(): static
     {
         return $this->state(fn () => ['platform' => LinkedAccountProvider::ChessCom]);
+    }
+
+    /**
+     * Team-play listing (M34). Defaults to a CS2 5v5 in `recruiting`. Override
+     * via chained states (`lobbyReadyChecking()`, `lobbyLocked()`, `private()`).
+     */
+    public function teamPlay(int $teamSize = 5, Game $game = Game::Cs2): static
+    {
+        return $this->forGame($game)->state(fn () => [
+            'team_size' => $teamSize,
+            'creator_side' => $this->faker->randomElement([
+                LobbyParticipant::SIDE_A,
+                LobbyParticipant::SIDE_B,
+            ]),
+            'lobby_state' => 'recruiting',
+        ]);
+    }
+
+    public function lobbyReadyChecking(): static
+    {
+        return $this->state(fn () => [
+            'lobby_state' => 'ready_checking',
+            // 5-minute window is the production default
+            // (`LobbyReadyCheckAction`). Tests and seeders need a non-null
+            // deadline so the grid card's countdown banner renders.
+            'lobby_ready_check_deadline' => now()->addMinutes(5),
+        ]);
+    }
+
+    /**
+     * Locked = all participants Ready, match has transitioned from
+     * LobbyFilling → Pending, listing.status is now Taken. Seeder is
+     * responsible for creating the matching GameMatch + snapshots.
+     */
+    public function lobbyLocked(): static
+    {
+        return $this->state(fn () => [
+            'lobby_state' => 'locked',
+            'status' => ListingStatus::Taken,
+        ]);
+    }
+
+    public function private(): static
+    {
+        return $this->state(fn () => [
+            'is_public' => false,
+            'invite_token' => Str::random(32),
+        ]);
+    }
+
+    /**
+     * Adjusts platform + time_control to match the target game. CS2 routes
+     * to FACEIT, Dota 2 routes to Steam (per the planned M15 catalog).
+     * Non-chess games clear `time_control` since the concept doesn't apply
+     * — `gameSupports()` hides the filter UI for them, and an empty
+     * jsonb array is valid storage.
+     */
+    public function forGame(Game $game): static
+    {
+        $platform = match ($game) {
+            Game::Chess => $this->faker->randomElement([
+                LinkedAccountProvider::ChessCom,
+                LinkedAccountProvider::Lichess,
+            ]),
+            Game::Cs2 => LinkedAccountProvider::Faceit,
+            Game::Dota2 => LinkedAccountProvider::Steam,
+        };
+
+        return $this->state(fn () => [
+            'game' => $game,
+            'platform' => $platform,
+            'time_control' => $game === Game::Chess
+                ? $this->faker->randomElements(
+                    array_map(fn (TimeControl $tc) => $tc->value, TimeControl::cases()),
+                    $this->faker->numberBetween(1, 3),
+                )
+                : [],
+        ]);
     }
 }

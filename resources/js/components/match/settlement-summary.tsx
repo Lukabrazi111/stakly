@@ -1,6 +1,7 @@
 import { Handshake, Trophy } from 'lucide-react';
 import { motion, useReducedMotion } from 'motion/react';
 import type { ReactNode } from 'react';
+import { useT } from '@/lib/i18n';
 import type { MatchPlayer } from '@/types';
 
 interface SettlementSummaryProps {
@@ -12,22 +13,14 @@ interface SettlementSummaryProps {
     /** Winner payout when there's a winner; per-player refund when drawn. */
     payout: number;
     iAmWinner: boolean;
-    /**
-     * Play the fade-up entrance animation. True when the card mounts
-     * during a live Pending → Settled transition (fresh reveal); false
-     * when the user landed on an already-settled match via refresh /
-     * direct link / back nav, where animating historical info would
-     * just slow down reading it. Defaults to true so callers that
-     * don't care opt into the animation.
-     */
+    /** Play the fade-up entrance. False when landing on an already-settled
+     *  match — avoids animating historical info on refresh / direct link. */
     animateEntrance?: boolean;
 }
 
 /**
- * Shown when `match.status === 'settled'`. Three views:
- *   - Winner's view: success accent, "You won."
- *   - Loser's view: muted, "[Winner] won."
- *   - Draw (winner === null): neutral, "Both stakes refunded." No fee row.
+ * Shown when `match.status === 'settled'`. Three views: winner (success
+ * accent), loser (muted), or draw (no winner, no fee row).
  */
 export function SettlementSummary({
     winner,
@@ -37,15 +30,9 @@ export function SettlementSummary({
     iAmWinner,
     animateEntrance = true,
 }: SettlementSummaryProps) {
+    const t = useT();
     const reduceMotion = useReducedMotion();
 
-    // Entrance animation — mirrors the WaitingForGameCard "Game found"
-    // hand-off so the settled card lands with the same fade-and-rise feel
-    // as the "found" state right before it. Slightly longer + larger lift
-    // than the found card (0.3s / y=12 vs 0.2s / y=8) because this is the
-    // bigger reveal moment of the flow. Suppressed when the parent
-    // signals this is an already-settled match (refresh / direct link),
-    // and respects reduced-motion in either case.
     const entrance =
         animateEntrance && !reduceMotion
             ? {
@@ -67,18 +54,18 @@ export function SettlementSummary({
                     </div>
                     <div>
                         <h2 className="font-display text-lg font-semibold text-foreground">
-                            Match drawn
+                            {t('Match drawn')}
                         </h2>
                         <p className="text-sm text-muted-foreground">
-                            Both stakes refunded. No platform fee.
+                            {t('Both stakes refunded. No platform fee.')}
                         </p>
                     </div>
                 </div>
 
                 <dl className="grid gap-5 sm:grid-cols-2">
-                    <Stat label="Pot" value={`$${pot}`} />
+                    <Stat label={t('Pot')} value={`$${pot}`} />
                     <Stat
-                        label="Refund (each)"
+                        label={t('Refund (each)')}
                         value={`$${payout.toFixed(2)}`}
                         accent
                     />
@@ -110,32 +97,28 @@ export function SettlementSummary({
                 </div>
                 <div>
                     <h2 className="font-display text-lg font-semibold text-foreground">
-                        Match settled
+                        {t('Match settled')}
                     </h2>
                     <p className="text-sm text-muted-foreground">
-                        {iAmWinner ? (
-                            'You won.'
-                        ) : (
-                            <>
-                                <span className="font-medium text-foreground">
-                                    {winner.name}
-                                </span>{' '}
-                                <span>(@{winner.username})</span> won.
-                            </>
-                        )}
+                        {iAmWinner
+                            ? t('You won.')
+                            : t(':name (@:username) won.', {
+                                  name: winner.name,
+                                  username: winner.username,
+                              })}
                     </p>
                 </div>
             </div>
 
             <dl className="grid gap-5 sm:grid-cols-3">
-                <Stat label="Pot" value={`$${pot}`} />
+                <Stat label={t('Pot')} value={`$${pot}`} />
                 <Stat
-                    label="Platform fee"
+                    label={t('Platform fee')}
                     value={`−$${fee.toFixed(2)}`}
                     muted
                 />
                 <Stat
-                    label={iAmWinner ? 'Your payout' : 'Winner payout'}
+                    label={iAmWinner ? t('Your payout') : t('Winner payout')}
                     value={`$${payout.toFixed(2)}`}
                     accent={iAmWinner}
                 />

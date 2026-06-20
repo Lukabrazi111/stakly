@@ -15,24 +15,14 @@ use Filament\Widgets\StatsOverviewWidget\Stat;
 use Illuminate\Support\Facades\DB;
 
 /**
- * M17 Phase 1 — single Stats Overview widget bundling the four ops metrics
- * Stakly's dashboard needs at a glance. Combined into one widget (rather
- * than 4 separate ones) so Filament's built-in responsive grid lays them
- * out horizontally: 4-in-a-row on desktop, 2x2 on tablet, stacked on
- * mobile. Splitting into separate widgets gives each one `columnSpan =
- * 'full'` and forces a vertical column.
- *
- * Each stat extracted to a private method so `getStats()` reads as a
- * recipe and the per-metric query lives in one focused chunk.
+ * Bundled Stats Overview widget. Combined into one widget (not 4 separate)
+ * so Filament's responsive grid lays them out horizontally — separate
+ * widgets force `columnSpan = 'full'` and stack vertically.
  */
 class OpsOverview extends StatsOverviewWidget
 {
     protected ?string $pollingInterval = '30s';
 
-    // 2x2 grid layout — for 4 stats this reads better than the default
-    // single-row stretch. Top row = "right now" (urgency + volume), bottom
-    // row = "trends" (revenue + engagement). Filament's responsive default
-    // collapses this to single-column on mobile.
     protected function getColumns(): int
     {
         return 2;
@@ -41,15 +31,10 @@ class OpsOverview extends StatsOverviewWidget
     protected function getStats(): array
     {
         return [
-            // Top-left: highest urgency. Admin's primary job is to clear
-            // this queue, so it lands where eyes naturally start.
             $this->openDisputesStat(),
-            // Top-right: today's volume — paired with disputes as the
-            // "right now" snapshot of platform activity.
+            $this->agingDisputesStat(),
             $this->matchesTodayStat(),
-            // Bottom-left: monthly revenue trend.
             $this->platformEarningsStat(),
-            // Bottom-right: weekly engagement trend.
             $this->activeUsersStat(),
         ];
     }
@@ -100,6 +85,56 @@ class OpsOverview extends StatsOverviewWidget
         };
 
         return ["Oldest: {$oldest->diffForHumans(syntax: 1)}", $color];
+    }
+
+    // ─── Aging disputes (M27 P4 SLA surface) ───────────────────────────────
+
+    private function agingDisputesStat(): Stat
+    {
+        $statuses = [MatchStatus::Disputed, MatchStatus::ManualReview];
+
+        // Aging timestamp: `dispute_opened_at` for genuine disputes (and
+        // ManualReview from dispute-Unknown). ManualReview from timeout has
+        // no dispute event so we fall back to `updated_at` (when status
+        // flipped to MR). Matches the source-of-truth used by the table
+        // column color in GameMatchesTable.
+        $count6h = $this->countAgingDisputesSince($statuses, now()->subHours(6));
+        $count12h = $this->countAgingDisputesSince($statuses, now()->subHours(12));
+
+        [$description, $color] = $this->agingDisputesDescription($count6h, $count12h);
+
+        return Stat::make('Aging disputes (≥6h)', (string) $count6h)
+            ->description($description)
+            ->descriptionIcon('heroicon-m-exclamation-triangle')
+            ->color($color)
+            ->url(GameMatchResource::getUrl('index'));
+    }
+
+    /**
+     * @param  array<int, MatchStatus>  $statuses
+     */
+    private function countAgingDisputesSince(array $statuses, CarbonImmutable $threshold): int
+    {
+        return GameMatch::query()
+            ->whereIn('status', $statuses)
+            ->whereRaw('COALESCE(dispute_opened_at, updated_at) <= ?', [$threshold])
+            ->count();
+    }
+
+    /**
+     * @return array{0: string, 1: string}
+     */
+    private function agingDisputesDescription(int $count6h, int $count12h): array
+    {
+        if ($count6h === 0) {
+            return ['No aging disputes', 'success'];
+        }
+
+        if ($count12h > 0) {
+            return ["{$count12h} over 12h", 'danger'];
+        }
+
+        return ["{$count6h} between 6h–12h", 'warning'];
     }
 
     // ─── Matches today ─────────────────────────────────────────────────────

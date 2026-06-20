@@ -1,5 +1,6 @@
 import { router } from '@inertiajs/react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { useT } from '@/lib/i18n';
 import { buildWalletHistoryQuery } from '@/lib/wallet-history-query';
 import { history as walletHistory } from '@/routes/wallet';
 import type { WalletFilters } from '@/types';
@@ -12,12 +13,6 @@ interface Props {
 
 const ELLIPSIS = '…';
 
-/**
- * Mirrors `ListingPagination` (same smart-ellipsis behaviour) against the
- * `wallet.history` route. Kept as its own component rather than abstracted
- * to a generic `Pagination` so the route helper + query builder stay
- * statically typed end-to-end.
- */
 function visiblePages(
     current: number,
     last: number,
@@ -48,6 +43,8 @@ function visiblePages(
 }
 
 export function WalletPagination({ currentPage, lastPage, filters }: Props) {
+    const t = useT();
+
     if (lastPage <= 1) {
         return null;
     }
@@ -57,10 +54,8 @@ export function WalletPagination({ currentPage, lastPage, filters }: Props) {
             return;
         }
 
-        // `replace: true` mirrors the filter chip's behavior in
-        // `pages/wallet/history.tsx` — pagination is view state within
-        // the same conceptual page, so Back should return to `/wallet`
-        // rather than walking through every page the user visited.
+        // `replace: true` so Back returns to `/wallet` rather than walking
+        // through every page the user visited.
         router.get(
             walletHistory().url,
             buildWalletHistoryQuery(filters, { page }),
@@ -76,11 +71,11 @@ export function WalletPagination({ currentPage, lastPage, filters }: Props) {
 
     return (
         <nav
-            aria-label="Pagination"
+            aria-label={t('Pagination')}
             className="mt-8 flex flex-wrap items-center justify-center gap-1.5"
         >
             <PageButton
-                aria-label="Previous page"
+                aria-label={t('Previous page')}
                 disabled={currentPage === 1}
                 onClick={() => goToPage(currentPage - 1)}
             >
@@ -99,7 +94,7 @@ export function WalletPagination({ currentPage, lastPage, filters }: Props) {
                 ) : (
                     <PageButton
                         key={page}
-                        aria-label={`Page ${page}`}
+                        aria-label={t('Page :page', { page })}
                         aria-current={page === currentPage ? 'page' : undefined}
                         active={page === currentPage}
                         onClick={() => goToPage(page)}
@@ -110,7 +105,7 @@ export function WalletPagination({ currentPage, lastPage, filters }: Props) {
             )}
 
             <PageButton
-                aria-label="Next page"
+                aria-label={t('Next page')}
                 disabled={currentPage === lastPage}
                 onClick={() => goToPage(currentPage + 1)}
             >

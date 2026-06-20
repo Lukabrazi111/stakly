@@ -20,6 +20,7 @@ import {
 import { Spinner } from '@/components/ui/spinner';
 import { useClipboard } from '@/hooks/use-clipboard';
 import { OTP_MAX_LENGTH } from '@/hooks/use-two-factor-auth';
+import { useT } from '@/lib/i18n';
 import { confirm } from '@/routes/two-factor';
 
 function GridScanIcon() {
@@ -61,6 +62,7 @@ function TwoFactorSetupStep({
     onNextStep: () => void;
     errors: string[];
 }) {
+    const t = useT();
     const [copiedText, copy] = useClipboard();
     const IconComponent = copiedText === manualSetupKey ? Check : Copy;
 
@@ -70,24 +72,20 @@ function TwoFactorSetupStep({
                 <AlertError errors={errors} />
             ) : (
                 <>
-                    {/* Authenticator app hint — helps users who haven't done
-                        2FA before. Lives above the QR so it sets expectations
-                        before the user reaches for their phone. */}
                     <p className="inline-flex items-start gap-2 self-stretch text-xs text-muted-foreground">
                         <Smartphone
                             className="mt-0.5 size-3.5 shrink-0"
                             aria-hidden="true"
                         />
                         <span>
-                            Use Google Authenticator, 1Password, Authy, or any
-                            TOTP app.
+                            {t(
+                                'Use Google Authenticator, 1Password, Authy, or any TOTP app.',
+                            )}
                         </span>
                     </p>
 
-                    {/* QR on a forced-light background — dark squares on
-                        white is the standard convention; many authenticator
-                        apps fail on inverted (white-on-dark) QRs. Mirrors
-                        the wallet/deposit QR treatment. */}
+                    {/* Forced-light QR background — many authenticator apps
+                        fail on inverted (white-on-dark) QRs. */}
                     <div className="mx-auto flex max-w-md overflow-hidden">
                         <div className="mx-auto aspect-square w-64 rounded-lg border border-border bg-white p-3">
                             <div className="z-10 flex h-full w-full items-center justify-center">
@@ -119,7 +117,7 @@ function TwoFactorSetupStep({
                     <div className="relative flex w-full items-center justify-center">
                         <div className="absolute inset-0 top-1/2 h-px w-full bg-border" />
                         <span className="relative bg-card px-2 py-1">
-                            or, enter the code manually
+                            {t('or, enter the code manually')}
                         </span>
                     </div>
 
@@ -160,6 +158,7 @@ function TwoFactorVerificationStep({
     onClose: () => void;
     onBack: () => void;
 }) {
+    const t = useT();
     const [code, setCode] = useState<string>('');
     const pinInputContainerRef = useRef<HTMLDivElement>(null);
 
@@ -226,7 +225,7 @@ function TwoFactorVerificationStep({
                                 onClick={onBack}
                                 disabled={processing}
                             >
-                                Back
+                                {t('Back')}
                             </Button>
                             <Button
                                 type="submit"
@@ -237,7 +236,7 @@ function TwoFactorVerificationStep({
                                     processing || code.length < OTP_MAX_LENGTH
                                 }
                             >
-                                Confirm
+                                {t('Confirm')}
                             </Button>
                         </div>
                     </div>
@@ -270,6 +269,7 @@ export default function TwoFactorSetupModal({
     fetchSetupData,
     errors,
 }: Props) {
+    const t = useT();
     const [showVerificationStep, setShowVerificationStep] =
         useState<boolean>(false);
 
@@ -280,29 +280,32 @@ export default function TwoFactorSetupModal({
     }>(() => {
         if (twoFactorEnabled) {
             return {
-                title: 'Two-factor authentication enabled',
-                description:
+                title: t('Two-factor authentication enabled'),
+                description: t(
                     'Two-factor authentication is now enabled. Scan the QR code or enter the setup key in your authenticator app.',
-                buttonText: 'Close',
+                ),
+                buttonText: t('Close'),
             };
         }
 
         if (showVerificationStep) {
             return {
-                title: 'Verify authentication code',
-                description:
+                title: t('Verify authentication code'),
+                description: t(
                     'Enter the 6-digit code from your authenticator app',
-                buttonText: 'Continue',
+                ),
+                buttonText: t('Continue'),
             };
         }
 
         return {
-            title: 'Enable two-factor authentication',
-            description:
+            title: t('Enable two-factor authentication'),
+            description: t(
                 'To finish enabling two-factor authentication, scan the QR code or enter the setup key in your authenticator app',
-            buttonText: 'Continue',
+            ),
+            buttonText: t('Continue'),
         };
-    }, [twoFactorEnabled, showVerificationStep]);
+    }, [twoFactorEnabled, showVerificationStep, t]);
 
     const resetModalState = useCallback(() => {
         setShowVerificationStep(false);

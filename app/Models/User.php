@@ -3,6 +3,9 @@
 namespace App\Models;
 
 use App\Enums\LinkedAccountProvider;
+use App\Enums\MatchStatus;
+use App\Notifications\PlayerNotification;
+use Carbon\CarbonImmutable;
 use Database\Factories\UserFactory;
 use Filament\Models\Contracts\FilamentUser;
 use Filament\Panel;
@@ -13,6 +16,7 @@ use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Laravel\Fortify\TwoFactorAuthenticatable;
@@ -43,22 +47,18 @@ class User extends Authenticatable implements FilamentUser, HasMedia, MustVerify
     use HasFactory, HasRoles, InteractsWithMedia, Notifiable, TwoFactorAuthenticatable;
 
     /**
-     * Computed avatar URLs exposed via Eloquent's `toArray()` — flow into
-     * Inertia's shared `auth.user` and `UserProfileResource` without any
-     * controller plumbing. Null when the user hasn't uploaded an avatar yet;
-     * the frontend falls back to a gradient-initials placeholder.
+     * Computed avatar URLs flow into Inertia's shared `auth.user` and
+     * `UserProfileResource` without controller plumbing. Null when no avatar
+     * uploaded; the frontend falls back to a gradient-initials placeholder.
      *
      * @var list<string>
      */
     protected $appends = ['avatar_url', 'avatar_thumb_url'];
 
     /**
-     * M12 — Filament panel access gate. Required by the `FilamentUser`
-     * interface. Only users with the Spatie `admin` role can reach
-     * `/admin/*` URLs; anyone else is redirected to the login page (or
-     * 403 if already authenticated as a non-admin). The platform user
-     * (`is_platform = true`) is also blocked — same posture as the
-     * `is_platform → 403` gate on the wallet routes, defense in depth.
+     * Filament panel access gate. Only `admin`-roled users reach `/admin/*`.
+     * The platform user (`is_platform = true`) is also blocked — same posture
+     * as the wallet routes' `is_platform → 403` gate, defense in depth.
      */
     public function canAccessPanel(Panel $panel): bool
     {
@@ -69,10 +69,28 @@ class User extends Authenticatable implements FilamentUser, HasMedia, MustVerify
         return $this->hasRole('admin');
     }
 
+    public const USERNAME_CHANGE_COOLDOWN_DAYS = 30;
+
+    public const USERNAME_RESERVATION_DAYS = 30;
+
     /**
-     * Route model binding uses `username` instead of `id`, so `/users/{user}`
-     * resolves via the public handle. Username is derived at registration and
-     * immutable in v1.
+     * System handles + route-segment names a `/users/{x}` URL could collide
+     * with. Shared by registration (`CreateNewUser`) and the rename validator.
+     *
+     * @var list<string>
+     */
+    public const RESERVED_USERNAMES = [
+        'admin', 'administrator', 'staff', 'support', 'help',
+        'stakly', 'platform', 'system', 'root', 'null',
+        'listings', 'settings', 'login', 'register', 'logout',
+        'wallet', 'match', 'matches', 'api', 'users', 'user',
+    ];
+
+    /**
+     * Route model binding on `username` so `/users/{user}` resolves via the
+     * public handle. Renames are gated by `canChangeUsername()` and old
+     * handles stay reserved via `username_history` for
+     * `USERNAME_RESERVATION_DAYS` after release.
      */
     public function getRouteKeyName(): string
     {
@@ -80,8 +98,6 @@ class User extends Authenticatable implements FilamentUser, HasMedia, MustVerify
     }
 
     /**
-     * Get the attributes that should be cast.
-     *
      * @return array<string, string>
      */
     protected function casts(): array
@@ -93,12 +109,42 @@ class User extends Authenticatable implements FilamentUser, HasMedia, MustVerify
             'usdt_balance' => 'decimal:6',
             'is_platform' => 'boolean',
             'is_active_mode' => 'boolean',
+            'notifications_last_seen_at' => 'datetime',
+            'notification_sound' => 'string',
+            'username_changed_at' => 'immutable_datetime',
+            'banned_at' => 'immutable_datetime',
         ];
     }
 
+    public function isBanned(): bool
+    {
+        return $this->banned_at !== null;
+    }
+
     /**
-     * Append-only ledger entries belonging to this user. Invariant:
-     * `SUM(wallet_transactions.amount) == users.usdt_balance` always.
+     * Authz hook read by `stechstudio/filament-impersonate` to decide whether
+     * THIS user can start an impersonation. Admin role only; platform user is
+     * excluded as defense-in-depth (it shouldn't carry the admin role, but the
+     * guard is cheap).
+     */
+    public function canImpersonate(): bool
+    {
+        return ! $this->is_platform && $this->hasRole('admin');
+    }
+
+    /**
+     * Authz hook read by `stechstudio/filament-impersonate` to decide whether
+     * THIS user can be impersonated. Platform user, banned users, and any
+     * `is_platform` row are off-limits. Self-impersonation is already blocked
+     * inside the package's own `canImpersonate()` check on the action.
+     */
+    public function canBeImpersonated(): bool
+    {
+        return ! $this->is_platform && ! $this->isBanned();
+    }
+
+    /**
+     * Invariant: `SUM(wallet_transactions.amount) == users.usdt_balance` always.
      */
     public function walletTransactions(): HasMany
     {
@@ -111,51 +157,190 @@ class User extends Authenticatable implements FilamentUser, HasMedia, MustVerify
     }
 
     /**
-     * Matches where this user is the taker. The creator side is reached via
-     * `$user->listings->map->gameMatch` — combined "all my matches" queries
-     * use a scope on `GameMatch` (Phase 6) rather than a model relation.
+     * M34 — the user's current team-play lobby participation, if any. Used to
+     * enforce the global single-active-lobby rule.
+     *
+     * "Active" = a live (not-kicked) participant row on a listing whose lobby
+     * is still in flight (`recruiting`, `ready_checking`, or `locked`) AND
+     * — for the `locked` branch — whose underlying match has not yet hit a
+     * terminal status. `lobby_state` stays `locked` even after Settled /
+     * ManualReview / Cancelled, so the lobby_state check alone would lock the
+     * user out of joining new lobbies forever once a match finishes (M34 P7
+     * follow-up bug).
+     *
+     * Terminal match statuses (Settled, ManualReview, Cancelled) release the
+     * user. `Disputed` keeps them locked — the dispute is an active engagement
+     * (evidence gathering in chat) where joining a parallel lobby would
+     * fragment attention. `Pending` and `LobbyFilling` are obviously active.
+     */
+    public function activeLobbyParticipation(): ?LobbyParticipant
+    {
+        $terminalMatchStatuses = [
+            MatchStatus::Settled->value,
+            MatchStatus::ManualReview->value,
+            MatchStatus::Cancelled->value,
+        ];
+
+        return LobbyParticipant::query()
+            ->where('user_id', $this->id)
+            ->live()
+            ->whereHas('listing', fn ($q) => $q
+                ->whereIn('lobby_state', ['recruiting', 'ready_checking', 'locked'])
+                ->where(fn ($q) => $q
+                    ->whereIn('lobby_state', ['recruiting', 'ready_checking'])
+                    ->orWhereDoesntHave('gameMatch', fn ($m) => $m
+                        ->whereIn('status', $terminalMatchStatuses))))
+            ->first();
+    }
+
+    /**
+     * Taker side only. Creator side is reached via `$user->listings`; combined
+     * "all my matches" queries use `GameMatch::scopeForParticipant` instead.
      */
     public function gameMatchesAsTaker(): HasMany
     {
         return $this->hasMany(GameMatch::class, 'taker_user_id');
     }
 
+    public function usernameHistory(): HasMany
+    {
+        return $this->hasMany(UsernameHistory::class);
+    }
+
+    public function moderationLogs(): HasMany
+    {
+        return $this->hasMany(UserModerationLog::class);
+    }
+
     /**
-     * Verified external game-account links (M18 Phase 3 prep — replaces the
-     * inline `chess_com_*` / `lichess_*` columns). One row per (user_id,
-     * provider) pair. Callers that read `chess_com_username` /
-     * `lichess_username` / `chess_com_verified_at` / `lichess_verified_at`
-     * via the legacy accessors below should eager-load this relation to
-     * avoid N+1 (e.g. `$user->load('linkedAccounts')`).
+     * Latest `action = ban` row for this user — the source of truth for the
+     * suspension reason rendered by the persistent banner + bell card. After
+     * an unban this row stays in `user_moderation_logs` (append-only audit),
+     * but the banner only reads it while `banned_at !== null`.
+     */
+    public function latestBanLog(): HasOne
+    {
+        return $this->hasOne(UserModerationLog::class)
+            ->where('action', UserModerationLog::ACTION_BAN)
+            ->latestOfMany();
+    }
+
+    public function canChangeUsername(): bool
+    {
+        return $this->usernameChangeBlockers() === [];
+    }
+
+    /**
+     * Cooldown clock end (null when no cooldown blocker). UI uses this to
+     * render the "available again in N days" hint without inferring the
+     * window length client-side.
+     */
+    public function usernameChangeAvailableAt(): ?CarbonImmutable
+    {
+        if ($this->username_changed_at === null) {
+            return null;
+        }
+
+        $available = $this->username_changed_at->addDays(self::USERNAME_CHANGE_COOLDOWN_DAYS);
+
+        return $available->isFuture() ? $available : null;
+    }
+
+    /**
+     * One reason per condition currently blocking a rename. Empty array =
+     * allowed. Order is deliberate: banned first (it's terminal — every
+     * other blocker is moot for a suspended account), then cooldown (has a
+     * date), then in-flight match.
+     *
+     * @return list<'banned'|'cooldown'|'in_flight_match'>
+     */
+    public function usernameChangeBlockers(): array
+    {
+        $blockers = [];
+
+        if ($this->isBanned()) {
+            $blockers[] = 'banned';
+        }
+
+        if ($this->usernameChangeAvailableAt() !== null) {
+            $blockers[] = 'cooldown';
+        }
+
+        $hasInFlightMatch = GameMatch::query()
+            ->forParticipant($this->id)
+            ->whereIn('status', [
+                MatchStatus::LobbyFilling,
+                MatchStatus::Pending,
+                MatchStatus::Disputed,
+                MatchStatus::ManualReview,
+            ])
+            ->exists();
+
+        // M34: lobby participants who aren't creator OR placeholder-taker
+        // (i.e. joiners on the opposing side) still count as in-flight. The
+        // global helper hits live participations in `recruiting`,
+        // `ready_checking`, or `locked` lobbies.
+        $hasLobbyParticipation = $this->activeLobbyParticipation() !== null;
+
+        if ($hasInFlightMatch || $hasLobbyParticipation) {
+            $blockers[] = 'in_flight_match';
+        }
+
+        return $blockers;
+    }
+
+    /**
+     * Verified external game-account links. One row per (user_id, provider).
+     * Callers reading the legacy `chess_com_*` / `lichess_*` accessors should
+     * `->load('linkedAccounts')` first to avoid N+1.
      */
     public function linkedAccounts(): HasMany
     {
         return $this->hasMany(LinkedAccount::class);
     }
 
-    /**
-     * In-flight bio-code verification state (transient). At most one row
-     * per user — the verification flow upserts on (user_id). Replaces the
-     * inline `pending_verification_*` columns.
-     */
     public function pendingVerification(): HasOne
     {
         return $this->hasOne(PendingVerification::class);
     }
 
+    // Excludes Filament admin rows — only PlayerNotification payloads set event_type.
+    public function playerNotifications(): MorphMany
+    {
+        return $this->notifications()->whereNotNull('data->event_type');
+    }
+
+    public function notificationPreferences(): HasMany
+    {
+        return $this->hasMany(NotificationPreference::class);
+    }
+
     /**
-     * Has the user verified at least one chess provider account? Gates both
-     * sides of marketplace participation (M8 Phase 5 take-gate +
-     * create-gate). Permissive — one link unlocks both create and take —
-     * because today every listing is chess and any verified chess link is
-     * sufficient to support evidence resolution. Phase 5's
-     * `listings.platform` column tightens this to "verified on the
-     * listing's specific platform."
-     *
-     * Reads from the loaded `linkedAccounts` collection when present
-     * (avoids an extra query on Inertia shared-data hot path); falls back
-     * to a relation query when not loaded. Callers that hit this in tight
-     * loops should `->load('linkedAccounts')` first.
+     * @return array{in_app: bool, sound: bool, email: bool}
+     */
+    public function getNotificationPreference(string $eventType): array
+    {
+        $row = $this->relationLoaded('notificationPreferences')
+            ? $this->notificationPreferences->firstWhere('event_type', $eventType)
+            : $this->notificationPreferences()->where('event_type', $eventType)->first();
+
+        if ($row === null) {
+            return PlayerNotification::defaultPreference($eventType);
+        }
+
+        return [
+            'in_app' => (bool) $row->in_app,
+            'sound' => (bool) $row->sound,
+            'email' => (bool) $row->email,
+        ];
+    }
+
+    /**
+     * Gates both sides of marketplace participation (take-gate + create-gate).
+     * Permissive — one link unlocks both — because today every listing is
+     * chess. Read from the loaded `linkedAccounts` collection when present
+     * (Inertia shared-data hot path); callers in tight loops should
+     * `->load('linkedAccounts')` first.
      */
     public function hasVerifiedChessLink(): bool
     {
@@ -166,11 +351,14 @@ class User extends Authenticatable implements FilamentUser, HasMedia, MustVerify
         return $this->linkedAccounts()->exists();
     }
 
+    public function isVerifiedOn(LinkedAccountProvider $provider): bool
+    {
+        return $this->linkedAccountFor($provider) !== null;
+    }
+
     /**
-     * Backwards-compat accessor — reads the chess.com username off the
-     * `linkedAccounts` relation. External callers still write
-     * `$user->chess_com_username` after the M18 normalisation refactor.
-     * Eager-load `linkedAccounts` first to keep this query-free.
+     * Backwards-compat accessor — reads off `linkedAccounts`. Eager-load
+     * `linkedAccounts` first to keep this query-free.
      */
     protected function chessComUsername(): Attribute
     {
@@ -200,10 +388,6 @@ class User extends Authenticatable implements FilamentUser, HasMedia, MustVerify
         );
     }
 
-    /**
-     * Internal helper for the backwards-compat accessors. Reads from the
-     * loaded collection when available, falls back to a one-shot query.
-     */
     private function linkedAccountFor(LinkedAccountProvider $provider): ?LinkedAccount
     {
         if ($this->relationLoaded('linkedAccounts')) {
@@ -216,11 +400,8 @@ class User extends Authenticatable implements FilamentUser, HasMedia, MustVerify
     }
 
     /**
-     * Single-file avatar collection (M18 Phase 1). Uploading a new avatar
-     * replaces the previous file on disk — `singleFile()` handles the
-     * delete + insert atomically. Accepted MIME types match the validation
-     * rule on `ProfileUpdateRequest`; both layers enforce the same set so
-     * a request can't sneak past one and trip the other.
+     * `singleFile()` deletes + inserts atomically so a new avatar replaces
+     * the old. MIME types mirror `ProfileUpdateRequest` (defense in depth).
      */
     public function registerMediaCollections(): void
     {
@@ -230,16 +411,9 @@ class User extends Authenticatable implements FilamentUser, HasMedia, MustVerify
     }
 
     /**
-     * Two derived sizes:
-     *   - `main` (512×512) — public profile + settings preview
-     *   - `thumb` (128×128) — chat bubbles, listing rows, comment avatars
-     *
-     * `nonQueued()` runs conversions inline because (a) the source is
-     * already cropped to a square ~512px by `react-image-crop` on the
-     * client, so the resize cost is trivial, and (b) returning a 200 with
-     * a still-pending conversion URL would 404 momentarily on the next
-     * page render. Once we need a CDN + larger originals, move to a
-     * queued worker.
+     * `nonQueued()` runs conversions inline — the source is pre-cropped to
+     * ~512px by `react-image-crop` so the resize cost is trivial, and a
+     * still-pending conversion URL would 404 momentarily on the next render.
      */
     public function registerMediaConversions(?Media $media = null): void
     {
@@ -254,11 +428,6 @@ class User extends Authenticatable implements FilamentUser, HasMedia, MustVerify
             ->performOnCollections('profile-avatar');
     }
 
-    /**
-     * Public URL of the 512×512 avatar conversion. Null when the user has
-     * not uploaded an avatar. Exposed via `$appends` so Inertia's shared
-     * `auth.user` carries it without any controller plumbing.
-     */
     protected function avatarUrl(): Attribute
     {
         return Attribute::get(function (): ?string {
@@ -268,11 +437,6 @@ class User extends Authenticatable implements FilamentUser, HasMedia, MustVerify
         });
     }
 
-    /**
-     * Public URL of the 128×128 avatar thumbnail. Used by dense lists
-     * (chat bubbles, listing rows) where the larger conversion is
-     * overkill. Null when no avatar uploaded.
-     */
     protected function avatarThumbUrl(): Attribute
     {
         return Attribute::get(function (): ?string {

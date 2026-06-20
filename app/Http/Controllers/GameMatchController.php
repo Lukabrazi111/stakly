@@ -8,14 +8,18 @@ use App\Actions\GameMatch\OpenDisputeAction;
 use App\Actions\GameMatch\RejectCancellationAction;
 use App\Actions\GameMatch\RequestCancellationAction;
 use App\Actions\GameMatch\TakeListingAction;
+use App\Enums\MatchStatus;
 use App\Exceptions\InsufficientBalanceException;
 use App\Http\Requests\GameMatch\IndexMatchesRequest;
 use App\Http\Requests\GameMatch\RequestCancellationRequest;
 use App\Http\Requests\GameMatch\TakeRequest;
+use App\Http\Requests\Match\OpenDisputeRequest;
 use App\Http\Resources\GameMatchResource;
 use App\Http\Resources\MessageResource;
 use App\Models\GameMatch;
 use App\Models\Listing;
+use App\Services\ParticipantStats;
+use App\Services\SellerTrust;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\ValidationException;
@@ -49,7 +53,7 @@ class GameMatchController extends Controller
             GameMatch::query()
                 ->forParticipant($user->id)
                 ->with([
-                    'listing:id,user_id,game,stake_amount,platform,time_control,status',
+                    'listing:id,user_id,game,stake_amount,platform,time_control,status,team_size',
                     'listing.user:id,name,username',
                     'taker:id,name,username',
                     'winner:id,name,username',
@@ -109,6 +113,15 @@ class GameMatchController extends Controller
             return to_route('linked-accounts.edit');
         }
 
+        if ($result === 'not_takeable') {
+            Inertia::flash('toast', [
+                'type' => 'info',
+                'message' => __('This is a team-play lobby — join from the lobby page instead.'),
+            ]);
+
+            return to_route('listings.show', $listing);
+        }
+
         if ($result === 'owner_inactive') {
             Inertia::flash('toast', [
                 'type' => 'info',
@@ -147,17 +160,68 @@ class GameMatchController extends Controller
      * job. Idempotency lives at the job layer (`ShouldBeUnique` plus
      * `alreadyPosted()`); F5-spam is harmless.
      */
-    public function show(GameMatch $match, DispatchAutoFetchAction $dispatchAutoFetch): Response
+    public function show(GameMatch $match, DispatchAutoFetchAction $dispatchAutoFetch): Response|RedirectResponse
     {
         $match->load([
-            'listing:id,user_id,game,stake_amount,platform,time_control,status',
+            'listing:id,user_id,game,stake_amount,platform,time_control,status,team_size',
             'listing.user:id,name,username',
             'taker:id,name,username',
             'winner:id,name,username',
             'providerSnapshots',
+            // M34 P6 — team rosters for `GameMatchResource::team_a` /
+            // `team_b`. Cheap for 1v1 (empty collection); essential for
+            // team play to avoid N+1 on the avatar accessor.
+            'listing.lobbyParticipants' => fn ($q) => $q->orderBy('side')->orderBy('slot_index'),
+            'listing.lobbyParticipants.user:id,name,username',
+            'listing.lobbyParticipants.user.media',
+            // M34 P8 Slice A — `linkedAccounts` feeds the per-player skill
+            // rating in the rich roster cards. Cheap for 1v1 (no roster).
+            'listing.lobbyParticipants.user.linkedAccounts',
         ]);
 
         abort_if(request()->user()->cannot('view', $match), 404);
+
+        // M34 P8 Slice A — batch attach `seller_trust` + `platform_stats`
+        // to each roster user so `GameMatchResource::platformStatsFor`
+        // reads the attributes without N+1. Mirrors the lobby's
+        // `ListingController::showTeamPlay` pattern. No-ops for 1v1
+        // (empty roster) and for non-team-play matches generally.
+        if ($match->listing->isTeamPlay() && $match->listing->relationLoaded('lobbyParticipants')) {
+            $userIds = $match->listing->lobbyParticipants
+                ->whereNull('kicked_at')
+                ->pluck('user_id')
+                ->unique()
+                ->values()
+                ->all();
+
+            if (count($userIds) > 0) {
+                $trust = SellerTrust::forBatch($userIds);
+                $stats = ParticipantStats::forBatch($userIds);
+
+                foreach ($match->listing->lobbyParticipants as $participant) {
+                    if ($participant->kicked_at !== null) {
+                        continue;
+                    }
+
+                    $participant->user->setAttribute(
+                        'seller_trust',
+                        $trust[$participant->user_id] ?? ['rate_30d' => null, 'settled_lifetime' => 0],
+                    );
+                    $participant->user->setAttribute(
+                        'platform_stats',
+                        $stats[$participant->user_id] ?? null,
+                    );
+                }
+            }
+        }
+
+        // M34 P1 — `LobbyFilling` matches don't yet have a lobby UI (lands in
+        // P3). Redirect to the listing detail page so users see the listing
+        // they came from rather than the half-rendered match page. P3 swaps
+        // the target to `route('lobbies.show', $match->listing)`.
+        if ($match->status === MatchStatus::LobbyFilling) {
+            return to_route('listings.show', $match->listing);
+        }
 
         $dispatchAutoFetch->handle($match);
 
@@ -193,13 +257,18 @@ class GameMatchController extends Controller
      * Pending (alongside `RequestCancellationAction` for cooperative exit).
      * Business logic lives in `OpenDisputeAction`.
      */
-    public function openDispute(Request $request, GameMatch $match, OpenDisputeAction $action): RedirectResponse
+    public function openDispute(OpenDisputeRequest $request, GameMatch $match, OpenDisputeAction $action): RedirectResponse
     {
         $user = $request->user();
 
         abort_if($user->cannot('openDispute', $match), 403);
 
-        $opened = $action->handle($user, $match);
+        $opened = $action->handle(
+            $user,
+            $match,
+            $request->input('reason'),
+            $request->file('evidence'),
+        );
 
         Inertia::flash('toast', $opened
             ? ['type' => 'warning', 'message' => __('Dispute opened — an admin will review and resolve this match.')]

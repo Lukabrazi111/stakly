@@ -45,7 +45,12 @@ test('does not send verification notification if email is verified', function ()
 
     $user = User::factory()->create();
 
-    $this->actingAs($user)
+    // Fortify's `EmailVerificationNotificationSentResponse` uses `back()`,
+    // which needs a session previous-URL to redirect to a specific page —
+    // otherwise it falls back to `/`. Setting one via `from()` so the
+    // assertion matches the locale-prefixed home (M26 P4).
+    $this->from(route('home'))
+        ->actingAs($user)
         ->post(route('verification.send'))
         ->assertRedirect(route('home'));
 

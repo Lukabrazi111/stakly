@@ -2,8 +2,10 @@
 
 namespace App\Http\Controllers\Settings;
 
+use App\Actions\Profile\ChangeUsernameAction;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Settings\ProfileUpdateRequest;
+use App\Support\BanGuard;
 use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -12,9 +14,6 @@ use Inertia\Response;
 
 class ProfileController extends Controller
 {
-    /**
-     * Show the user's profile settings page.
-     */
     public function edit(Request $request): Response
     {
         return Inertia::render('settings/profile', [
@@ -24,21 +23,28 @@ class ProfileController extends Controller
     }
 
     /**
-     * Update the user's profile information.
-     *
-     * Avatar arrives as a multipart file and is extracted from the
-     * validated array before `fill()` so the file instance never reaches
-     * mass-assignment. After the scalar fields save, the Spatie
-     * `profile-avatar` single-file collection on `User` swaps in the new
-     * upload (the previous file is deleted automatically).
+     * Avatar is extracted from the validated array before `fill()` so the
+     * file instance never reaches mass-assignment. Username changes detour
+     * through `ChangeUsernameAction` which handles the row-locked re-check,
+     * reservation write, and cooldown bump atomically.
      */
-    public function update(ProfileUpdateRequest $request): RedirectResponse
+    public function update(ProfileUpdateRequest $request, ChangeUsernameAction $changeUsername): RedirectResponse
     {
+        if (BanGuard::isBanned($request->user())) {
+            Inertia::flash('toast', ['type' => 'error', 'message' => BanGuard::rejectionMessage()]);
+
+            return to_route('profile.edit');
+        }
+
         $validated = $request->validated();
         $avatarFile = $request->file('avatar');
         unset($validated['avatar']);
 
         $user = $request->user();
+
+        $submittedUsername = $validated['username'] ?? null;
+        unset($validated['username']);
+
         $user->fill($validated);
 
         if ($user->isDirty('email')) {
@@ -46,6 +52,10 @@ class ProfileController extends Controller
         }
 
         $user->save();
+
+        if (is_string($submittedUsername) && $submittedUsername !== $user->username) {
+            $changeUsername->handle($user, $submittedUsername);
+        }
 
         if ($avatarFile !== null) {
             $user->addMedia($avatarFile)->toMediaCollection('profile-avatar');
@@ -57,11 +67,8 @@ class ProfileController extends Controller
     }
 
     /**
-     * Remove the user's avatar, reverting them to the gradient-initials
-     * fallback. Idempotent — clearing an empty collection is a no-op and
-     * still returns a clean toast so the UI feels consistent (the FE only
-     * surfaces the button when an avatar exists, but a duplicate click /
-     * stale view should never 500).
+     * Idempotent — clearing an empty collection is a no-op so a duplicate
+     * click / stale view never 500s.
      */
     public function destroyAvatar(Request $request): RedirectResponse
     {

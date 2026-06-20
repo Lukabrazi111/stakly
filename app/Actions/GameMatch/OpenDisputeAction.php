@@ -4,46 +4,51 @@ namespace App\Actions\GameMatch;
 
 use App\Actions\Admin\NotifyAdminsAction;
 use App\Actions\Message\PostSystemMessageAction;
+use App\Actions\Message\SendMessageAction;
 use App\Enums\MatchStatus;
+use App\Enums\MessageType;
+use App\Events\MessageSent;
 use App\Filament\Resources\GameMatches\GameMatchResource;
 use App\Models\GameMatch;
+use App\Models\Message;
 use App\Models\User;
+use App\Notifications\DisputeOpenedNotification;
+use App\Services\MatchParticipants;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Notification;
 
 /**
- * Player-triggered escalation during the Pending window. Either participant
- * can open a dispute; the match flips to `Disputed` and lands in the
- * admin review queue (M12 Phase 2).
+ * Player-triggered escalation during the Pending window. Match flips to `Disputed`
+ * and lands in the admin review queue.
  *
- * M12 Phase 3 — dispute resolution is now admin-driven by default. The
- * pre-Phase-3 behavior auto-resolved via `ResolveDisputeAction` (which
- * called the configured `GameApi` driver — `MockGameApi` in tests, no
- * production driver yet); after Phase 3, OpenDisputeAction stops invoking
- * that path. `ResolveDisputeAction` + `MockGameApi` remain in the codebase
- * for the test suite and for any future automated arbitration (M14).
+ * M14 Slice 4a — when `config('stakly.dispute_fast_path_enabled')` is true AND
+ * the match's game has an arbitration driver registered, `ResolveDisputeAction`
+ * runs synchronously right after the status flip. Skips the wait for the next
+ * 5-min cron tick. Default off until Slice 4b's Phase-1-metrics checkpoint.
  *
- * Returns `true` if the dispute was opened, `false` if the match was
- * already past Pending by the time our row lock acquired (race with
- * cancellation, settlement, or another dispute).
+ * M15 P5 — the game-eligibility gate was generalized from a hardcoded
+ * `Game::Chess` check to `Game::hasArbitrationDriver()`. FACEIT (CS2)
+ * is now eligible; Dota2 (no adapter yet) still routes to slow-path
+ * admin review.
  *
- * Race-safety:
- *   - Two players opening dispute simultaneously → second caller's row
- *     lock waits, sees status=Disputed, returns false.
- *   - Race with the timeout job → same `lockForUpdate` + status guard;
- *     whichever runs second is a no-op.
- *   - Race with mutual cancellation acceptance → status becomes Cancelled
- *     before our lock; we return false.
+ * Returns true if opened, false on race (lock acquired after status moved off Pending).
  */
 class OpenDisputeAction
 {
     public function __construct(
         private readonly PostSystemMessageAction $postSystem,
         private readonly NotifyAdminsAction $notifyAdmins,
+        private readonly ResolveDisputeAction $resolveDispute,
     ) {}
 
-    public function handle(User $user, GameMatch $match): bool
-    {
-        $opened = DB::transaction(function () use ($match, $user) {
+    public function handle(
+        User $user,
+        GameMatch $match,
+        ?string $reason = null,
+        ?UploadedFile $evidence = null,
+    ): bool {
+        $opened = DB::transaction(function () use ($match, $user, $reason, $evidence) {
             $locked = GameMatch::query()->lockForUpdate()->findOrFail($match->id);
 
             if ($locked->status !== MatchStatus::Pending) {
@@ -60,18 +65,92 @@ class OpenDisputeAction
                 [['type' => 'dispute_prompt']],
             );
 
+            $this->postOpenerClaim($locked, $user, $reason, $evidence);
+
             return true;
         });
 
-        // Notification dispatched AFTER commit. Inside the transaction it
-        // would fire even if a downstream caller rolls back, and the bell
-        // would point to a match that "didn't happen." After-commit is
-        // also where broadcast events should fire for cache/timing reasons.
+        // After-commit: inside the transaction the notification would fire even on rollback,
+        // pointing the bell at a match that "didn't happen."
         if ($opened) {
-            $this->notifyAdminsOfDispute($match->fresh());
+            $fresh = $match->fresh(['listing.user', 'taker']);
+            $this->notifyAdminsOfDispute($fresh);
+            $this->notifyParticipantsOfDispute($fresh, $user);
+
+            $this->runFastPathIfEnabled($fresh);
         }
 
         return $opened;
+    }
+
+    /**
+     * M14 Slice 4a — flag-gated synchronous arbitration. M15 P5 — gate
+     * generalized from `Game::Chess` to `Game::hasArbitrationDriver()` so
+     * any game with a wired `GameApi` adapter (currently Chess + Cs2 via
+     * the `FaceitGameApi → ChessGameApi → MockGameApi` chain) is eligible.
+     * `ResolveDisputeAction` short-circuits on terminal statuses, so a race
+     * where admin resolves the same match while we're querying is safe.
+     */
+    private function runFastPathIfEnabled(GameMatch $match): void
+    {
+        if (! config('stakly.dispute_fast_path_enabled')) {
+            return;
+        }
+
+        $game = $match->listing?->game;
+        if ($game === null || ! $game->hasArbitrationDriver()) {
+            return;
+        }
+
+        $this->resolveDispute->handle($match);
+    }
+
+    /**
+     * Posts the disputing user's reason + optional evidence image as a chat
+     * message authored by them, tagged with the `dispute_opening` attachment
+     * marker so the bubble renders a "Reason for dispute" header. Closes the
+     * fairness gap of "opponent sees a banner but doesn't know what's being
+     * claimed" — and gives admin a single anchor message to read first when
+     * a dispute lands in ManualReview.
+     */
+    private function postOpenerClaim(
+        GameMatch $match,
+        User $user,
+        ?string $reason,
+        ?UploadedFile $evidence,
+    ): void {
+        $message = Message::create([
+            'match_id' => $match->id,
+            'user_id' => $user->id,
+            'type' => MessageType::Text,
+            'content' => $reason,
+            'attachments_json' => [['type' => 'dispute_opening']],
+        ]);
+
+        if ($evidence !== null) {
+            SendMessageAction::attachFileTo($message, $evidence);
+            $message->load('media');
+        }
+
+        MessageSent::dispatch($message);
+    }
+
+    /**
+     * Fan out to every live participant on both teams, excluding the
+     * opener (they triggered it — no self-notification). For 1v1 that's
+     * the single opponent; for team play it's the opener's 4 team-mates
+     * + the full opposing 5 (so the entire match knows admin review is
+     * incoming and can post evidence in chat).
+     */
+    private function notifyParticipantsOfDispute(GameMatch $match, User $opener): void
+    {
+        $recipients = MatchParticipants::allExcept($match, $opener);
+
+        if ($recipients->isEmpty()) {
+            return;
+        }
+
+        Notification::send($recipients, new DisputeOpenedNotification($match, $opener));
     }
 
     private function flipToDisputed(GameMatch $match, User $opener): void

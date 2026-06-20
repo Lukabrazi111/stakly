@@ -7,15 +7,8 @@ interface Props {
     balance: number;
 }
 
-/**
- * Compact wallet-balance pill rendered in `SiteHeader` next to `ProfileMenu`
- * on desktop (md+). Closes the create-listing → balance-changed feedback loop
- * — without this, the user has to navigate to /wallet to see whether the
- * escrow actually went through.
- *
- * Hidden on mobile (`hidden md:inline-flex`) — `MobileMenu` shows the same
- * info inline inside the account card.
- */
+/** Wallet-balance pill in `SiteHeader`. Desktop-only — `MobileMenu` shows
+ *  the same info inline. */
 export function BalanceChip({ balance }: Props) {
     return (
         <Link

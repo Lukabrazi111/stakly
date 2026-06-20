@@ -5,17 +5,10 @@ namespace App\Enums;
 /**
  * Type of a chat message on `messages.type`.
  *
- * Text   — sent by a match participant via `POST /matches/{match}/messages`.
- *          `user_id` is the authenticated user. Subject to rate limits +
- *          content cap.
- *
- * System — posted by an internal Action (never the HTTP path). `user_id`
- *          is null. Used in M8 Phase 5 for dispute-opened prompts and
- *          evidence-submission hints. Cannot be impersonated because the
- *          HTTP path always writes `Text` and sets the auth user.
- *
- * Future cases (Phase 3 `Image`, Phase 4 `Link`) will join here as the
- * smart-link enrichment lands.
+ * System messages are posted by internal Actions only (never the HTTP path)
+ * with `user_id` null — used for dispute prompts and evidence hints. Cannot
+ * be impersonated because the HTTP path always writes `Text` and sets the
+ * auth user.
  */
 enum MessageType: string
 {

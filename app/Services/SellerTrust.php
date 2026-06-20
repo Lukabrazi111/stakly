@@ -10,19 +10,11 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 
 /**
- * Per-creator trust aggregates for the listings marketplace (M22 Phase 1).
- *
- * Batches the calculation across N user IDs so a paginated `/listings` page
- * does ONE aggregation query, not one per row. Mirrors the formula used by
- * `App\Http\Controllers\UserController::show` — same 3-free-cancellation
- * buffer on the 30-day rate, no buffer on lifetime. If the formula changes
- * here, change there too (and consider consolidating).
- *
- * Returns `['rate_30d' => int|null, 'settled_lifetime' => int]` per user.
- * - `rate_30d` is `null` when the user has no engaged matches in the last
- *   30 days (no headline rate to show).
- * - `settled_lifetime` is the all-time settled count — the denominator that
- *   tells "98%" from "98% of 47 matches" on the listing chip.
+ * Per-creator trust aggregates for the listings marketplace. Batches one
+ * aggregation across N user IDs so a paginated `/listings` page does ONE
+ * query, not one per row. Mirrors the formula in `UserController::show`
+ * (same 3-free-cancellation buffer on 30-day rate, none on lifetime) — keep
+ * both in sync if the formula changes.
  */
 class SellerTrust
 {
@@ -30,11 +22,6 @@ class SellerTrust
     public const int FREE_CANCELLATIONS_PER_PERIOD = 3;
 
     /**
-     * Convenience wrapper for controllers: takes a Listing collection (or
-     * paginator), batch-loads the trust aggregate for each unique creator,
-     * and attaches the result as a transient `seller_trust` attribute on
-     * each listing model. `ListingResource` reads that attribute.
-     *
      * @param  iterable<Listing>  $listings
      */
     public static function attachTo(iterable $listings): void
@@ -42,8 +29,7 @@ class SellerTrust
         // Don't `collect($listings)->pluck()` — for a `LengthAwarePaginator`,
         // Collection's `getArrayableItems` calls `toArray()` which yields the
         // paginator's WRAPPER shape (data / total / per_page / etc.), not the
-        // listing items themselves. Iterate explicitly to be paginator- and
-        // plain-collection-safe.
+        // items themselves. Iterate explicitly to be paginator-safe.
         $userIds = [];
         foreach ($listings as $listing) {
             $userIds[] = $listing->user_id;
@@ -73,13 +59,9 @@ class SellerTrust
 
         $thirtyDaysAgo = now()->subDays(30);
 
-        // ONE query: every match where any user in the batch is a
-        // participant (creator via `listings.user_id` OR taker via
-        // `game_matches.taker_user_id`). Aggregation happens in PHP because
-        // the per-user attribution depends on which side the user was on,
-        // and the same match row can count for two different users if both
-        // are in the batch (rare but possible — creator + taker both have
-        // listings on the page).
+        // ONE query for every match where any user in the batch participates
+        // (creator OR taker). PHP-side aggregation because the same match row
+        // can count for two batch users (creator + taker both on the page).
         $rows = GameMatch::query()
             ->join('listings', 'listings.id', '=', 'game_matches.listing_id')
             ->where(function ($q) use ($userIds) {
@@ -115,12 +97,8 @@ class SellerTrust
     }
 
     /**
-     * Tally settled + cancellation counts for a single user across the
-     * already-fetched match row set. Returns [settled_30d, settled_lifetime,
-     * cancellations_30d].
-     *
      * @param  Collection<int, object>  $rows
-     * @return array{0: int, 1: int, 2: int}
+     * @return array{0: int, 1: int, 2: int} [settled_30d, settled_lifetime, cancellations_30d]
      */
     private static function tallyForUser(Collection $rows, int $userId, CarbonInterface $thirtyDaysAgo): array
     {
@@ -136,8 +114,6 @@ class SellerTrust
                 continue;
             }
 
-            // `status` is cast to `MatchStatus` on the GameMatch model, so
-            // comparing to the enum (not its value) is what the cast hands us.
             if ($row->status === MatchStatus::Settled) {
                 $settledLifetime++;
 

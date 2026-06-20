@@ -5,6 +5,7 @@ use App\Models\Listing;
 use App\Models\User;
 use App\Services\GameApi\MockGameApi;
 use App\Services\Wallet;
+use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -195,6 +196,104 @@ function chessComGameFixture(array $overrides = []): array
 function chessComArchiveFixture(array $games): array
 {
     return ['games' => $games];
+}
+
+/**
+ * Realistic FACEIT `GET /data/v4/players/{id}/history` response fixture —
+ * paginated list of match references the auto-fetch job iterates. Each item
+ * is the slim shape `searchPlayerMatches()` reads (just `match_id`); the job
+ * calls `fetchMatch()` per ID for full details.
+ *
+ * @param  list<string>  $matchIds
+ * @return array<string, mixed>
+ */
+function faceitHistoryFixture(array $matchIds = []): array
+{
+    return [
+        'items' => array_map(
+            fn (string $id) => [
+                'match_id' => $id,
+                'status' => 'FINISHED',
+            ],
+            $matchIds,
+        ),
+        'start' => 0,
+        'end' => count($matchIds),
+    ];
+}
+
+/**
+ * Realistic FACEIT `GET /data/v4/matches/{match_id}` response fixture, trimmed
+ * to the fields `FaceitGameClient` parses. Captured from the Phase 0 research
+ * shape — 5v5 CS2 matchmaking, faction1 wins, both rosters AC-required.
+ *
+ * @param  array<string, mixed>  $overrides
+ * @return array<string, mixed>
+ */
+function faceitMatchFixture(array $overrides = []): array
+{
+    return array_merge([
+        'match_id' => '1-abcd1234-ef56-7890-ab12-cd34ef567890',
+        'game' => 'cs2',
+        'region' => 'EU',
+        'competition_type' => 'matchmaking',
+        'started_at' => 1_716_000_000,
+        'finished_at' => 1_716_002_000,
+        'status' => 'FINISHED',
+        'results' => [
+            'winner' => 'faction1',
+            'score' => ['faction1' => 16, 'faction2' => 14],
+        ],
+        'teams' => [
+            'faction1' => [
+                'roster' => [
+                    ['player_id' => 'guid-a1', 'nickname' => 'alice-faceit', 'anticheat_required' => true],
+                    ['player_id' => 'guid-a2', 'nickname' => 'alice2', 'anticheat_required' => true],
+                    ['player_id' => 'guid-a3', 'nickname' => 'alice3', 'anticheat_required' => true],
+                    ['player_id' => 'guid-a4', 'nickname' => 'alice4', 'anticheat_required' => true],
+                    ['player_id' => 'guid-a5', 'nickname' => 'alice5', 'anticheat_required' => true],
+                ],
+            ],
+            'faction2' => [
+                'roster' => [
+                    ['player_id' => 'guid-b1', 'nickname' => 'bob-faceit', 'anticheat_required' => true],
+                    ['player_id' => 'guid-b2', 'nickname' => 'bob2', 'anticheat_required' => true],
+                    ['player_id' => 'guid-b3', 'nickname' => 'bob3', 'anticheat_required' => true],
+                    ['player_id' => 'guid-b4', 'nickname' => 'bob4', 'anticheat_required' => true],
+                    ['player_id' => 'guid-b5', 'nickname' => 'bob5', 'anticheat_required' => true],
+                ],
+            ],
+        ],
+    ], $overrides);
+}
+
+/**
+ * Build a `faceitMatchFixture` variant where Alice (creator) + Bob (taker) sit
+ * on OPPOSING factions — the only roster shape that satisfies
+ * `AutoFetchFaceitGameJob::isOpposingRosterPair()`. First slot of each faction
+ * is the Stakly player; the other four per side stay as the fixture's unknown
+ * extras (alice2..5 / bob2..5) so AC checks still pass.
+ *
+ * @return array<string, mixed>
+ */
+function faceitOpposingRosterFixture(
+    string $creatorGuid = 'guid-a1',
+    string $takerGuid = 'guid-b1',
+    string $winnerFaction = 'faction1',
+    ?int $finishedAt = null,
+): array {
+    $fixture = faceitMatchFixture();
+
+    $fixture['match_id'] = '1-real-match';
+    $fixture['results']['winner'] = $winnerFaction;
+    $fixture['finished_at'] = $finishedAt ?? CarbonImmutable::now()->subMinutes(5)->timestamp;
+
+    $fixture['teams']['faction1']['roster'][0]['player_id'] = $creatorGuid;
+    $fixture['teams']['faction1']['roster'][0]['nickname'] = 'alice-faceit';
+    $fixture['teams']['faction2']['roster'][0]['player_id'] = $takerGuid;
+    $fixture['teams']['faction2']['roster'][0]['nickname'] = 'bob-faceit';
+
+    return $fixture;
 }
 
 /**

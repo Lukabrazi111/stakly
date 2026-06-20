@@ -4,6 +4,9 @@
 // - resources/js/config/games.ts (game registry)
 
 import type { GameId } from '@/config/games';
+import type { GameTile } from '@/types/home';
+import type { Lobby } from './lobby';
+import type { ChatMessage } from './match';
 
 export type ListingStatus = 'open' | 'taken' | 'expired' | 'cancelled';
 
@@ -40,21 +43,31 @@ export interface ListingCreator {
     // the cross-platform earned badge in `SellerTrustMeta`: the green
     // `BadgeCheck` icon appears in the meta line ONLY when the creator has
     // verified on 2+ providers ("went the extra mile" credential).
-    verified_providers: ListingPlatform[];
+    verified_providers: ChessProvider[];
     // M23 Phase 1 — detail-page creator card uplift. `bio` and `member_since`
     // mirror the profile-page hero. `linked_accounts` carries the
     // (provider, username) pairs the detail-page chip strip needs to click
     // out to each external profile — different shape from `verified_providers`
     // above (which only carries the provider id, sufficient for the badge).
+    // M15 Phase 3 — widened from `ChessProvider` to `ListingPlatform` so
+    // FACEIT (+ future Steam) verifications surface in the chip strip too.
     bio: string | null;
     member_since: string | null;
     linked_accounts: Array<{ provider: ListingPlatform; username: string }>;
 }
 
+// Chess-only linked-account providers. Distinct from `ListingPlatform` below
+// because a user can only "link" chess accounts today — FACEIT/Steam linking
+// is M15 work. The two types overlap on `chess_com | lichess`.
+export type ChessProvider = 'chess_com' | 'lichess';
+
 // The external provider the match must be played on (M8 Phase 5 Slice B).
 // Matches `App\Enums\LinkedAccountProvider` values. Taker must have THIS
 // platform verified to take the listing.
-export type ListingPlatform = 'chess_com' | 'lichess';
+// `faceit` + `steam` are M15 placeholders — they appear on dev-seeded CS2
+// (FACEIT) and Dota 2 (Steam) listings, never via the Create flow today.
+// See backend `App\Enums\LinkedAccountProvider` for the matching cases.
+export type ListingPlatform = ChessProvider | 'faceit' | 'steam';
 
 export interface Listing {
     id: number;
@@ -77,6 +90,24 @@ export interface Listing {
     expires_at: string;
     status: ListingStatus;
     created_at: string | null;
+    // 1 for chess (default). > 1 for team-play listings (CS2 Wingman 2v2 / 5v5).
+    team_size: number;
+    // null for chess; one of 'recruiting' | 'ready_checking' | 'locked' |
+    // 'cancelled' for team-play. Marketplace listings only ever appear with
+    // null or 'recruiting' | 'ready_checking' (Open status filter).
+    lobby_state: string | null;
+    // ISO-8601 deadline for the ready-check countdown. Only non-null while
+    // `lobby_state === 'ready_checking'`.
+    lobby_ready_check_deadline: string | null;
+    // Active lobby seats (kicked_at IS NULL). 0 for chess.
+    live_participant_count: number;
+    // Up to 3 live participants, ordered by `joined_at`. Powers the grid-card
+    // roster avatar preview. Always present; empty for chess.
+    participant_previews: Array<{
+        username: string;
+        name: string;
+        avatar_thumb_url: string | null;
+    }>;
     creator: ListingCreator;
 }
 
@@ -121,6 +152,7 @@ export interface ListingsIndexProps {
     listings: Paginator<Listing>;
     filters: ListingFilters;
     sorts: ListingSort[];
+    games: { data: GameTile[] };
 }
 
 // Phase 1 (M4) — props for the listing detail page. `listing` is the resource
@@ -131,9 +163,17 @@ export interface ListingsIndexProps {
 // viewer is a participant (creator or taker). For non-participants and
 // non-taken listings the controller sends `null` — the frontend uses its
 // presence as the sole gate for the "View match →" link.
+//
+// M34 P3.1 Slice B.1 — `lobby` + `messages` arrive only when the listing is
+// team-play (`team_size > 1`). Their presence signals the page should render
+// the lobby UI instead of the chess detail view. Chess listings keep the
+// `match` column populated for participants; team-play listings ignore it
+// in favour of `lobby.match_id`.
 export interface ListingShowProps {
     listing: Listing;
     match: { id: number } | null;
+    lobby?: Lobby;
+    messages?: { data: ChatMessage[] };
 }
 
 // Props for the create-listing form. Option lists (regions / languages /
@@ -151,11 +191,26 @@ export interface ListingCreateProps {
     durations: number[];
     activeListingsCount: number;
     maxActiveListings: number;
-    // M8 Phase 5 Slice B — the verified providers the user has linked.
-    // Empty array = no link; create form swaps to the link-CTA notice card.
-    // One = picker hidden, platform auto-selected.
-    // Two = picker shown so the user picks per listing.
+    // M8 Phase 5 Slice B (widened in M15 Phase 3) — every provider the user
+    // has verified. Drives the chess platform picker (shown when both chess
+    // providers linked) + the per-game default-platform pick.
     linkedPlatforms: ListingPlatform[];
+    // M15 Phase 3 — DB-backed game catalog (Active games). Same shape the
+    // homepage GameSelector consumes; drives the in-form game-tile picker.
+    games: { data: GameTile[] };
+    // M15 Phase 3 — per-game gate data. `providers` = which platforms the
+    // game can be posted on (chess → chess_com|lichess; cs2 → faceit).
+    // `verified` = the current user has at least one of those linked. The
+    // form shows an inline "Link X to post" notice when verified=false for
+    // the picked game.
+    requirementsByGame: Record<
+        GameId,
+        {
+            providers: ListingPlatform[];
+            verified: boolean;
+            allowed_team_sizes: number[];
+        }
+    >;
 }
 
 // Tab values for the /listings/mine page (M6 Phase 6.5).

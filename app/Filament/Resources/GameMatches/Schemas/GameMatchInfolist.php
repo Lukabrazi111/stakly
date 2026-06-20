@@ -2,9 +2,11 @@
 
 namespace App\Filament\Resources\GameMatches\Schemas;
 
+use App\Enums\AutoFetchOutcome;
 use App\Enums\MatchStatus;
 use App\Filament\Infolists\Components\ChatHistoryEntry;
 use App\Models\GameMatch;
+use App\Models\MatchAutoFetchAttempt;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Schemas\Components\Grid;
 use Filament\Schemas\Components\Section;
@@ -12,22 +14,9 @@ use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 
 /**
- * M12 Phase 2 — admin match detail view used on `ViewGameMatch`.
- *
- * Layout (top → bottom). Every top-level Section calls `columnSpanFull()`
- * — Filament's default panel schema runs a 3-column grid, and without the
- * full-span override, sections collide on the same row and inner fields
- * wrap awkwardly. Match metadata is split across three smaller sections
- * (Status / Money / Timeline) instead of one wide card so each section
- * fits its fields in 4 columns without label-wrap.
- *
- *   1. Status & game — Match #, status badge, game, platform, winner
- *   2. Money breakdown — stake, pot, fee, winner payout
- *   3. Timeline — created/disputed/opened-by/settled timestamps
- *   4. Creator + Taker — side-by-side Grid(2). Winner gets a gold trophy
- *      on their section header when Settled.
- *   5. Chat history — full-width, primary content
- *   6. Admin resolution history — full-width, only when rows exist
+ * Admin match detail view. Sections need `columnSpanFull()` because
+ * Filament's default panel grid is 3-column — without it, sections collide
+ * on the same row and inner fields wrap awkwardly.
  */
 class GameMatchInfolist
 {
@@ -45,6 +34,7 @@ class GameMatchInfolist
                         self::takerSection(),
                     ]),
                 self::chatSection()->columnSpanFull(),
+                self::autoFetchHistorySection()->columnSpanFull(),
                 self::resolutionHistorySection()->columnSpanFull(),
             ]);
     }
@@ -60,6 +50,7 @@ class GameMatchInfolist
                 TextEntry::make('status')
                     ->badge()
                     ->color(fn (MatchStatus $state): string => match ($state) {
+                        MatchStatus::LobbyFilling => 'gray',
                         MatchStatus::Pending => 'gray',
                         MatchStatus::Disputed => 'warning',
                         MatchStatus::ManualReview => 'danger',
@@ -67,6 +58,7 @@ class GameMatchInfolist
                         MatchStatus::Cancelled => 'gray',
                     })
                     ->formatStateUsing(fn (MatchStatus $state): string => match ($state) {
+                        MatchStatus::LobbyFilling => 'Lobby Filling',
                         MatchStatus::Pending => 'Pending',
                         MatchStatus::Disputed => 'Disputed',
                         MatchStatus::ManualReview => 'Manual Review',
@@ -133,7 +125,7 @@ class GameMatchInfolist
                     ->since()
                     ->badge()
                     ->color(function ($state, GameMatch $record): string {
-                        // Don't urgency-color terminal matches — already resolved.
+                        // Skip urgency color on terminal matches.
                         if (in_array($record->status, [MatchStatus::Settled, MatchStatus::Cancelled], true)) {
                             return 'gray';
                         }
@@ -188,13 +180,6 @@ class GameMatchInfolist
     }
 
     /**
-     * Shared schema for the Creator + Taker cards. `relationPath` is either
-     * `listing.user` or `taker` so the same set of TextEntries works on
-     * both sides.
-     *
-     * Linked-account rows hide themselves when empty so the cards stay
-     * tight when a player isn't linked on a given platform.
-     *
      * @return array<int, TextEntry>
      */
     private static function playerEntries(string $relationPath): array
@@ -246,6 +231,23 @@ class GameMatchInfolist
             ->visible(fn (GameMatch $record) => $record->adminResolutions()->exists());
     }
 
+    /**
+     * Per-match auto-fetch audit. Lets admins answer "why is this match in
+     * ManualReview?" by reading the full attempt history.
+     */
+    private static function autoFetchHistorySection(): Section
+    {
+        return Section::make('Auto-fetch history')
+            ->icon(Heroicon::ArrowPath)
+            ->schema([
+                TextEntry::make('auto_fetch_summary')
+                    ->hiddenLabel()
+                    ->state(fn (GameMatch $record) => self::autoFetchSummary($record))
+                    ->html(),
+            ])
+            ->visible(fn (GameMatch $record) => $record->autoFetchAttempts()->exists());
+    }
+
     private static function isWinner(GameMatch $record, ?int $playerId): bool
     {
         return $record->status === MatchStatus::Settled
@@ -253,11 +255,6 @@ class GameMatchInfolist
             && $record->winner_user_id === $playerId;
     }
 
-    /**
-     * Renders the audit rows for this match as a small HTML list. Inline
-     * here rather than a separate custom entry because the markup is
-     * trivial — one row per resolution with admin, action, and reason.
-     */
     private static function resolutionSummary(GameMatch $record): string
     {
         $rows = $record->adminResolutions()->with('admin', 'winner')->get();
@@ -278,5 +275,76 @@ class GameMatchInfolist
         $html .= '</div>';
 
         return $html;
+    }
+
+    private static function autoFetchSummary(GameMatch $record): string
+    {
+        $rows = $record->autoFetchAttempts()->get();
+
+        if ($rows->isEmpty()) {
+            return '<em>No auto-fetch attempts yet.</em>';
+        }
+
+        $html = '<div class="space-y-2">';
+        foreach ($rows as $row) {
+            $html .= self::autoFetchRowHtml($row);
+        }
+        $html .= '</div>';
+
+        return $html;
+    }
+
+    private static function autoFetchRowHtml(MatchAutoFetchAttempt $row): string
+    {
+        $when = $row->created_at->format('M j, Y H:i:s');
+        $provider = e($row->provider->value);
+        $badge = self::outcomeBadge($row->outcome);
+        $detail = self::outcomeDetail($row);
+        $attempt = $row->attempt_number > 1 ? " · attempt #{$row->attempt_number}" : '';
+
+        return "<div><strong>{$when}</strong> · {$provider} · {$badge}{$attempt}<br>"
+            ."<span class=\"text-sm opacity-75\">{$detail}</span></div>";
+    }
+
+    /**
+     * Inline-styled span — we're rendering raw HTML inside a TextEntry so we
+     * can't compose Filament's Badge component. Colors match Filament's badge
+     * palette so the timeline reads consistently with the status section.
+     */
+    private static function outcomeBadge(AutoFetchOutcome $outcome): string
+    {
+        $palette = match ($outcome) {
+            AutoFetchOutcome::Matched => ['#16a34a', '#dcfce7'],
+            AutoFetchOutcome::NoMatch => ['#6b7280', '#f3f4f6'],
+            AutoFetchOutcome::Ambiguous => ['#d97706', '#fef3c7'],
+            AutoFetchOutcome::Error => ['#dc2626', '#fee2e2'],
+            AutoFetchOutcome::Skipped => ['#6b7280', '#f3f4f6'],
+        };
+        [$fg, $bg] = $palette;
+        $label = e($outcome->value);
+
+        return "<span style=\"display:inline-block;padding:2px 8px;border-radius:9999px;font-size:0.75rem;font-weight:600;color:{$fg};background:{$bg};\">{$label}</span>";
+    }
+
+    private static function outcomeDetail(MatchAutoFetchAttempt $row): string
+    {
+        return match ($row->outcome) {
+            AutoFetchOutcome::Matched => 'Winner: '.e($row->winner_username ?? '—')
+                .' · '.self::latencyLabel($row->latency_ms),
+            AutoFetchOutcome::NoMatch => '0 candidates'
+                .($row->outcome_reason ? ' · '.e($row->outcome_reason) : '')
+                .' · '.self::latencyLabel($row->latency_ms),
+            AutoFetchOutcome::Ambiguous => ($row->candidates_count ?? 0).' candidates'
+                .($row->outcome_reason ? ' · '.e($row->outcome_reason) : '')
+                .' · '.self::latencyLabel($row->latency_ms),
+            AutoFetchOutcome::Error => e($row->error_message ?? 'Unknown error')
+                .' · '.self::latencyLabel($row->latency_ms),
+            AutoFetchOutcome::Skipped => 'Reason: '.e($row->outcome_reason ?? 'unspecified'),
+        };
+    }
+
+    private static function latencyLabel(?int $ms): string
+    {
+        return $ms === null ? 'no provider call' : "{$ms}ms";
     }
 }

@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
+import { useT } from '@/lib/i18n';
 import { store } from '@/routes/register';
 
 interface RegisterFormProps {
@@ -13,6 +14,8 @@ interface RegisterFormProps {
 }
 
 export function RegisterForm({ onSwitchToLogin }: RegisterFormProps) {
+    const t = useT();
+
     return (
         <Form
             {...store.form()}
@@ -25,7 +28,7 @@ export function RegisterForm({ onSwitchToLogin }: RegisterFormProps) {
                     <div className="flex flex-col gap-4">
                         <div className="flex flex-col gap-2">
                             <Label htmlFor="name" className="text-sm">
-                                Name
+                                {t('Name')}
                             </Label>
                             <Input
                                 id="name"
@@ -33,7 +36,7 @@ export function RegisterForm({ onSwitchToLogin }: RegisterFormProps) {
                                 type="text"
                                 autoFocus
                                 autoComplete="name"
-                                placeholder="Your name"
+                                placeholder={t('Your name')}
                                 required
                                 className={authInputClass}
                             />
@@ -42,7 +45,7 @@ export function RegisterForm({ onSwitchToLogin }: RegisterFormProps) {
 
                         <div className="flex flex-col gap-2">
                             <Label htmlFor="email" className="text-sm">
-                                Email
+                                {t('Email')}
                             </Label>
                             <Input
                                 id="email"
@@ -58,13 +61,13 @@ export function RegisterForm({ onSwitchToLogin }: RegisterFormProps) {
 
                         <div className="flex flex-col gap-2">
                             <Label htmlFor="password" className="text-sm">
-                                Password
+                                {t('Password')}
                             </Label>
                             <PasswordInput
                                 id="password"
                                 name="password"
                                 autoComplete="new-password"
-                                placeholder="At least 8 characters"
+                                placeholder={t('At least 8 characters')}
                                 required
                                 className={authInputClass}
                             />
@@ -76,13 +79,13 @@ export function RegisterForm({ onSwitchToLogin }: RegisterFormProps) {
                                 htmlFor="password_confirmation"
                                 className="text-sm"
                             >
-                                Confirm password
+                                {t('Confirm password')}
                             </Label>
                             <PasswordInput
                                 id="password_confirmation"
                                 name="password_confirmation"
                                 autoComplete="new-password"
-                                placeholder="Repeat your password"
+                                placeholder={t('Repeat your password')}
                                 required
                                 className={authInputClass}
                             />
@@ -101,17 +104,17 @@ export function RegisterForm({ onSwitchToLogin }: RegisterFormProps) {
                         data-test="register-user-button"
                     >
                         {processing && <Spinner />}
-                        Create account
+                        {t('Create account')}
                     </Button>
 
                     <p className="text-center text-sm text-muted-foreground">
-                        Already have an account?{' '}
+                        {t('Already have an account?')}{' '}
                         <button
                             type="button"
                             onClick={onSwitchToLogin}
                             className="cursor-pointer font-medium text-foreground transition-colors hover:text-primary"
                         >
-                            Sign in
+                            {t('Sign in')}
                         </button>
                     </p>
                 </>

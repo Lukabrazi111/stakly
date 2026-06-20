@@ -24,14 +24,14 @@ class DatabaseSeeder extends Seeder
         // `/users/testuser` without depending on faker's random output.
         // `->active()` so manual UI testing sees the user as discoverable
         // (column default is `false`; production new users opt in).
-        // `->withLichess/withChessCom` so the linked-accounts section on
-        // the public profile renders populated rows out-of-the-box; same
-        // reason `MatchHistorySeeder` can settle real matches involving
-        // testuser (matchmaking gates require a verified provider).
+        // All three providers linked so testuser can participate across the
+        // full marketplace + team-play lobbies out-of-the-box without
+        // needing to hand-link accounts before testing.
         $test = User::factory()
             ->active()
             ->withLichess('testuser-lichess')
             ->withChessCom('testuser-chesscom')
+            ->withFaceit('testuser-faceit', skillRating: 1500)
             ->create([
                 'name' => 'Test User',
                 'username' => 'testuser',
@@ -46,6 +46,8 @@ class DatabaseSeeder extends Seeder
         Wallet::deposit($test, '10000', reference: "seed:dev-deposit:{$test->id}");
 
         $this->call(AdminUserSeeder::class);
+        $this->call(GameSeeder::class);
+        $this->call(PageSeeder::class);
         $this->call(ListingSeeder::class);
         $this->call(MatchHistorySeeder::class);
     }

@@ -5,27 +5,17 @@ namespace App\Services\Provider;
 use Carbon\CarbonImmutable;
 
 /**
- * Immutable DTO for a chess.com game fetched from the Published Data API.
+ * Immutable DTO for a chess.com game from the Published Data API.
  *
- * chess.com's API returns games via a per-user monthly archive
- * (`/pub/player/{username}/games/{YYYY}/{MM}`); a single game appears in
- * both players' archives. We parse the subset of fields the chat card
- * renderer + dispute arbitration need.
+ * Outcome semantics: chess.com uses `result` strings per-side. One side
+ * `result === 'win'` → that side is the winner. Neither has `'win'` → draw
+ * (or aborted — counted as non-decisive, not as draw).
  *
- * Outcome semantics — chess.com uses `result` strings per-side. We map:
- *   - One side `result === 'win'` → that side is the winner.
- *   - Neither has `'win'` → draw (or aborted). Treat as draw for the
- *     `isDraw()` helper; aborted games still count as no-winner / non-decisive.
- *
- * Usernames preserve case as chess.com surfaces them
- * (`players.{color}.username`); cross-check against snapshotted handles
- * uses `strtolower(...)` on both sides for case-insensitive compare.
+ * Usernames preserve chess.com's case. Cross-check against snapshotted
+ * handles must lowercase both sides.
  */
 final readonly class ChessComGameResult
 {
-    /**
-     * Per-side result strings chess.com uses to indicate a draw outcome.
-     */
     private const DRAW_RESULTS = [
         'agreed',
         'repetition',
@@ -34,6 +24,14 @@ final readonly class ChessComGameResult
         '50move',
         'timevsinsufficient',
     ];
+
+    /**
+     * M14 Slice 3b — chess.com's `abandoned` result is the analog to
+     * Lichess's `aborted`. Both sides record `result: 'abandoned'` when
+     * neither player engaged the game (the parser then sets `status` to
+     * the white side's result string). Treated as cooperative-exit refund.
+     */
+    private const ABORTED_RESULTS = ['abandoned'];
 
     public function __construct(
         public string $id,
@@ -58,6 +56,12 @@ final readonly class ChessComGameResult
     {
         return $this->winnerColor === null
             && in_array($this->status, self::DRAW_RESULTS, true);
+    }
+
+    public function isAborted(): bool
+    {
+        return $this->winnerColor === null
+            && in_array($this->status, self::ABORTED_RESULTS, true);
     }
 
     public function winnerUsername(): ?string

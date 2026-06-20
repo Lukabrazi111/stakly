@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { ChatInput } from '@/components/match/chat-input';
 import { ChatMessageBubble } from '@/components/match/chat-message-bubble';
+import { useT } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import type { ChatMessage, MatchPlayer } from '@/types';
 
@@ -12,38 +13,42 @@ interface ChatPanelProps {
     viewerId: number;
     creator: MatchPlayer;
     taker: MatchPlayer;
+    /**
+     * M34 — lobby chat. When set, takes precedence over creator/taker for
+     * sender-to-bubble mapping in `ChatMessageBubble`. The match-show page
+     * doesn't set this; the lobby page passes its full live roster.
+     */
+    participants?: MatchPlayer[];
     isReadOnly: boolean;
     isPending: boolean;
     onSend: (content: string, file: File | null) => void;
     onRetry: (correlationId: string) => void;
     onDismiss: (correlationId: string) => void;
     uploadProgress: number | null;
-    // When true, render without the outer card chrome — used inside the
-    // mobile bottom sheet where Sheet provides its own surface.
+    /** Render without outer card chrome — used inside the mobile sheet. */
     bare?: boolean;
 }
 
-const ACCEPTED_MIMES = ['image/jpeg', 'image/png', 'image/webp'];
+const ACCEPTED_MIMES = [
+    'image/jpeg',
+    'image/png',
+    'image/webp',
+    'application/pdf',
+];
 const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024;
 
 /**
- * Pure presentation component for a match's chat thread. Owns:
- *  - auto-scroll to bottom on new messages
- *  - empty-state copy
- *  - read-only banner when match status locks chat (Settled / ManualReview)
- *  - drag-and-drop image upload (Phase 3 Slice 1) on the message list area
- *  - pending-file state shared with `ChatInput` (so drag-drop and the
- *    paperclip picker both feed into the same queued attachment)
- *
- * Receives messages + the send callback from `useMatchChat` (called once at
- * the page level so a single Echo subscription serves both the desktop
- * right-rail render and the mobile sheet render of this same component).
+ * Match chat thread. Owns auto-scroll, empty state, read-only banner,
+ * drag-drop image upload, and pending-file state shared with ChatInput.
+ * Messages + send callback come from `useMatchChat` (called once at the
+ * page level so a single Echo subscription serves both renders).
  */
 export function ChatPanel({
     messages,
     viewerId,
     creator,
     taker,
+    participants,
     isReadOnly,
     isPending,
     onSend,
@@ -52,14 +57,12 @@ export function ChatPanel({
     uploadProgress,
     bare = false,
 }: ChatPanelProps) {
+    const t = useT();
     const scrollRef = useRef<HTMLDivElement>(null);
     const [pendingFile, setPendingFile] = useState<File | null>(null);
     const [isDragOver, setIsDragOver] = useState(false);
 
-    // Auto-scroll on new message. Phase 2 keeps this naive: always pin to
-    // the bottom. If a user is reading history when a new message arrives,
-    // they get yanked down — refine with an "at-bottom" check + a "↓ N new"
-    // pill if the behaviour shows up as a complaint.
+    // Naive auto-scroll — always pin to bottom on new message.
     useEffect(() => {
         const el = scrollRef.current;
 
@@ -75,9 +78,7 @@ export function ChatPanel({
             return;
         }
 
-        // Only react when a file is being dragged — text selections in the
-        // chat trigger dragenter too, and we don't want to flicker the
-        // overlay on every accidental drag.
+        // Filter to file drags only — text selections in chat also fire dragenter.
         if (!e.dataTransfer.types.includes('Files')) {
             return;
         }
@@ -96,8 +97,7 @@ export function ChatPanel({
     };
 
     const handleDragLeave = (e: DragEvent<HTMLDivElement>) => {
-        // dragleave fires on every child boundary — only clear the overlay
-        // when the cursor actually leaves the panel.
+        // dragleave fires on every child boundary; only clear when truly leaving.
         if (e.currentTarget.contains(e.relatedTarget as Node | null)) {
             return;
         }
@@ -120,13 +120,15 @@ export function ChatPanel({
         }
 
         if (!ACCEPTED_MIMES.includes(file.type)) {
-            toast.error('Only JPEG, PNG, or WebP images can be sent in chat.');
+            toast.error(
+                t('Only JPG, PNG, WebP, or PDF files can be sent in chat.'),
+            );
 
             return;
         }
 
         if (file.size > MAX_FILE_SIZE_BYTES) {
-            toast.error('Image is larger than 5 MB.');
+            toast.error(t('File is larger than 5 MB.'));
 
             return;
         }
@@ -149,7 +151,7 @@ export function ChatPanel({
                 <header className="flex items-center gap-2 border-b border-border/60 px-4 py-3">
                     <MessageSquare className="size-4 text-muted-foreground" />
                     <h2 className="text-sm font-semibold text-foreground">
-                        Match chat
+                        {t('Match chat')}
                     </h2>
                 </header>
             )}
@@ -159,7 +161,7 @@ export function ChatPanel({
                 className="flex-1 space-y-3 overflow-y-auto px-3 py-4"
                 role="log"
                 aria-live="polite"
-                aria-label="Match chat messages"
+                aria-label={t('Match chat messages')}
             >
                 {empty ? (
                     <EmptyState />
@@ -171,6 +173,7 @@ export function ChatPanel({
                             viewerId={viewerId}
                             creator={creator}
                             taker={taker}
+                            participants={participants}
                             onRetry={onRetry}
                             onDismiss={onDismiss}
                         />
@@ -190,17 +193,15 @@ export function ChatPanel({
                 />
             )}
 
-            {/* Drag overlay — only when the user drags a file onto the panel.
-                Pointer-events-none so the drop target underneath still fires
-                onDrop; the overlay is purely visual. */}
+            {/* pointer-events-none so the drop target underneath still fires onDrop. */}
             {isDragOver && !isReadOnly && (
                 <div className="pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-primary/60 bg-primary/10 backdrop-blur-sm">
                     <ImagePlus className="size-8 text-primary" />
                     <p className="text-sm font-medium text-foreground">
-                        Drop image to attach
+                        {t('Drop file to attach')}
                     </p>
                     <p className="text-xs text-muted-foreground">
-                        JPEG, PNG, or WebP up to 5 MB
+                        {t('JPG, PNG, WebP, or PDF up to 5 MB')}
                     </p>
                 </div>
             )}
@@ -209,22 +210,27 @@ export function ChatPanel({
 }
 
 function EmptyState() {
+    const t = useT();
+
     return (
         <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center text-xs text-muted-foreground">
             <MessageSquare className="size-6 opacity-40" />
             <p>
-                No messages yet. Share your chess.com / Lichess game URL when
-                the match ends.
+                {t(
+                    'No messages yet. Share your chess.com / Lichess game URL when the match ends.',
+                )}
             </p>
         </div>
     );
 }
 
 function ReadOnlyFooter() {
+    const t = useT();
+
     return (
         <div className="flex items-center gap-2 border-t border-border/60 px-4 py-3 text-xs text-muted-foreground">
             <Lock className="size-3.5" />
-            <span>This match is settled — chat is read-only.</span>
+            <span>{t('This match is settled — chat is read-only.')}</span>
         </div>
     );
 }

@@ -112,6 +112,22 @@ class SettleMatchAction
         return [$winnerPayout, $fee];
     }
 
+    /**
+     * Notification dispatch helper for callers that need to render the
+     * payout amount in a `MatchSettledNotification` body. Mirrors
+     * computeAmounts but returns only the winner payout — avoids
+     * duplicating the bcmul chain across SettleFromCard / ResolveDispute /
+     * AdminSettleToWinner.
+     */
+    public static function computeWinnerPayout(string $stake): string
+    {
+        $pot = bcmul($stake, '2', self::SCALE);
+        $feeRate = (string) config('stakly.platform_fee_rate');
+        $fee = bcmul($pot, $feeRate, self::SCALE);
+
+        return bcsub($pot, $fee, self::SCALE);
+    }
+
     private function postLedgerEntries(GameMatch $match, User $winner, string $winnerPayout, string $fee): void
     {
         Wallet::payout(

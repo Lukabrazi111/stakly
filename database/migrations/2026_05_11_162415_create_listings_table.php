@@ -63,12 +63,50 @@ return new class extends Migration
             // open | taken | expired | cancelled (PHP enum casts in model).
             $table->string('status')->default('open');
 
+            // M34 — team play + lobbies.
+            //
+            // `team_size` drives lobby size: total participants = 2 × team_size.
+            // Chess listings stay 1 (handled by existing TakeListingAction flow);
+            // CS2 = 5; Wingman = 2. When `> 1`, listing skips the Open→Taken
+            // transition through TakeListingAction and instead routes through
+            // the lobby pipeline (JoinLobbyAction → ToggleReadyAction →
+            // LobbyLockAction).
+            $table->unsignedSmallInteger('team_size')->default(1);
+
+            // Side the creator joins in their own lobby. 'a' or 'b'. Null for
+            // team_size = 1 listings (chess doesn't use the lobby concept).
+            $table->string('creator_side', 1)->nullable();
+
+            // Lifecycle state for team-play lobbies. Null for team_size = 1.
+            // recruiting → ready_checking → locked → cancelled / expired.
+            // Drives UI affordances + cron sweep targeting.
+            $table->string('lobby_state', 16)->nullable();
+
+            // Stamped when `lobby_state` transitions to `ready_checking`
+            // (lobby just reached max soft-joined). The 5-min cron sweep
+            // reads `WHERE lobby_state = 'ready_checking' AND
+            // lobby_ready_check_deadline < now()` to fire
+            // LobbyReadyCheckTimeoutAction. Cleared on lock, vacate, or
+            // soft-joined count dropping below max.
+            $table->timestamp('lobby_ready_check_deadline')->nullable();
+
+            // Public listings appear in the /listings marketplace; private
+            // listings reach players only via `/lobbies/{invite_token}`.
+            $table->boolean('is_public')->default(true);
+
+            // Opaque URL-safe token for private listings. Null for public.
+            // 32 chars from Str::random(32). Token effectively expires when
+            // the match goes Pending or the listing cancels (resolution
+            // happens at LobbyController::show, not via column expiry).
+            $table->string('invite_token', 32)->nullable()->unique();
+
             $table->timestamps();
 
             $table->index('status');
             $table->index('stake_amount');
             $table->index('expires_at');
             $table->index('created_at');
+            $table->index('lobby_state');
         });
     }
 

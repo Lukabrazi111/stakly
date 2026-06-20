@@ -72,7 +72,7 @@ test('opening a dispute fires admin notification with match details', function (
     $admin = User::factory()->admin()->create();
     [$creator, , , $match] = pendingMatch();
 
-    app(OpenDisputeAction::class)->handle($creator, $match);
+    app(OpenDisputeAction::class)->handle($creator, $match, 'opponent claims they won but the game shows me winning');
 
     $notification = DatabaseNotification::query()
         ->where('notifiable_id', $admin->id)
@@ -88,7 +88,7 @@ test('repeat openDispute on already-Disputed match does NOT fire a duplicate not
     [$creator, , , $match] = pendingMatch();
     $match->update(['status' => MatchStatus::Disputed, 'dispute_opened_at' => now()]);
 
-    app(OpenDisputeAction::class)->handle($creator, $match);
+    app(OpenDisputeAction::class)->handle($creator, $match, 'opponent claims they won but the game shows me winning');
 
     // Race-loss path: no new notification because the action returned false.
     expect(DatabaseNotification::query()->where('notifiable_id', $admin->id)->count())->toBe(0);

@@ -3,23 +3,20 @@
 namespace App\Services\Provider;
 
 use App\Services\Provider\Exceptions\ProfileNotFoundException;
-use App\Services\Provider\Exceptions\ProviderUnavailableException;
+use App\Services\Provider\Exceptions\TransientProviderError;
 
 /**
- * Shared contract for chess.com / Lichess profile fetches. Future game
- * adapters (Dota 2 OpenDota, FACEIT, etc.) layer on the same shape when
- * they land (M14).
- *
- * Implementations MUST translate transport-level failures into
- * `ProfileNotFoundException` (404 — username doesn't exist) or
- * `ProviderUnavailableException` (5xx / network / timeout — try later).
+ * Shared contract for profile fetches. Implementations MUST translate
+ * transport-level failures into `ProfileNotFoundException` (404) or
+ * `TransientProviderError` (5xx / network / timeout — profile flow doesn't
+ * currently differentiate further; that's M14 Slice 2a Game-clients-only).
  * Anything else is a real bug and should bubble.
  */
 interface ProfileClient
 {
     /**
      * @throws ProfileNotFoundException
-     * @throws ProviderUnavailableException
+     * @throws TransientProviderError
      */
     public function fetchProfile(string $username): ProfileFetchResult;
 }

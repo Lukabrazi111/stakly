@@ -13,7 +13,7 @@ class EmailVerificationNotificationSentResponse implements EmailVerificationNoti
         Inertia::flash([
             'toast' => [
                 'type' => 'success',
-                'message' => 'Verification email sent. Check your inbox.',
+                'message' => __('Verification email sent. Check your inbox.'),
             ],
             'verify_cooldown_seconds' => 60,
         ]);

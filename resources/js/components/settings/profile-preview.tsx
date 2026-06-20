@@ -3,38 +3,24 @@ import { ArrowUpRight, Eye } from 'lucide-react';
 import { VerificationChip } from '@/components/profile/verification-chip';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { useInitials } from '@/hooks/use-initials';
+import { useT } from '@/lib/i18n';
 
 interface Props {
     name: string;
     username: string;
     bio: string;
-    /**
-     * The avatar URL to display. Pass the staged-blob preview URL when the
-     * user has picked a new avatar but hasn't saved yet, otherwise the
-     * persisted `user.avatar_url`. Undefined falls back to gradient initials.
-     */
+    /** Staged-blob preview URL when picking a new avatar, otherwise the
+     *  persisted URL. Undefined falls back to gradient initials. */
     avatarSrc: string | undefined;
-    /** ISO datetime — formatted to "Joined {Mon YYYY}" in the chip strip. */
     joinedAt: string;
     linkedAccounts: ReadonlyArray<{
         provider: 'chess_com' | 'lichess';
         username: string;
     }>;
-    /** Absolute or relative URL of the user's own public profile page. */
     profileUrl: string;
 }
 
-/**
- * Live preview of the user's public profile, shown above the settings/profile
- * form so the user can see how name + avatar + bio changes will land on their
- * actual `/users/{username}` page as they type. Mirrors the layout of
- * `ProfileHeader` (the real profile hero) but lighter — no Edit button,
- * no trust-data hookup, just identity.
- *
- * Updates live: `name`, `bio`, and `avatarSrc` come from the form's draft
- * state on every keystroke / file pick. `username`, `joinedAt`, and
- * `linkedAccounts` are read-only context (none of them are editable here).
- */
+/** Live preview of the public profile shown above the settings form. */
 export function ProfilePreview({
     name,
     username,
@@ -44,31 +30,32 @@ export function ProfilePreview({
     linkedAccounts,
     profileUrl,
 }: Props) {
+    const t = useT();
     const getInitials = useInitials();
 
-    const joinedLabel = new Intl.DateTimeFormat('en-US', {
+    const joinedLabel = new Intl.DateTimeFormat(undefined, {
         month: 'short',
         year: 'numeric',
     }).format(new Date(joinedAt));
 
-    const trimmedName = name.trim() || 'Your name';
+    const trimmedName = name.trim() || t('Your name');
     const trimmedBio = bio.trim();
 
     return (
         <section
-            aria-label="Public profile preview"
+            aria-label={t('Public profile preview')}
             className="rounded-2xl border border-border/60 bg-card p-6"
         >
             <header className="mb-4 flex items-center justify-between gap-3">
                 <span className="inline-flex items-center gap-1.5 text-[11px] font-medium tracking-widest text-muted-foreground uppercase">
                     <Eye className="size-3.5" aria-hidden="true" />
-                    Preview
+                    {t('Preview')}
                 </span>
                 <Link
                     href={profileUrl}
                     className="inline-flex items-center gap-1 text-xs font-medium text-primary transition-colors hover:text-primary/80"
                 >
-                    View public profile
+                    {t('View public profile')}
                     <ArrowUpRight className="size-3.5" aria-hidden="true" />
                 </Link>
             </header>
@@ -100,7 +87,7 @@ export function ProfilePreview({
                     />
                 ))}
                 <span className="inline-flex shrink-0 items-center rounded-full border border-border/60 bg-card px-3 py-1 text-xs font-medium text-muted-foreground">
-                    Joined {joinedLabel}
+                    {t('Joined :date', { date: joinedLabel })}
                 </span>
             </div>
 
@@ -110,8 +97,9 @@ export function ProfilePreview({
                 </p>
             ) : (
                 <p className="mt-4 text-sm text-muted-foreground italic">
-                    Bio is empty — add one to tell other players a bit about
-                    yourself.
+                    {t(
+                        'Bio is empty — add one to tell other players a bit about yourself.',
+                    )}
                 </p>
             )}
         </section>

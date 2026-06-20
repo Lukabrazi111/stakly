@@ -1,5 +1,6 @@
 import { Clock } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { useT } from '@/lib/i18n';
 
 interface MatchTimerProps {
     /** Deadline by which the game API must verify a result before the match flips to ManualReview. */
@@ -9,28 +10,33 @@ interface MatchTimerProps {
 const MS_30_MIN = 30 * 60 * 1000;
 const MS_1_HOUR = 60 * 60 * 1000;
 
-/**
- * Compact countdown chip for the 4-hour API-resolution deadline. Sits next
- * to the status badge in the match page header — small enough to live
- * inline, but ticks every second and shifts color as the deadline
- * approaches so it reads as live, not decorative.
- *
- * Tiers (matched to the page header badge style):
- *   > 1h     — pink (primary, brand neutral) — distinct from the amber
- *              "Pending" badge sitting next to it
- *   30m–1h   — amber (warning)
- *   < 30m    — red (destructive) + pulse
- *   expired  — muted gray, "Expired" label (`ResolveMatchTimeoutAction`
- *              flips the match to ManualReview in the next cron sweep)
- */
+/** Countdown chip for the 4-hour API-resolution deadline. Tiers shift
+ *  color (>1h pink, 30m–1h amber, <30m red+pulse, expired gray). */
 export function MatchTimer({ deadline }: MatchTimerProps) {
-    const [now, setNow] = useState(() => Date.now());
+    const t = useT();
+    // null until mount — initializing to Date.now() would cause a hydration mismatch.
+    const [now, setNow] = useState<number | null>(null);
 
     useEffect(() => {
+        setNow(Date.now());
         const id = window.setInterval(() => setNow(Date.now()), 1000);
 
         return () => window.clearInterval(id);
     }, []);
+
+    if (now === null) {
+        return (
+            <time
+                dateTime={deadline.toISOString()}
+                role="timer"
+                aria-label={t('Loading time remaining')}
+                className="inline-flex w-fit shrink-0 items-center gap-1.5 rounded-full border border-primary/40 bg-primary/10 px-3 py-1.5 text-xs font-medium text-primary"
+            >
+                <Clock className="size-3.5 shrink-0" aria-hidden="true" />
+                <span className="tabular-nums">— : — : —</span>
+            </time>
+        );
+    }
 
     const msRemaining = deadline.getTime() - now;
     const isExpired = msRemaining <= 0;
@@ -51,12 +57,20 @@ export function MatchTimer({ deadline }: MatchTimerProps) {
             : 'border-primary/40 bg-primary/10 text-primary';
 
     const display = isExpired
-        ? 'Expired'
-        : `${hours}h ${minutes.toString().padStart(2, '0')}m ${seconds.toString().padStart(2, '0')}s`;
+        ? t('Expired')
+        : t(':hoursh :minutesm :secondss', {
+              hours,
+              minutes: minutes.toString().padStart(2, '0'),
+              seconds: seconds.toString().padStart(2, '0'),
+          });
 
     const ariaLabel = isExpired
-        ? 'Match deadline expired'
-        : `Time remaining: ${hours} hours ${minutes} minutes ${seconds} seconds`;
+        ? t('Match deadline expired')
+        : t('Time remaining: :hours hours :minutes minutes :seconds seconds', {
+              hours,
+              minutes,
+              seconds,
+          });
 
     return (
         <time

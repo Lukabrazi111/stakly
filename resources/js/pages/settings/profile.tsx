@@ -1,4 +1,4 @@
-import { Head, Link, router, useForm, usePage } from '@inertiajs/react';
+import { Link, router, useForm, usePage } from '@inertiajs/react';
 import { CameraIcon, CheckCircle2, MailWarning } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import type { ChangeEvent, FormEvent } from 'react';
@@ -6,12 +6,25 @@ import ProfileController from '@/actions/App/Http/Controllers/Settings/ProfileCo
 import InputError from '@/components/input-error';
 import { AvatarCropModal } from '@/components/settings/avatar-crop-modal';
 import { ProfilePreview } from '@/components/settings/profile-preview';
+import { PageMeta } from '@/components/site/page-meta';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
+import {
+    Dialog,
+    DialogClose,
+    DialogContent,
+    DialogDescription,
+    DialogFooter,
+    DialogHeader,
+    DialogTitle,
+    DialogTrigger,
+} from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { useInitials } from '@/hooks/use-initials';
+import { useT } from '@/lib/i18n';
+import type { TranslationFn } from '@/lib/i18n';
 import { show as userShow } from '@/routes/users';
 import { send } from '@/routes/verification';
 
@@ -30,18 +43,21 @@ export default function Profile({
     mustVerifyEmail: boolean;
     status?: string;
 }) {
+    const t = useT();
     const { auth } = usePage().props;
     const user = auth.user!;
     const getInitials = useInitials();
 
     const { data, setData, post, processing, errors, reset } = useForm<{
         name: string;
+        username: string;
         email: string;
         bio: string;
         avatar: Blob | null;
         _method: 'patch';
     }>({
         name: user.name,
+        username: user.username,
         email: user.email,
         bio: user.bio ?? '',
         avatar: null,
@@ -55,7 +71,13 @@ export default function Profile({
     const [previewUrl, setPreviewUrl] = useState<string | null>(null);
     const [rawFileError, setRawFileError] = useState<string | null>(null);
     const [isRemovingAvatar, setIsRemovingAvatar] = useState(false);
+    const [removeConfirmOpen, setRemoveConfirmOpen] = useState(false);
+    const [usernameConfirmOpen, setUsernameConfirmOpen] = useState(false);
     const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+    const usernameEdit = user.username_edit;
+    const usernameBlocker = usernameEdit.blockers[0] ?? null;
+    const usernameDirty = data.username.trim() !== user.username;
 
     // Revoke the cropped-blob object URL on unmount or when it's replaced —
     // otherwise the blob stays alive in memory for the page's lifetime.
@@ -80,7 +102,9 @@ export default function Profile({
 
         if (picked.size > RAW_FILE_MAX_BYTES) {
             setRawFileError(
-                'That image is too large to process. Pick a file under 20 MB.',
+                t(
+                    'That image is too large to process. Pick a file under 20 MB.',
+                ),
             );
 
             return;
@@ -108,26 +132,39 @@ export default function Profile({
         setIsRemovingAvatar(true);
         router.delete(ProfileController.destroyAvatar.url(), {
             preserveScroll: true,
-            onFinish: () => setIsRemovingAvatar(false),
+            onFinish: () => {
+                setIsRemovingAvatar(false);
+                setRemoveConfirmOpen(false);
+            },
         });
     };
 
-    const handleSubmit = (e: FormEvent) => {
-        e.preventDefault();
+    const submitForm = () => {
         post(ProfileController.update.url(), {
             preserveScroll: true,
             forceFormData: true,
             onSuccess: () => {
-                // Avatar uploaded — clear the staged blob + preview so the
-                // form goes back to a clean state showing the saved avatar.
                 if (previewUrl) {
                     URL.revokeObjectURL(previewUrl);
                 }
 
                 setPreviewUrl(null);
                 reset('avatar');
+                setUsernameConfirmOpen(false);
             },
         });
+    };
+
+    const handleSubmit = (e: FormEvent) => {
+        e.preventDefault();
+
+        if (usernameDirty && usernameEdit.can_change) {
+            setUsernameConfirmOpen(true);
+
+            return;
+        }
+
+        submitForm();
     };
 
     const displayAvatarSrc = previewUrl ?? user.avatar_url ?? undefined;
@@ -142,18 +179,22 @@ export default function Profile({
             username: account.username,
         }),
     );
-    const publicProfileUrl = userShow(user.username).url;
+    const publicProfileUrl = userShow({ user: user.username }).url;
 
     return (
         <>
-            <Head title="Profile settings" />
+            <PageMeta
+                title={t('Profile settings')}
+                description={t('Edit your profile details.')}
+                noindex
+            />
 
-            <h1 className="sr-only">Profile settings</h1>
+            <h1 className="sr-only">{t('Profile settings')}</h1>
 
             <div className="space-y-6">
                 <ProfilePreview
                     name={data.name}
-                    username={user.username}
+                    username={data.username || user.username}
                     bio={data.bio}
                     avatarSrc={displayAvatarSrc}
                     joinedAt={user.created_at}
@@ -169,11 +210,12 @@ export default function Profile({
                     <section className="space-y-6 rounded-2xl border border-border/60 bg-card p-6">
                         <header>
                             <h2 className="font-display text-base font-semibold text-foreground">
-                                Public profile
+                                {t('Public profile')}
                             </h2>
                             <p className="mt-0.5 text-xs text-muted-foreground">
-                                What other players see on your profile page +
-                                listings.
+                                {t(
+                                    'What other players see on your profile page + listings.',
+                                )}
                             </p>
                         </header>
 
@@ -182,7 +224,7 @@ export default function Profile({
                             crop modal, and the cropped blob lives in
                             `data.avatar`. */}
                         <div className="grid gap-3">
-                            <Label>Avatar</Label>
+                            <Label>{t('Avatar')}</Label>
                             <div className="flex items-center gap-5">
                                 <button
                                     type="button"
@@ -190,7 +232,7 @@ export default function Profile({
                                         fileInputRef.current?.click()
                                     }
                                     className="group relative cursor-pointer rounded-full transition-shadow duration-200 ease-out hover:shadow-glow focus-visible:shadow-glow focus-visible:outline-none"
-                                    aria-label="Change avatar"
+                                    aria-label={t('Change avatar')}
                                 >
                                     <Avatar className="size-20 overflow-hidden rounded-full ring-2 ring-border/60 transition-colors duration-200 ease-out group-hover:ring-primary/50 group-focus-visible:ring-primary/60">
                                         <AvatarImage
@@ -215,25 +257,73 @@ export default function Profile({
                                                 fileInputRef.current?.click()
                                             }
                                         >
-                                            Change avatar
+                                            {t('Change avatar')}
                                         </Button>
                                         {user.avatar_url && !previewUrl && (
-                                            <Button
-                                                type="button"
-                                                variant="ghost"
-                                                size="sm"
-                                                onClick={handleRemoveAvatar}
-                                                disabled={isRemovingAvatar}
-                                                className="text-destructive [text-shadow:none] hover:text-destructive hover:[text-shadow:none]"
+                                            <Dialog
+                                                open={removeConfirmOpen}
+                                                onOpenChange={
+                                                    setRemoveConfirmOpen
+                                                }
                                             >
-                                                {isRemovingAvatar
-                                                    ? 'Removing…'
-                                                    : 'Remove'}
-                                            </Button>
+                                                <DialogTrigger asChild>
+                                                    <Button
+                                                        type="button"
+                                                        variant="ghost"
+                                                        size="sm"
+                                                        className="text-destructive [text-shadow:none] hover:text-destructive hover:[text-shadow:none]"
+                                                    >
+                                                        {t('Remove')}
+                                                    </Button>
+                                                </DialogTrigger>
+                                                <DialogContent>
+                                                    <DialogHeader>
+                                                        <DialogTitle>
+                                                            {t(
+                                                                'Remove avatar?',
+                                                            )}
+                                                        </DialogTitle>
+                                                        <DialogDescription>
+                                                            {t(
+                                                                'Your profile will go back to showing your initials. You can upload a new avatar any time.',
+                                                            )}
+                                                        </DialogDescription>
+                                                    </DialogHeader>
+                                                    <DialogFooter>
+                                                        <DialogClose asChild>
+                                                            <Button
+                                                                type="button"
+                                                                variant="ghost"
+                                                                disabled={
+                                                                    isRemovingAvatar
+                                                                }
+                                                            >
+                                                                {t('Cancel')}
+                                                            </Button>
+                                                        </DialogClose>
+                                                        <Button
+                                                            type="button"
+                                                            variant="destructive"
+                                                            onClick={
+                                                                handleRemoveAvatar
+                                                            }
+                                                            disabled={
+                                                                isRemovingAvatar
+                                                            }
+                                                        >
+                                                            {isRemovingAvatar
+                                                                ? t('Removing…')
+                                                                : t('Remove')}
+                                                        </Button>
+                                                    </DialogFooter>
+                                                </DialogContent>
+                                            </Dialog>
                                         )}
                                     </div>
                                     <p className="mt-1 text-xs text-muted-foreground">
-                                        JPG, PNG, or WebP. Max 2 MB after crop.
+                                        {t(
+                                            'JPG, PNG, or WebP. Max 2 MB after crop.',
+                                        )}
                                     </p>
                                 </div>
                             </div>
@@ -250,7 +340,34 @@ export default function Profile({
                         </div>
 
                         <div className="grid gap-2">
-                            <Label htmlFor="name">Name</Label>
+                            <Label htmlFor="username">{t('Username')}</Label>
+                            <Input
+                                id="username"
+                                className="block w-full"
+                                value={data.username}
+                                onChange={(e) =>
+                                    setData(
+                                        'username',
+                                        e.target.value.toLowerCase(),
+                                    )
+                                }
+                                name="username"
+                                required
+                                autoComplete="off"
+                                spellCheck={false}
+                                disabled={!usernameEdit.can_change}
+                                placeholder={t('your-handle')}
+                            />
+                            <UsernameHelper
+                                blocker={usernameBlocker}
+                                availableAt={usernameEdit.available_at}
+                                t={t}
+                            />
+                            <InputError message={errors.username} />
+                        </div>
+
+                        <div className="grid gap-2">
+                            <Label htmlFor="name">{t('Name')}</Label>
                             <Input
                                 id="name"
                                 className="block w-full"
@@ -261,14 +378,14 @@ export default function Profile({
                                 name="name"
                                 required
                                 autoComplete="name"
-                                placeholder="Full name"
+                                placeholder={t('Full name')}
                             />
                             <InputError message={errors.name} />
                         </div>
 
                         <div className="grid gap-2">
                             <div className="flex items-baseline justify-between">
-                                <Label htmlFor="bio">Bio</Label>
+                                <Label htmlFor="bio">{t('Bio')}</Label>
                                 <span
                                     className={
                                         bioOverCap
@@ -285,7 +402,9 @@ export default function Profile({
                                 name="bio"
                                 value={data.bio}
                                 onChange={(e) => setData('bio', e.target.value)}
-                                placeholder="Tell other players a bit about yourself…"
+                                placeholder={t(
+                                    'Tell other players a bit about yourself…',
+                                )}
                                 maxLength={BIO_MAX}
                                 rows={4}
                             />
@@ -298,23 +417,27 @@ export default function Profile({
                     <section className="space-y-6 rounded-2xl border border-border/60 bg-card p-6">
                         <header>
                             <h2 className="font-display text-base font-semibold text-foreground">
-                                Account
+                                {t('Account')}
                             </h2>
                             <p className="mt-0.5 text-xs text-muted-foreground">
-                                Private — used for sign-in and notifications.
+                                {t(
+                                    'Private — used for sign-in and notifications.',
+                                )}
                             </p>
                         </header>
 
                         <div className="grid gap-2">
                             <div className="flex items-center justify-between gap-3">
-                                <Label htmlFor="email">Email address</Label>
+                                <Label htmlFor="email">
+                                    {t('Email address')}
+                                </Label>
                                 {isEmailVerified ? (
                                     <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-success/30 bg-success/10 px-2 py-0.5 text-[11px] font-medium text-success">
                                         <CheckCircle2
                                             className="size-3"
                                             aria-hidden="true"
                                         />
-                                        Verified
+                                        {t('Verified')}
                                     </span>
                                 ) : (
                                     <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-warning/40 bg-warning/10 px-2 py-0.5 text-[11px] font-medium text-warning">
@@ -322,7 +445,7 @@ export default function Profile({
                                             className="size-3"
                                             aria-hidden="true"
                                         />
-                                        Unverified
+                                        {t('Unverified')}
                                     </span>
                                 )}
                             </div>
@@ -337,7 +460,7 @@ export default function Profile({
                                 name="email"
                                 required
                                 autoComplete="username"
-                                placeholder="Email address"
+                                placeholder={t('Email address')}
                             />
                             <InputError message={errors.email} />
 
@@ -348,11 +471,11 @@ export default function Profile({
                                         as="button"
                                         className="text-foreground underline decoration-neutral-300 underline-offset-4 transition-colors duration-300 ease-out hover:decoration-current dark:decoration-neutral-500"
                                     >
-                                        Resend verification email
+                                        {t('Resend verification email')}
                                     </Link>
                                     {status === 'verification-link-sent' && (
                                         <span className="ml-2 text-success">
-                                            Sent — check your inbox.
+                                            {t('Sent — check your inbox.')}
                                         </span>
                                     )}
                                 </p>
@@ -368,7 +491,7 @@ export default function Profile({
                             disabled={processing}
                             data-test="update-profile-button"
                         >
-                            {processing ? 'Saving…' : 'Save changes'}
+                            {processing ? t('Saving…') : t('Save changes')}
                         </Button>
                         <Button
                             type="button"
@@ -378,7 +501,7 @@ export default function Profile({
                             className="rounded-full"
                         >
                             <Link href={publicProfileUrl}>
-                                View public profile
+                                {t('View public profile')}
                             </Link>
                         </Button>
                     </div>
@@ -391,6 +514,99 @@ export default function Profile({
                 onClose={handleCropClose}
                 onConfirm={handleCropConfirm}
             />
+
+            <Dialog
+                open={usernameConfirmOpen}
+                onOpenChange={(next) => {
+                    if (!processing) {
+                        setUsernameConfirmOpen(next);
+                    }
+                }}
+            >
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle>{t('Change your username?')}</DialogTitle>
+                        <DialogDescription>
+                            {t('Renaming')}{' '}
+                            <span className="font-medium text-foreground">
+                                {user.username}
+                            </span>{' '}
+                            {t('to')}{' '}
+                            <span className="font-medium text-foreground">
+                                {data.username}
+                            </span>{' '}
+                            {t(
+                                "also updates your profile URL. You won't be able to change it again for 30 days.",
+                            )}
+                        </DialogDescription>
+                    </DialogHeader>
+                    <DialogFooter>
+                        <Button
+                            type="button"
+                            variant="ghost"
+                            onClick={() => setUsernameConfirmOpen(false)}
+                            disabled={processing}
+                        >
+                            {t('Cancel')}
+                        </Button>
+                        <Button
+                            type="button"
+                            variant="gradient"
+                            size="pill"
+                            onClick={submitForm}
+                            disabled={processing}
+                        >
+                            {processing ? t('Saving…') : t('Confirm change')}
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
         </>
+    );
+}
+
+function UsernameHelper({
+    blocker,
+    availableAt,
+    t,
+}: {
+    blocker: 'banned' | 'cooldown' | 'in_flight_match' | null;
+    availableAt: string | null;
+    t: TranslationFn;
+}) {
+    if (blocker === 'banned') {
+        return null;
+    }
+
+    if (blocker === 'cooldown' && availableAt) {
+        const date = new Date(availableAt).toLocaleDateString(undefined, {
+            month: 'short',
+            day: 'numeric',
+            year: 'numeric',
+        });
+
+        return (
+            <p className="text-xs text-muted-foreground">
+                {t('You can change it again on :date.', { date })}
+            </p>
+        );
+    }
+
+    if (blocker === 'in_flight_match') {
+        return (
+            <p className="text-xs text-muted-foreground">
+                {t(
+                    "You can't change your username while you have a match in progress or an open dispute.",
+                )}
+            </p>
+        );
+    }
+
+    return (
+        <p className="text-xs text-muted-foreground">
+            {t(
+                'Lowercase letters, numbers, and hyphens. 3–30 characters. Changing it locks the field for 30 days.',
+            )}
+        </p>
     );
 }

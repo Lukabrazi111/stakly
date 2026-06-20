@@ -290,6 +290,74 @@ Originally landed Lichess-only as `LichessGameApi`; Phase 4b extended to chess.c
 
 ---
 
+## M14 Phase 1 — Per-match audit trail + admin visibility ✅ shipped 2026-05-29
+
+Closes the "why is this match in ManualReview?" gap. Pre-Phase-1, every dispute investigation started with `grep` against ephemeral logs — the pipeline ran in production conditions with no in-app record of what it tried, when, or why it failed. M14 Phase 1 captures the auto-fetch pipeline's reasoning as queryable data inside the app: every dispatch, every fetch, every skip lands as one `match_auto_fetch_attempts` row, and admins read the trail straight from the match's Filament page.
+
+**Schema** — `match_auto_fetch_attempts` table (append-only, no `updated_at`). Columns: `match_id` (cascade-on-delete FK to `game_matches`), `provider`, `outcome`, `outcome_reason`, `attempt_number`, `winner_username`, `candidates_count`, `error_message`, `latency_ms`, `created_at`. Three indexes: `(match_id, created_at)` for the per-match timeline, `(outcome, created_at)` for outcome-wide rollups, `(provider, outcome, created_at)` for provider-specific health queries. `App\Enums\AutoFetchOutcome` (Matched / NoMatch / Ambiguous / Error / Skipped) cast on the model. `GameMatch::autoFetchAttempts()` ordered oldest→newest so the timeline reads top-down.
+
+**Single write point** — `App\Actions\GameMatch\RecordAutoFetchAttemptAction`. Mirrors the Wallet pattern: every audit row goes through one Action so the write surface stays auditable. Trims `error_message` to 2000 chars at the boundary (full message stays in the log mirror). DB insert failures log + return null rather than cascade into pipeline failure — losing an audit row beats losing a settlement. Pairs every DB row with a `Log::info` / `Log::warning` line (warning on `error` outcomes, info on all others) so operators tailing either surface see the same record. `DispatchAutoFetchAction` writes skips for `not_pending` and `snapshot_missing` before reaching the jobs. Both `AutoFetchLichessGameJob` and `AutoFetchChessComGameJob` write `matched` / `no_match` / `ambiguous` / `error` rows with `latency_ms` measured around the HTTP call.
+
+**Admin surfaces** — `GameMatchInfolist::autoFetchHistorySection` renders a per-attempt timeline inside the match View page (inline HTML with colored outcome badges, latency, and per-outcome detail strings — `Matched` shows the winner, `NoMatch` shows the candidate count + reason, `Skipped` shows the reason). `PipelineHealth` widget on the Filament dashboard (`StatsOverviewWidget` with 4 stats): auto-settlements (24h count + 7d sparkline), pipeline errors (24h count + 7d sparkline, danger ≥10/day), avg provider latency (7d vs prior 7d trend — lower = success), pipeline attempts (24h volume + per-outcome breakdown). 30s polling.
+
+**Diverges from the original spec on the widget shape** — original called for 7d/30d success-rate percentages + avg time-to-settle (Pending → Settled) + top no_match reasons grouped by provider. Shipped 24h-counts + 7d-latency-trend instead. The 24h focus matches how an operations dashboard actually gets read at launch ("what's broken right now?") and raw counts give clearer signal than ratios at low volume. The percentage / time-to-settle / top-failure-reasons views can land as a separate slice if real telemetry shows they're needed. Also: `no_match` badge color is gray (muted), not warning — `no_match` is the expected outcome on most ticks (the game hasn't been played yet), warning would cry wolf.
+
+**Tests** — `DispatchAutoFetchActionTest` (skip path coverage), `RecordAutoFetchAttemptActionTest` (write + log mirror + truncation + insert-failure swallowing), `AutoFetchLichessAuditTrailTest` + `AutoFetchChessComAuditTrailTest` (per-job outcome coverage), `Admin/GameMatchResourceTest` (Filament timeline rendering), `Admin/PipelineHealthWidgetTest` (widget stats + time-window queries). 63 tests, 186 assertions.
+
+Commit: `527dd1e`. Files touched: 21 (1995 insertions). Foundation for Phase 2 (reliability) — the audit rows are the substrate every retry / circuit-breaker decision will read from.
+
+---
+
+## M14 Phase 2 — Reliability ✅ shipped 2026-06-06
+
+Turns provider failures from silent log-and-swallow events into a classified-retry-or-fail decision tree. Pre-Phase-2, every HTTP error caught a single `ProviderUnavailableException` and silently dropped (audit row written, retry only at the next 5-min cron tick). Post-Phase-2, transient errors retry within the job, rate-limited errors honor the provider's `Retry-After`, permanent errors fail-fast into `failed_jobs`, and a per-provider circuit breaker pauses dispatch when error rates spike.
+
+**Slice 2a — `ProviderError` hierarchy.** Replaced `ProviderUnavailableException` with `App\Services\Provider\Exceptions\ProviderError` (abstract) → `TransientProviderError` (5xx / connect / timeout) + `RateLimitedError` (429, carries optional `?CarbonInterface $retryAt`) + `PermanentProviderError` (4xx-non-429 / malformed JSON). Both Game clients (`LichessGameClient`, `ChessComGameClient`) classify responses via a private `classifyResponseError(Response $response, string $context)` helper. Profile clients (Lichess + chess.com) renamed their throws to `TransientProviderError` for parity (no per-status differentiation yet — future-extensible). 14 references to the deleted `ProviderUnavailableException` migrated. **Diverges from original spec** ("transient / permanent / **ambiguous**") — rate-limited gets its own class because its retry strategy is provider-driven via `Retry-After`, and "ambiguous" is better modeled as an audit-row `outcome` value than an exception class.
+
+**Slice 2b — Job retry policy.** `AutoFetchLichessGameJob` `$tries: 1 → 4` (initial + 3 retries) with `$uniqueFor = 240`. `AutoFetchChessComGameJob` `$tries: 4 → 7` (existing 4-slot no_match retry chain + 3 HTTP error retries share the budget) with `$uniqueFor = 360`. Both define `backoff(): [5, 15, 30]` and `retryUntil(): match.created_at + M16 timeout` so the retry chain can't outlive the match's confirmation window. New catch shape: `PermanentProviderError` → write audit + `$this->fail($e)` (no retry, lands in `failed_jobs`); `TransientProviderError` + `RateLimitedError` → write audit + re-throw (Laravel retries per backoff). Removed the catch-all `Throwable` swallow so programming bugs surface immediately. ChessCom job's no_match retry chain (`RETRY_DELAYS = [5, 15, 45]`) and HTTP error retries share `$tries=7` — a flaky provider eats into archive-lag retry budget, which is the right semantic.
+
+**Slice 2c — Rate-limit header awareness.** New `App\Services\Provider\RateLimitHeaderParser::parseRetryAt(Response): ?CarbonInterface`. Honors `Retry-After` first (RFC 9110: integer seconds OR HTTP-date), falls back to `X-RateLimit-Reset` (numeric, heuristic: values past year-2000 epoch are unix timestamps, smaller are seconds-from-now). Both Game clients populate `RateLimitedError::retryAt` from this parser. Both auto-fetch jobs gained a dedicated `catch (RateLimitedError $e)` block before `catch (ProviderError $e)`: if `retryAt` is set + in the future + retry budget remains, call `$this->release($delay)` with the provider-supplied delay (overrides the job's default `backoff()`); otherwise fall through to throw. Uses `now()->getTimestamp()` (not PHP `time()`) so Carbon's `setTestNow` mocking carries through tests.
+
+**Slice 2d — Circuit breaker per provider.** New `App\Services\Provider\ProviderCircuitBreaker` — sliding 10-min window of `[ts, success]` attempts in cache, trips when ≥5 attempts AND failure rate >50%, opens for a 5-min cooldown, attempts list cleared on trip (prevents immediate re-trip on stale signal after cooldown). `recordFailure` no-ops while open (defensive). `DispatchAutoFetchAction` constructor-injects the breaker and short-circuits with an audit row reasoned `circuit_open` between the existing `not_pending` and `snapshot_missing` checks. Both auto-fetch jobs accept a 5th `handle()` arg (the breaker) and call `recordSuccess` after a successful HTTP call (regardless of candidate count — health tracks provider availability), `recordFailure` after each error catch. New `App\Filament\Widgets\ProviderCircuitBanner` with `canView()` short-circuit — renders only when at least one chess provider's circuit is open. Red banner shows provider name + cooldown countdown. Thresholds (50% / 5 attempts / 5 min / 10 min window) are starting defaults — re-tune after first month of real telemetry.
+
+**Tests** — `ProviderErrorTest` (hierarchy), `RateLimitHeaderParserTest` (12 parser branches), `ProviderCircuitBreakerTest` (11 tests: trip / cooldown / per-provider isolation / no-op-while-open), `ProviderCircuitBannerTest` (`canView` + Livewire render), updates to client tests + audit trail tests + dispatch action test. Phase 2 added ~50 tests across the four slices.
+
+Commits: `feat(provider): M14 Slice 2a — structured ProviderError hierarchy`, `feat(provider): M14 Slice 2b — auto-fetch job retry policy`, `feat(provider): M14 Slice 2c — honor Retry-After / X-RateLimit-Reset`, `feat(provider): M14 Slice 2d — per-provider circuit breaker`.
+
+---
+
+## M14 Phase 3 — Coverage ✅ shipped 2026-06-06
+
+Fills in the silent-skip edge cases the pipeline had left as "stays Pending forever, eventually flips to ManualReview." Each slice paired a research/decision step with the implementation; decisions written into `milestones.md` before each implementation slice landed.
+
+**Slice 3a — Aborted-game policy (decision).** Researched Lichess (`status: 'aborted' | 'noStart'`) and chess.com (`result: 'abandoned'` on both sides) abort semantics. Decided **cooperative-exit refund**: aborted games settle as a draw, both stakes refunded. Reasoning: mirrors M10's mutual-cancellation philosophy; abuse window is narrow (Lichess only allows abort during moves 0-1, chess.com requires both players to abandon); the `completion_rate_30d` trust signal penalizes serial aborters naturally; cleaner UX than leaving the match stuck in Pending.
+
+**Slice 3b — Aborted-game implementation.** Added `LichessGameResult::ABORTED_STATUSES = ['aborted', 'noStart']` + `isAborted()`. Added `ChessComGameResult::ABORTED_RESULTS = ['abandoned']` + `isAborted()`. Refactored `filterCompleted` in both jobs to a **two-pass** filter: primary = decisive/draw, fallback to aborted only when there's no primary candidate. The two-pass rule prevents an aborted game from poisoning a window that has a real played-out result — decisive games always win when both are present (the original "1 decisive + 1 aborted → posts decisive" test still passes). Aborted games settle via the existing `SettleFromCardAction` draw path (winner_color = null → both stakes refunded). Card payload carries the original `aborted` / `abandoned` status so chat UI can render an "aborted, refunded" banner if it wants.
+
+**Slice 3c — Multi-candidate disambiguation.** Replaced the silent `count > 1 → ambiguous` skip with a deterministic picker: `pickSettleableCandidate(array $candidates)` filters by listing's `time_control` array, then sorts surviving candidates by `|lastMoveAt - match.created_at|` (or `endedAt` for chess.com), tie-breaking on lexicographic game id. Returns `null` when no candidate matches the time-control. Audit row's `candidates_count` retains the pre-disambiguation count so the timeline reader sees "found N, picked 1." When picker returns null: `outcome=ambiguous` + `outcome_reason='time_control_mismatch'`.
+
+**Slice 3d — Single-candidate time-control enforcement (reverted 2026-06-06).** Initially shipped: picker called for all candidate counts; single-candidate match with TC mismatch → ambiguous, stay Pending. Reverted same day after live testing surfaced the problem — Lichess returns `correspondence` for casual no-clock games and `bullet` for sub-180s estimated games, neither of which sit in Stakly's `TimeControl` enum (blitz / rapid / classical only). Outcome: real played-out games were silently rejected because their speed didn't map to the listing's TC. The picker stays in the codebase (Slice 3c still uses it for multi-candidate disambiguation), but `handle()` only calls it when `count > 1`. Single-candidate path is back to pre-3d behavior: take the game, post the card, settle. The sandbag-via-time-control hole 3d was meant to close is real but tiny — addressing it correctly requires either expanding the `TimeControl` enum or making listing-creation UX teach users which time controls Stakly actually accepts. Both are M-something-else, not M14.
+
+**Tests** — Added 16 tests across Slices 3b / 3c / 3d covering: aborted classification (Lichess + chess.com), two-pass filter (decisive beats aborted), single-candidate TC mismatch (blitz-listing + bullet-game → ambiguous), multi-candidate picker (closest by time + tie-break by id), multi-candidate TC mismatch. Several existing ambiguity tests updated to force `time_control=['classical']` to preserve "ambiguous" semantics under the new picker.
+
+Commits: `feat(provider): M14 Slice 3b — aborted games settle as cooperative-exit refund`, `feat(provider): M14 Slice 3c — multi-candidate disambiguation`, `feat(provider): M14 Slice 3d — single-candidate time-control enforcement`.
+
+---
+
+## M14 Phase 4 — Dispute fast-path ✅ shipped 2026-06-06
+
+The original M14 intent slimmed to chess-only flag-gated wiring.
+
+**Slice 4a — `OpenDisputeAction` → `ResolveDisputeAction` (chess, flag-gated).** New `config('stakly.dispute_fast_path_enabled')` (default `false`, env override via `STAKLY_DISPUTE_FAST_PATH_ENABLED`). `OpenDisputeAction` constructor now injects `ResolveDisputeAction`; after the after-commit notifications fire, a private `runFastPathIfEnabled()` helper checks two gates — flag is on AND `listing.game === Game::Chess` — before calling `ResolveDisputeAction::handle($match)` synchronously. Chess gate widens in M15 when FACEIT / OpenDota / Riot adapters ship. When the fast-path fires, the match transitions directly from Disputed to Settled (Confirmed / Drawn) or ManualReview (Unknown) on the same HTTP request — player sees "Report a problem" → resolution in <1s.
+
+**Slice 4b — Flag flip after Phase 1 metrics (open checkpoint).** No code — calendar checkpoint. Once Phase 1's `PipelineHealth` widget shows ~2 weeks of stable auto-fetch (>95% success, no provider-side outages), flip the flag on in dev → observe → flip in prod. Not blocked on anything else in M14; waiting on real telemetry. Tracked here in the archive rather than in `milestones.md` since M14 is functionally complete and the checkpoint doesn't need active milestone surface area.
+
+**Tests** — 5 tests in `tests/Feature/GameMatch/DisputeFastPathTest.php`: flag-off-default (status stays Disputed), flag-on-confirmed (Settled to winner), flag-on-draw (Settled, no winner), flag-on-unknown (ManualReview), flag-on-non-chess (chess gate prevents fast-path). Existing OpenDispute tests continue passing — default flag preserves M12 Phase 3's "admin handles all disputes" behavior unchanged.
+
+Commit: `feat(provider): M14 Slice 4a — flag-gated dispute fast-path`.
+
+---
+
 ## M12 — Filament admin panel + chat-driven dispute resolution ✅ shipped 2026-05-24
 
 Pulled forward from "pre-launch gate" because chat-first dispute resolution needs admin tooling. Without M12, M8's chat sat alongside the existing `MockGameApi` dispute path — useful but not the primary mechanism. M12 makes chat the source of truth for disputes; the game API becomes one input among many that an admin weighs.
@@ -622,3 +690,533 @@ While there: chip strips on BOTH `listings/show.tsx` and `profile-header.tsx` sw
 - **Take-time prediction** ("Average time to start: 6m"). Bybit-style metric; we don't track this. Defer indefinitely.
 - **System-wide card token sweep.** Detail-page-only here; other pages stay on their tokens until a dedicated audit slice.
 - **System-wide chip-strip wrap audit.** Only the two surfaces with the visible clipping issue got fixed (listings detail + profile header). Other chip strips can be revisited if the same failure mode appears.
+
+---
+
+## M24 — Game catalog (admin-managed posters) ✅ shipped 2026-05-28
+
+The homepage `GameSelector` row went from a hardcoded React array of icon-tinted placeholders to a DB-backed catalog of vertical poster tiles, admin-managed via Filament. Art, ordering, status, and new-game additions now flow through `/admin/games` without code changes. Visual treatment matches the mmrangels reference (~3:4 vertical posters, hover lift + magenta glow on selected, "Soon" badge for non-Active tiles).
+
+### Backend slice
+
+`games` table (slug unique, display_name, poster_path nullable, position int, status string, timestamps). `App\Enums\GameStatus` (`Active` | `ComingSoon` | `Disabled`) replaces the two-boolean approach — single source of truth, can't contradict itself. `Game` model + factory + observer-free cache invalidation via `booted()`: `creating` hook auto-appends new rows to `MAX(position) + 10` so admin never sees a position field; `saved`/`deleted` busts `homepage:games`. `Game::forHomepage()` scope returns Active + ComingSoon ordered by position (Disabled hidden). `Game::hasBackendIntegration()` is true only when status is Active AND slug matches an `App\Enums\Game` enum case.
+
+`GameSeeder` mirrors the existing row (chess Active + cs2/dota2/valorant/lol/pubg/apex/rocket-league/overwatch ComingSoon), seeding `poster_path` against the pre-existing `public/images/games/*.{jpg,png}` files. Filament uploads land in `storage/app/public/games/` via the standard `disk('public')` symlink; `GameResource` (HTTP) normalizes both source styles — root-relative `/images/...` paths pass through unchanged, disk-relative `games/...` paths get `/storage/` prepended.
+
+`HomeController::index` queries `Game::forHomepage()->get()` wrapped in `Cache::remember('homepage:games', 1h, ...)`. The cached value is the RESOLVED resource array (`GameResource::collection(...)->resolve()`), not the Eloquent Collection — caching the Collection round-trips through the Postgres cache driver's serialize path and crashes on `__PHP_Incomplete_Class` when read back. Stored as a plain array of dicts, it round-trips cleanly.
+
+### Filament admin
+
+`App\Filament\Resources\Games\GameResource` is a `--simple` resource (single ManageGames page). Form fields: display_name, slug (unique + alpha-dash + custom rule), poster `FileUpload` (`disk('public')`, `directory('games')`, `imageEditor()`, resize to 600×900 via `imageResizeMode/Width/Height`, min-dimension guard `480×640`), status select. **No position field on the form** — auto-append covers create, drag-to-reorder covers edit. **Form is fully static** (no `->live()` anywhere) — earlier iterations used `->live(onBlur: true)` on display_name to auto-populate slug, but that fired a Livewire roundtrip on field-blur which dismissed the Status select dropdown on its first open. Dropping auto-slug eliminated the flicker; admin types both fields (kebab-case slug is trivial for < 20 games).
+
+Table uses `reorderable('position')` for drag-to-reorder. Filament's `reorderTable` issues a raw SQL `update` with a CASE expression — it **bypasses Eloquent model events**, so the model's `saved`-hooked cache bust doesn't fire on reorder. Explicit `afterReordering(fn () => Cache::forget(Game::HOMEPAGE_CACHE_KEY))` on the table closes that gap.
+
+Server validation rule: `status = Active` only allowed when `App\Enums\Game::tryFrom($slug) !== null`. Admin can add coming-soon display tiles freely; flipping one Active still requires the enum case in code (M15 per-game adapter work).
+
+### Frontend slice
+
+`GameSelector` rewritten to consume a `games` prop instead of its hardcoded `GAME_TILES` const. Lucide icon imports + `GameTileId` union + `GAME_TILES` export all removed. `selectedSlug` is now `string` (the slug from the DB row). Tiles render `<img src={poster_path}>` full-bleed with `object-cover object-center`, `loading={index < 3 ? 'eager' : 'lazy'}`, hover scale `group-hover:scale-105` (`motion-reduce` opt-out), `border-[3px]` thickness, magenta glow via the new `--shadow-arena-card-glow` token. Tiles without a `poster_path` fall back to a default magenta-gradient + `display_name` overlay so admin adding a game before the art lands doesn't break the page.
+
+`welcome.tsx` reads `games: { data: GameTile[] }` from Inertia, defaults `selectedSlug` to the first tile's slug, filters the featured-listings strip on `tile.status === 'active'` (only chess returns real listings today).
+
+### Glow token surgery
+
+Mid-build the user bumped the global `shadow-glow` utility to a beefier value to make the arena tiles pop. That leaked to every consumer of `shadow-glow` / `shadow-glow-sm` (listings rows, wallet cards, profile avatars, chat link cards, auth inputs — ~15 surfaces) as a heavy purple halo. Reverted both global utilities to the original soft `0 0 18px -7px` haze and added `--shadow-arena-card-glow: 0 0 19px -3.5px var(--gradient-glow)` as a component-specific CSS variable. The arena cards reference it inline via `shadow-[var(--shadow-arena-card-glow)]` per CLAUDE.md's "component-specific shadow values live as CSS variables" convention; everyone else keeps the soft halo untouched.
+
+### Tests
+
+10 new Pest tests across `tests/Feature/HomeIndexTest.php` (+4: prop order, Disabled excluded, whitelisted shape, admin-upload URL resolution) and `tests/Feature/GameModelTest.php` (+6: `forHomepage` + `ordered` scopes, `hasBackendIntegration`, cache bust on save / delete, slug uniqueness). Suite 786 / 3380.
+
+### Decisions
+
+- **Game model = display catalog; `App\Enums\Game` = backend identity.** Two parallel representations on purpose — admin can add tiles without code changes, but a tile only becomes Active (players can actually stake on it) when both layers agree. The slug column is the join key. Future M15 adapter work adds enum cases; admin then flips Active.
+- **Status enum, not two booleans.** `Active` | `ComingSoon` | `Disabled`. Two-boolean schemas can contradict (`is_active=true` and `is_coming_soon=true`); the enum forbids the impossible state.
+- **`position` is a sort key, not a 1-indexed row slot.** Seeder uses 10/20/30/.../90 so inserts have gaps. The admin form **does not expose** position — auto-append (`MAX(position) + 10` in the `creating` hook) handles new rows; drag-to-reorder handles changes. Typing a number into a "position" field confused the user (typed 3, expected slot 3, got slot 1 because 3 < 10).
+- **Static Filament form (no `live()`).** Reactivity on inputs fires Livewire roundtrips on field-blur, which can dismiss freshly-opened Selects. For a < 20-row catalog the auto-slug convenience wasn't worth the dropdown flicker.
+- **Cache the resolved array, not the Collection.** `Cache::remember` of an Eloquent Collection crashes the Postgres cache driver's unserialize path with `__PHP_Incomplete_Class`. The resolved resource array (plain dicts) round-trips cleanly.
+- **Filament reorder bypasses Eloquent events.** `reorderTable` uses raw SQL for atomicity. Cache-bust must hook `afterReordering` on the table, not rely on `saved`.
+- **Arena card glow lives in its own CSS variable.** Bumping the global `shadow-glow` utility leaked to every consumer (listings, wallet, avatars). `--shadow-arena-card-glow` keeps the arena-row treatment isolated.
+- **WebP conversion deferred.** Filament v5 dropped `imageResizeOutputFormat()`; the replacement is a custom `saveUploadedFileUsing` callback with Intervention/Image. For ~9 posters at 600×900, original JPG/PNG is fine. Revisit if homepage perf budget demands it.
+- **Coming-soon click is inert.** No tooltip, no "notify me when live" lead capture. Adds surface area without clear payoff today.
+
+### Not in M24
+
+- **Hooking `listings.platform` / `matches.game` to `games.id`.** That's M15 — when the first non-chess game lands its adapter, the listings + matches schema migrates to a foreign-key relationship on `games`. Phase 1 leaves listings untouched.
+- **"Notify me when live" lead capture per coming-soon tile.** Marketing slice if/when pre-launch interest capture becomes a priority.
+- **Admin RBAC per-resource.** Existing Filament panel auth (admin user gating) is sufficient. Per-resource roles only if multiple admins eventually need scoped access.
+- **Filament "preview row" page** for visual-consistency check before publishing. Overkill for a solo dev managing < 20 tiles; revisit if mismatched posters become an actual problem.
+- **WebP conversion pipeline** (see Decisions). Lives as a future-polish slice, not blocking.
+
+---
+
+## M25 — Lichess OAuth (StaklyBot bot account) ✅ shipped 2026-05-29
+
+Authenticated every outbound Lichess request as the registered `StaklyBot` account. Pre-M25 calls were anonymous — landed in Lichess's anonymous rate-limit bucket and were untraceable to a known client. Post-M25 they carry `Authorization: Bearer <token>` from a personal access token stored in `.env` as `LICHESS_API_TOKEN`, exposed via `config('services.lichess.token')` (Laravel convention for third-party tokens — sits alongside Mailgun / Postmark / Stripe rather than in the `stakly.*` business-config namespace).
+
+Three call sites updated in lockstep — `LichessGameClient` (both `fetchGame` and `searchGamesBetween`), `LichessProfileClient::fetchProfile`, and `LichessStreamCommand::openStream` (curl `CURLOPT_HTTPHEADER`). Each grew a small private helper (`lichessHeaders()` / `buildStreamHeaders()`) that returns the base headers and conditionally appends `Authorization` only when the token is a non-empty string. The stream command's helper is `public` rather than `private` so the header-build logic is testable in isolation without spinning up curl — mirrors the same exposed-for-testability convention `dispatchFromEvent` already uses.
+
+Setup steps documented inline in `config/services.php` (where to log in, where to generate the token, what scopes to tick — `none`, all the endpoints we hit are public reads). `.env.example` carries a placeholder + short comment so onboarding picks it up. 11 new Pest tests in `LichessAuthHeaderTest`: per call site, asserts the header is sent when the token is configured AND omitted when the token is null OR an empty string; one cross-call consistency test seeds a single token value and confirms all four surfaces send the same bearer verbatim. Suite 786 → 835.
+
+### Decisions
+
+- **Bot handle: `StaklyBot`.** Names itself as automation to Lichess support, separate from any personal account. Suspension blast radius limited to Stakly; token leak doesn't expose a human's chess account.
+- **Config namespace: `services.lichess.token`, not `stakly.lichess_token`.** Matches the Laravel convention for third-party API tokens (Mailgun / Postmark / Stripe live there). `config/stakly.php` is reserved for Stakly business config (platform_fee_rate, chess_com_user_agent).
+- **Anonymous fallback always allowed.** When the env var is unset (casual dev without the secret), every helper omits the `Authorization` header entirely. Wire shape exactly matches pre-M25 so existing `Http::fake()` assertions in other test files keep passing; no env dependency for dev or CI. Empty string treated the same as null — never send a literal `Bearer ` header that would identify us as a misconfigured client.
+- **Scopes: none.** The four endpoints we hit (`/game/export/{id}`, `/api/games/user/{username}`, `/api/user/{username}`, `/api/stream/games-by-users`) are public reads that work with any valid token regardless of scope. Granting unused scopes (`msg:write`, `bot:play`, `challenge:write`) would only widen blast radius if the token ever leaks.
+- **No chess.com equivalent.** Chess.com's Published Data API has no token / OAuth mechanism — their auth model is `User-Agent` containing a contact email, which `ChessComGameClient` already sends via `config('stakly.chess_com_user_agent')`. The two providers reach the same end state via different mechanisms.
+- **Rate-limit header parsing deferred.** Lichess doesn't reliably emit `X-Ratelimit-*` headers on the read endpoints we use; a 429 response surfaces as `ProviderUnavailableException` → M14 P1 audit row with `outcome=error` → visible in `PipelineHealth`. The pipeline already catches the only signal that matters today. Add active header parsing later if Lichess starts sending consistent data.
+
+### Not in M25
+
+- **Chess.com authentication.** Their API has no token mechanism (see Decisions).
+- **Lichess Bot API (`bot:play` scope / `/api/bot/*`).** Stakly observes games, doesn't play them. Account-upgrade-to-bot is one-way and would lock the account out of human play.
+- **OAuth user delegation.** Each end user proves Lichess ownership via the existing M8 bio-code flow; we never need to act as the user on Lichess, only read public game data. Per-user OAuth tokens would add infrastructure (per-user storage, refresh tokens, revocation handling) for zero new capability.
+- **Stream-only settlement path.** Stream is an optimisation over the 5-min cron + page-visit + chat-send triggers; the multi-trigger layering survives so a stream outage isn't a frozen-match scenario.
+
+## M26 — Filament-managed CMS pages + global SSR + full-site i18n ✅ shipped 2026-05-29 → 2026-06-05
+
+Moved About / Privacy / Terms / Support from hardcoded React pages to admin-editable database-backed content (`pages` table with `(slug, locale)` uniqueness, Filament `PageResource` with `MarkdownEditor` + signed-URL preview, locale-aware `forSlugWithFallback` resolver behind a `Cache::rememberForever` layer with event-driven invalidation). Then enabled global Inertia SSR (Path A) — the Docker `ssr` sidecar runs `inertia:start-ssr` against `bootstrap/ssr/ssr.js`, six render-time hydration hazards were fixed (timer / cooldown / sidebar / tab / auth-modal state), and a shared `PageMeta` component now drives per-page canonical + og + twitter tags on every public surface. Finally added full-site i18n: locale-prefix routing (`/{en|ka|ru}/*` everywhere, unprefixed → 301 redirect with cookie-aware target), `SetLocale` middleware + global `URL::defaults` fallback (covers admin / queue / console contexts that bypass middleware), Wayfinder `setUrlDefaults` on the client, `HandleInertiaRequests::share()` exposing `locale` / `availableLocales` / `translations` as **closures** so the request-locale binding is correct, `useT()` / `useLocale()` / `useAvailableLocales()` hooks, `LocaleSwitcher` dropdown in `SiteHeader` + `MobileMenu`, and 13 page-by-page extraction slices (D-1..D-13) covering listings, profile, match, wallet, notifications, settings, auth, BannedBanner, validation/flash/errors. `lang/en.json` ended at ~790 keys; `ka.json` / `ru.json` are content backlog (Laravel falls back to the key when a translation is missing, so the site stays usable while copy is written). New Inertia-rendered error pages (403/404/500/503) replace Symfony defaults; 419 / 422 stay on Inertia's default reload + inline-field-error handling.
+
+### Decisions
+
+- **URL pattern: path prefix everywhere.** `/en/listings`, `/ka/listings`, `/ru/listings` — same shape as M26 P1's CMS routes. SEO-correct multilingual pattern; unprefixed paths 301 to the user's remembered cookie locale (else `en`).
+- **Laravel-native bridge, NOT `react-i18next`.** `lang/*.json` is the single source of truth for both PHP `__('key')` and React `t('key')`. Backend strings (validation, M20 emails) work out of the box. Swap to `react-i18next` later if ICU plural rules or lazy-loaded locale bundles become necessary — call sites change, translation files port cleanly.
+- **`URL::defaults(['locale' => …])` MUST be seeded globally, not only by middleware.** `AppServiceProvider::boot()` sets the default so Filament admin / queue workers / console / Octane all get it. `SetLocale` middleware overrides per-request via `array_merge`. Without the global default, routes inside Filament resources crash with "Missing parameter: locale" because middleware never fires there.
+- **Never call Wayfinder generators at module-top-level scope.** They run before `setUrlDefaults` and fall back to the literal `'$locale'` placeholder. Build nav arrays inside the component body. Active-state matching uses `walletIndex().url` for both `href` and `matchPrefix`, not hardcoded strings.
+- **Inertia shared props that depend on the request locale must be closures.** Eager values capture the default `en` because Inertia's `share()` fires before route-level middleware sets the locale.
+- **Admin (Filament) is exempt from translation.** `/admin/*` stays English-only — single-language, internal, reduces admin training. M12 disputes, M24 games, M26 pages, M30 users, M31 wallet ledger, M32 listings all bypass extraction.
+- **User-generated content stays in its source language.** Listing notes, bios, chat messages — shown as typed. Machine translation is future polish if scale demands.
+- **Detection: no `Accept-Language` sniff.** First visit always lands on `en`; user picks via switcher, cookie remembers. Avoids surprise redirects, simpler edge cases with VPNs / bots / crawlers / SEO.
+- **CMS schema baked `locale` from day one.** `pages.UNIQUE(slug, locale)`. Adding a second language is a content task (one INSERT per slug-locale pair), not a migration.
+- **Hand-coded routes per CMS page, not a wildcard `/p/{slug}` catch-all.** `/privacy`, `/terms`, `/about`, `/support` are first-class destinations with brand value.
+- **Global Inertia SSR (Path A), not Blade-only for CMS.** SEO works on every Inertia page — homepage, listings index, listing detail, profile — not just the three CMS pages.
+- **Vite hot routing overrides the SSR sidecar.** `Inertia\Ssr\HttpGateway::dispatch()` checks `Vite::isRunningHot()`. If `public/hot` exists, SSR goes to Vite's `/__inertia_ssr` endpoint (which isn't wired) and silently falls back to client rendering. For local SSR verification, kill `npm run dev` and `rm public/hot` first.
+- **Inertia v3 `withExceptions->respond()` for 403/404/500/503 only.** 419 (CSRF) stays on the default reload toast — a full page would be the wrong UX for in-flight form expiry. 422 (validation) untouched — field errors render inline. Debug mode + non-Inertia (`curl` / direct asset) requests bypass the Inertia render so Whoops still works and JSON consumers don't get HTML.
+
+### Not in M26
+
+- **Page versioning / draft history.** Single live row per `(slug, locale)` + `updated_at` is sufficient signal; if legal needs an audit trail of changes, revisit then.
+- **Rich-text editor with image uploads.** Markdown is enough for these pages. If a future content type needs images, that's a separate decision.
+- **Wildcard `/p/{slug}` routing.** Hardcoded routes per page keep the URL space disciplined.
+- **Localised admin UI.** Filament admin stays English-only regardless of content language.
+- **Translation labor (`lang/ka.json` / `lang/ru.json` body content).** Engineering treats those files as drop-in; writing the actual Georgian / Russian copy is a content backlog, not a code task.
+- **Per-locale `validation.php` overrides.** Laravel's bundled validation translations cover `en`; `ka` / `ru` fall back to English for now (Laravel ships defaults for ~50 locales, but not Georgian — would need community translation). Add when a real Georgian / Russian user complains.
+- **`og-image.png` asset.** The meta tag is wired; the 1200×630 brand-design file isn't dropped yet. Without it, link previews show title + description but no image. Brand-design task, not code.
+
+## M27 — In-app notifications + action-required UX + sound ✅ shipped 2026-06-02
+
+The synchronous in-app channel that complements M20 (email, asynchronous). Today Stakly has no player-facing notification surface — if Bob takes Alice's listing while she's offline, and Alice visits Stakly later without checking email, she has no visible signal anything happened until she navigates to `/matches`. M27 closes that gap with a bell in `SiteHeader` + real-time push via Reverb + a sound for high-priority events. Symmetric on the admin side — `OpsOverview` gets SLA-aware surfaces so old disputes can't be ignored accidentally.
+
+The `notifications` table already exists (it shipped with M12's `NotifyAdminsAction` for the Filament admin bell). M27 reuses that table via Laravel's `database` notification channel; M20 layers `mail` channel on top later.
+
+### Design decisions taken into this milestone
+
+- **Real-time via Reverb + Laravel Echo + private per-user channel.** Already in the stack. No polling fallback. Sub-second push is what makes sound notifications usable — a 30s polling delay would feel broken.
+- **Sound default is narrow, sound preference is per-event.** Defaults to ON for `listing_taken` only (`PlayerNotification::SOUND_DEFAULT_EVENT_TYPES`) — the only event where the user is reliably away from the page and needs to come back NOW. The other 4 configurable events (`match_settled`, `match_manual_review`, `dispute_opened`, `cancellation_requested`) default OFF, but the user can opt them in via /settings/notifications Sound checkboxes. The 4 informational events (`listing_expired`, `dispute_resolved`, `cancellation_accepted`, `cancellation_rejected`) are non-configurable + always silent — pings, not signals.
+- **Multi-tab sound coordination via `BroadcastChannel`.** If a user has multiple Stakly tabs open, only the first tab to receive the broadcast plays the sound — the others suppress. Prevents triple-ding when one event lands. (Phase 2 work.)
+- **Notification classes designed to support `mail` channel from day one** even though M27 only lights up `database` + `broadcast`. M20 wires the Blade templates later without touching dispatch sites or class signatures.
+- **Sound toggle lives on the preferences page (M27 Phase 5)**, alongside per-event in-app and email toggles. Default: `ListingTaken` sound ON for everyone, no other event has a sound toggle because no other event plays sound.
+- **Mandatory events cannot be silenced.** "Settled — you won/lost" and "Cancellation request awaiting response" are operational, not informational — turning them off would let users miss money-affecting events. UI greys those toggles.
+- **Coexist with Filament admin bell in the same `notifications` table** via the `type` discriminator. Filament reads `data->>'format' = 'filament'`; player notifications have `type = 'App\Notifications\XxxNotification'` and no `format` key, so each consumer queries its own subset. No schema changes, no migration of existing admin notifications.
+- **`ShouldQueue` from day one.** `broadcast` channel hits Reverb over HTTP — a sync dispatch on a Reverb hiccup would fail the originating user's action (e.g. TakeListing). Queued notifications process in 100-500ms via Redis worker; user-action state (match created, listing taken) remains synchronous.
+- **After-commit dispatch, never inside transactions.** Mirrors the existing `OpenDisputeAction::notifyAdminsOfDispute()` pattern — inside the transaction, a notification would fire even on rollback, pointing the bell at a match that "didn't happen." Settle Actions return an outcome marker from their `DB::transaction` closure; the outer `handle()` dispatches notifications after commit.
+
+### Phases
+
+**Phase 1 — Notification dispatch infrastructure** ✅ Shipped 2026-05-30
+
+Scope expanded from 7 → 9 notification classes during P1 (added `DisputeResolvedNotification` so the admin-intervened path reads distinctly from auto-settle, and `ListingExpiredNotification` since the existing `ExpireListingAction` scheduler had no user signal beyond a wallet ledger row).
+
+- [x] `App\Notifications\PlayerNotification` abstract base — handles `via(['database','broadcast'])`, `toDatabase()`, `toBroadcast(BroadcastMessage)`, assembles uniform payload `{event_type, title, body, action_url, related_id}`. Subclasses implement 5 abstract methods. `ShouldQueue` so Reverb hiccups don't fail user actions.
+- [x] 9 concrete notification classes — `ListingTaken` (creator), `MatchSettled` (both), `MatchManualReview` (both), `DisputeOpened` (opponent of opener), `DisputeResolved` (both), `CancellationRequested` (opponent), `CancellationAccepted` (original requester), `CancellationRejected` (original requester), `ListingExpired` (creator).
+- [x] After-commit dispatch wired into 11 Actions:
+    - `TakeListingAction` → `ListingTakenNotification` to creator
+    - `SettleFromCardAction` → `MatchSettledNotification` to both (won/lost branch + draw branch)
+    - `AdminSettleToWinnerAction` → `MatchSettledNotification` to both (admin manual settle of ManualReview)
+    - `AdminSettleDrawAction` → `MatchSettledNotification` to both (admin manual draw)
+    - `ResolveDisputeAction` → `DisputeResolvedNotification` to both (Confirmed + Drawn branches) OR `MatchManualReviewNotification` to both (Unknown branch)
+    - `ResolveMatchTimeoutAction` → `MatchManualReviewNotification` to both (alongside existing admin Filament bell)
+    - `OpenDisputeAction` → `DisputeOpenedNotification` to opponent (alongside existing admin Filament bell)
+    - `RequestCancellationAction` → `CancellationRequestedNotification` to opponent
+    - `AcceptCancellationAction` → `CancellationAcceptedNotification` to original requester
+    - `RejectCancellationAction` → `CancellationRejectedNotification` to original requester
+    - `ExpireListingAction` → `ListingExpiredNotification` to creator
+- [x] `SettleMatchAction::computeWinnerPayout($stake)` public static helper so calling Actions can render payout in `MatchSettledNotification` / `DisputeResolvedNotification` body without duplicating the bcmul chain.
+- [x] Tests: 14 Pest tests in `tests/Feature/Notifications/PlayerNotificationsTest.php` — one per (Action, expected_notification, expected_recipient) tuple.
+- [x] Existing 877 tests stay green — Action signature changes (transaction return shape on `SettleFromCardAction`, `ResolveDisputeAction`, cancellation Actions) are internal; public `handle()` signatures unchanged.
+
+Gotchas / what we learned:
+
+- **`routes/channels.php` already has the `App.Models.User.{id}` channel auth** — Laravel auto-creates it in the starter kit. No additional channel registration needed for broadcast notifications.
+- **`Inertia\Ssr\HttpGateway::dispatch()` Vite-hot routing was a separate concern** (M26 P3 gotcha) — unrelated to notification broadcasts which go directly to Reverb.
+- **Postgres `LIKE` on the `type` column doesn't work cross-driver** — `\%` in a Postgres LIKE pattern means literal `%` because `\` is the default escape character, so `'App\\Notifications\\%'` matched nothing. Switched the player/admin discriminator to `whereNotNull('data->event_type')` (every `PlayerNotification::payload()` emits `event_type`; Filament admin rows don't). Database-agnostic + survives namespace refactors.
+- **CSRF for the bell's mutation endpoints uses the `XSRF-TOKEN` cookie**, not a `<meta name="csrf-token">` tag. Inertia/Laravel already set the cookie; bell's `postJson()` helper reads it and sends as `X-XSRF-TOKEN` header. No meta tag was added.
+- **`SoundPriority` enum was wrong abstraction — removed during P5 testing.** Original P1 design declared a per-class `SoundPriority` enum (`Urgent | Soft | None`); the frontend hook gated playback on `priority !== 'none'`. P5 then exposed per-event Sound checkboxes — but those checkboxes were silently no-ops on 4 of 5 events because the classes still returned `None`. Two unrelated concepts had collided: backend "event urgency" and the user's chime choice (the user-facing values `classic / soft / ding` even share the word "soft" with the enum but mean an audio file). Fix: deleted the enum, the abstract `soundPriority()` method, and the `sound_priority` payload field. Sound playback is now gated only by (a) user's `notification_sound !== 'off'` and (b) the per-event `notification_sound_map[event_type]` preference. Default audibility lives in `SOUND_DEFAULT_EVENT_TYPES = ['listing_taken']` — same outcome for new users, but the rest of the events now respect the user's checkbox.
+
+**Phase 2 — Bell UI in `SiteHeader` + real-time + sound** ✅ Shipped 2026-06-02
+
+- [x] Bell icon + unread count badge in `SiteHeader` (auth-gated — anonymous visitors see no bell). Popover on desktop, Sheet on mobile via `useIsMobile`.
+- [x] Dropdown with last ~15 notifications, each linking to its `action_url`. "Mark all read" affordance. "View all" → full notifications page. Optimistic local-state mark-read on click.
+- [x] Full notifications page at `/notifications` — paginated list, all notifications, expanded card rows with event icon + title + body + timestamp + read indicator. All / Unread filter chips with filter-aware optimistic mark-read. Mark-individual (click) + mark-all controls.
+- [x] Laravel Echo subscribed to `App.Models.User.{id}` via `useEchoNotification` (kept the default channel rather than the originally-drafted `private-users.{id}` — the channel auth already exists in `routes/channels.php`, zero overrides needed). On broadcast: increment badge + prepend dropdown entry + invoke sound playback hook.
+- [x] Sound assets in `public/sounds/` — `classic.mp3`, `soft.mp3`, `ding.mp3` committed (royalty-free chimes; the user picks which one plays via /settings/notifications).
+- [x] `useNotificationSound` hook reads the user's `notification_sound` choice off Inertia share, plays the matching file via `new Audio('/sounds/${choice}.mp3').play()`. Multi-tab coordination via `BroadcastChannel('stakly:notification-sound')` — claiming tab posts `{type:'claim', at:ts}`; tabs receiving a claim within 500ms suppress.
+- [x] Browser autoplay policy handled implicitly — by the time a notification lands, the user has interacted with Stakly at least once.
+- [x] **`NotificationProvider` context** mounted in `SiteLayout` holds the unread count (initial from `auth.user.unread_notifications_count`, bumped on broadcast, cleared on bell open) and the `lastBroadcast` Notification (signal for the dropdown to prepend). The Echo subscription lives in an inner `AuthedNotificationProvider` so the hook only mounts for authed users. Re-syncs from Inertia share on every navigation (server is authoritative on multi-tab mark-read).
+
+**Phase 3 — Action-required banners on match pages** ✅ Shipped 2026-06-02
+
+Full-width status banners at the top of `match/show.tsx`, mutually exclusive by status. Visible whenever the player views the match page, independent of bell state — the banner is the source of truth for "what does this player need to do here."
+
+- [x] **`CancellationRequestBanner`** — Pending matches with an open cancellation request. Two viewer-aware variants in one component: `RequesterWaitingBanner` (Clock icon, "Cancellation request sent" + opponent name) for the requester, `RespondBanner` (Handshake icon, requester name in title, Accept/Decline buttons with processing states) for the opponent. Both render the reason in a card below the body. Shipped pre-M27 as part of the cancellation flow.
+- [x] **`AdminReviewBanner`** — Disputed + ManualReview matches. Three copy variants via a single `resolveCopy(match, viewerId)` helper:
+    - `manual_review` → "Match flagged for admin review" (auto-flag, no human opener).
+    - `disputed` + viewer opened it → "You reported a problem" + escrow + evidence prompt.
+    - `disputed` + opponent opened it → "{Opener name} reported a problem" + same prompt. Opener resolved client-side from `match.dispute.opened_by_id`, matched against `creator.id` / `taker.id`.
+    - All three carry a "Post evidence in chat" outline button that dispatches a `stakly:focus-chat` window event.
+- [x] **Chat-focus mechanism via `window` custom event `stakly:focus-chat`** — banner fires the event; `ChatInput` always listens and focuses + scrollIntoView's its textarea; `MobileChatTrigger` listens only when `useIsMobile()` is true and opens the Sheet first, then re-fires the event 250ms later so the freshly-mounted inner `ChatInput` catches it. `open` guard breaks the re-dispatch loop.
+- [x] **`GameMatchResource` exposes `dispute.opened_by_id` + `dispute.opened_at`** so the frontend can do the viewer-aware split. Backend columns existed since dispute flow shipped; just weren't on the resource.
+- [x] **Tests**: 4 new Pest feature tests in `tests/Feature/GameMatchShowTest.php` cover the dispute resource shape — fresh match nulls, Disputed opened by creator (creator id surfaced), Disputed opened by taker (taker id surfaced), ManualReview (null opener — auto-flag). UI rendering assertions are not part of this slice because Stakly's test suite is Pest-only; the React side has no Vitest/RTL setup. The component is small, pure, and exercised manually + via the resource-shape contract above.
+
+P3 follow-up slices (also 2026-06-02):
+
+- [x] **Dispute opener-claim** — the "Report a problem" dialog captures the disputing player's reason + an optional evidence file (image OR PDF). On submit, `OpenDisputeAction::postOpenerClaim` posts a USER-authored chat message owned by the disputing player, tagged with a new `dispute_opening` attachment marker. Closes the fairness gap of "opponent sees a banner but doesn't know what's being claimed" — and gives admin an anchor message to read first if the dispute escalates to ManualReview. Reason or evidence is required (either-or, mirrors chat's `required_without` pattern); reason is uncapped on min length to keep filing friction low. `ChatMessageBubble` renders a `⚠ Reason for dispute` warning-toned pill above the user's bubble when the marker is present. New tests in `GameMatchOpenDisputeTest.php` cover the require-either rule, evidence-only path, PDF acceptance, and unsupported-mime rejection.
+- [x] **Live page sync via `MatchLiveUpdater`** — any `PlayerNotification` whose `related_id === match.id` triggers a `router.reload()` on the match page. Closes the UX gap where admin-resolved settlements left the banner, status chip, action card, and shared `auth.user.usdt_balance` stale until the user manually refreshed. Covers admin settle (both branches), admin draw, dispute resolve (Confirmed/Drawn/Unknown), opponent-opens-dispute, opponent-requests-cancellation, cancellation-accepted/rejected — every match-state-mutating notification path already in M27 P1.
+- [x] **Chat universally accepts PDFs** (started as dispute-only, generalized). `StoreMessageRequest::ALLOWED_MIMES` now includes `pdf`, dropped the `image` rule. New shared `SendMessageAction::attachFileTo` static helper branches by mime — images go through the existing EXIF-strip + dimension-capture pipeline, PDFs get a direct media store. Used by both chat sends AND dispute-opener evidence (replaced the earlier private `attachEvidence` duplicate). `MessageAttachmentsPayload::mediaEntries` (renamed from `imageEntries`) emits `type: 'image'` vs `type: 'file'` based on the media mime so the same payload shape works for both. Frontend chat-input, chat-panel drag-drop, and a new `OptimisticAttachment` component branch by mime: image previews via blob URL, PDFs render a `FileText` icon tile with name + size. `Message::registerMediaCollections::acceptsMimeTypes` extended to `application/pdf` (defense in depth at the storage layer).
+- [x] **Admin Filament chat-history Blade now renders PDFs as download tiles.** `ChatHistoryEntry` gained `attachmentIsImage()` / `attachmentName()` / `attachmentSizeLabel()` helpers; the Blade template branches by mime so non-image media gets a clickable document-icon tile linking to the file (was previously a broken `<img>` with alt "Chat attachment").
+- [x] **Fix: `dispute_opening` marker was being stored but never serialized to the frontend.** `MessageAttachmentsPayload::forMessage()` was missing `disputeOpeningEntries()`. Without this, the warning-toned "Reason for dispute" pill never rendered for anyone. Added the entry method + updated the `forMessage` spread.
+- [x] **Fix: long PDF filenames broke the dispute dialog layout.** `DialogContent` is a CSS grid; unbreakable filename text was forcing the grid track wider than the dialog's `max-w-lg`, defeating the inner `truncate`. Added `min-w-0` on the dialog body wrapper + `min-w-0 overflow-hidden` on the file tile so the truncate engages reliably.
+
+Gotchas / what we learned:
+
+- **Mobile chat-focus needs a re-dispatch.** On mobile, `MobileChatTrigger`'s ChatInput isn't mounted while the sheet is closed — the in-input event listener doesn't exist yet, so a direct dispatch from the banner would no-op. The trigger listens for the same event, opens the sheet (state change → render → ChatInput mounts), and re-fires the event after a 250ms delay so the now-mounted listener picks it up. The `if (open) return` guard short-circuits the re-fire on the second pass so we don't loop.
+- **`useIsMobile()` gating on the trigger's listener is required** — without it, on desktop the trigger's listener would still fire and `setOpen(true)` the Sheet (which renders via portal regardless of the `lg:hidden` wrapper), causing the sheet's ChatInput to ALSO claim focus and steal it from the always-mounted desktop ChatInput.
+- **React 19 forwards refs through function components by default.** No `forwardRef` needed on the Textarea primitive — passing `ref={textareaRef}` to `<Textarea>` flows through to the underlying `<textarea>` via `{...props}`. Saved a primitive rewrite.
+- **`NotificationProvider` is mounted inside `SiteLayout`, NOT at app root.** Pages that want to read `useNotificationContext()` must call it from a component RENDERED inside `<SiteLayout>{...}</SiteLayout>` — not from the outer page component. The outer page is the provider's PARENT in the tree, so a context read there returns the default empty value. Fix pattern: extract a tiny child component (e.g. `MatchLiveUpdater`) and render it inside the return tree of `<SiteLayout>`. First attempt at the live-update bridge was silently a no-op for exactly this reason — symptom was "the chime plays + the bell badge bumps, but the page doesn't refresh" because chat updates go through `useMatchChat`'s own Echo subscription (mounted inside the chat panel, also inside SiteLayout).
+- **Spatie media `acceptsMimeTypes` is collection-level defense in depth.** When extending mime support at the form-request layer, you must ALSO extend `Message::registerMediaCollections::acceptsMimeTypes()` — otherwise Spatie rejects the upload at storage time. Symptom was "validation passes, no exception thrown, but the Message ends up with zero media." Easy to miss because it's silent.
+- **Grid items size to min-content by default; long unbreakable text expands grid tracks past the parent's max-width.** `DialogContent` is a CSS grid (`grid w-full max-w-lg`); a PDF filename like `529978784udII46jNzRq…pdf` has no whitespace, so its min-content equals its full pixel width, which inflates the grid track and defeats any inner `truncate`. Fix: `min-w-0` on the grid item lets it shrink below content size, then the inner `truncate` engages. Cheap insurance to add at `min-w-0` on every direct child of a `Dialog`/`Sheet`/`Popover` content wrapper that might hold variable-width content.
+- **`MessageAttachmentsPayload` is two-pronged.** Media (Spatie collection) iterates `getMedia(...)` once and emits per-media entries. JSON markers (`attachments_json`) iterate the array once per marker type and emit per-marker entries. When you add a new marker type (`dispute_opening` was the gotcha), you have to add it to BOTH `forMessage()`'s spread AND a dedicated `xxxEntries()` method. Skipping the entry method silently drops the marker from the broadcast payload — the message persists fine, the frontend just never sees the discriminator.
+
+**Phase 4 — Admin SLA surfaces** ✅ Shipped 2026-06-02
+
+- [x] **`OpsOverview` → new "Aging disputes (≥6h)" stat** alongside the existing "Open disputes" stat. Stat value = count of Disputed + ManualReview matches whose aging timestamp is ≥6h old. Description + color escalation:
+    - 0 aging → green / "No aging disputes"
+    - 1+ in 6h–12h window → amber / "N between 6h–12h"
+    - 1+ over 12h → red / "N over 12h"
+
+    The two dispute stats render side-by-side on row 1 of the dashboard (`getColumns() = 2`) so admins see "total" + "aging" together.
+- [x] **Aging timestamp = `COALESCE(dispute_opened_at, updated_at)`** — Disputed matches have `dispute_opened_at` set, and ManualReview routed from a Dispute-Unknown branch also has it. ManualReview matches from match-timeout (no dispute event ever fired) fall back to `updated_at`, which corresponds to when the status flipped to MR. One consistent aging field across both statuses.
+- [x] **`GameMatchesTable` default sort: newest first** (`created_at DESC`). The earlier P4 iteration tried "oldest unactioned at top" via a COALESCE expression, but admin browsing UX consistently wants the most recent at the top — the SLA cues live in the Age column's color badge + the OpsOverview "Aging disputes" stat, not in the row ordering. Click-sort on the Age column gives admin oldest-first when they want to triage.
+- [x] **Per-row age badge** — the existing `dispute_opened_at` column is relabeled "Age" and rendered as a colored `->badge()` with the same SLA scale as the OpsOverview widget (success / warning / danger at the same 6h / 12h thresholds). Non-dispute rows (when admin widens the filter past the default) render `'gray'` and a `—` placeholder. Color resolver is `GameMatchesTable::ageBadgeColor()` — kept inside the table class so the SLA scale lives in one place.
+- [ ] (Deferred) Slack / Discord webhook to admin channel when a dispute crosses the 12h `danger` threshold without action. Out of scope for now; opens a follow-up if email-to-admin pings prove too quiet in practice.
+- [x] **Tests**: 4 new Livewire tests in `tests/Feature/Admin/DashboardWidgetsTest.php` covering the aging-disputes stat (zero / between-6h-12h / over-12h / MR-from-timeout fallback to updated_at). 1 new test in `tests/Feature/Admin/GameMatchResourceTest.php` asserting `assertCanSeeTableRecordsInOrder([oldest, middle, newest])` for the default-sort behavior.
+
+Gotchas:
+
+- **Filament 4 `defaultSort()` accepts a Closure.** When the sort key isn't a simple column (we need `COALESCE(dispute_opened_at, updated_at)`), pass a `fn (Builder $q) => $q->orderByRaw(...)` instead of column name + direction. The closure form is documented but easy to miss; the column-name form would have required a virtual column on the model.
+- **`getColumns(): int` controls the stats-row wrap.** Adding a 5th stat to a 2-column grid produces a 2 / 2 / 1 layout (the last stat alone in row 3). Acceptable here because "active users" sits alone on row 3 cleanly. If we add another stat later, bump to 3 columns or shuffle the pairing.
+
+**Phase 5 — Preferences UI (shared surface with M20)** ✅ Shipped 2026-06-02
+
+Final design landed after three iterations (icon-tile + custom Switch → single combined card → Dribbble-style **matrix grid**, which is what shipped).
+
+- [x] New `/settings/notifications` page — sub-header with title + two pill bulk-action buttons (Switch off all / Email only — one-shot client-side state mutations, respect mandatory In-app), then **three cards** using a shared row pattern: card header strip (title + description) + divider + event/choice rows underneath.
+    - **Match activity** card — Listing taken, Match settled (locked), Cancellation requested (locked).
+    - **Disputes & moderation** card — Dispute opened, Match flagged for review.
+    - Each event row = event name (+ Lock icon for mandatory events with tooltip "Required — affects your money. Can't be silenced.") + 3 checkbox+label columns: **In-app / Sound / Email**.
+    - **Sound** card — 4 radio rows (Off / Classic / Soft / Ding) with contextual lucide icons (`VolumeX`, `Bell`, `Music`, `BellRing`); each non-Off row has a ▶ preview button.
+- [x] Checkboxes use a custom `components/ui/checkbox.tsx` rebuilt on the **native peer pattern** — `<input type="checkbox" className="peer sr-only">` + sibling box `<span>` + sibling lucide `<Check>`, all wrapped in a `relative inline-flex`. State driven entirely by Tailwind `peer-checked:` / `peer-focus-visible:` / `peer-disabled:` modifiers. 16px box, no motion. Public API (`checked` / `onCheckedChange` / `disabled` / `aria-label`) is shadcn-compatible.
+- [x] Per-event preferences scoped to the 5 main events: `listing_taken`, `match_settled`, `match_manual_review`, `dispute_opened`, `cancellation_requested`. The other 4 (`listing_expired`, `dispute_resolved`, `cancellation_accepted`, `cancellation_rejected`) always fire and aren't user-configurable — they're after-the-fact informational pings, not signals that need a mute toggle. `PlayerNotification::CONFIGURABLE_EVENT_TYPES` is the source of truth.
+- [x] Email column is freely togglable. The backend records the preference today; delivery activates with M20 (no UI placeholder gating — just an honest "set it now, mailer ships later" model).
+- [x] Schema: `notification_preferences` table — `user_id` FK cascade, `event_type` string, `in_app` + `sound` + `email` booleans, UNIQUE `(user_id, event_type)`. Per-event `sound` toggle gates whether the chime fires for that event; the global `users.notification_sound` choice (Off/Classic/Soft/Ding) decides which file plays. Lazy default policy in code instead of seeding rows on user creation — `PlayerNotification::defaultPreference($eventType)` returns the default (sound defaults ON only for `listing_taken`); `User::getNotificationPreference` returns the DB row if present, else the default. Avoids backfill and keeps the table sparse.
+- [x] Sound choice picker — `users.notification_sound` string nullable column on users. Four valid values: `off | classic | soft | ding` (validated server-side via `Rule::in(PlayerNotification::SOUND_CHOICES)`). `useNotificationSound` reads `auth.user.notification_sound` (defaults to `'classic'` when null) and skips playback entirely when the choice is `off`. The per-event `sound` preference is shared as `auth.user.notification_sound_map` and checked by `NotificationProvider` before calling the hook — `false` (explicitly muted) suppresses, `true` or missing plays normally. Per-sound preview button on the settings page plays the file directly via `new Audio(url).play()`. Sound files (`public/sounds/{classic,soft,ding}.mp3`) committed alongside P2.
+- [x] Backend enforcement: `PlayerNotification::via()` returns `[]` for muted optional events (suppresses both database + broadcast channels). Mandatory events bypass the preference unconditionally.
+- [x] Cleanup: the abandoned `components/ui/switch.tsx` and `components/ui/radio-group.tsx` (built for earlier P5 iterations) are deleted — both confirmed unreferenced before removal.
+
+### Cross-milestone notes
+
+- **M20** plugs into M27's notification classes by writing Blade email templates + wiring SMTP config. The dispatch layer is reused as-is. M20's preferences UI piggybacks on M27 Phase 5's page.
+- **M9 (chain integration)** will add `DepositConfirmedNotification` and `WithdrawalProcessingNotification` when it lands. The pattern is established by M27.
+- **M13 (chat anti-abuse)** can add `MessageFlaggedForReviewNotification` (admin-side) when it ships, using the same dispatch pattern.
+- **M14** ManualReview escalation already exists via `ResolveMatchTimeoutAction` → `NotifyAdminsAction`; M27 P4 surfaces it as an SLA-tracked dashboard widget rather than just a single admin bell ping.
+
+### Not in M27
+
+- Mobile push (APNS / FCM). Web push (browser Notification API) is also out of scope — `Notification.requestPermission()` introduces a permission-prompt UX that's worth handling deliberately, not bundling into the in-app milestone.
+- SMS notifications. Different channel, different milestone if ever needed.
+- Email channel. M20 owns that end-to-end; M27 just makes sure the dispatch layer supports it without rework.
+- Notification analytics / read-rate tracking. Premature.
+- Per-tab focus-aware sound suppression (i.e. "don't ding the tab the user is actively looking at"). The `BroadcastChannel` coordination already prevents the triple-ding case; layering "is this tab focused" on top is polish that can wait for user feedback.
+
+---
+
+## M29 — Editable username (with cooldown + reservation) ✅ shipped 2026-06-03
+
+Registration auto-derives the username via `Str::slug($name)` — users have no direct control over their handle at signup. M29 gives them a one-per-month rename path, with the guardrails a money platform needs: a 30-day cooldown on a per-user basis, a 30-day reservation on the released handle so nobody can impersonate the original holder, a hard block while the user has an in-flight match or open dispute, and a 301 redirect from the released handle to the current owner during the reservation window so old bookmarks + indexed URLs stay alive.
+
+Full name remains freely editable (no cooldown, no audit). It's display-only — not a route key, not a reputation key, none of username's weight.
+
+### Design decisions taken into this milestone
+
+- **30-day cooldown.** Once renamed, the user can't rename again for 30 days. Matches GitHub / eBay precedent. Stops "rename mid-match to dodge a dispute" abuse.
+- **30-day reservation on the released handle.** Old handle goes into `username_history` and can't be reclaimed by anyone — including the original owner — during the window. Mitigates impersonation: if Alice renames `alice-pro → alice-new`, nobody can grab `alice-pro` for 30 days.
+- **In-flight match blocks rename.** Any `GameMatch` where the user is participant and status ∈ {Pending, Disputed, ManualReview} blocks the field. One blocker key (`in_flight_match`) covers all three sub-states.
+- **M9 withdrawal blocker deferred.** No withdrawal model exists yet (chain paused). Clean spot to add when M9 resumes.
+- **Active listings DO NOT block.** Listings link to user by FK id, not handle. The 30-day URL redirect covers shared listing-detail links during the window.
+- **Old URL → current owner redirect.** During the 30-day reservation, hitting `/users/{old-handle}` 301-redirects to the current owner's profile via the route's `missing()` callback querying `UsernameHistory::reserved()`.
+- **Atomic rename via `ChangeUsernameAction`.** Row-locks the user inside a transaction, re-checks blockers + availability, writes the reservation row, bumps `username_changed_at` — closes the validate-then-act race.
+- **Lowercase normalization at the FormRequest layer.** `prepareForValidation` lowercases the input (`Alice-Pro` → `alice-pro`) so the storage / display invariant holds without surprising the user with a rejection.
+- **Full name stays freely editable.** Already worked via the existing `ProfileController::update`. No cooldown, no audit — `name` doesn't have the load that `username` does.
+
+### Phases
+
+**Phase 1 — Drop `@` from listings username display** ✅ shipped 2026-06-03
+
+Two-line tweak in `components/listings/listing-row.tsx`: removed the `@` prefix from both the rendered username and the `aria-label`. Companion fix bundled in: gave the Take CTA wrapper a fixed `md:w-44` and added a matching placeholder column to the desktop header strip in `pages/listings/index.tsx`, so the `Ends in` / `Stake` header labels sit over their data columns instead of drifting over the Take button.
+
+**Phase 2 — Schema + model** ✅ shipped 2026-06-03
+
+- `users.username_changed_at` (nullable `immutable_datetime`) — cooldown anchor.
+- `username_history` table — `id`, `user_id` FK (`nullOnDelete` so history survives a hard-delete and keeps the reservation timer), `username` (indexed), `released_at` (indexed).
+- `UsernameHistory` model — `user()` BelongsTo + `scopeReserved()` (rows where `released_at > now`).
+- `User` model — constants `USERNAME_CHANGE_COOLDOWN_DAYS = 30` / `USERNAME_RESERVATION_DAYS = 30`, the `RESERVED_USERNAMES` list lifted up from `CreateNewUser` so both registration and rename share it, `usernameHistory()` HasMany, and three helpers: `canChangeUsername()`, `usernameChangeAvailableAt()`, `usernameChangeBlockers()`.
+
+**Phase 3 — Backend update path + tests** ✅ shipped 2026-06-03
+
+- `ProfileUpdateRequest` extended — username rule is `sometimes|required|min:3|max:30|regex:^[a-z0-9]+(?:-[a-z0-9]+)*$|unique`. Auto-lowercase via `prepareForValidation`. An `after()` callback layers the domain checks: reserved-word rejection, reservation rejection, cooldown + in-flight-match blocker messages. `sometimes` so existing PATCH payloads that omit username still pass.
+- `App\Actions\Profile\ChangeUsernameAction` — `DB::transaction` + `User::lockForUpdate()`, re-checks blockers + reserved-words + uniqueness + reservation, writes the old handle to `username_history` with `released_at = now() + 30 days`, updates `users.username` + `users.username_changed_at`. No-op when the submitted value equals the current handle.
+- `ProfileController::update` — pulls `username` out of validated, runs the action when it differs from current.
+- 27 Pest feature tests in `tests/Feature/Settings/UsernameChangeTest.php` — happy path, history-row shape (`released_at = now + 30d`), lowercase normalization, idempotent same-value submit, 8 format edge cases (leading / trailing / consecutive hyphens, underscore, space, dot, too short, too long), reserved-word rejection, uniqueness rejection, reservation window (own + others), reservation expiry, cooldown enter / exit, in-flight match / dispute / manual-review blockers, terminal-match non-blockers, User-model helpers.
+
+**Phase 4 — Frontend UI** ✅ shipped 2026-06-03
+
+- `HandleInertiaRequests::share` exposes `auth.user.username_edit: { can_change, available_at, blockers }`.
+- `resources/js/types/auth.ts` — `username_edit` typed on `User`.
+- `pages/settings/profile.tsx` — username field above name, lowercase on input, disabled when `!can_change`, helper text branches (cooldown date / in-flight-match message / default format hint). Server-side errors flow into `InputError`.
+- Confirmation dialog intercepts submit when the field is dirty + allowed. Cancel keeps form open; Confirm fires `submitForm()`. Quotes before/after handles so the user sees what they're changing.
+- Live preview — `ProfilePreview` reads `data.username` (not the saved value) so the handle on the preview card updates as the user types.
+
+**Phase 5 — Old-URL redirect during the reservation window** ✅ shipped 2026-06-03
+
+- `routes/web.php` — `users.show` route's `missing()` callback queries `UsernameHistory::reserved()->where('username', $handle)->whereNotNull('user_id')`. If found, 301 → the current owner via `redirect()->route('users.show', ['user' => $historyRow->user], 301)` (binds via `getRouteKeyName() = 'username'`, so picks up the user's current handle).
+- 7 Pest feature tests in `tests/Feature/UsernameRedirectTest.php` — in-window redirect, expired-window 404, chained-rename behavior (verifies the 30-day cooldown == 30-day reservation symmetry so only the most recent prior handle stays redirected), orphan history rows (user hard-deleted) → 404, unknown handle → 404, current owner of a previously-released handle renders normally (no redirect loop), stale history row with past `released_at` doesn't trigger redirect.
+
+### Cleanup decision (post-ship)
+
+- **No scheduled cleanup of `username_history`.** Volume is bounded by the 30-day cooldown (max ~12 rows / user / year), each row is ~80 bytes, and the rows retain audit value beyond the reservation window (who used to be called X, useful for support tickets and abuse investigations). Easy to add a daily prune-after-1-year Artisan command later if it ever matters; no schema lock-in by waiting.
+
+### Not in M29
+
+- Pick-your-own-username at registration. Considered when discussing whether to remove rename entirely; landed on keeping rename (Option A) since registration auto-derives via `Str::slug($name)` and users need *some* way to fix a bad handle. A pick-at-registration flow stays an option later if rename ever proves too noisy.
+- "Formerly known as alice-pro" trust signal on the profile. The data exists in `username_history`; rendering it is a future trust-signal decision, not engineering scope today.
+- Username change audit log shown on the profile. The data is in `username_history` — surface it if a use case appears.
+- Cleanup / pruning job. See cleanup decision above.
+
+---
+
+## M30 — Admin user management ✅ shipped 2026-06-03 → 2026-06-04
+
+A first-class user moderation + support surface inside Filament. Today the admin panel has zero user UI — moderation, investigation, manual interventions all require Tinker queries. The first time a real user files a support ticket or a chat-abuse report surfaces, the admin needs to investigate without dropping to the shell. M30 closes that gap.
+
+This is the single biggest support gap in the panel today. For a custodial money platform with player-to-player chat, the longer it takes to act on abuse, the worse it gets.
+
+### Design decisions taken into this milestone
+
+- **Always-rendered wallet invariant on the view page.** Compares `users.usdt_balance` to `SUM(wallet_transactions)` and renders a success/danger badge. Should always pass — exists to catch a regression early when investigating a problem user.
+- **Ban toggle requires a reason in both directions.** Initial ban captures *why*; lifting captures *why now*. Months later we want a single trail of "what happened" without cross-referencing.
+- **Ban actually does something day one — four enforcement guards land in M30.** The spec was originally "M30 ships the column, M21 wires the enforcement" but that leaves the toggle informational. Instead, M30 wires the four guards that actually *stop the bleed*: (1) `ListingController::create + store` rejects banned users so no new abuse-vector listings land; (2) `ProfileController::update` rejects banned users so they can't evade by changing name / avatar; (3) `ChangeUsernameAction` gains `banned` as a blocker on top of cooldown + in-flight-match, so rename isn't an evasion path; (4) listing-marketplace scopes filter `where('users.banned_at', null)` so existing listings disappear from the public board. M21 still owns chat-send-block, take-listing-block, polished "you've been suspended" page, blacklist (user-to-user) UI, and multi-account anti-evasion.
+- **No delete action.** Hard-deleting users breaks FK chains across listings, matches, messages, wallet transactions. `banned_at` is the correct mechanism. If a user requests data deletion under privacy law, that is a user-owned legal call, not an engineering action.
+- **Mandatory 2FA on admin role.** New middleware on `/admin/*` gates access on `two_factor_confirmed_at IS NOT NULL` for users with the `admin` Spatie role. Unenrolled admin → redirected to Fortify's existing two-factor-authentication enrollment page with a flash notice. Hardens the admin panel against credential phishing now that admin can impersonate any user. Uses Fortify's existing TOTP infrastructure — no new auth surface, just a route guard.
+- **Decision: admin 2FA challenge on every login bridges to Fortify (Phase 6), not a plugin swap.** P3's middleware enforces 2FA *enrollment* before reaching the panel, but Filament's built-in `->login()` form bypasses Fortify's pipeline, so the on-every-login TOTP prompt doesn't fire. The `stephenjude/filament-two-factor-authentication` plugin was evaluated 2026-06-03 and rejected: (a) its `TwoFactorAuthenticatable` trait collides method-name-wise with Fortify's, so installing it requires removing Fortify's 2FA *app-wide* — not localized to admin; (b) Stakly's `/settings/security` is Inertia/React but the plugin's 2FA setup is Livewire, so adopting it routes every user (not just admins) through Filament/Livewire for 2FA setup; (c) `spatie/laravel-passkeys` is a hard composer dep for an unused feature. DIY bridge instead — custom Filament `Login` subclass detects admins with 2FA, bounces to a Stakly-styled `/admin/two-factor-challenge` Inertia page that validates codes via Fortify's existing `TwoFactorAuthenticationProvider`, plus a defense-in-depth middleware that catches the same condition on direct panel hits. Reuses Fortify's TOTP setup at `/settings/security` unchanged; ~200 LOC + tests.
+- **User-facing ban feedback fires across three channels (P4).** When admin bans a user, the user MUST learn about it through (a) a persistent banner on every Stakly page they touch, (b) an in-app notification through M27's `PlayerNotification` pipeline (bell + `/notifications` page + real-time Reverb push), and (c) email. Production-grade: any single channel can fail (email in spam, user not on site for the bell push, banner missed because user is reading via email) — together the three guarantee the message lands. Same three channels on unban for symmetry.
+- **Ban-feedback banner is non-dismissible.** Banned users shouldn't be able to hide the explanation of why they can't act on the platform. Sticky at top of every page, destructive tone, includes the reason from `user_moderation_logs` + a link to the CMS Support page.
+- **Reason source of truth for ban feedback: `user_moderation_logs.reason`.** The banner reads the latest row where `action = 'ban'` via a new `auth.user.banned_reason` field exposed through `HandleInertiaRequests::share()`. The notification snapshots the reason in its own payload so old notifications keep showing the original reason even if a later ban/unban cycle changes "latest."
+- **Decision: use `stechstudio/filament-impersonate` for the auth-swap, build the audit + reason + expiry + Stakly banner on top.** Initial plan was custom-built ("minimizing third-party auth packages"). Reversed after 2026-06-04 research: the package is actively maintained (v5.5.0 released 2026-05-26, Filament 4+5 composer constraint), publishes `EnterImpersonation` / `LeaveImpersonation` events that map cleanly to our audit-row writes, uses the same `impersonated_by` session key the spec called out, and ships authz hooks (`User::canImpersonate()` / `canBeImpersonated()`) that absorb the `is_platform` / banned / self guards. We keep ownership of every Stakly-specific concern (audit table, reason capture, 30-min expiry, branded banner) while delegating the security-sensitive session-guard swap to battle-tested code. Net ~120 LOC vs ~200 with less risk on the auth path.
+- **Impersonation requires password re-entry inside the start modal.** Initial spec routed start through Fortify's `password.confirm` route middleware. Discarded because the package's action runs inside Livewire (not an HTTP POST that survives a redirect to `/user/confirm-password` + bounceback). Replaced with a `current_password` Laravel validation rule on a password field inside the impersonate modal — admin types their password every single time (stricter than Fortify's 3-hour freshness window), single-modal UX, no redirect dance.
+- **Impersonation auto-expires after 30 minutes.** `started_at` on the audit row; middleware compares against `now` and force-exits past 30 min. Prevents "admin walked away from the desk" scenarios.
+- **Impersonation banner rendered in `app.blade.php`.** Persists across every page the impersonating admin lands on — Stakly app pages, auth pages, error pages, even `/admin` if they navigate there. Single source of truth, no React provider plumbing. Shows "Viewing as @username · Exit" with the exit button always one click away.
+- **Impersonation reason required at start.** Free-text field on the start modal ("Investigating Alice's wallet-history bug"). The audit row's reason is the answer to "why did admin X impersonate user Y three weeks ago?" — timestamp alone is too thin.
+- **Impersonation exit returns to wherever the admin started from.** The package stores `impersonate.back_to` in session at start (default: the referring URL, which for our flow is the user's admin view page). The exit route reads and clears it. Same end state as the original spec — the admin lands back on the user they were investigating.
+- **Impersonation blocked for `is_platform` users, banned users, and self.** Three guards expressed via the package's `User::canImpersonate()` (admin gate) + `User::canBeImpersonated()` (target gate) — the action is hidden in the UI AND the package's internal `canImpersonate()` re-checks before calling `enter()`, so defense-in-depth holds even if a stale-cache click slipped through.
+
+### Phases
+
+**Phase 1 — Schema + `UserResource` scaffold + index page** ✅ shipped 2026-06-03
+
+Migrations for `users.banned_at` + the append-only `admin_impersonations` audit table; `Filament/Resources/Users/` folder; index page with 3-column search + 4 filters, `is_platform` excluded, `canCreate() = false`. `AdminImpersonation` model landed here too (was originally scoped to P5 — cleaner alongside the migration). Pest tests cover admin-only access + the filters / search / sort + no-create gate.
+
+**Phase 2 — View page + non-impersonate actions + ban enforcement** ✅ shipped 2026-06-03
+
+Schema: append-only `user_moderation_logs` (`action: ban | unban`, `UPDATED_AT = null`). `UserInfolist` with 7 stacked sections including an always-rendered wallet invariant badge that compares `users.usdt_balance` to `SUM(wallet_transactions.amount)`. Header actions: View as visitor / Verify email / Reset 2FA / Ban toggle (reason required both directions; DB transaction wraps `banned_at` flip + audit row write).
+
+`App\Support\BanGuard` helper centralises `isBanned()` / `rejectionMessage()` / `supportUrl()` across the four enforcement surfaces (listing create+store, profile update, username rename blocker, marketplace scope). 14 Pest tests across `UserResourceActionsTest` + `BanEnforcementTest`.
+
+Two calls flagged in the ship report: skipped the parallel `banned-user store-listing` test (the create-form test already proves the controller-level guard); switched flash style from `->with('toast', ...)` to `Inertia::flash('toast', ...)` because the former tripped `assertRedirect`'s session-error inspection.
+
+**Phase 3 — Mandatory 2FA for admin role** ✅ shipped 2026-06-03
+
+`App\Http\Middleware\RequireAdminTwoFactor` registered in `AdminPanelProvider::authMiddleware` — redirects admins without `two_factor_confirmed_at` to `/settings/security` with a toast flash. Non-admins fall through to Filament's `canAccessPanel` 403. `UserFactory::admin()` + `AdminUserSeeder` stamp the column so existing tests + local dev + CI don't trip the gate. Production checklist: operator re-enrolls real 2FA after first login.
+
+Gotcha documented in tests: `/settings/security` is itself behind Fortify's `password.confirm` (`confirmPassword: true` in `config/fortify.php`), so the real flow is `/admin → /settings/security → /user/confirm-password → /settings/security → enrolls 2FA`. 5 Pest tests assert the full chain.
+
+**Phase 4 — User-facing ban feedback (banner + bell + email)** ✅ shipped 2026-06-03
+
+P2 shipped enforcement (banned users can't act) but only a generic flash on guarded actions. P4 closes the explanation loop across three channels so the user can't miss it.
+
+- `BannedBanner` in `SiteLayout` above `SiteHeader`. Reads `auth.user.ban` ({reason, banned_at}) lazy-loaded via `User::latestBanLog` (HasOne with `latestOfMany`) only when `banned_at !== null` — unbanned users skip the join entirely.
+- `AccountBanned` / `AccountRestored` extend `PlayerNotification` but override `via()` to fan out `['database', 'broadcast', 'mail']` unconditionally. Bypasses parent's preference flow because moderation can't be silenced. Mail uses `MailMessage` greeting/line/action with Laravel's default `notifications::email` Blade layout — custom branded templates deferred to a polish pass.
+- Real-time banner refresh: `NotificationProvider` calls `router.reload({ only: ['auth'] })` on the `account_banned` / `account_restored` broadcast.
+- Dispatch sits outside the DB transaction (`ViewUser::banToggleAction`) so a queue/notification failure doesn't roll back the moderation write.
+- 9 Pest tests in `BanNotificationTest` (44 assertions) cover dispatch, channels, mail content, Inertia share, ban→unban→ban chain.
+
+Support CTA is `mailto:support@stakly.com` (dedicated `/support` page deferred to M21).
+
+**Phase 5 — Impersonate action + audit + banner** ✅ shipped 2026-06-04
+
+`stechstudio/filament-impersonate` v5.5 handles the session-guard swap + leave route + Login/Logout teardown. We layer Stakly concerns on top:
+
+- `User::canImpersonate()` (admin role only, `is_platform` excluded) + `User::canBeImpersonated()` (`is_platform` excluded, banned excluded). The package's action checks both before allowing start. Self-impersonation is also blocked by the package's own guard.
+- `App\Filament\Resources\Users\Actions\ImpersonateUserAction` extends the package action with two modal fields the upstream skips — a `current_password`-validated password field (typed every time, no Fortify freshness shortcut) and a 1000-char `reason` Textarea. `before()` stashes the reason on the session so the listener can persist it. Danger color + finger-print icon. Registered as the 5th `ViewUser` header action.
+- `App\Listeners\RecordImpersonationStart` writes the `admin_impersonations` row on `EnterImpersonation` (admin id, target id, reason from session, started_at, ip, user_agent). `RecordImpersonationEnd` stamps `ended_at` on the impersonator's active row on `LeaveImpersonation`. Both registered in `AppServiceProvider::boot()`.
+- `App\Http\Middleware\HandleImpersonationExpiry` (global `web` group) checks `started_at` vs 30-min cap every request; calls `Impersonation::leave()` past the threshold + flashes an info toast. Cheap no-op when no impersonation is active.
+- `resources/views/partials/impersonation-banner.blade.php` reads `Impersonation::isImpersonating()` and renders an amber fixed-top bar with `Viewing as @username` + Exit link. Included unconditionally in `app.blade.php` so it shows across Stakly pages, error pages, auth pages, and even `/admin` if the impersonated user clicked their way there (target won't have admin role → Filament 403). Package's own banner stays on for the panel-internal context.
+- One audit-integrity edge case left open: if the admin force-logs-out from the impersonated session (vs clicking Exit), Laravel's `Logout` event fires the package's `clear()` path which doesn't dispatch `LeaveImpersonation`. The row stays open. Treat any row older than `started_at + 30 min` with `ended_at IS NULL` as orphaned (ended at the 30-min mark via the middleware's policy). Acceptable today; a future `php artisan impersonations:close-stale` scheduled task could tighten this if the operational case shows up.
+- 13 Pest tests in `tests/Feature/Admin/AdminImpersonationTest.php` cover visibility (`is_platform` / banned / self / normal), validation (missing reason / missing password / wrong password), successful start (audit row + auth swap + session marker), banner render on a public page (and absence when not impersonating), exit (row closure + admin restoration), and 30-min middleware (both above- and below-threshold).
+
+**Phase 6 — Admin 2FA challenge on every login (bridge to Fortify)** ✅ shipped 2026-06-03
+
+Build-time research found Filament 5 ships **native multi-factor authentication** in `Filament\Auth\Pages\Login::authenticate()` — it iterates registered `MultiFactorAuthenticationProvider`s, swaps the login form to a challenge form, re-runs validation on submit, and rate-limits at 5 attempts per user. The original spec (custom login subclass + dedicated route + Inertia page + controller + middleware + rate limiter) collapses to a single provider class.
+
+- `App\Filament\MultiFactor\FortifyAppAuthentication` (5 contract methods, ~120 LOC) bridges Filament's MFA hook to Fortify's existing 2FA columns. `isEnabled` reads `two_factor_confirmed_at`. `getChallengeFormComponents` returns `OneTimeCodeInput` + recovery `TextInput` with toggle. Validation rules call into Fortify's `TwoFactorAuthenticationProvider::verify(Fortify::currentEncrypter()->decrypt($user->two_factor_secret), $code)` and `replaceRecoveryCode(...)`. `getManagementSchemaComponents` returns `[]` so the Filament panel doesn't leak its own 2FA setup UI — admins enroll at `/settings/security` (Inertia/React), same as every other user.
+- Registered in `AdminPanelProvider` via `->multiFactorAuthentication([FortifyAppAuthentication::make()])`. No custom login subclass, routes, controller, Inertia page, rate limiter, or middleware.
+- `RequireAdminTwoFactor` middleware (P3) stays — it enforces 2FA *enrollment* before reaching the panel; P6 enforces 2FA *challenge* on every login. Complementary, both run.
+- 8 Pest tests in `AdminTwoFactorChallengeTest` cover the full Livewire MFA flow including recovery code consumption + the admin-without-2FA fallthrough. TOTP codes generated per-test via `(new Google2FA)->getCurrentOtp(...)` — Fortify encrypts the secret via its own encrypter, not a model cast.
+
+No "I lost my TOTP device" cancel button: admins close the tab (no session leak, they're not logged in yet) and contact support, who uses the existing `reset_2fa` action in `ViewUser` (P2) to wipe the columns. Recovery codes remain the in-band escape.
+
+### Not in M30
+
+- Bulk actions (bulk ban, bulk verify). Solo-dev support cadence doesn't need bulk operations.
+- Chat-send-block + take-listing-block enforcement of `banned_at`. Those land in M21 (blacklist + safety) — same column, additional guards inside `SendMessageAction` + `TakeListingAction`.
+- Polished "your account has been suspended" full-page landing (separate from the banner). M30 P4 ships the persistent banner + in-app notification + email — those cover the "user knows they're banned and why" surface area. A dedicated suspension-landing page (the experience when banned users click the banner's CTA or hit a guarded route) is still M21's scope alongside the broader appeals UX.
+- Multi-account / IP-evasion detection for banned users. Lives with M21's anti-evasion scope.
+- User-to-user blacklist UI (Alice blocks Bob). Different mental model — admin ban vs user-driven block. M21 owns the user-driven version.
+- Admin action audit log beyond `admin_impersonations` + `user_moderation_logs`. M30 P2 + P4 cover the two highest-leverage audit surfaces (ban actions, impersonation sessions). Broader action coverage — a generic `admin_actions` table logging every Filament action across every resource — is its own milestone; revisit when a second-admin scenario, internal-audit requirement, or specific compliance need drives the shape.
+- Notification preference / linked account mutating on behalf of the user. View-only on the user page is enough; changes to those values should still go through the user-facing settings flow.
+- Admin session timeout / IP allowlist / email-on-admin-login. Adjacent admin-hardening ideas; mandatory 2FA covers the highest-leverage threat (credential phishing). Layer more on if a concrete incident drives it.
+- Support / read-only admin role with restricted resource access. The `admin` Spatie role is the only privileged role today. When a real support hire happens, add a `support` role + per-resource Filament policies (read-only on UserResource / WalletTransactionResource, no impersonation, no ban, no 2FA reset). Doesn't block M30; revisit when there's a second person in the admin panel.
+- Built-in support ticket system / contact form. The CMS Support page covers the contact channel today (admin writes whatever — email / Discord / form). A dedicated ticket queue is its own milestone if volume justifies.
+
+
+
+## M31 — Admin wallet ledger ✅ shipped 2026-06-04
+
+Read-only audit visibility into every money movement on the platform — the "where did my $12.50 go?" support tool for the custodial money platform. Filament resource over `wallet_transactions`. Two phases shipped in one day.
+
+### Design decisions
+
+- **Read-only resource.** `canCreate / canEdit / canDelete = false`. Every money write continues to go through `App\Services\Wallet` to preserve the `users.usdt_balance == SUM(wallet_transactions.amount)` invariant asserted in `WalletTest`. No "create transaction" / "adjust" / "transfer" actions — no such domain trigger exists today, and adding one would be a footgun.
+- **`HasColor` + `HasLabel` on `WalletTransactionType` enum.** Filament's TextColumn::badge() + infolist TextEntry auto-style each case. Deposit/Payout=success, Withdrawal=danger, EscrowHold=warning, EscrowRelease=info, Fee=gray. The enum lives in `App\Enums\WalletTransactionType`; the contracts add `getLabel()` + `getColor()` methods without changing serialized values.
+- **BCMath-aware money formatter on the model.** `WalletTransaction::formatAmount(string $amount): string` is used by both the table column and the infolist amount entries. Truncates to 2 decimals at scale, prepends `$`, applies thousand separators, preserves sign — without round-tripping through float. The decimal(18,6) string from the cast stays as a string the whole way through.
+- **Sum summarizer on the amount column.** Footer total of currently-visible rows. Filtering by `type = Fee` + this month gives the platform's monthly revenue in one click — the drill-down companion to `OpsOverview`'s top-line stat.
+- **"Sibling transactions" share an entity, NOT a reference_id.** The original M31 spec said siblings share the same `reference_id`, but the column has a UNIQUE constraint (it's the idempotency key for Wallet service writes — `findByReference` returns existing rows on repeat). The actual pattern is "two rows referencing the same match" via different prefixes — e.g. `match-payout:7` + `match-fee:7`. Implemented via `WalletReferenceParser::parseEntity()` returning `[kind, id]` and `allReferencesFor($kind, $id)` returning every known prefix combo, then a `whereIn` against the unique index. Fast lookup, no LIKE.
+- **Reference parser maps to the resources that exist today.** Listing-bound prefixes (`listing-create:` / `listing-cancel:` / `listing-expire:` / `match-take:`) link to the public `listings.show` page; match-bound prefixes (`match-payout:` / `match-fee:` / `match-draw-*:` / `cancel-refund-*:`) link to the admin Disputes resource (M12's `GameMatchResource`). When M32 lands a proper `ListingResource`, only the parser needs updating — every consumer reads through it.
+- **No CSV export, no charts, no per-currency filtering, no edit/adjust mutations.** Spec carve-outs hold — adjacent surfaces (`OpsOverview` widget for charts, `ListingResource` for listings) own those concerns.
+
+### Phases
+
+**Phase 1 — Resource scaffold + index page + filters + sum summarizer** ✅ shipped 2026-06-04
+
+- `WalletTransactionType` enum implements `HasColor` + `HasLabel`.
+- `app/Filament/Resources/WalletTransactions/` mirroring M30's structure: `WalletTransactionResource` (read-only gates, banknotes icon, Operations group, slug `wallet-transactions`), `Pages/ListWalletTransactions`, `Tables/WalletTransactionsTable`.
+- Index columns: Tx# / User (link to `UserResource` view) / Type (auto-colored badge) / Amount (right-aligned, BCMath-formatted, color-coded by sign) / Reference (truncated + copyable) / When (relative + tooltip with absolute datetime).
+- Filters: type multi-select (`->options(WalletTransactionType::class)` — Filament auto-detects the enum), user typeahead via relationship (no `preload()` — caused rendering issues in tests), date range, amount range, reference-contains.
+- `Sum` summarizer on the amount column with the same BCMath formatter for the footer total.
+- Default sort: `created_at` DESC.
+- 14 Pest tests in `tests/Feature/Admin/WalletTransactionResourceTest.php` (48 assertions).
+
+**Phase 2 — View page + Infolist + reference parser + sibling-entity lookup** ✅ shipped 2026-06-04
+
+- `ViewWalletTransaction` page registered in `getPages()` + table-level `ViewAction` row action.
+- `WalletTransactionInfolist` with three sections: Transaction (id, type badge, when, user link, amount + balance_after BCMath-formatted), Reference (raw id + parsed contextual link + description + related listing FK), Sibling transactions (other rows referencing the same listing/match).
+- `App\Support\WalletReferenceParser` — `parse()` returns `[label, url]`; `parseEntity()` returns `[kind, id]`; `allReferencesFor()` returns every known prefix combo for an entity. Single source of truth for prefix→entity mapping.
+- Sibling section uses `parseEntity` + `allReferencesFor` + `whereIn` so it hits the unique index instead of LIKE. Hidden when reference is unparseable / null.
+- 11 additional feature tests (parser + view page + siblings + formatter) — total M31 suite is 25 tests, 122 assertions. 151/151 admin suite + 101/101 wallet suite passing.
+
+### Not in M31
+
+- CSV export. Add when there's a concrete external workflow (tax filing, accounting integration, auditor request) — column / format decisions follow the destination.
+- Charts / time-series. `OpsOverview` widget already exposes monthly platform earnings; this resource is the drill-down.
+- Per-currency filtering. USDT-only today; extends when M15-era multi-currency happens.
+- Refund / adjust / cross-user-transfer actions. No domain trigger today; refunds happen via `Wallet::release` triggered by match-state events. Manual adjustments would require a future `Wallet::adjust(...)` method that doesn't exist.
+
+---
+
+## M32 — Admin listing management ✅ shipped 2026-06-04
+
+Operational visibility + force-cancel for the marketplace. The lowest-urgency of the three admin gaps, but enables takedown of abusive listings (sub-penny stakes, off-platform deal solicitation in the title, harassment-style descriptions) without dropping to Tinker. Admin views every listing the same way users see them, plus a single moderation action.
+
+### Design decisions taken into this milestone
+
+- **Index columns** — id, creator (link to UserResource view), state badge (Open / Taken / Cancelled / Expired), platform (chess.com / Lichess), stake_amount (right-aligned), skill range, time controls, region, languages, created_at, expires_at.
+- **Filters** — state multi-select, platform, stake range, creator typeahead, region, has-language.
+- **One action: Force cancel.** Routes through the existing `CancelListingAction` so escrow releases via `Wallet::release` and the ledger stays clean — the admin never writes to `usdt_balance` directly. Confirm dialog names the listing id + stake + creator so a wrong click is hard. Listing must be in `Open` state; Taken / Cancelled / Expired states have no force-cancel action (the corresponding match flow handles those cases through `GameMatchResource`).
+- **View page.** Full listing data, related match (if Taken — link to `GameMatchResource`), related wallet transactions (escrow hold + any release on cancel).
+- **No edit action.** Stake / skill range / platform are immutable on a real listing — changing them mid-flight invalidates expectations for any taker. If a listing needs changes, the right path is force-cancel + the creator re-creates.
+- **No bulk cancel.** One listing at a time; bulk-cancel is a footgun and there's no operational scenario that needs it.
+- **`ListingStatus` gets `HasColor` + `HasLabel`.** Same pattern M31 used for `WalletTransactionType` — auto-colored badges across every Filament surface that reads this enum (admin index, view page, dashboard widgets, M32 + future).
+- **The M31 wallet-reference parser already knows about listing prefixes.** `listing-create:` / `listing-cancel:` / `listing-expire:` / `match-take:` are all entity-mapped to "listing" via `WalletReferenceParser::parseEntity()`. The View page's wallet-transactions section calls `WalletReferenceParser::allReferencesFor('listing', $id)` + `whereIn('reference_id', $candidates)` (plus FK match on `related_listing_id`) — fast indexed lookup, no LIKE, no parser logic re-implementation.
+
+### Phases
+
+**Phase 1 — Resource scaffold + index page + filters** ✅ shipped 2026-06-04
+
+- [x] `App\Enums\ListingStatus` implements `HasColor` + `HasLabel`. Open=success, Taken=warning, Expired=gray, Cancelled=danger.
+- [x] `app/Filament/Resources/Listings/` folder: `ListingResource` (read-only — `canCreate / canEdit / canDelete = false` on the resource, force-cancel surfaces only as a header action on the View page in P2), `Pages/ListListings`, `Tables/ListingsTable`.
+- [x] Index columns — id, Creator (link to `filament.admin.resources.users.view`), Game, Platform, Stake (right-aligned, `$X.XX USDT` via `number_format((float) $state, 2)` — `decimal(12,2)` doesn't need BCMath display precision the way the ledger does), Skill range (formatted "1200–1600"), Time controls (joined from the `time_control` jsonb column), Region, Languages (joined from the `language` jsonb column), Status (auto-colored badge), Created at, Expires at.
+- [x] Filters — status multi-select via `->options(ListingStatus::class)`, platform select, stake range (custom Filter with min/max TextInputs), creator typeahead via `relationship('user', 'username')->searchable()`, region select, has-language text/contains filter against the jsonb column.
+- [x] Default sort: `created_at` DESC.
+- [x] Pest tests in `tests/Feature/Admin/ListingResourceTest.php` — admin-only access, non-admin 403, guest redirect, list renders, read-only posture (canCreate/canEdit/canDelete all false), each filter narrows correctly, default sort newest-first.
+
+**Phase 2 — View page + force-cancel action + related entities** ✅ shipped 2026-06-04
+
+- [x] `Pages/ViewListing` registered in `getPages()` + table-level `ViewAction` row action.
+- [x] `Schemas/ListingInfolist` with three sections:
+  - **Listing details** — every column rendered, creator link to `UserResource` view, status / platform / game badges.
+  - **Related match** — visible only when `status === Taken`; link to `route('filament.admin.resources.disputes.view', $match->id)` (the M12 `GameMatchResource`). Hidden otherwise.
+  - **Wallet transactions** — every `wallet_transactions` row tied to this listing. Lookup combines `whereIn('reference_id', WalletReferenceParser::allReferencesFor('listing', $id))` with `orWhere('related_listing_id', $id)` so the FK-bound rows (escrow holds via `match-take:{listingId}`, escrow holds on listing-create, refunds on cancel) all appear. Reuses M31's HTML-summary pattern.
+- [x] Force-cancel header action — `danger` color, confirm modal showing `Listing #X · $Y stake · @creator` so misclick risk is low. `visible(fn $r => $r->status === ListingStatus::Open)`. Callback: `app(CancelListingAction::class)->handle($record)`. Defense-in-depth re-check `status === Open` inside the callback (stale-cache safety). Filament notification on success.
+- [x] Pest tests — view page renders, force-cancel action hidden on Taken/Expired/Cancelled, action visible+working on Open, force-cancel flips status to Cancelled AND emits an `escrow_release` ledger row with `listing-cancel:{id}` reference (via `Wallet::release`), creator's balance returns to pre-listing state, action stays hidden after cancel (idempotent at the visibility layer).
+
+### Not in M32
+
+- Manual "create listing on behalf of a user" action. No legitimate support reason; a vector for admin abuse if it existed.
+- Force-expire (separate from force-cancel). The expiry clock is automatic; manual expiry without refund is a money operation that should go through the existing cancellation path. If we ever need "skip the timer," it's the cancellation action with the same refund behavior.
+- Listing dispute moderation (separate from match dispute moderation). Match disputes are covered by `GameMatchResource` (M12). Pre-match listing disputes don't exist as a concept.
+- Editing listing description / title (no fields exist today on listings — listing is just stake + skill + time control + region + languages). If a future listing schema adds free-text fields, moderation routes through M13 chat-anti-abuse patterns, not via direct admin edits.
+
+---
+---
+
+## Parked milestones
+
+Work that has a clear shape but isn't being picked up right now. Lives in the archive so the active milestones list stays focused on what we can act on; revisit if priorities shift.
+
+### M13 — Chat anti-abuse + moderation [parked]
+
+**Why parked:** the original framing assumed every flagged-keyword case was a clear off-platform-deal attempt, but the actual designs (regex flags + flagged-messages dashboard + per-day caps + blocked-words list) need a tighter problem definition before they're worth building. Pre-launch with no real chat volume, building a moderation pipeline against hypothetical patterns risks false positives across legitimate match-coordination chat. Revisit once there's real chat traffic to study OR a concrete abuse incident to design against.
+
+**Sketch that was drafted (kept for future reference):**
+
+- Phase 1 — Off-platform deal detection: regex flags in `SendMessageAction` for TRC20 / ERC20 / BTC addresses + payment-method names + messenger handles + trade-coordination phrases. Flagged messages still post (don't tip the abuser) but write to a `flagged_messages` table with the trigger pattern. Filament dashboard widget for recent flags.
+- Phase 2 — Rate limits + report-user button: per-user chat soft-warn UI on top of the M8 Phase 2 10-msg/10s limit, per-match-day cap (200 messages), per-message report-user button writing a Filament-routed report.
+- Phase 3 — Blocked words + admin moderation tools: configurable blocked-words list (slurs / harassment) filtered server-side, admin moderation panel for flagged + reported users, mute / ban tools with history.
+
+**Adjacent dependencies (when picked up):**
+
+- M20 — could add `MessageFlaggedForReviewNotification` (admin bell) using M27's dispatch pattern.
+- M21 — blacklist enforcement overlaps with mute / ban; align the two before scoping M13's admin tools to avoid duplicate ban paths.
+- M30 — admin user ban / moderation actions land in M30; M13's mute is a chat-specific subset rather than an account-wide ban.
+
+
+

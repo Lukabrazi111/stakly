@@ -8,15 +8,11 @@ use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
 /**
- * Public shape of a chat message. Shape mirrors `MessageSent::broadcastWith()`
- * so the frontend can render initial-load and live-broadcast messages with
- * the same type. The frontend derives sender display info (name/username)
- * from the `match.creator` / `match.taker` props by matching `user_id` —
- * embedding the user object here would be redundant for the two-participant
- * universe of a single match.
- *
- * `attachments` is built via `MessageAttachmentsPayload` so the initial-load
- * and broadcast paths share one source of truth. See that class for shape.
+ * Shape mirrors `MessageSent::broadcastWith()` so the FE renders initial-load
+ * and live-broadcast messages with the same type. Sender display info is
+ * derived from `match.creator` / `match.taker` by matching `user_id`, so the
+ * user object isn't embedded here. `attachments` goes through
+ * `MessageAttachmentsPayload` to keep load and broadcast on one source.
  *
  * @mixin Message
  */

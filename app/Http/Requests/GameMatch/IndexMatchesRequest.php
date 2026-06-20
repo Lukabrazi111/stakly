@@ -8,12 +8,9 @@ use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
 /**
- * Validates filter + page query params for the authenticated player's
- * /matches index. Same Spatie query-builder URL contract as /listings:
- *
- *   /matches?filter[status]=pending&page=2
- *
- * Bad / unknown query params redirect to a clean /matches rather than 422.
+ * Spatie query-builder URL contract: `/matches?filter[status]=pending&page=2`.
+ * Bad / unknown query params redirect to a clean /matches rather than 422
+ * — a stale share-link should land on the unfiltered index, not an error.
  */
 class IndexMatchesRequest extends FormRequest
 {
@@ -39,9 +36,6 @@ class IndexMatchesRequest extends FormRequest
     }
 
     /**
-     * Flat filter shape echoed back to the frontend so the chip row can
-     * hydrate from the URL.
-     *
      * @return array{status: ?string}
      */
     public function filters(): array

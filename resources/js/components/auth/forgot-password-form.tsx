@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
+import { useT } from '@/lib/i18n';
 import { email as emailRoute } from '@/routes/password';
 
 interface ForgotPasswordFormProps {
@@ -14,13 +15,15 @@ interface ForgotPasswordFormProps {
 export function ForgotPasswordForm({
     onSwitchToLogin,
 }: ForgotPasswordFormProps) {
+    const t = useT();
+
     return (
         <Form {...emailRoute.form()} className="flex flex-col gap-6">
             {({ processing, errors }) => (
                 <>
                     <div className="flex flex-col gap-2">
                         <Label htmlFor="email" className="text-sm">
-                            Email
+                            {t('Email')}
                         </Label>
                         <Input
                             id="email"
@@ -44,17 +47,17 @@ export function ForgotPasswordForm({
                         data-test="email-password-reset-link-button"
                     >
                         {processing && <Spinner />}
-                        Send reset link
+                        {t('Send reset link')}
                     </Button>
 
                     <p className="text-center text-sm text-muted-foreground">
-                        Remembered it?{' '}
+                        {t('Remembered it?')}{' '}
                         <button
                             type="button"
                             onClick={onSwitchToLogin}
                             className="cursor-pointer font-medium text-foreground transition-colors hover:text-primary"
                         >
-                            Sign in
+                            {t('Sign in')}
                         </button>
                     </p>
                 </>

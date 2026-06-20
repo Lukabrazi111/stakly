@@ -1,10 +1,12 @@
 <?php
 
+use App\Enums\LinkedAccountProvider;
 use App\Enums\MatchAdminResolutionAction;
 use App\Enums\MatchStatus;
 use App\Filament\Resources\GameMatches\Pages\ListGameMatches;
 use App\Filament\Resources\GameMatches\Pages\ViewGameMatch;
 use App\Models\MatchAdminResolution;
+use App\Models\MatchAutoFetchAttempt;
 use App\Models\User;
 use App\Models\WalletTransaction;
 use Livewire\Livewire;
@@ -56,6 +58,22 @@ test('list page can show all statuses when filter is cleared', function () {
         ->assertCanSeeTableRecords([$disputed, $settled]);
 });
 
+test('list page sorts matches newest-first by created_at (latest disputes at top)', function () {
+    [, , , $oldest] = pendingMatch();
+    $oldest->forceFill(['created_at' => now()->subDays(2)])->save();
+    $oldest->update(['status' => MatchStatus::Disputed, 'dispute_opened_at' => now()->subHours(10)]);
+
+    [, , , $middle] = pendingMatch();
+    $middle->forceFill(['created_at' => now()->subDay()])->save();
+    $middle->update(['status' => MatchStatus::Disputed, 'dispute_opened_at' => now()->subHours(5)]);
+
+    [, , , $newest] = pendingMatch();
+    $newest->update(['status' => MatchStatus::Disputed, 'dispute_opened_at' => now()->subHour()]);
+
+    Livewire::test(ListGameMatches::class)
+        ->assertCanSeeTableRecords([$newest, $middle, $oldest], inOrder: true);
+});
+
 // ─── View page render ──────────────────────────────────────────────────────
 
 test('view page renders for a Disputed match', function () {
@@ -64,6 +82,57 @@ test('view page renders for a Disputed match', function () {
 
     Livewire::test(ViewGameMatch::class, ['record' => $match->getKey()])
         ->assertSuccessful();
+});
+
+// ─── M14 P1 — Auto-fetch history section ────────────────────────────────────
+
+test('auto-fetch history section appears when attempts exist', function () {
+    [, , , $match] = pendingMatch();
+    MatchAutoFetchAttempt::factory()->matched('alice-lichess')->create([
+        'match_id' => $match->id,
+        'provider' => LinkedAccountProvider::Lichess,
+        'latency_ms' => 142,
+    ]);
+
+    Livewire::test(ViewGameMatch::class, ['record' => $match->getKey()])
+        ->assertSuccessful()
+        ->assertSee('Auto-fetch history')
+        ->assertSee('matched', escape: false)
+        ->assertSee('alice-lichess')
+        ->assertSee('142ms');
+});
+
+test('auto-fetch history section is hidden when no attempts exist', function () {
+    [, , , $match] = pendingMatch();
+
+    Livewire::test(ViewGameMatch::class, ['record' => $match->getKey()])
+        ->assertSuccessful()
+        ->assertDontSee('Auto-fetch history');
+});
+
+test('auto-fetch history surfaces skipped reasons + error messages', function () {
+    [, , , $match] = pendingMatch();
+
+    MatchAutoFetchAttempt::factory()->skipped('not_pending')->create(['match_id' => $match->id]);
+    MatchAutoFetchAttempt::factory()->error('Lichess returned 503.')->create(['match_id' => $match->id]);
+
+    Livewire::test(ViewGameMatch::class, ['record' => $match->getKey()])
+        ->assertSuccessful()
+        ->assertSee('not_pending')
+        ->assertSee('Lichess returned 503.');
+});
+
+test('auto-fetch history surfaces outcome_reason for ambiguous rows (M14 Slice 3c/3d UX)', function () {
+    [, , , $match] = pendingMatch();
+
+    MatchAutoFetchAttempt::factory()->ambiguous(1)->create([
+        'match_id' => $match->id,
+        'outcome_reason' => 'time_control_mismatch',
+    ]);
+
+    Livewire::test(ViewGameMatch::class, ['record' => $match->getKey()])
+        ->assertSuccessful()
+        ->assertSee('time_control_mismatch');
 });
 
 test('resolve actions are visible for Disputed match', function () {

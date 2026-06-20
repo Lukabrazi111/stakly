@@ -1,53 +1,49 @@
 import { BadgeCheck } from 'lucide-react';
-import type { ListingPlatform } from '@/types';
+import { useT } from '@/lib/i18n';
+import type { ChessProvider } from '@/types';
 
 interface Props {
     rate: number | null;
     settled: number;
-    /**
-     * M22 Phase 1 (badge tier) — providers the creator is verified on.
-     * The green `BadgeCheck` icon appears in the meta line ONLY when this
-     * list has 2+ entries (cross-platform earned credential). For chess
-     * today that means chess.com + Lichess; future M15 providers (FACEIT,
-     * Riot, Steam) extend the rule naturally — any 2+ verified providers
-     * earns the badge.
-     */
-    verifiedProviders: ListingPlatform[];
+    /** Providers the creator is verified on. The green BadgeCheck icon
+     *  appears ONLY when this list has 2+ entries (cross-platform credential). */
+    verifiedProviders: ChessProvider[];
 }
 
-const PROVIDER_LABEL: Record<ListingPlatform, string> = {
+const PROVIDER_LABEL: Record<ChessProvider, string> = {
     chess_com: 'chess.com',
     lichess: 'Lichess',
 };
 
-/**
- * Seller trust signal as inline meta under the creator name (M22 Phase 1).
- * Mirrors Bybit's "503 Order(s) | 91% | 6m" pattern — small gray text below
- * the seller name showing 30-day completion rate + lifetime settled count.
- *
- * The leading green `BadgeCheck` icon is an *earned* signal: it appears
- * only when the creator has verified accounts on 2+ providers (cross-
- * platform credential). Single-platform sellers see the meta line without
- * the icon — the trust info is still there, just no extra badge.
- *
- * Hides entirely when `settled === 0` (no track record).
- */
+/** Inline seller trust meta under the creator name. Hides when settled === 0. */
 export function SellerTrustMeta({ rate, settled, verifiedProviders }: Props) {
+    const t = useT();
+
     if (settled === 0) {
         return null;
     }
 
     const isCrossPlatform = verifiedProviders.length >= 2;
     const rateLabel = rate === null ? '—' : `${rate}%`;
-    const matchLabel = `${settled} ${settled === 1 ? 'match' : 'matches'}`;
+    const matchCount =
+        settled === 1
+            ? t(':count match', { count: settled })
+            : t(':count matches', { count: settled });
 
     const rateClause =
         rate === null
-            ? `${matchLabel} settled lifetime. No engaged matches in the last 30 days.`
-            : `${rateLabel} 30-day completion rate · ${matchLabel} settled lifetime.`;
+            ? `${t(':matches settled lifetime.', { matches: matchCount })} ${t('No engaged matches in the last 30 days.')}`
+            : t(':rate% 30-day completion rate · :matches settled lifetime.', {
+                  rate: rateLabel,
+                  matches: matchCount,
+              });
 
     const tooltip = isCrossPlatform
-        ? `Verified on ${verifiedProviders.map((p) => PROVIDER_LABEL[p]).join(' + ')}. ${rateClause}`
+        ? `${t('Verified on :providers.', {
+              providers: verifiedProviders
+                  .map((p) => PROVIDER_LABEL[p])
+                  .join(' + '),
+          })} ${rateClause}`
         : rateClause;
 
     return (
@@ -66,7 +62,7 @@ export function SellerTrustMeta({ rate, settled, verifiedProviders }: Props) {
             <span aria-hidden="true" className="opacity-60">
                 ·
             </span>
-            <span>{matchLabel}</span>
+            <span>{matchCount}</span>
         </span>
     );
 }

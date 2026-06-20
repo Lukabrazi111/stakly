@@ -9,18 +9,8 @@ use App\Models\User;
 use Illuminate\Validation\ValidationException;
 
 /**
- * Step 1 of the bio-code linking flow: generate a code, upsert a
- * `PendingVerification` row for the user, return the code for display.
- *
- * Throws `ValidationException` on three rejectable conditions:
- *   - username doesn't match the provider's allowed format
- *   - another Stakly user already has this username verified
- *   - this user is already verified for this provider (must unlink first)
- *
- * Starting a verification upserts on (user_id) — a user who started a
- * chess.com flow and then changes their mind to Lichess overwrites the
- * pending row cleanly, no stuck state. Code TTL is configurable via
- * `stakly.link_verification_ttl_minutes` (default 15).
+ * Step 1 of the bio-code linking flow: generate a code, upsert a `PendingVerification`,
+ * return the code for display. TTL configurable via `stakly.link_verification_ttl_minutes`.
  */
 class RequestLinkVerificationAction
 {
@@ -35,10 +25,7 @@ class RequestLinkVerificationAction
         $code = $this->generateCode();
         $ttlMinutes = (int) config('stakly.link_verification_ttl_minutes', 15);
 
-        // Upsert on user_id — the UNIQUE constraint on
-        // `pending_verifications.user_id` ensures at most one in-flight
-        // verification per user. `updateOrCreate` translates cleanly to
-        // an INSERT … ON CONFLICT under the hood.
+        // UNIQUE on `pending_verifications.user_id` ensures at most one in-flight verification per user.
         PendingVerification::updateOrCreate(
             ['user_id' => $user->id],
             [

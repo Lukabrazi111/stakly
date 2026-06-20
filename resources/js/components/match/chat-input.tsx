@@ -1,4 +1,4 @@
-import { Paperclip, Send, X } from 'lucide-react';
+import { FileText, Paperclip, Send, X } from 'lucide-react';
 import type {
     ChangeEvent,
     ClipboardEvent,
@@ -9,27 +9,32 @@ import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
+import { useT } from '@/lib/i18n';
 
 interface ChatInputProps {
     onSend: (content: string, file: File | null) => void;
-    // Disabled while a send is in-flight so double-Enter doesn't double-post.
-    // (Server-side rate limit catches it too, but UI feedback is nicer.)
+    /** Disabled while a send is in-flight so double-Enter doesn't double-post. */
     disabled: boolean;
-    // Pending image attachment + clearer. Owned by ChatPanel so the
-    // drag-drop overlay above can push a file in here without prop-drilling.
+    /** File state owned by ChatPanel so the drag-drop overlay can push a
+     *  file in without prop-drilling. */
     file: File | null;
     onFileChange: (file: File | null) => void;
-    // 0..100 while a file upload is in flight, null otherwise.
+    /** 0..100 while a file upload is in flight, null otherwise. */
     uploadProgress: number | null;
 }
 
-// Locked at 2000 in milestones.md M8 Phase 2. Matches `StoreMessageRequest::MAX_CONTENT_LENGTH`.
+// Mirrors `StoreMessageRequest::MAX_CONTENT_LENGTH`.
 const MAX_CONTENT_LENGTH = 2000;
 
-// 5 MB cap matches `StoreMessageRequest::MAX_FILE_SIZE_KB` and the Phase 3 lock.
+// Mirrors `StoreMessageRequest::MAX_FILE_SIZE_KB`.
 const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024;
 
-const ACCEPTED_MIMES = ['image/jpeg', 'image/png', 'image/webp'];
+const ACCEPTED_MIMES = [
+    'image/jpeg',
+    'image/png',
+    'image/webp',
+    'application/pdf',
+];
 const ACCEPT_ATTR = ACCEPTED_MIMES.join(',');
 
 export function ChatInput({
@@ -39,18 +44,36 @@ export function ChatInput({
     onFileChange,
     uploadProgress,
 }: ChatInputProps) {
+    const t = useT();
     const [content, setContent] = useState('');
     const [previewUrl, setPreviewUrl] = useState<string | null>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-    // Local object-URL preview so the user sees the thumb before send.
-    // Revoke on unmount / file-change to prevent the browser from holding
-    // a blob in memory after the upload completes. setState-inside-effect
-    // is the right shape here — useMemo + cleanup-only effect breaks under
-    // React strict mode (the URL gets revoked during the strict double-mount
-    // and the image src then points at a dead blob).
     useEffect(() => {
-        if (!file) {
+        const handler = () => {
+            const el = textareaRef.current;
+
+            if (!el) {
+                return;
+            }
+
+            el.focus();
+            el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        };
+
+        window.addEventListener('stakly:focus-chat', handler);
+
+        return () => window.removeEventListener('stakly:focus-chat', handler);
+    }, []);
+
+    // setState-inside-effect: useMemo + cleanup-only effect breaks under
+    // strict mode — the URL gets revoked during double-mount, leaving a
+    // dead blob src.
+    useEffect(() => {
+        // Only image previews need a blob URL — PDFs render as a file icon
+        // tile, no inline preview.
+        if (!file || !file.type.startsWith('image/')) {
             setPreviewUrl(null);
 
             return;
@@ -84,7 +107,7 @@ export function ChatInput({
         }
     };
 
-    // Enter sends, Shift+Enter inserts newline. See milestones.md M8 Phase 2.
+    // Enter sends, Shift+Enter inserts newline.
     const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
         if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();
@@ -92,10 +115,8 @@ export function ChatInput({
         }
     };
 
-    // Paste-to-upload — copy a screenshot, Cmd/Ctrl+V into the textarea, the
-    // image lands in the file slot instead of pasting as text. If a file is
-    // already queued, ignore the paste rather than silently replacing it
-    // (user has to clear the existing one first — feels less surprising).
+    // Paste-to-upload: pasted image lands in the file slot. If a file is
+    // already queued, ignore rather than silently replacing it.
     const handlePaste = (e: ClipboardEvent<HTMLTextAreaElement>) => {
         if (disabled || hasFile) {
             return;
@@ -111,7 +132,7 @@ export function ChatInput({
             if (item.kind === 'file' && item.type.startsWith('image/')) {
                 const pasted = item.getAsFile();
 
-                if (pasted && validateFile(pasted)) {
+                if (pasted && validateFile(pasted, t)) {
                     e.preventDefault();
                     onFileChange(pasted);
                 }
@@ -124,9 +145,8 @@ export function ChatInput({
     const handleFileInputChange = (e: ChangeEvent<HTMLInputElement>) => {
         const next = e.target.files?.[0] ?? null;
 
-        if (next && !validateFile(next)) {
-            // Clear the input so re-selecting the same bad file still fires
-            // onChange and re-runs validation.
+        if (next && !validateFile(next, t)) {
+            // Clear so re-selecting the same bad file still fires onChange.
             e.target.value = '';
 
             return;
@@ -148,17 +168,18 @@ export function ChatInput({
             onSubmit={submit}
             className="border-t border-border/60 bg-card/40"
         >
-            {/* File preview strip — only when a file is queued. Shows the
-                local object-URL thumb + a clear button + (when in flight)
-                an upload progress bar. */}
             {hasFile && (
                 <div className="flex items-center gap-3 border-b border-border/40 px-3 py-2">
-                    {previewUrl && (
+                    {previewUrl ? (
                         <img
                             src={previewUrl}
                             alt={file.name}
                             className="size-12 shrink-0 rounded-md border border-border/60 object-cover"
                         />
+                    ) : (
+                        <span className="flex size-12 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
+                            <FileText className="size-5" />
+                        </span>
                     )}
                     <div className="min-w-0 flex-1">
                         <p className="truncate text-xs font-medium text-foreground">
@@ -181,7 +202,7 @@ export function ChatInput({
                         size="icon"
                         variant="ghost"
                         onClick={clearFile}
-                        aria-label="Remove attachment"
+                        aria-label={t('Remove attachment')}
                         disabled={disabled}
                         className="shrink-0"
                     >
@@ -205,32 +226,34 @@ export function ChatInput({
                     variant="ghost"
                     onClick={() => fileInputRef.current?.click()}
                     disabled={disabled || hasFile}
-                    aria-label="Attach image"
+                    aria-label={t('Attach file')}
                     className="shrink-0"
                 >
                     <Paperclip className="size-4" />
                 </Button>
                 <div className="flex-1 space-y-1">
                     <Textarea
+                        ref={textareaRef}
                         value={content}
                         onChange={(e) => setContent(e.target.value)}
                         onKeyDown={handleKeyDown}
                         onPaste={handlePaste}
                         placeholder={
                             hasFile
-                                ? 'Add a caption (optional)…'
-                                : 'Type a message…'
+                                ? t('Add a caption (optional)…')
+                                : t('Type a message…')
                         }
                         rows={1}
-                        aria-label="Chat message"
+                        aria-label={t('Chat message')}
                         aria-invalid={overLimit || undefined}
                         className="max-h-32 min-h-9 resize-none py-2 text-sm"
                     />
                     {overLimit && (
                         <p className="text-[11px] text-destructive">
-                            {trimmed.length.toLocaleString()} /{' '}
-                            {MAX_CONTENT_LENGTH.toLocaleString()} — message too
-                            long.
+                            {t(':count / :max — message too long.', {
+                                count: trimmed.length.toLocaleString(),
+                                max: MAX_CONTENT_LENGTH.toLocaleString(),
+                            })}
                         </p>
                     )}
                 </div>
@@ -239,7 +262,7 @@ export function ChatInput({
                     size="icon"
                     variant="gradient"
                     disabled={!canSend}
-                    aria-label="Send message"
+                    aria-label={t('Send message')}
                 >
                     <Send className="size-4" />
                 </Button>
@@ -248,20 +271,21 @@ export function ChatInput({
     );
 }
 
-/**
- * Client-side preflight on file picker. Server validates again (defense in
- * depth + the source of truth for accepted types / sizes), but rejecting
- * here saves the user a round-trip when they obviously picked the wrong file.
- */
-function validateFile(file: File): boolean {
+/** Client-side preflight; server validates again as source of truth. */
+function validateFile(
+    file: File,
+    t: (key: string, replacements?: Record<string, string | number>) => string,
+): boolean {
     if (!ACCEPTED_MIMES.includes(file.type)) {
-        toast.error('Only JPEG, PNG, or WebP images can be sent in chat.');
+        toast.error(
+            t('Only JPG, PNG, WebP, or PDF files can be sent in chat.'),
+        );
 
         return false;
     }
 
     if (file.size > MAX_FILE_SIZE_BYTES) {
-        toast.error('Image is larger than 5 MB.');
+        toast.error(t('File is larger than 5 MB.'));
 
         return false;
     }

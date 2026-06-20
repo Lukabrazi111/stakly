@@ -9,6 +9,7 @@ import {
     DialogHeader,
     DialogTitle,
 } from '@/components/ui/dialog';
+import { useT } from '@/lib/i18n';
 import { cancel as cancelRoute } from '@/routes/listings';
 
 interface CancelListing {
@@ -24,24 +25,20 @@ interface Props {
     onSuccess?: () => void;
 }
 
-/**
- * Shared confirmation dialog for cancelling a listing. Used by the listing
- * detail page Cancel button and the /listings/mine row Cancel action.
- *
- * Owns its own `processing` state and the DELETE call. Consumers manage
- * `open` only (controlled), matching the `ResumeListingDialog` pattern.
- */
+/** Shared confirmation dialog for cancelling a listing. Owns the DELETE
+ *  call; consumers control `open` only. */
 export function CancelListingDialog({
     listing,
     open,
     onOpenChange,
     onSuccess,
 }: Props) {
+    const t = useT();
     const [processing, setProcessing] = useState(false);
 
     const handleConfirm = () => {
         setProcessing(true);
-        router.delete(cancelRoute(listing.id).url, {
+        router.delete(cancelRoute({ listing: listing.id }).url, {
             preserveScroll: true,
             onSuccess: () => {
                 onSuccess?.();
@@ -55,14 +52,12 @@ export function CancelListingDialog({
         <Dialog open={open} onOpenChange={onOpenChange}>
             <DialogContent>
                 <DialogHeader>
-                    <DialogTitle>Cancel this listing?</DialogTitle>
+                    <DialogTitle>{t('Cancel this listing?')}</DialogTitle>
                     <DialogDescription>
-                        Your{' '}
-                        <span className="font-semibold text-foreground">
-                            ${listing.stake_amount} USDT
-                        </span>{' '}
-                        stake will be refunded immediately. This can&apos;t be
-                        undone.
+                        {t(
+                            "Your :amount stake will be refunded immediately. This can't be undone.",
+                            { amount: `$${listing.stake_amount} USDT` },
+                        )}
                     </DialogDescription>
                 </DialogHeader>
                 <DialogFooter>
@@ -71,14 +66,14 @@ export function CancelListingDialog({
                         onClick={() => onOpenChange(false)}
                         disabled={processing}
                     >
-                        Keep listing
+                        {t('Keep listing')}
                     </Button>
                     <Button
                         variant="destructive"
                         onClick={handleConfirm}
                         disabled={processing}
                     >
-                        {processing ? 'Cancelling…' : 'Cancel & refund'}
+                        {processing ? t('Cancelling…') : t('Cancel & refund')}
                     </Button>
                 </DialogFooter>
             </DialogContent>

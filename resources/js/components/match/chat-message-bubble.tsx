@@ -1,7 +1,9 @@
 import {
+    AlertTriangle,
     BadgeCheck,
     Crown,
     ExternalLink,
+    FileText,
     Link as LinkIcon,
     Loader2,
     Megaphone,
@@ -14,9 +16,13 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { useInitials } from '@/hooks/use-initials';
+import { useT } from '@/lib/i18n';
+import type { TranslationFn } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import type {
+    ChatDisputeOpeningAttachment,
     ChatDisputePromptAttachment,
+    ChatFileAttachment,
     ChatGameCardAttachment,
     ChatImageAttachment,
     ChatLinkAttachment,
@@ -26,14 +32,18 @@ import type {
 
 interface ChatMessageBubbleProps {
     message: ChatMessage;
-    // The current viewer — used to align own vs opponent bubbles.
     viewerId: number;
-    // Sender lookup: the two known participants. Resolves `user_id` to a
-    // display name without embedding the user object on every message.
     creator: MatchPlayer;
     taker: MatchPlayer;
-    // Optimistic-UI handlers — invoked from the failed-bubble footer.
-    // No-op for server-sourced messages (they never reach a failed state).
+    /**
+     * M34 — when set, takes precedence over `creator`/`taker` for sender
+     * lookup. Lobby chat (LobbyFilling matches) has up to `team_size × 2`
+     * participants, not just the 1v1 pair; the lobby page passes its full
+     * roster here. Existing match/show.tsx keeps using creator+taker
+     * without change.
+     */
+    participants?: MatchPlayer[];
+    /** Invoked from the failed-bubble footer; no-op for server-sourced messages. */
     onRetry: (correlationId: string) => void;
     onDismiss: (correlationId: string) => void;
 }
@@ -43,9 +53,11 @@ export function ChatMessageBubble({
     viewerId,
     creator,
     taker,
+    participants,
     onRetry,
     onDismiss,
 }: ChatMessageBubbleProps) {
+    const t = useT();
     const gameCards = message.attachments.filter(
         (attachment): attachment is ChatGameCardAttachment =>
             attachment.type === 'game_card',
@@ -66,11 +78,22 @@ export function ChatMessageBubble({
     }
 
     const isOwn = message.user_id === viewerId;
-    const sender = message.user_id === creator.id ? creator : taker;
+    const sender =
+        participants?.find((p) => p.id === message.user_id) ??
+        (message.user_id === creator.id ? creator : taker);
+
+    const isDisputeOpening = message.attachments.some(
+        (attachment): attachment is ChatDisputeOpeningAttachment =>
+            attachment.type === 'dispute_opening',
+    );
 
     const images = message.attachments.filter(
         (attachment): attachment is ChatImageAttachment =>
             attachment.type === 'image',
+    );
+    const files = message.attachments.filter(
+        (attachment): attachment is ChatFileAttachment =>
+            attachment.type === 'file',
     );
     const links = message.attachments.filter(
         (attachment): attachment is ChatLinkAttachment =>
@@ -102,13 +125,20 @@ export function ChatMessageBubble({
                     isPending && 'opacity-70',
                 )}
             >
-                {/* Optimistic local-file preview takes the place of real
-                    attachments while the upload is in flight or after a
-                    send failure. Replaced when the broadcast lands. */}
+                {isDisputeOpening && (
+                    <span className="inline-flex items-center gap-1.5 rounded-full border border-warning/40 bg-warning/10 px-2.5 py-1 text-[11px] font-medium text-warning">
+                        <AlertTriangle className="size-3" aria-hidden />
+                        {t('Reason for dispute')}
+                    </span>
+                )}
+
+                {/* Local-file preview while upload is in flight or after a
+                    failure; replaced when the broadcast lands. */}
                 {hasOptimisticFile && message.optimistic_file && (
-                    <OptimisticImage
+                    <OptimisticAttachment
                         previewUrl={message.optimistic_file.preview_url}
                         name={message.optimistic_file.name}
+                        size={message.optimistic_file.size}
                         isOwn={isOwn}
                         isFailed={isFailed}
                     />
@@ -122,6 +152,14 @@ export function ChatMessageBubble({
                             isOwn={isOwn}
                         />
                     ))}
+
+                {files.map((file) => (
+                    <FileAttachment
+                        key={file.media_id}
+                        file={file}
+                        isOwn={isOwn}
+                    />
+                ))}
 
                 {hasContent && (
                     <div
@@ -174,17 +212,10 @@ interface ImageAttachmentProps {
     isOwn: boolean;
 }
 
-/**
- * Inline thumbnail bubble rendered above any caption. Click opens the
- * full-resolution original inside a centered dialog. Both src URLs point at
- * the authenticated streaming route, so the browser asks the Stakly app for
- * each fetch — no public-disk leak path.
- *
- * When the backend supplies `width` + `height`, set them on the img so the
- * browser reserves the right box before bytes arrive — no scroll-shift when
- * chat history scrolls past a run of unloaded images.
- */
+/** Inline thumbnail; click opens the full-resolution original in a dialog.
+ *  width/height reserve the box so chat scroll doesn't shift on load. */
 function ImageAttachment({ image, isOwn }: ImageAttachmentProps) {
+    const t = useT();
     const [open, setOpen] = useState(false);
 
     return (
@@ -196,7 +227,7 @@ function ImageAttachment({ image, isOwn }: ImageAttachmentProps) {
                     'group overflow-hidden rounded-2xl border border-border/60 bg-card transition-shadow hover:shadow-glow-sm focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none',
                     isOwn ? 'rounded-br-md' : 'rounded-bl-md',
                 )}
-                aria-label={`Open image: ${image.name}`}
+                aria-label={t('Open image: :name', { name: image.name })}
             >
                 <img
                     src={image.thumb_url}
@@ -222,23 +253,58 @@ function ImageAttachment({ image, isOwn }: ImageAttachmentProps) {
     );
 }
 
+interface FileAttachmentProps {
+    file: ChatFileAttachment;
+    isOwn: boolean;
+}
+
+/** Download tile for non-image attachments (PDFs from dispute opener evidence).
+ *  Click opens the file in a new tab; the user can save via the browser. */
+function FileAttachment({ file, isOwn }: FileAttachmentProps) {
+    return (
+        <a
+            href={file.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className={cn(
+                'group inline-flex max-w-[300px] items-center gap-3 rounded-2xl border border-border/60 bg-card px-3 py-2.5 transition-shadow hover:shadow-glow-sm focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none',
+                isOwn ? 'rounded-br-md' : 'rounded-bl-md',
+            )}
+        >
+            <span className="inline-flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                <FileText className="size-4" />
+            </span>
+            <span className="flex min-w-0 flex-col">
+                <span className="truncate text-sm font-medium text-foreground">
+                    {file.name}
+                </span>
+                <span className="text-[11px] text-muted-foreground">
+                    {formatFileSize(file.size)}
+                </span>
+            </span>
+        </a>
+    );
+}
+
+function formatFileSize(bytes: number): string {
+    if (bytes < 1024) {
+        return `${bytes} B`;
+    }
+
+    if (bytes < 1024 * 1024) {
+        return `${(bytes / 1024).toFixed(1)} KB`;
+    }
+
+    return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}
+
 interface LinkCardProps {
     link: ChatLinkAttachment;
     isOwn: boolean;
 }
 
-/**
- * OG/Twitter/oEmbed unfurl card rendered below the chat bubble's text
- * content. Whole card is one anchor so the browser handles middle-click,
- * Cmd-click, drag-to-bookmark, etc. naturally — no nested interactive
- * elements that compete for click semantics.
- *
- * The image (when present) comes from `link-images.show`, the
- * authenticated proxy route. We set `width`/`height` to the rendered
- * size (not the natural image size) because OG images are highly
- * variable and we want a fixed-aspect-ratio tile, not flex-based image
- * sizing that shifts layout on bytes-arrived.
- */
+/** OG/oEmbed unfurl card. Whole card is one anchor so middle-click /
+ *  Cmd-click work naturally — no nested interactive elements. */
 function LinkCard({ link, isOwn }: LinkCardProps) {
     const hostname =
         link.site_name ?? safeHostname(link.canonical_url ?? link.url);
@@ -287,56 +353,84 @@ function LinkCard({ link, isOwn }: LinkCardProps) {
     );
 }
 
-interface OptimisticImageProps {
-    previewUrl: string;
+interface OptimisticAttachmentProps {
+    previewUrl: string | null;
     name: string;
+    size: number;
     isOwn: boolean;
     isFailed: boolean;
 }
 
-/**
- * Local-blob preview rendered while an upload is in flight (and kept
- * visible if the send failed so the user can retry without re-picking the
- * file). Not clickable into a lightbox — the original doesn't exist on the
- * server yet. Replaced by the real `ImageAttachment` render once the
- * broadcast confirms the message.
- */
-function OptimisticImage({
+/** Local-blob preview rendered while upload is in flight or after a
+ *  failure. Not clickable — the original doesn't exist on the server yet.
+ *  Image attachments show the blob; non-image (PDFs) show a file-icon tile. */
+function OptimisticAttachment({
     previewUrl,
     name,
+    size,
     isOwn,
     isFailed,
-}: OptimisticImageProps) {
+}: OptimisticAttachmentProps) {
+    if (previewUrl) {
+        return (
+            <div
+                className={cn(
+                    'relative overflow-hidden rounded-2xl border border-border/60 bg-card',
+                    isOwn ? 'rounded-br-md' : 'rounded-bl-md',
+                    isFailed && 'border-destructive/60',
+                )}
+            >
+                <img
+                    src={previewUrl}
+                    alt={name}
+                    className={cn(
+                        'max-h-64 max-w-[300px] object-contain',
+                        isFailed && 'opacity-50',
+                    )}
+                />
+                {!isFailed && (
+                    <div className="absolute inset-0 flex items-center justify-center bg-background/60 backdrop-blur-[1px]">
+                        <Loader2 className="size-6 animate-spin text-primary" />
+                    </div>
+                )}
+            </div>
+        );
+    }
+
     return (
         <div
             className={cn(
-                'relative overflow-hidden rounded-2xl border border-border/60 bg-card',
+                'relative inline-flex max-w-[300px] items-center gap-3 rounded-2xl border border-border/60 bg-card px-3 py-2.5',
                 isOwn ? 'rounded-br-md' : 'rounded-bl-md',
                 isFailed && 'border-destructive/60',
+                isFailed && 'opacity-70',
             )}
         >
-            <img
-                src={previewUrl}
-                alt={name}
-                className={cn(
-                    'max-h-64 max-w-[300px] object-contain',
-                    isFailed && 'opacity-50',
-                )}
-            />
+            <span className="inline-flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                <FileText className="size-4" />
+            </span>
+            <span className="flex min-w-0 flex-col">
+                <span className="truncate text-sm font-medium text-foreground">
+                    {name}
+                </span>
+                <span className="text-[11px] text-muted-foreground">
+                    {formatFileSize(size)}
+                </span>
+            </span>
             {!isFailed && (
-                <div className="absolute inset-0 flex items-center justify-center bg-background/60 backdrop-blur-[1px]">
-                    <Loader2 className="size-6 animate-spin text-primary" />
-                </div>
+                <Loader2 className="size-4 shrink-0 animate-spin text-primary" />
             )}
         </div>
     );
 }
 
 function PendingFooter() {
+    const t = useT();
+
     return (
         <span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground">
             <Loader2 className="size-2.5 animate-spin" />
-            Sending…
+            {t('Sending…')}
         </span>
     );
 }
@@ -347,10 +441,12 @@ interface FailedFooterProps {
 }
 
 function FailedFooter({ onRetry, onDismiss }: FailedFooterProps) {
+    const t = useT();
+
     return (
         <div className="inline-flex items-center gap-2 text-[11px] text-destructive">
             <TriangleAlert className="size-3" />
-            <span>Failed to send</span>
+            <span>{t('Failed to send')}</span>
             <Button
                 type="button"
                 variant="ghost"
@@ -359,14 +455,14 @@ function FailedFooter({ onRetry, onDismiss }: FailedFooterProps) {
                 className="h-6 gap-1 px-2 text-[11px] text-destructive hover:bg-destructive/10 hover:text-destructive hover:[text-shadow:none]"
             >
                 <RotateCw className="size-3" />
-                Retry
+                {t('Retry')}
             </Button>
             <Button
                 type="button"
                 variant="ghost"
                 size="sm"
                 onClick={onDismiss}
-                aria-label="Dismiss"
+                aria-label={t('Dismiss')}
                 className="h-6 px-1.5 text-muted-foreground hover:text-foreground hover:[text-shadow:none]"
             >
                 <X className="size-3" />
@@ -397,9 +493,8 @@ function SenderAvatar({
 interface SystemBubbleProps {
     content: string;
     gameCards: ChatGameCardAttachment[];
-    // `dispute_prompt` swaps the muted lifecycle styling for a warning
-    // variant — the message is a call-to-action ("submit evidence") that
-    // should stand out from neutral lifecycle narration.
+    /** `dispute_prompt` swaps muted lifecycle styling for warning so the
+     *  call-to-action stands out from neutral narration. */
     variant?: 'default' | 'dispute_prompt';
 }
 
@@ -431,9 +526,6 @@ function SystemBubble({
                 <GameCardAttachment
                     key={`${card.game_id}-${card.source}`}
                     card={card}
-                    // System cards aren't tied to a sender so isOwn doesn't
-                    // apply — false renders the symmetric (not own-aligned)
-                    // corner radius.
                     isOwn={false}
                 />
             ))}
@@ -446,17 +538,11 @@ interface GameCardAttachmentProps {
     isOwn: boolean;
 }
 
-/**
- * Phase 4 verified-game evidence card. Same chat-card visual family as
- * `LinkCard` — pill border, Stakly-skinned hover glow — with a chess
- * provenance tile on the left and structured game metadata on the right.
- *
- * The verified badge is colour + icon (not colour alone) per the
- * accessibility rule — colour-blind users still see the BadgeCheck
- * affordance.
- */
+/** Verified-game evidence card. Verified badge uses color + icon so
+ *  color-blind users still see the BadgeCheck affordance. */
 function GameCardAttachment({ card, isOwn }: GameCardAttachmentProps) {
-    const winnerLabel = describeWinner(card);
+    const t = useT();
+    const winnerLabel = describeWinner(card, t);
     const speedLabel = card.speed ? capitalize(card.speed) : null;
 
     return (
@@ -464,7 +550,7 @@ function GameCardAttachment({ card, isOwn }: GameCardAttachmentProps) {
             href={card.url}
             target="_blank"
             rel="noopener noreferrer"
-            aria-label={`Open Lichess game ${card.game_id}`}
+            aria-label={t('Open Lichess game :id', { id: card.game_id })}
             className={cn(
                 'group flex w-full max-w-[320px] cursor-pointer flex-col gap-2 overflow-hidden rounded-2xl border border-border/60 bg-card/80 p-3 transition-all duration-200 hover:border-primary/40 hover:shadow-glow-sm focus-visible:border-primary/60 focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none',
                 isOwn ? 'rounded-br-md' : 'rounded-bl-md',
@@ -477,10 +563,10 @@ function GameCardAttachment({ card, isOwn }: GameCardAttachmentProps) {
                     </span>
                     <div className="flex min-w-0 flex-col">
                         <span className="text-xs font-semibold tracking-tight text-foreground">
-                            Lichess game
+                            {t('Lichess game')}
                         </span>
                         <span className="truncate text-[10px] tracking-wide text-muted-foreground/80 uppercase">
-                            {[speedLabel, card.rated ? 'Rated' : 'Casual']
+                            {[speedLabel, card.rated ? t('Rated') : t('Casual')]
                                 .filter(Boolean)
                                 .join(' · ')}
                         </span>
@@ -489,11 +575,11 @@ function GameCardAttachment({ card, isOwn }: GameCardAttachmentProps) {
                 {card.verified ? (
                     <span className="inline-flex items-center gap-1 rounded-full bg-success/15 px-2 py-0.5 text-[10px] font-semibold tracking-wide text-success uppercase">
                         <BadgeCheck className="size-3" strokeWidth={2} />
-                        Verified
+                        {t('Verified')}
                     </span>
                 ) : (
                     <span className="inline-flex items-center gap-1 rounded-full border border-border/60 px-2 py-0.5 text-[10px] font-semibold tracking-wide text-muted-foreground uppercase">
-                        Unverified
+                        {t('Unverified')}
                     </span>
                 )}
             </div>
@@ -561,46 +647,40 @@ function PlayerBadge({ username, color, isWinner }: PlayerBadgeProps) {
 }
 
 /**
- * Map raw status + winner to human chat copy. Handles BOTH Lichess and
- * chess.com vocabularies — they use different status strings for the
- * same outcomes:
- *   Lichess:   mate / resign / outoftime / timeout / cheat / draw / stalemate / aborted
- *   chess.com: checkmated / resigned / timeout / abandoned / agreed / repetition / stalemate / etc.
- *
- * For chess.com, `status` is set to the LOSER's per-side `result` string
- * by `ChessComGameClient::parseGame`. So a checkmate-win game has
- * status='checkmated', a resignation has status='resigned', etc.
+ * Map raw status + winner to chat copy. Handles both Lichess
+ * (mate/resign/outoftime/...) and chess.com (checkmated/resigned/... — the
+ * loser's `result` string from `ChessComGameClient::parseGame`).
  */
-function describeWinner(card: ChatGameCardAttachment): string | null {
+function describeWinner(
+    card: ChatGameCardAttachment,
+    t: TranslationFn,
+): string | null {
     const status = card.status;
     const winner = card.winner_username;
 
     if (winner && status) {
-        const reason: Record<string, string> = {
-            // Lichess vocabulary
-            mate: 'by checkmate',
-            resign: 'by resignation',
-            outoftime: 'on time',
-            timeout: 'on time',
-            cheat: 'by cheat report',
-            // chess.com vocabulary (loser's result string)
-            checkmated: 'by checkmate',
-            resigned: 'by resignation',
-            abandoned: 'by abandonment',
-            lose: '',
+        const winnerKey: Record<string, string> = {
+            mate: ':winner won by checkmate.',
+            resign: ':winner won by resignation.',
+            outoftime: ':winner won on time.',
+            timeout: ':winner won on time.',
+            cheat: ':winner won by cheat report.',
+            checkmated: ':winner won by checkmate.',
+            resigned: ':winner won by resignation.',
+            abandoned: ':winner won by abandonment.',
+            lose: ':winner won.',
         };
 
-        const text = reason[status];
+        const key = winnerKey[status];
 
-        if (text !== undefined) {
-            return text === '' ? `${winner} won.` : `${winner} won ${text}.`;
+        if (key !== undefined) {
+            return t(key, { winner });
         }
 
-        return `${winner} won.`;
+        return t(':winner won.', { winner });
     }
 
-    // Draw vocabulary — covers both providers.
-    const drawStatuses: Record<string, string> = {
+    const drawKeys: Record<string, string> = {
         draw: 'Drawn.',
         stalemate: 'Drawn by stalemate.',
         agreed: 'Drawn by agreement.',
@@ -610,12 +690,12 @@ function describeWinner(card: ChatGameCardAttachment): string | null {
         timevsinsufficient: 'Drawn — time vs insufficient material.',
     };
 
-    if (status && status in drawStatuses) {
-        return drawStatuses[status];
+    if (status && status in drawKeys) {
+        return t(drawKeys[status]);
     }
 
     if (status === 'aborted') {
-        return 'Game aborted.';
+        return t('Game aborted.');
     }
 
     return null;
@@ -629,11 +709,6 @@ function capitalize(value: string): string {
     return value.charAt(0).toUpperCase() + value.slice(1);
 }
 
-/**
- * Pull the hostname off a URL string for the link-card footer. Falls
- * back to null on malformed input rather than throwing — a broken URL
- * shouldn't break the bubble render.
- */
 function safeHostname(url: string | null): string | null {
     if (!url) {
         return null;
@@ -646,9 +721,6 @@ function safeHostname(url: string | null): string | null {
     }
 }
 
-/**
- * Compact same-day formatter: "14:32".
- */
 function formatBubbleTime(iso: string | null): string {
     if (!iso) {
         return '';

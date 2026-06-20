@@ -15,6 +15,7 @@ import {
     DialogPortal,
     DialogTitle,
 } from '@/components/ui/dialog';
+import { useT } from '@/lib/i18n';
 
 const META: Record<AuthView, { title: string; description: string }> = {
     login: {
@@ -32,6 +33,7 @@ const META: Record<AuthView, { title: string; description: string }> = {
 };
 
 export function AuthModal() {
+    const t = useT();
     const { open, close, view, setView } = useAuthModal();
     const page = usePage();
     const status =
@@ -73,21 +75,23 @@ export function AuthModal() {
                     onOpenAutoFocus={(e) => {
                         e.preventDefault();
                     }}
-                    className="fixed top-[50%] left-[50%] z-50 w-full max-w-[calc(100%-2rem)] translate-x-[-50%] translate-y-[-50%] overflow-hidden rounded-2xl border border-glow bg-card p-0 duration-200 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 sm:max-w-md"
+                    className="fixed top-[50%] left-[50%] z-50 w-full max-w-[calc(100%-2rem)] translate-x-[-50%] translate-y-[-50%] overflow-hidden rounded-2xl border-2 border-primary bg-card p-0 shadow-glow-md duration-200 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 sm:max-w-md"
                 >
                     <DialogTitle className="sr-only">
-                        Authenticate to Stakly
+                        {t('Authenticate to Stakly')}
                     </DialogTitle>
                     <DialogDescription className="sr-only">
-                        Sign in, create an account, or reset your password.
+                        {t(
+                            'Sign in, create an account, or reset your password.',
+                        )}
                     </DialogDescription>
 
                     <DialogPrimitive.Close
-                        aria-label="Close"
+                        aria-label={t('Close')}
                         className="absolute top-3.5 right-3.5 z-10 inline-flex size-9 cursor-pointer items-center justify-center rounded-full text-muted-foreground transition-colors duration-150 ease-out hover:bg-primary/10 hover:text-foreground focus-visible:ring-2 focus-visible:ring-primary/25 focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none disabled:pointer-events-none"
                     >
                         <X className="size-4" />
-                        <span className="sr-only">Close</span>
+                        <span className="sr-only">{t('Close')}</span>
                     </DialogPrimitive.Close>
 
                     <motion.div
@@ -115,10 +119,10 @@ export function AuthModal() {
                             >
                                 <div className="flex flex-col gap-2 text-center">
                                     <h2 className="font-display text-2xl font-bold tracking-tight text-foreground">
-                                        {META[view].title}
+                                        {t(META[view].title)}
                                     </h2>
                                     <p className="text-sm text-muted-foreground">
-                                        {META[view].description}
+                                        {t(META[view].description)}
                                     </p>
                                 </div>
 

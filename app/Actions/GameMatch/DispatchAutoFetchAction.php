@@ -2,55 +2,73 @@
 
 namespace App\Actions\GameMatch;
 
+use App\Enums\AutoFetchOutcome;
 use App\Enums\LinkedAccountProvider;
 use App\Enums\MatchStatus;
 use App\Jobs\AutoFetchChessComGameJob;
+use App\Jobs\AutoFetchFaceitGameJob;
 use App\Jobs\AutoFetchLichessGameJob;
 use App\Models\GameMatch;
+use App\Services\Provider\ProviderCircuitBreaker;
 
 /**
- * M16 Phase 2 — dispatches the per-platform auto-fetch job for a Pending
- * match. Layered trigger sites all funnel through here:
+ * Funnel for per-platform auto-fetch job dispatch (page-visit, chat-send, cron, Lichess stream).
+ * Idempotency lives at the job layer (`ShouldBeUnique` + `alreadyPosted()` short-circuit).
+ * Every skip writes a `match_auto_fetch_attempts` row so the admin timeline reflects the decision.
  *
- *   - `GameMatchController::show` on every Pending page-visit.
- *   - `SendMessageAction` on every chat message during Pending / Disputed.
- *   - `App\Console\Commands\AutoFetchPendingMatches` cron at 5-min cadence.
- *   - (Phase 4) Lichess stream consumer on stream `game-end` events.
- *
- * Idempotency lives at the job layer:
- *   - `AutoFetch*GameJob` implements `ShouldBeUnique` — concurrent dispatches
- *     for the same match are dropped while a job is in-flight, so F5-spam
- *     or a cron-page-visit race doesn't thunder-herd the provider API.
- *   - The job's `alreadyPosted()` check short-circuits if a card already
- *     landed (e.g. settled in a prior run; re-dispatch is a cheap DB query).
- *
- * Pre-flight gates (silent skip — these are normal "nothing to do" states):
- *   - Match must be Pending. Other statuses don't need a fresh API fetch.
- *   - Both sides must have a snapshot for the listing's platform —
- *     auto-fetch can't anchor a card without both usernames.
+ * M14 Slice 2d: `circuit_open` skip when the per-provider breaker has tripped — keeps us
+ * from hammering a provider that's already failing the rest of the pipeline.
  */
 class DispatchAutoFetchAction
 {
+    public function __construct(
+        private readonly RecordAutoFetchAttemptAction $recordAttempt,
+        private readonly ProviderCircuitBreaker $breaker,
+    ) {}
+
     public function handle(GameMatch $match): void
     {
+        $match->loadMissing('listing', 'providerSnapshots');
+
+        // Read platform first so even the `not_pending` skip carries provider
+        // context for PipelineHealth's per-provider skip rollup.
+        $platform = $match->listing->platform;
+
         if ($match->status !== MatchStatus::Pending) {
+            $this->recordSkip($match->id, $platform, 'not_pending');
+
             return;
         }
 
-        $match->loadMissing('listing', 'providerSnapshots');
+        if ($this->breaker->isOpen($platform)) {
+            $this->recordSkip($match->id, $platform, 'circuit_open');
 
-        $platform = $match->listing->platform;
+            return;
+        }
 
         $creatorSnap = $match->snapshotUsername(GameMatch::SIDE_CREATOR, $platform);
         $takerSnap = $match->snapshotUsername(GameMatch::SIDE_TAKER, $platform);
 
         if ($creatorSnap === null || $takerSnap === null) {
+            $this->recordSkip($match->id, $platform, 'snapshot_missing');
+
             return;
         }
 
         match ($platform) {
             LinkedAccountProvider::Lichess => AutoFetchLichessGameJob::dispatch($match),
             LinkedAccountProvider::ChessCom => AutoFetchChessComGameJob::dispatch($match),
+            LinkedAccountProvider::Faceit => AutoFetchFaceitGameJob::dispatch($match),
         };
+    }
+
+    private function recordSkip(int $matchId, LinkedAccountProvider $provider, string $reason): void
+    {
+        $this->recordAttempt->handle(
+            matchId: $matchId,
+            provider: $provider,
+            outcome: AutoFetchOutcome::Skipped,
+            extras: ['outcome_reason' => $reason],
+        );
     }
 }

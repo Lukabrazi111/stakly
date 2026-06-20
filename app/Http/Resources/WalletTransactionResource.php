@@ -11,20 +11,14 @@ use Illuminate\Http\Resources\Json\JsonResource;
  *
  * Deliberately omitted:
  *   - `reference_id` — idempotency keys (`listing-create:42`) are internal
- *     plumbing. Leaking them would expose our naming convention to anyone who
- *     can see their own history.
- *   - `user_id` — the user is implied by the auth context for every endpoint
- *     that returns this resource. Repeating it adds nothing and would invite
- *     mistakes if we ever introduce a generic ledger viewer.
+ *     plumbing; exposing them leaks our naming convention.
+ *   - `user_id` — implied by the auth context; would invite mistakes in a
+ *     generic ledger viewer.
  *
- * `amount` and `balance_after` cast to floats at the JSON boundary — matches
- * the M3 listings convention and keeps the frontend free of BCMath strings.
+ * `amount` / `balance_after` cast to floats at the JSON boundary so the FE
+ * never deals with BCMath strings.
  *
- * `related_match` is included for transactions whose listing has a 1:1 match
- * (Payout / Fee, and any Hold posted at match-take time). The frontend uses
- * it to deep-link Payout / Fee rows directly to the match for one-click
- * navigation from "$180 credit" to "the match it came from". Callers MUST
- * eager-load `listing.gameMatch` to avoid N+1 — controllers do this today.
+ * Callers MUST eager-load `listing.gameMatch` to avoid N+1 on `related_match`.
  *
  * @mixin WalletTransaction
  */

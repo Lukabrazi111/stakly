@@ -2,6 +2,7 @@ import { router } from '@inertiajs/react';
 import { MailWarning } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
+import { useT } from '@/lib/i18n';
 import { send } from '@/routes/verification';
 
 interface Props {
@@ -27,10 +28,16 @@ function readCooldownRemaining(): number {
 }
 
 export function UnverifiedChip({ className }: Props) {
+    const t = useT();
     const [sending, setSending] = useState(false);
-    const [cooldown, setCooldown] = useState(() => readCooldownRemaining());
+    // Default 0 during SSR + first paint, sync after mount — reading
+    // localStorage synchronously would cause a hydration mismatch on the label.
+    const [cooldown, setCooldown] = useState(0);
 
-    // Tick down while cooldown is active.
+    useEffect(() => {
+        setCooldown(readCooldownRemaining());
+    }, []);
+
     useEffect(() => {
         if (cooldown <= 0) {
             return;
@@ -43,8 +50,8 @@ export function UnverifiedChip({ className }: Props) {
         return () => window.clearInterval(id);
     }, [cooldown]);
 
-    // Re-read cooldown when useFlashToast writes a fresh value to localStorage
-    // (e.g. server flashed `verify_cooldown_seconds` after register/resend).
+    // Re-read when useFlashToast writes a fresh value (server flashed
+    // `verify_cooldown_seconds` after register/resend).
     useEffect(() => {
         const sync = () => setCooldown(readCooldownRemaining());
 
@@ -78,7 +85,9 @@ export function UnverifiedChip({ className }: Props) {
                     toast.error(
                         typeof message === 'string'
                             ? message
-                            : 'Could not resend right now. Try again in a moment.',
+                            : t(
+                                  'Could not resend right now. Try again in a moment.',
+                              ),
                     );
                 },
             },
@@ -87,14 +96,14 @@ export function UnverifiedChip({ className }: Props) {
 
     const label = (() => {
         if (sending) {
-            return 'Sending...';
+            return t('Sending…');
         }
 
         if (cooldown > 0) {
-            return `Resend in ${cooldown}s`;
+            return t('Resend in :seconds s', { seconds: cooldown });
         }
 
-        return 'Verify email';
+        return t('Verify email');
     })();
 
     return (
@@ -105,8 +114,12 @@ export function UnverifiedChip({ className }: Props) {
             className={`inline-flex items-center gap-2 rounded-full border border-warning/30 bg-warning/10 px-3 py-1.5 text-xs font-medium text-warning transition-colors duration-200 ease-out hover:border-warning/50 hover:bg-warning/20 focus-visible:ring-2 focus-visible:ring-warning focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:border-warning/30 disabled:hover:bg-warning/10 ${className ?? ''}`}
             title={
                 cooldown > 0
-                    ? `Wait ${cooldown}s before requesting another email`
-                    : 'Verify your email to create listings — click to resend'
+                    ? t('Wait :seconds s before requesting another email', {
+                          seconds: cooldown,
+                      })
+                    : t(
+                          'Verify your email to create listings — click to resend',
+                      )
             }
         >
             <MailWarning className="size-3.5" />

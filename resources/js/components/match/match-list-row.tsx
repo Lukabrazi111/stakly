@@ -1,7 +1,9 @@
 import { Link, usePage } from '@inertiajs/react';
 import { Clock, Handshake, Trophy } from 'lucide-react';
+import { GameChip } from '@/components/listings/game-chip';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { useInitials } from '@/hooks/use-initials';
+import { useT } from '@/lib/i18n';
 import { timeControlLabels } from '@/lib/listings-format';
 import {
     formatMatchDate,
@@ -16,21 +18,10 @@ interface Props {
     match: Match;
 }
 
-/**
- * One row inside the `/matches` table container (`pages/match/index.tsx`).
- *
- * Designed to live inside a single wrapping card with siblings — uses
- * `border-t border-border/40 first:border-t-0` for separation instead of
- * its own rounded border. Hover is a flat `bg-primary/5` row-tint rather
- * than the lift+glow you'd expect on a floating card.
- *
- * Whole row is clickable to the match detail page via an absolute-overlay
- * Link (same pattern as `ListingRow` / `MineListingRow`). The opponent zone
- * is a *sibling* Link with `relative` positioning so it paints above the
- * overlay and intercepts its own clicks → user profile. Body content uses
- * `pointer-events-none` so clicks fall through to the overlay.
- */
+/** One row inside `/matches`. Whole row → match detail via absolute-overlay
+ *  Link; opponent zone is a sibling Link with `relative` to capture its own clicks. */
 export function MatchListRow({ match }: Props) {
+    const t = useT();
     const getInitials = useInitials();
     const { auth } = usePage().props;
 
@@ -38,8 +29,6 @@ export function MatchListRow({ match }: Props) {
     const isCreator = match.creator.id === userId;
     const opponent = isCreator ? match.taker : match.creator;
 
-    // Result chip only on settled matches. Three mutually-exclusive states:
-    // youWon / youLost / isDraw (settled with no winner).
     const youWon = match.winner !== null && userId === match.winner.id;
     const youLost =
         match.status === 'settled' && match.winner !== null && !youWon;
@@ -47,16 +36,14 @@ export function MatchListRow({ match }: Props) {
 
     return (
         <article className="group relative flex flex-col gap-4 border-t border-border/40 px-4 py-4 transition-colors duration-200 ease-out first:border-t-0 hover:bg-primary/5 md:flex-row md:items-center md:gap-6 md:px-5">
-            {/* Overlay: entire row → match detail */}
             <Link
-                href={matchShow(match.id).url}
-                aria-label={`View match vs ${opponent.name}`}
+                href={matchShow({ match: match.id }).url}
+                aria-label={t('View match vs :name', { name: opponent.name })}
                 className="absolute inset-0 rounded-lg focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none"
             />
 
-            {/* Opponent zone — relative sibling, sits above overlay → user profile */}
             <Link
-                href={userShow(opponent.username).url}
+                href={userShow({ user: opponent.username }).url}
                 className="relative flex min-w-0 items-center gap-3 rounded-lg focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none md:w-52 md:shrink-0"
             >
                 <Avatar className="size-10 shrink-0 overflow-hidden rounded-full">
@@ -79,13 +66,14 @@ export function MatchListRow({ match }: Props) {
                 </div>
             </Link>
 
-            {/* Match body — no Link wrapper; clicks bubble to overlay */}
             <div className="pointer-events-none relative flex flex-1 flex-wrap items-center gap-3 md:flex-nowrap md:gap-6">
                 <div className="flex flex-wrap items-center gap-2 md:flex-1">
+                    <GameChip game={match.listing.game} />
+
                     <span
                         className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-medium ${matchStatusTone[match.status]}`}
                     >
-                        {matchStatusLabel[match.status]}
+                        {t(matchStatusLabel[match.status])}
                     </span>
 
                     {match.listing.time_control.map((tc) => (
@@ -94,7 +82,7 @@ export function MatchListRow({ match }: Props) {
                             className="inline-flex items-center gap-1.5 rounded-full border border-border/60 bg-background/60 px-3 py-1 text-xs font-medium text-muted-foreground"
                         >
                             <Clock className="size-3" />
-                            {timeControlLabels[tc]}
+                            {t(timeControlLabels[tc])}
                         </span>
                     ))}
 
@@ -111,13 +99,17 @@ export function MatchListRow({ match }: Props) {
                             ) : (
                                 <Trophy className="size-3" />
                             )}
-                            {isDraw ? 'Draw' : youWon ? 'You won' : 'You lost'}
+                            {isDraw
+                                ? t('Draw')
+                                : youWon
+                                  ? t('You won')
+                                  : t('You lost')}
                         </span>
                     )}
                 </div>
 
                 <div className="inline-flex shrink-0 items-center gap-1.5 text-xs font-medium text-muted-foreground md:w-20 md:justify-end">
-                    {match.created_at && formatMatchDate(match.created_at)}
+                    {match.created_at && formatMatchDate(match.created_at, t)}
                 </div>
 
                 <div className="flex items-baseline gap-1 md:w-28 md:shrink-0 md:justify-end">

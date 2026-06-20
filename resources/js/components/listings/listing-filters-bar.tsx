@@ -20,6 +20,7 @@ import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { CURRENCIES, DEFAULT_CURRENCY } from '@/config/currencies';
 import { gameSupports } from '@/config/games';
 import { useIsMobile } from '@/hooks/use-mobile';
+import { useT } from '@/lib/i18n';
 import { buildListingsQuery } from '@/lib/listings-query';
 import { index as listingsIndex } from '@/routes/listings';
 import type {
@@ -93,6 +94,7 @@ function visit(filters: ListingFiltersType) {
 }
 
 export function ListingFiltersBar({ filters, sorts }: Props) {
+    const t = useT();
     const isMobile = useIsMobile();
     const count = activeFilterCount(filters);
     const showTimeControlChips = gameSupports(filters.game, 'time_control');
@@ -138,7 +140,6 @@ export function ListingFiltersBar({ filters, sorts }: Props) {
 
     return (
         <div className="space-y-3">
-            {/* Row 1: Sort + (desktop quick filters inline) + Filters button. */}
             <div className="flex items-center gap-3">
                 <Select
                     value={filters.sort}
@@ -150,17 +151,20 @@ export function ListingFiltersBar({ filters, sorts }: Props) {
                     <SelectContent>
                         {sorts.map((sort) => (
                             <SelectItem key={sort} value={sort}>
-                                {SORT_LABELS[sort]}
+                                {t(SORT_LABELS[sort])}
                             </SelectItem>
                         ))}
                     </SelectContent>
                 </Select>
 
-                {/* Desktop only — stake + chips live in the bar. */}
                 {!isMobile && (
                     <>
                         <StakeAmountInput filters={filters} />
 
+                        {/* Chess-specific. When a second game adapter ships
+                            (M15), branch here per `filters.game` with a
+                            sibling component (`Cs2FormatChips`, etc.). See
+                            the matching gate in `listing-filters.tsx`. */}
                         {showTimeControlChips && (
                             <ToggleGroup
                                 type="multiple"
@@ -178,10 +182,10 @@ export function ListingFiltersBar({ filters, sorts }: Props) {
                                     <ToggleGroupItem
                                         key={tc}
                                         value={tc}
-                                        aria-label={TIME_CONTROL_LABELS[tc]}
+                                        aria-label={t(TIME_CONTROL_LABELS[tc])}
                                         className="rounded-full px-4 py-2"
                                     >
-                                        {TIME_CONTROL_LABELS[tc]}
+                                        {t(TIME_CONTROL_LABELS[tc])}
                                     </ToggleGroupItem>
                                 ))}
                             </ToggleGroup>
@@ -195,39 +199,44 @@ export function ListingFiltersBar({ filters, sorts }: Props) {
                 </div>
             </div>
 
-            {/* Row 2: full-width stake input on mobile only. */}
             {isMobile && <StakeAmountInput filters={filters} fullWidth />}
 
             {count > 0 && (
                 <div className="flex flex-wrap items-center gap-2">
                     {filters.stake_min !== null && (
                         <ActiveChip
-                            label={`Min $${filters.stake_min}`}
+                            label={t('Min $:amount', {
+                                amount: filters.stake_min,
+                            })}
                             onRemove={() => removeFilter('stake_min')}
                         />
                     )}
                     {filters.stake_max !== null && (
                         <ActiveChip
-                            label={`Max $${filters.stake_max}`}
+                            label={t('Max $:amount', {
+                                amount: filters.stake_max,
+                            })}
                             onRemove={() => removeFilter('stake_max')}
                         />
                     )}
                     {filters.skill_min !== null && (
                         <ActiveChip
-                            label={`Skill ${filters.skill_min}+`}
+                            label={t('Skill :min+', { min: filters.skill_min })}
                             onRemove={() => removeFilter('skill_min')}
                         />
                     )}
                     {filters.skill_max !== null && (
                         <ActiveChip
-                            label={`Skill up to ${filters.skill_max}`}
+                            label={t('Skill up to :max', {
+                                max: filters.skill_max,
+                            })}
                             onRemove={() => removeFilter('skill_max')}
                         />
                     )}
                     {filters.time_control.map((tc) => (
                         <ActiveChip
                             key={tc}
-                            label={TIME_CONTROL_LABELS[tc]}
+                            label={t(TIME_CONTROL_LABELS[tc])}
                             onRemove={() => removeTimeControl(tc)}
                         />
                     ))}
@@ -248,7 +257,7 @@ export function ListingFiltersBar({ filters, sorts }: Props) {
                         onClick={clearAll}
                         className="ml-1 cursor-pointer text-xs font-medium text-muted-foreground underline-offset-4 transition-colors hover:text-foreground hover:underline"
                     >
-                        Clear all
+                        {t('Clear all')}
                     </button>
                 </div>
             )}
@@ -261,16 +270,10 @@ interface StakeAmountInputProps {
     fullWidth?: boolean;
 }
 
-/**
- * Bar quick-action: "Up to $X | USDT ▾" — Bybit-style compound input.
- * Single bordered container holding the amount input + a vertical divider
- * + a currency dropdown. v1 = USDT-only enabled; others show "Soon" badges.
- *
- * Sets `stake_max` via debounced router.get so we don't fire on every
- * keystroke. Local state echoes input while typing; commits after the
- * user pauses.
- */
+/** "Up to $X | USDT" compound input. Debounces `stake_max` updates so we
+ *  don't fire a router.get on every keystroke. */
 function StakeAmountInput({ filters, fullWidth }: StakeAmountInputProps) {
+    const t = useT();
     const [value, setValue] = useState<string>(
         filters.stake_max !== null ? String(filters.stake_max) : '',
     );
@@ -295,7 +298,7 @@ function StakeAmountInput({ filters, fullWidth }: StakeAmountInputProps) {
 
     return (
         <div
-            className={`h-9 items-center rounded-md border border-border/60 bg-card/60 transition-[color,box-shadow] focus-within:border-primary/40 focus-within:ring-2 focus-within:ring-primary/25 hover:border-border ${
+            className={`h-9 items-center rounded-md border border-border/60 bg-card/60 transition-[color,box-shadow] focus-within:border-ring focus-within:ring-1 focus-within:shadow-glow-sm focus-within:ring-ring ${
                 fullWidth ? 'flex w-full' : 'inline-flex'
             }`}
         >
@@ -304,10 +307,10 @@ function StakeAmountInput({ filters, fullWidth }: StakeAmountInputProps) {
                 inputMode="decimal"
                 min={0}
                 max={100000}
-                placeholder="Up to $"
+                placeholder={t('Up to $')}
                 value={value}
                 onChange={(e) => setValue(e.target.value)}
-                aria-label="Maximum stake"
+                aria-label={t('Maximum stake')}
                 className={`[appearance:textfield] bg-transparent px-3 text-sm outline-none placeholder:text-muted-foreground [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none ${
                     fullWidth ? 'min-w-0 flex-1' : 'w-32'
                 }`}
@@ -319,12 +322,14 @@ function StakeAmountInput({ filters, fullWidth }: StakeAmountInputProps) {
 }
 
 function CurrencyDropdown() {
+    const t = useT();
+
     return (
         <DropdownMenu modal={false}>
             <DropdownMenuTrigger asChild>
                 <button
                     type="button"
-                    aria-label="Select currency"
+                    aria-label={t('Select currency')}
                     className="inline-flex h-full cursor-pointer items-center gap-1.5 rounded-r-md px-3 text-sm font-medium text-foreground transition-colors outline-none hover:text-primary"
                 >
                     <CurrencyBadge currency={DEFAULT_CURRENCY} />
@@ -347,7 +352,7 @@ function CurrencyDropdown() {
                         <span>{currency.id}</span>
                         {!currency.available && (
                             <span className="ml-auto rounded-full bg-background/80 px-2 py-0.5 text-[10px] tracking-wide text-muted-foreground uppercase">
-                                Soon
+                                {t('Soon')}
                             </span>
                         )}
                     </DropdownMenuItem>
@@ -379,13 +384,15 @@ interface ActiveChipProps {
 }
 
 function ActiveChip({ label, onRemove }: ActiveChipProps) {
+    const t = useT();
+
     return (
         <span className="inline-flex items-center gap-1.5 rounded-full border border-primary/30 bg-primary/10 px-3 py-1 text-xs font-medium text-foreground">
             {label}
             <button
                 type="button"
                 onClick={onRemove}
-                aria-label={`Remove ${label} filter`}
+                aria-label={t('Remove :label filter', { label })}
                 className="-mr-1 inline-flex size-4 cursor-pointer items-center justify-center rounded-full text-muted-foreground transition-colors hover:text-primary"
             >
                 <X className="size-3" />

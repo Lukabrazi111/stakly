@@ -10,6 +10,8 @@ import {
 } from 'lucide-react';
 import { useState } from 'react';
 import { useAuthModal } from '@/components/auth/auth-modal-provider';
+import { HowItWorksLink } from '@/components/site/how-it-works-link';
+import { LocaleSwitcher } from '@/components/site/locale-switcher';
 import { UnverifiedChip } from '@/components/site/unverified-chip';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
@@ -22,6 +24,7 @@ import {
     SheetTrigger,
 } from '@/components/ui/sheet';
 import { useInitials } from '@/hooks/use-initials';
+import { useT } from '@/lib/i18n';
 import { formatUsdt } from '@/lib/wallet-format';
 import { home, logout } from '@/routes';
 import {
@@ -39,22 +42,26 @@ interface NavLink {
     href: ReturnType<typeof listingsIndex> | string;
 }
 
-const navLinks: NavLink[] = [
-    { label: 'Listings', href: listingsIndex() },
-    { label: 'How it Works', href: '#how-it-works' },
-    { label: 'Support', href: '#' },
-];
-
 const mobileMenuItemClass =
     'text-muted-foreground hover:text-foreground active:text-foreground hover:bg-primary/10 active:bg-primary/10 [&_svg]:text-muted-foreground hover:[&_svg]:text-primary active:[&_svg]:text-primary flex w-full cursor-pointer items-center gap-3 rounded-xl px-3 py-3 text-sm font-medium transition-colors duration-150 ease-out';
 
 export function MobileMenu() {
+    const t = useT();
     const [open, setOpen] = useState(false);
     const { openLogin, openRegister } = useAuthModal();
     const { auth } = usePage().props;
     const user = auth.user;
     const isUnverified = Boolean(user && !user.email_verified_at);
     const getInitials = useInitials();
+
+    // Built inside the component so Wayfinder generators see `URL::defaults`
+    // (set after `setUrlDefaults` runs in app.tsx). Module-top-level
+    // declaration would produce hrefs like `/$locale/listings` on first
+    // import — same gotcha as `settings/layout.tsx` had.
+    const navLinks: NavLink[] = [
+        { label: t('Listings'), href: listingsIndex() },
+        { label: t('How it works'), href: '/#how-it-works' },
+    ];
 
     const triggerAuth = (action: () => void) => {
         setOpen(false);
@@ -70,7 +77,7 @@ export function MobileMenu() {
             <SheetTrigger asChild>
                 <button
                     type="button"
-                    aria-label="Open menu"
+                    aria-label={t('Open menu')}
                     className="group relative inline-flex size-10 cursor-pointer items-center justify-center rounded-full transition-shadow duration-200 ease-out hover:shadow-glow-sm focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none md:hidden"
                 >
                     <span className="relative flex h-4 w-6 flex-col justify-between">
@@ -85,16 +92,16 @@ export function MobileMenu() {
                 side="right"
                 className="flex w-full flex-col gap-0 border-l border-border/50 bg-background/95 p-0 backdrop-blur-xl sm:max-w-none"
             >
-                <SheetTitle className="sr-only">Stakly menu</SheetTitle>
+                <SheetTitle className="sr-only">{t('Stakly menu')}</SheetTitle>
                 <SheetDescription className="sr-only">
-                    Site navigation, search, and account actions.
+                    {t('Site navigation, search, and account actions.')}
                 </SheetDescription>
 
                 <div className="flex items-center border-b border-border/50 px-5 py-4">
                     <SheetClose asChild>
                         <Link
                             href={home()}
-                            aria-label="Stakly home"
+                            aria-label={t('Stakly home')}
                             className="text-gradient-primary font-display text-2xl font-bold tracking-tight"
                         >
                             stakly
@@ -107,20 +114,24 @@ export function MobileMenu() {
                         <Search className="absolute top-1/2 left-4 size-4 -translate-y-1/2 text-muted-foreground" />
                         <input
                             type="search"
-                            placeholder="Search listings, players, games..."
-                            aria-label="Search"
+                            placeholder={t(
+                                'Search listings, players, games...',
+                            )}
+                            aria-label={t('Search')}
                             className="h-11 w-full rounded-full border border-border bg-card pr-4 pl-11 text-sm text-foreground transition-shadow duration-200 ease-out placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-1 focus-visible:shadow-glow-sm focus-visible:ring-ring focus-visible:outline-none"
                         />
                     </div>
                 </div>
 
                 <nav className="flex flex-col px-5 pt-8">
-                    {navLinks.map((link) => (
-                        <SheetClose key={link.label} asChild>
-                            <Link
-                                href={link.href}
-                                className="group flex items-center justify-between border-b border-border/40 py-4 font-display text-2xl font-bold tracking-tight text-foreground transition-colors hover:text-primary"
-                            >
+                    {navLinks.map((link) => {
+                        const isHashAnchor =
+                            typeof link.href === 'string' &&
+                            link.href.includes('#');
+                        const className =
+                            'group flex items-center justify-between border-b border-border/40 py-4 font-display text-2xl font-bold tracking-tight text-foreground transition-colors hover:text-primary';
+                        const inner = (
+                            <>
                                 <span>{link.label}</span>
                                 <span
                                     aria-hidden
@@ -128,9 +139,26 @@ export function MobileMenu() {
                                 >
                                     →
                                 </span>
-                            </Link>
-                        </SheetClose>
-                    ))}
+                            </>
+                        );
+
+                        return (
+                            <SheetClose key={link.label} asChild>
+                                {isHashAnchor ? (
+                                    <HowItWorksLink className={className}>
+                                        {inner}
+                                    </HowItWorksLink>
+                                ) : (
+                                    <Link
+                                        href={link.href}
+                                        className={className}
+                                    >
+                                        {inner}
+                                    </Link>
+                                )}
+                            </SheetClose>
+                        );
+                    })}
                 </nav>
 
                 {user && (
@@ -143,10 +171,10 @@ export function MobileMenu() {
                                     className="w-full"
                                     disabled
                                 >
-                                    Create listing
+                                    {t('Create listing')}
                                 </Button>
                                 <p className="text-center text-xs text-muted-foreground">
-                                    Verify your email to create listings.
+                                    {t('Verify your email to create listings.')}
                                 </p>
                             </div>
                         ) : (
@@ -158,7 +186,7 @@ export function MobileMenu() {
                                     asChild
                                 >
                                     <Link href={listingsCreate().url}>
-                                        Create listing
+                                        {t('Create listing')}
                                     </Link>
                                 </Button>
                             </SheetClose>
@@ -166,7 +194,19 @@ export function MobileMenu() {
                     </div>
                 )}
 
-                <div className="mt-auto flex flex-col gap-3 p-5">
+                {/* Locale switcher — settings-style utility row, sits above
+                    the auth / user-card section so it's reachable for both
+                    guests and authed users without crowding the sheet's
+                    primary actions or competing with the sheet's built-in
+                    close X button at the top right. */}
+                <div className="mt-auto flex items-center justify-between border-t border-border/40 px-5 py-4">
+                    <span className="text-sm font-medium text-muted-foreground">
+                        {t('Language')}
+                    </span>
+                    <LocaleSwitcher align="end" />
+                </div>
+
+                <div className="flex flex-col gap-3 p-5">
                     {user ? (
                         <div className="flex flex-col overflow-hidden rounded-2xl border border-border/60 bg-card/95 backdrop-blur-md">
                             <div className="flex items-center gap-3 p-4">
@@ -195,9 +235,6 @@ export function MobileMenu() {
                                 </div>
                             )}
 
-                            {/* Inline balance — the mobile equivalent of the
-                                desktop BalanceChip. Tapping it navigates to
-                                /wallet, so it doubles as a wallet entry point. */}
                             <SheetClose asChild>
                                 <Link
                                     href={walletIndex().url}
@@ -205,7 +242,7 @@ export function MobileMenu() {
                                     className="flex items-center justify-between gap-3 border-t border-border/60 px-4 py-3 transition-colors duration-150 ease-out hover:bg-primary/10 active:bg-primary/10"
                                 >
                                     <span className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
-                                        Balance
+                                        {t('Balance')}
                                     </span>
                                     <span className="font-display text-base font-semibold text-foreground">
                                         ${formatUsdt(user.usdt_balance)}{' '}
@@ -219,12 +256,15 @@ export function MobileMenu() {
                             <div className="flex flex-col gap-0.5 border-t border-border/60 p-2">
                                 <SheetClose asChild>
                                     <Link
-                                        href={userShow(user.username).url}
+                                        href={
+                                            userShow({ user: user.username })
+                                                .url
+                                        }
                                         prefetch
                                         className={mobileMenuItemClass}
                                     >
                                         <UserIcon className="size-5" />
-                                        My profile
+                                        {t('My profile')}
                                     </Link>
                                 </SheetClose>
                                 <SheetClose asChild>
@@ -234,7 +274,7 @@ export function MobileMenu() {
                                         className={mobileMenuItemClass}
                                     >
                                         <ListChecks className="size-5" />
-                                        My listings
+                                        {t('My listings')}
                                     </Link>
                                 </SheetClose>
                                 <SheetClose asChild>
@@ -244,7 +284,7 @@ export function MobileMenu() {
                                         className={mobileMenuItemClass}
                                     >
                                         <Swords className="size-5" />
-                                        Matches
+                                        {t('Matches')}
                                     </Link>
                                 </SheetClose>
                                 <SheetClose asChild>
@@ -254,7 +294,7 @@ export function MobileMenu() {
                                         className={mobileMenuItemClass}
                                     >
                                         <Wallet className="size-5" />
-                                        Wallet
+                                        {t('Wallet')}
                                     </Link>
                                 </SheetClose>
                                 <SheetClose asChild>
@@ -264,7 +304,7 @@ export function MobileMenu() {
                                         className={mobileMenuItemClass}
                                     >
                                         <Settings className="size-5" />
-                                        Settings
+                                        {t('Settings')}
                                     </Link>
                                 </SheetClose>
                             </div>
@@ -279,7 +319,7 @@ export function MobileMenu() {
                                         className="flex w-full cursor-pointer items-center gap-3 rounded-xl px-3 py-3 text-sm font-medium text-muted-foreground transition-colors duration-150 ease-out hover:bg-destructive/10 hover:text-destructive active:bg-destructive/10 active:text-destructive [&_svg]:text-muted-foreground hover:[&_svg]:text-destructive active:[&_svg]:text-destructive"
                                     >
                                         <LogOut className="size-5" />
-                                        Log out
+                                        {t('Log out')}
                                     </Link>
                                 </SheetClose>
                             </div>
@@ -292,7 +332,7 @@ export function MobileMenu() {
                                 className="w-full"
                                 onClick={() => triggerAuth(openLogin)}
                             >
-                                Sign in
+                                {t('Sign in')}
                             </Button>
                             <Button
                                 variant="gradient"
@@ -300,7 +340,7 @@ export function MobileMenu() {
                                 className="w-full"
                                 onClick={() => triggerAuth(openRegister)}
                             >
-                                Sign up
+                                {t('Sign up')}
                             </Button>
                         </>
                     )}

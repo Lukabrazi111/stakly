@@ -1,5 +1,7 @@
-import { Head, router, usePage } from '@inertiajs/react';
+import { router, usePage } from '@inertiajs/react';
 import { useEffect, useMemo, useState } from 'react';
+import { GameChip } from '@/components/listings/game-chip';
+import { AdminReviewBanner } from '@/components/match/admin-review-banner';
 import { CancellationRequestBanner } from '@/components/match/cancellation-request-banner';
 import { CancellationSummary } from '@/components/match/cancellation-summary';
 import { ChatPanel } from '@/components/match/chat-panel';
@@ -11,10 +13,15 @@ import { MobileChatTrigger } from '@/components/match/mobile-chat-trigger';
 import { OpenDisputeButton } from '@/components/match/open-dispute-button';
 import { RequestCancellationButton } from '@/components/match/request-cancellation-button';
 import { SettlementSummary } from '@/components/match/settlement-summary';
+import { TeamMatchView } from '@/components/match/team-match-view';
 import { WaitingForGameCard } from '@/components/match/waiting-for-game-card';
+import { useNotificationContext } from '@/components/notifications/notification-provider';
 import { BackLink } from '@/components/site/back-link';
+import { PageMeta } from '@/components/site/page-meta';
 import { useMatchChat } from '@/hooks/use-match-chat';
 import SiteLayout from '@/layouts/site-layout';
+import { useT } from '@/lib/i18n';
+import { isMatchChatReadOnly } from '@/lib/match-chat-readonly';
 import { show as listingShow } from '@/routes/listings';
 import type { Match, MatchShowProps, MatchStatus } from '@/types';
 
@@ -51,6 +58,10 @@ function cooldownRemainingFor(match: Match, viewerId: number): number {
 }
 
 const STATUS_LABEL: Record<MatchStatus, string> = {
+    // M34: LobbyFilling matches are server-redirected to /listings/{id} so
+    // this branch is unreachable in practice — included to satisfy the
+    // exhaustive Record<MatchStatus, string> contract.
+    lobby_filling: 'Lobby filling',
     pending: 'Pending — waiting for game',
     disputed: 'Disputed — under review',
     settled: 'Settled',
@@ -59,6 +70,7 @@ const STATUS_LABEL: Record<MatchStatus, string> = {
 };
 
 const STATUS_TONE: Record<MatchStatus, string> = {
+    lobby_filling: 'border-muted-foreground/40 bg-muted text-muted-foreground',
     pending: 'border-warning/40 bg-warning/10 text-warning',
     disputed: 'border-destructive/40 bg-destructive/10 text-destructive',
     settled: 'border-success/40 bg-success/10 text-success',
@@ -67,6 +79,22 @@ const STATUS_TONE: Record<MatchStatus, string> = {
 };
 
 export default function MatchShow({ match, messages }: MatchShowProps) {
+    // M34 P6 — team matches branch to the team-aware view (separate
+    // header, roster, pot math, settlement summary). 1v1 chess keeps
+    // the existing page below untouched.
+    if (match.listing.team_size > 1) {
+        return (
+            <SiteLayout>
+                <TeamMatchView match={match} messages={messages} />
+            </SiteLayout>
+        );
+    }
+
+    return <ChessMatchShow match={match} messages={messages} />;
+}
+
+function ChessMatchShow({ match, messages }: MatchShowProps) {
+    const t = useT();
     const { auth } = usePage().props;
 
     // Chat state lives in one hook so a single Echo subscription serves both
@@ -76,14 +104,11 @@ export default function MatchShow({ match, messages }: MatchShowProps) {
     // channel auth callback). viewerId feeds the hook's optimistic-UI
     // injection so the sender sees their own bubble immediately.
     const chat = useMatchChat(match.id, messages.data, auth.user?.id ?? null);
-    const chatIsReadOnly =
-        match.status === 'settled' ||
-        match.status === 'manual_review' ||
-        match.status === 'cancelled';
+    const chatIsReadOnly = isMatchChatReadOnly(match.status);
 
     const isCreator = auth.user?.id === match.creator.id;
     const opponent = isCreator ? match.taker : match.creator;
-    const youAre = isCreator ? 'Listing creator' : 'Taker';
+    const youAreLabel = isCreator ? t('Listing creator') : t('Taker');
 
     // M16 — has an auto-fetched card landed in chat yet? Drives the
     // Pending action card's "found, settling…" hand-off state. The next
@@ -153,7 +178,15 @@ export default function MatchShow({ match, messages }: MatchShowProps) {
 
     return (
         <SiteLayout>
-            <Head title={`Match #${match.id}`} />
+            <MatchLiveUpdater matchId={match.id} />
+
+            <PageMeta
+                title={t('Match #:id', { id: match.id })}
+                description={t(
+                    'Match details and chat. Private to participants.',
+                )}
+                noindex
+            />
 
             <div className="mx-auto max-w-7xl px-4 py-10 md:px-6 md:py-14">
                 {/* ─── Status notifications — full-width, above
@@ -175,22 +208,17 @@ export default function MatchShow({ match, messages }: MatchShowProps) {
                     </div>
                 )}
 
-                {(match.status === 'disputed' ||
-                    match.status === 'manual_review') && (
-                    <section className="mb-6 rounded-2xl border border-destructive/40 bg-destructive/5 p-6">
-                        <h2 className="mb-2 font-display text-lg font-semibold text-foreground">
-                            Admin review pending
-                        </h2>
-                        <p className="text-sm text-muted-foreground">
-                            {match.status === 'disputed'
-                                ? 'A Stakly admin will review this match and resolve it. Please post any evidence (screenshots, game URLs, PGN) in the chat below so the reviewer has the full picture. Your stake stays in escrow until resolved.'
-                                : 'This match was auto-flagged for admin review after the confirmation window expired without an API-verified game record. A Stakly admin will review the chat and resolve. Your stake stays in escrow until then.'}
-                        </p>
-                    </section>
-                )}
+                <AdminReviewBanner
+                    match={match}
+                    viewerId={auth.user?.id ?? null}
+                />
 
                 <div className="mb-6">
-                    <BackLink fallback={listingShow(match.listing.id).url} />
+                    <BackLink
+                        fallback={
+                            listingShow({ listing: match.listing.id }).url
+                        }
+                    />
                 </div>
 
                 <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_460px] lg:gap-6">
@@ -199,24 +227,27 @@ export default function MatchShow({ match, messages }: MatchShowProps) {
                         <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                             <div>
                                 <h1 className="font-display text-3xl font-bold tracking-tight text-foreground">
-                                    Match #{match.id}
+                                    {t('Match #:id', { id: match.id })}
                                 </h1>
                                 <p className="mt-1 text-sm text-muted-foreground">
-                                    You are the {youAre.toLowerCase()}.
+                                    {t('You are the :role.', {
+                                        role: youAreLabel.toLowerCase(),
+                                    })}
                                 </p>
                                 <MatchTimestamps
                                     startedAt={match.created_at}
                                     finishedAt={match.settled_at}
                                 />
                             </div>
-                            {/* Status + countdown live together on the right side
-                        of the header. Wraps to a new line on narrow widths
-                        so neither chip truncates. */}
+                            {/* Game + status + countdown live together on the
+                        right side of the header. Wraps to a new line on
+                        narrow widths so nothing truncates. */}
                             <div className="flex flex-wrap items-center gap-2">
+                                <GameChip game={match.listing.game} />
                                 <span
                                     className={`inline-flex w-fit shrink-0 items-center rounded-full border px-3 py-1.5 text-xs font-medium ${STATUS_TONE[match.status]}`}
                                 >
-                                    {STATUS_LABEL[match.status]}
+                                    {t(STATUS_LABEL[match.status])}
                                 </span>
                                 {match.status === 'pending' &&
                                     matchDeadline && (
@@ -350,4 +381,27 @@ export default function MatchShow({ match, messages }: MatchShowProps) {
             </div>
         </SiteLayout>
     );
+}
+
+/**
+ * Live-update bridge from the player notification stream. Lives INSIDE
+ * `SiteLayout` so it can read from `NotificationProvider`'s context (the
+ * provider is mounted in SiteLayout — the outer Show component is its
+ * parent in the React tree, not a descendant, so a context read up there
+ * gets the default empty value). When a match-scoped notification arrives
+ * (admin settle, opponent dispute/cancellation, etc.) we fire a full
+ * `router.reload()` to refresh `match` + shared `auth.user.usdt_balance`.
+ */
+function MatchLiveUpdater({ matchId }: { matchId: number }) {
+    const { lastBroadcast } = useNotificationContext();
+
+    useEffect(() => {
+        if (lastBroadcast?.related_id !== matchId) {
+            return;
+        }
+
+        router.reload();
+    }, [lastBroadcast, matchId]);
+
+    return null;
 }

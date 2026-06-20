@@ -7,6 +7,8 @@ use App\Enums\GameApiConfidence;
 use App\Enums\MatchStatus;
 use App\Models\GameMatch;
 use App\Models\User;
+use App\Notifications\DisputeResolvedNotification;
+use App\Notifications\MatchManualReviewNotification;
 use App\Services\GameApi\GameApi;
 use App\Services\GameApi\GameApiResult;
 use Illuminate\Support\Facades\DB;
@@ -14,22 +16,11 @@ use InvalidArgumentException;
 
 /**
  * Resolves a `Disputed` match via the configured `GameApi` driver.
+ * Confidence → action: `Confirmed` settles to winner (API overrides player reports),
+ * `Drawn` refunds both, `Unknown` flips to `ManualReview` and leaves money locked.
  *
- * - `Confirmed` confidence → delegate to `SettleMatchAction` (the API
- *   winner is authoritative; overrides player self-reports).
- * - `Drawn` confidence → delegate to `SettleDrawMatchAction` (both refunded,
- *   no fee).
- * - `Unknown` confidence → flip to `ManualReview` and leave money locked
- *   (admin tooling owns this state).
- *
- * Idempotent: terminal states (`Settled`, `ManualReview`) short-circuit.
- * The row lock + status guard serialise concurrent dispute-resolution
- * attempts (e.g. both players hit "Open dispute" simultaneously, or the
- * timeout job fires while a manual dispute is already in flight).
- *
- * Audit: the driver's raw response is persisted to
- * `game_matches.api_response` along with `api_resolved_at`, written
- * before settlement so we have a record even if settlement throws.
+ * Idempotent: terminal states (`Settled`, `ManualReview`) short-circuit under row lock.
+ * The driver's raw response is persisted before settlement so we keep the record even if settlement throws.
  */
 class ResolveDisputeAction
 {
@@ -41,11 +32,11 @@ class ResolveDisputeAction
 
     public function handle(GameMatch $match): void
     {
-        DB::transaction(function () use ($match) {
+        $outcome = DB::transaction(function () use ($match) {
             $locked = GameMatch::query()->lockForUpdate()->findOrFail($match->id);
 
             if ($this->isTerminal($locked)) {
-                return;
+                return null;
             }
 
             $this->assertDisputed($locked);
@@ -56,8 +47,46 @@ class ResolveDisputeAction
 
             $this->persistApiAudit($locked, $result);
 
-            $this->dispatchOnConfidence($locked, $result);
+            return $this->dispatchOnConfidence($locked, $result);
         });
+
+        if ($outcome === null) {
+            return;
+        }
+
+        $this->notifyPlayers($match->fresh(['listing.user', 'taker']), $outcome);
+    }
+
+    /**
+     * @param  array{type: string, winner?: User}  $outcome
+     */
+    private function notifyPlayers(GameMatch $match, array $outcome): void
+    {
+        $creator = $match->listing->user;
+        $taker = $match->taker;
+
+        if ($outcome['type'] === 'manual_review') {
+            $notification = new MatchManualReviewNotification($match);
+            $creator->notify($notification);
+            $taker->notify($notification);
+
+            return;
+        }
+
+        if ($outcome['type'] === 'draw') {
+            $notification = new DisputeResolvedNotification($match, 'draw');
+            $creator->notify($notification);
+            $taker->notify($notification);
+
+            return;
+        }
+
+        $winner = $outcome['winner'];
+        $payout = SettleMatchAction::computeWinnerPayout((string) $match->listing->stake_amount);
+        $loser = $winner->id === $creator->id ? $taker : $creator;
+
+        $winner->notify(new DisputeResolvedNotification($match, 'won', $payout));
+        $loser->notify(new DisputeResolvedNotification($match, 'lost', '0'));
     }
 
     private function isTerminal(GameMatch $match): bool
@@ -67,10 +96,8 @@ class ResolveDisputeAction
     }
 
     /**
-     * Sanity guard: callers must transition to `Disputed` before invoking.
-     * Keeping the contract explicit prevents a future caller from
-     * short-circuiting the player-confirm window by jumping straight to
-     * API resolution from `Pending`.
+     * Callers must transition to `Disputed` first — prevents a future caller from
+     * short-circuiting the player-confirm window by jumping straight from `Pending`.
      */
     private function assertDisputed(GameMatch $match): void
     {
@@ -82,9 +109,7 @@ class ResolveDisputeAction
     }
 
     /**
-     * Persist audit trail before branching so it's saved even if a
-     * downstream settle throws (rolls back inside the transaction, but
-     * the failure shape is observable in logs / re-attempts).
+     * Persist before branching so the failure shape is observable even if a downstream settle throws.
      */
     private function persistApiAudit(GameMatch $match, GameApiResult $result): void
     {
@@ -94,37 +119,34 @@ class ResolveDisputeAction
         ]);
     }
 
-    private function dispatchOnConfidence(GameMatch $match, GameApiResult $result): void
+    /**
+     * @return array{type: string, winner?: User}
+     */
+    private function dispatchOnConfidence(GameMatch $match, GameApiResult $result): array
     {
         if ($result->confidence === GameApiConfidence::Unknown) {
             $this->flipToManualReview($match);
 
-            return;
+            return ['type' => 'manual_review'];
         }
 
         if ($result->confidence === GameApiConfidence::Drawn) {
-            // Nested DB::transaction composes via savepoint — atomic with the
-            // outer audit-trail update. `SettleDrawMatchAction` posts its own
-            // "Match ended as a draw" system message.
+            // Nested DB::transaction composes via savepoint — atomic with the outer audit-trail update.
             $this->settleDraw->handle($match);
 
-            return;
+            return ['type' => 'draw'];
         }
 
-        // Confirmed → winner-based settlement. `SettleMatchAction` posts its
-        // own "Match settled. {name} wins." system message.
         $winner = $this->resolveWinner($match, $result);
 
         $this->settle->handle($match, $winner);
+
+        return ['type' => 'win', 'winner' => $winner];
     }
 
     /**
-     * Unknown-confidence resolution: lock the match in `ManualReview` and
-     * post two system messages — first narrating why we're here, then a
-     * `dispute_prompt`-marked call-to-action telling players what evidence
-     * to submit for the admin review (M12). The marker attachment lets
-     * the React `SystemBubble` render a visually distinct warning variant
-     * for the prompt without changing copy detection.
+     * Two system messages: narration + `dispute_prompt`-marked evidence call-to-action.
+     * The marker attachment lets `SystemBubble` render a warning variant without copy-matching.
      */
     private function flipToManualReview(GameMatch $match): void
     {
@@ -143,8 +165,7 @@ class ResolveDisputeAction
     }
 
     /**
-     * Defense in depth: the driver shouldn't return a non-participant,
-     * but if it does we'd rather throw than pay a stranger.
+     * Defense in depth — driver shouldn't return a non-participant, but if it does, throw rather than pay a stranger.
      */
     private function resolveWinner(GameMatch $match, GameApiResult $result): User
     {

@@ -6,6 +6,7 @@ use App\Enums\Game;
 use App\Enums\LinkedAccountProvider;
 use App\Enums\ListingStatus;
 use App\Enums\TimeControl;
+use App\Models\LobbyParticipant;
 use App\Services\Wallet;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
@@ -58,6 +59,19 @@ class StoreListingRequest extends FormRequest
         if (is_array($this->input('language')) && empty($this->input('language'))) {
             $this->merge(['language' => null]);
         }
+
+        // Default team_size to 1 when missing — keeps the existing chess +
+        // legacy CS2 1v1 forms working without a payload change. Team-play
+        // listings (M34) explicitly send team_size > 1.
+        if ($this->input('team_size') === null) {
+            $this->merge(['team_size' => 1]);
+        }
+
+        // Default is_public to true. Frontend sends `false` explicitly when
+        // the creator picks "private (invite link only)".
+        if ($this->input('is_public') === null) {
+            $this->merge(['is_public' => true]);
+        }
     }
 
     /**
@@ -83,12 +97,41 @@ class StoreListingRequest extends FormRequest
             ],
             'skill_min' => ['nullable', 'integer', 'min:0', 'max:3500'],
             'skill_max' => ['nullable', 'integer', 'min:0', 'max:3500', 'gte:skill_min'],
-            'time_control' => ['required', 'array', 'min:1', 'max:'.count(TimeControl::cases())],
+            // `time_control` is chess-only (Blitz / Rapid / Classical). For
+            // non-chess games it stays null on the listing row — the
+            // marketplace already hides the column via `gameSupports()`.
+            // Base shape (array, max) always applies; `required + min:1`
+            // only fires when the listing's game is chess.
+            'time_control' => [
+                'array',
+                'max:'.count(TimeControl::cases()),
+                Rule::when(
+                    fn () => $this->input('game') === Game::Chess->value,
+                    ['required', 'min:1'],
+                ),
+            ],
             'time_control.*' => ['string', Rule::enum(TimeControl::class), 'distinct'],
             'region' => ['nullable', 'string', Rule::in(self::REGIONS)],
             'language' => ['nullable', 'array', 'max:'.count(self::LANGUAGES)],
             'language.*' => ['string', Rule::in(self::LANGUAGES), 'distinct'],
             'duration_hours' => ['required', 'integer', Rule::in(self::DURATION_HOURS)],
+
+            // M34 — team play + lobbies. `team_size` defaults to 1 (chess +
+            // legacy 1v1 flow). Per-game allowed sizes enforced in
+            // `withValidator()` against `Game::allowedTeamSizes()`.
+            'team_size' => ['required', 'integer', 'min:1', 'max:10'],
+            // Required only when team_size > 1. The creator picks their slot
+            // side at listing creation — joiners pick at join time.
+            'creator_side' => [
+                Rule::when(
+                    fn () => (int) $this->input('team_size') > 1,
+                    ['required', 'string', Rule::in([LobbyParticipant::SIDE_A, LobbyParticipant::SIDE_B])],
+                    ['nullable'],
+                ),
+            ],
+            // M34 — private listings hide from the marketplace and surface
+            // only via `/lobbies/{invite_token}`. Default true (public).
+            'is_public' => ['required', 'boolean'],
         ];
     }
 
@@ -118,6 +161,44 @@ class StoreListingRequest extends FormRequest
                     'active_listings_cap',
                     __('You already have :count active listings — the maximum allowed. Cancel one (or wait for it to settle / expire) before creating another.', [
                         'count' => $activeCount,
+                    ]),
+                );
+            }
+
+            // M15 Phase 3 — platform must belong to the game's required
+            // providers. CS2 listings can't post to chess.com, chess listings
+            // can't post to FACEIT, etc. Frontend gates the picker in Slice 2;
+            // server check covers stale tabs and crafted requests.
+            $gameValue = $this->input('game');
+            $platformValue = $this->input('platform');
+            $game = is_string($gameValue) ? Game::tryFrom($gameValue) : null;
+            $platform = is_string($platformValue) ? LinkedAccountProvider::tryFrom($platformValue) : null;
+
+            if ($game !== null && $platform !== null
+                && ! in_array($platform, $game->requiredProviders(), true)
+            ) {
+                $validator->errors()->add(
+                    'platform',
+                    __('The :platform platform isn\'t valid for :game listings.', [
+                        'platform' => $platform->displayName(),
+                        'game' => $game->displayName(),
+                    ]),
+                );
+            }
+
+            // M34 — team_size must be in the game's allowed set. Chess = [1]
+            // only, CS2 = [1, 5], Dota2 = [1].
+            $teamSize = (int) $this->input('team_size', 1);
+
+            if ($game !== null && ! in_array($teamSize, $game->allowedTeamSizes(), true)) {
+                $allowedList = implode(', ', $game->allowedTeamSizes());
+
+                $validator->errors()->add(
+                    'team_size',
+                    __(':game listings only support team_size :allowed (got :got).', [
+                        'game' => $game->displayName(),
+                        'allowed' => $allowedList,
+                        'got' => $teamSize,
                     ]),
                 );
             }

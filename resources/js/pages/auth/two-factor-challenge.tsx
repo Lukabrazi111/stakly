@@ -1,8 +1,9 @@
-import { Form, Head, setLayoutProps } from '@inertiajs/react';
+import { Form, setLayoutProps } from '@inertiajs/react';
 import { REGEXP_ONLY_DIGITS } from 'input-otp';
 import { useMemo, useState } from 'react';
 import { authInputClass } from '@/components/auth/input-styles';
 import InputError from '@/components/input-error';
+import { PageMeta } from '@/components/site/page-meta';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -12,9 +13,11 @@ import {
 } from '@/components/ui/input-otp';
 import { Spinner } from '@/components/ui/spinner';
 import { OTP_MAX_LENGTH } from '@/hooks/use-two-factor-auth';
+import { useT } from '@/lib/i18n';
 import { store } from '@/routes/two-factor/login';
 
 export default function TwoFactorChallenge() {
+    const t = useT();
     const [showRecoveryInput, setShowRecoveryInput] = useState<boolean>(false);
     const [code, setCode] = useState<string>('');
 
@@ -25,20 +28,22 @@ export default function TwoFactorChallenge() {
     }>(() => {
         if (showRecoveryInput) {
             return {
-                title: 'Use a recovery code',
-                description:
+                title: t('Use a recovery code'),
+                description: t(
                     'Enter one of the emergency recovery codes you saved when you set up two-factor authentication.',
-                toggleText: 'Use an authentication code instead',
+                ),
+                toggleText: t('Use an authentication code instead'),
             };
         }
 
         return {
-            title: 'Two-factor authentication',
-            description:
+            title: t('Two-factor authentication'),
+            description: t(
                 'Enter the 6-digit code from your authenticator app to continue.',
-            toggleText: 'Use a recovery code instead',
+            ),
+            toggleText: t('Use a recovery code instead'),
         };
-    }, [showRecoveryInput]);
+    }, [showRecoveryInput, t]);
 
     setLayoutProps({
         title: viewMeta.title,
@@ -53,7 +58,11 @@ export default function TwoFactorChallenge() {
 
     return (
         <>
-            <Head title="Two-factor authentication" />
+            <PageMeta
+                title={t('Two-factor authentication')}
+                description={t('Enter your 2FA code to continue.')}
+                noindex
+            />
 
             <Form
                 {...store.form()}
@@ -68,7 +77,7 @@ export default function TwoFactorChallenge() {
                                 <Input
                                     name="recovery_code"
                                     type="text"
-                                    placeholder="Recovery code"
+                                    placeholder={t('Recovery code')}
                                     autoFocus
                                     required
                                     className={authInputClass}
@@ -111,7 +120,7 @@ export default function TwoFactorChallenge() {
                             disabled={processing}
                         >
                             {processing && <Spinner />}
-                            Continue
+                            {t('Continue')}
                         </Button>
 
                         <p className="text-center text-sm text-muted-foreground">

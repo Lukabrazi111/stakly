@@ -11,6 +11,7 @@ import {
     DialogHeader,
     DialogTitle,
 } from '@/components/ui/dialog';
+import { useT } from '@/lib/i18n';
 
 interface Props {
     file: File | null;
@@ -19,16 +20,15 @@ interface Props {
     onConfirm: (blob: Blob) => void;
 }
 
-// Minimum dimensions of the on-screen crop selection. Below this the cropped
-// 512×512 output starts looking pixelated when we upscale the source region.
+// Below this the cropped 512×512 output looks pixelated.
 const MIN_CROP_PX = 100;
 
-// Output canvas dimensions. Matches the server-side `main` Spatie conversion
-// (User::registerMediaConversions), so the server never has to upscale — only
-// re-encode + normalise.
+// Matches the server-side `main` Spatie conversion (User::registerMediaConversions)
+// so the server never has to upscale.
 const OUTPUT_SIZE = 512;
 
 export function AvatarCropModal({ file, open, onClose, onConfirm }: Props) {
+    const t = useT();
     const [imageSrc, setImageSrc] = useState<string | null>(null);
     const [crop, setCrop] = useState<Crop | undefined>(undefined);
     const [completedCrop, setCompletedCrop] = useState<PixelCrop | undefined>(
@@ -37,8 +37,6 @@ export function AvatarCropModal({ file, open, onClose, onConfirm }: Props) {
     const [isProcessing, setIsProcessing] = useState(false);
     const imgRef = useRef<HTMLImageElement | null>(null);
 
-    // Read the picked file into a data URL so `<img>` can render it. Reset
-    // state when the file changes (re-pick) or clears (modal close).
     useEffect(() => {
         if (!file) {
             setImageSrc(null);
@@ -99,10 +97,11 @@ export function AvatarCropModal({ file, open, onClose, onConfirm }: Props) {
         >
             <DialogContent className="sm:max-w-md">
                 <DialogHeader>
-                    <DialogTitle>Crop your avatar</DialogTitle>
+                    <DialogTitle>{t('Crop your avatar')}</DialogTitle>
                     <DialogDescription>
-                        Drag the corners to adjust. Your avatar is always
-                        square.
+                        {t(
+                            'Drag the corners to adjust. Your avatar is always square.',
+                        )}
                     </DialogDescription>
                 </DialogHeader>
 
@@ -124,7 +123,7 @@ export function AvatarCropModal({ file, open, onClose, onConfirm }: Props) {
                             <img
                                 ref={imgRef}
                                 src={imageSrc}
-                                alt="Crop preview"
+                                alt={t('Crop preview')}
                                 onLoad={handleImageLoad}
                                 className="max-h-[60vh] object-contain"
                             />
@@ -139,7 +138,7 @@ export function AvatarCropModal({ file, open, onClose, onConfirm }: Props) {
                         onClick={onClose}
                         disabled={isProcessing}
                     >
-                        Cancel
+                        {t('Cancel')}
                     </Button>
                     <Button
                         variant="gradient"
@@ -147,7 +146,7 @@ export function AvatarCropModal({ file, open, onClose, onConfirm }: Props) {
                         onClick={handleConfirm}
                         disabled={!completedCrop || isProcessing}
                     >
-                        {isProcessing ? 'Saving…' : 'Use this crop'}
+                        {isProcessing ? t('Saving…') : t('Use this crop')}
                     </Button>
                 </DialogFooter>
             </DialogContent>
@@ -155,12 +154,6 @@ export function AvatarCropModal({ file, open, onClose, onConfirm }: Props) {
     );
 }
 
-/**
- * Render the cropped region of `image` onto a square `outputSize × outputSize`
- * canvas and return a JPEG blob at quality 0.92. The result lives inside the
- * server's 2 MB validation cap by a wide margin (~50–100 KB) which keeps the
- * upload network-light too.
- */
 async function cropToBlob(
     image: HTMLImageElement,
     crop: PixelCrop,

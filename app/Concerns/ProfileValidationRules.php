@@ -9,8 +9,6 @@ use Illuminate\Validation\Rule;
 trait ProfileValidationRules
 {
     /**
-     * Get the validation rules used to validate user profiles.
-     *
      * @return array<string, array<int, ValidationRule|array<mixed>|string>>
      */
     protected function profileRules(?int $userId = null): array
@@ -22,10 +20,9 @@ trait ProfileValidationRules
     }
 
     /**
-     * Custom validation messages shared by `CreateNewUser` (Fortify action,
-     * uses `Validator::make`) and `ProfileUpdateRequest` (FormRequest,
-     * overrides `messages()`). Keeping them in one place ensures registration
-     * and profile-update show the same UX for the same constraint.
+     * Shared between `CreateNewUser` (Fortify, uses `Validator::make`) and
+     * `ProfileUpdateRequest` (FormRequest, overrides `messages()`) so
+     * registration and profile-update show identical copy.
      *
      * @return array<string, string>
      */
@@ -37,15 +34,9 @@ trait ProfileValidationRules
     }
 
     /**
-     * Get the validation rules used to validate user names.
-     *
      * Stakly accepts pure ASCII Latin names only — same posture as Bybit and
-     * other regulated crypto platforms. The regex:
-     *   - `(?=.*[a-zA-Z])` — must contain at least one letter (kills "..." / "---")
-     *   - `[a-zA-Z '\-\.]+`  — allowed chars: letters, spaces, apostrophes, hyphens, periods
-     *
-     * Explicitly rejected: accents (François), non-Latin scripts (Дмитрий,
-     * 李明), numbers (John2), emojis, other symbols.
+     * other regulated crypto platforms. Rejects accents, non-Latin scripts,
+     * numbers, emojis. The `(?=.*[a-zA-Z])` lookahead kills "..." / "---".
      *
      * @return array<int, ValidationRule|array<mixed>|string>
      */
@@ -58,8 +49,6 @@ trait ProfileValidationRules
     }
 
     /**
-     * Get the validation rules used to validate user emails.
-     *
      * @return array<int, ValidationRule|array<mixed>|string>
      */
     protected function emailRules(?int $userId = null): array

@@ -9,17 +9,9 @@ use Filament\Infolists\Components\Entry;
 use Illuminate\Support\Collection;
 
 /**
- * M12 Phase 2 — read-only chat-history renderer for the admin dispute
- * panel. Loads every message on the match (text, system, image
- * attachments, link cards, auto-fetched provider cards) and hands the
- * collection to the Blade view, which is responsible for the actual
- * markup. The Blade view is intentionally simple (Tailwind utility
- * classes, no React) — admin doesn't need the live websocket UX, just
- * the immutable record of what happened.
- *
- * Eager loads:
- *   - `user` so we can show "Alice said:" without an extra query per row
- *   - `media` so attachment URLs resolve cheaply
+ * Read-only chat-history renderer for the admin dispute panel. The Blade
+ * view is deliberately plain (no React) — admin doesn't need the live
+ * websocket UX, just the immutable record of what happened.
  */
 class ChatHistoryEntry extends Entry
 {
@@ -53,14 +45,6 @@ class ChatHistoryEntry extends Entry
         return $record instanceof GameMatch ? $record->taker_user_id : null;
     }
 
-    /**
-     * Classifies a message by role for visual treatment in the Blade view:
-     *   - 'system' → system messages (lifecycle narration, dispute prompts)
-     *   - 'creator' → message authored by the listing creator
-     *   - 'taker' → message authored by the taker
-     *   - 'other' → fallback (shouldn't happen — match policy enforces
-     *               only participants can post)
-     */
     public function roleOf(Message $message): string
     {
         if ($message->type === MessageType::System) {
@@ -86,13 +70,55 @@ class ChatHistoryEntry extends Entry
             return null;
         }
 
-        return route(
+        $base = route(
             'matches.messages.attachment',
             [
                 'match' => $message->match_id,
                 'message' => $message->id,
                 'media' => $media->id,
             ],
-        ).($thumb ? '?conversion='.Message::THUMBNAIL_CONVERSION : '');
+        );
+
+        // Thumbnail conversion only exists for image media — PDFs return the
+        // original file at the same URL regardless of the `thumb` flag.
+        return $thumb && str_starts_with((string) $media->mime_type, 'image/')
+            ? $base.'?conversion='.Message::THUMBNAIL_CONVERSION
+            : $base;
+    }
+
+    public function attachmentIsImage(Message $message): bool
+    {
+        $media = $message->getFirstMedia(Message::ATTACHMENTS_COLLECTION);
+
+        return $media !== null
+            && str_starts_with((string) $media->mime_type, 'image/');
+    }
+
+    public function attachmentName(Message $message): ?string
+    {
+        $media = $message->getFirstMedia(Message::ATTACHMENTS_COLLECTION);
+
+        return $media?->name ?: $media?->file_name;
+    }
+
+    public function attachmentSizeLabel(Message $message): ?string
+    {
+        $media = $message->getFirstMedia(Message::ATTACHMENTS_COLLECTION);
+
+        if (! $media) {
+            return null;
+        }
+
+        $bytes = (int) $media->size;
+
+        if ($bytes < 1024) {
+            return "{$bytes} B";
+        }
+
+        if ($bytes < 1024 * 1024) {
+            return number_format($bytes / 1024, 1).' KB';
+        }
+
+        return number_format($bytes / 1024 / 1024, 1).' MB';
     }
 }

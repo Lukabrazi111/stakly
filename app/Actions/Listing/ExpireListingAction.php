@@ -4,6 +4,7 @@ namespace App\Actions\Listing;
 
 use App\Enums\ListingStatus;
 use App\Models\Listing;
+use App\Notifications\ListingExpiredNotification;
 use App\Services\Wallet;
 use Illuminate\Support\Facades\DB;
 
@@ -26,18 +27,27 @@ class ExpireListingAction
 {
     public function handle(int $listingId): bool
     {
-        return DB::transaction(function () use ($listingId) {
+        $expired = DB::transaction(function () use ($listingId) {
             $listing = Listing::query()->lockForUpdate()->find($listingId);
 
             if (! $this->isStillExpirable($listing)) {
-                return false;
+                return null;
             }
 
             $this->refundStake($listing);
             $this->markExpired($listing);
 
-            return true;
+            return $listing;
         });
+
+        if ($expired === null) {
+            return false;
+        }
+
+        $expired->loadMissing('user');
+        $expired->user->notify(new ListingExpiredNotification($expired));
+
+        return true;
     }
 
     /**

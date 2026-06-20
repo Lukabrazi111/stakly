@@ -2,6 +2,7 @@ import * as React from 'react';
 import { ListingsSection } from '@/components/profile/listings-section';
 import { MatchHistorySection } from '@/components/profile/match-history-section';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { useT } from '@/lib/i18n';
 import type { Listing, Match } from '@/types';
 
 type ProfileTab = 'matches' | 'listings' | 'reviews';
@@ -29,15 +30,8 @@ interface Props {
 }
 
 /**
- * Profile activity tabs (M19 Phase 4). Three tabs: Match History (default)
- * | Open Listings | Reviews (placeholder). State syncs to `?tab=` so
- * deep-link / refresh / browser-back navigate within a profile.
- *
- * URL sync uses pure client-side `history.pushState` rather than Inertia
- * `router.get()` — the underlying data (matches + listings) is already
- * loaded by `UserController::show`, so re-fetching on every tab click
- * would be wasted work. Mirrors the auth-modal-provider's URL handling
- * pattern (per CLAUDE.md).
+ * Profile activity tabs. State syncs to `?tab=` via `history.pushState` —
+ * the data is already loaded, no need to re-fetch on tab click.
  */
 export function ProfileTabs({
     matches,
@@ -45,9 +39,14 @@ export function ProfileTabs({
     profileUserId,
     isOwnProfile,
 }: Props) {
-    const [tab, setTab] = React.useState<ProfileTab>(readTabFromUrl);
+    const t = useT();
+    // Default during SSR + first paint, sync after mount — reading the URL
+    // synchronously would cause a hydration mismatch when `?tab=*` is set.
+    const [tab, setTab] = React.useState<ProfileTab>(DEFAULT_TAB);
 
     React.useEffect(() => {
+        setTab(readTabFromUrl());
+
         const handler = () => setTab(readTabFromUrl());
         window.addEventListener('popstate', handler);
 
@@ -76,10 +75,13 @@ export function ProfileTabs({
 
     return (
         <Tabs value={tab} onValueChange={handleChange} className="w-full">
-            <TabsList variant="line" aria-label="Profile activity sections">
-                <TabsTrigger value="matches">Match History</TabsTrigger>
-                <TabsTrigger value="listings">Open Listings</TabsTrigger>
-                <TabsTrigger value="reviews">Reviews</TabsTrigger>
+            <TabsList
+                variant="line"
+                aria-label={t('Profile activity sections')}
+            >
+                <TabsTrigger value="matches">{t('Match History')}</TabsTrigger>
+                <TabsTrigger value="listings">{t('Open Listings')}</TabsTrigger>
+                <TabsTrigger value="reviews">{t('Reviews')}</TabsTrigger>
             </TabsList>
 
             <TabsContent value="matches" className="mt-5">
@@ -105,14 +107,17 @@ export function ProfileTabs({
 }
 
 function ReviewsPlaceholder() {
+    const t = useT();
+
     return (
         <div className="rounded-xl border border-dashed border-border/60 bg-card/40 p-8 text-center">
             <p className="text-sm font-medium text-foreground">
-                Reviews coming soon
+                {t('Reviews coming soon')}
             </p>
             <p className="mx-auto mt-2 max-w-prose text-sm text-muted-foreground">
-                Stakly is designing a coercion-resistant review system. Until
-                then, reputation is shown via completion rate + match history.
+                {t(
+                    'Stakly is designing a coercion-resistant review system. Until then, reputation is shown via completion rate + match history.',
+                )}
             </p>
         </div>
     );

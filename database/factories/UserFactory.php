@@ -132,6 +132,27 @@ class UserFactory extends Factory
     }
 
     /**
+     * Mark the user as having a verified FACEIT account (M15). Populates
+     * `provider_user_id` (FACEIT guid) and `skill_rating` (Faceit ELO)
+     * alongside `username` — these columns are NULL for chess providers
+     * but expected for non-chess adapters. Used by Phase 1 snapshot tests
+     * until the Phase 2 OAuth callback writes real values.
+     */
+    public function withFaceit(?string $username = null, ?string $providerUserId = null, ?int $skillRating = null): static
+    {
+        return $this->afterCreating(function (User $user) use ($username, $providerUserId, $skillRating) {
+            LinkedAccount::create([
+                'user_id' => $user->id,
+                'provider' => LinkedAccountProvider::Faceit->value,
+                'username' => $username ?? Str::slug(fake()->unique()->userName()),
+                'provider_user_id' => $providerUserId ?? (string) Str::uuid(),
+                'skill_rating' => $skillRating ?? fake()->numberBetween(800, 2200),
+                'verified_at' => now(),
+            ]);
+        });
+    }
+
+    /**
      * Assign the Spatie `admin` role after creation. Creates the role if
      * it doesn't exist yet (RefreshDatabase tests drop the roles table
      * between cases). Used by Filament panel tests + any other admin-only
@@ -139,13 +160,23 @@ class UserFactory extends Factory
      */
     public function admin(): static
     {
-        return $this->afterCreating(function (User $user) {
-            $role = Role::firstOrCreate([
-                'name' => 'admin',
-                'guard_name' => 'web',
-            ]);
+        return $this
+            ->state(fn () => [
+                // M30 P3 — admin-panel gate requires `two_factor_confirmed_at`
+                // to be set. Factory stamps it by default so existing tests
+                // that do `User::factory()->admin()->create()` keep reaching
+                // `/admin` without needing per-test 2FA wiring. To exercise
+                // the gate's redirect path, override with
+                // `->create(['two_factor_confirmed_at' => null])`.
+                'two_factor_confirmed_at' => now(),
+            ])
+            ->afterCreating(function (User $user) {
+                $role = Role::firstOrCreate([
+                    'name' => 'admin',
+                    'guard_name' => 'web',
+                ]);
 
-            $user->assignRole($role);
-        });
+                $user->assignRole($role);
+            });
     }
 }

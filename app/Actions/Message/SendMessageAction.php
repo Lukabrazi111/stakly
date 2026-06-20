@@ -22,35 +22,12 @@ use Illuminate\Validation\ValidationException;
 use Spatie\Image\Image;
 
 /**
- * Posts a human chat message to a match's thread.
+ * Posts a human chat message to a match's thread. The HTTP path always produces `Text`
+ * messages — system messages go through a separate Action so the type is never caller-supplied.
  *
- * The HTTP path always produces `Text` messages from the authenticated user.
- * System messages (Phase 5) go through a separate Action so the type is
- * never caller-supplied — no path through this Action can produce one.
- *
- * Four guards, ordered cheapest-first:
- *
- *   1. Text rate limit (10 messages / 10s per user). Every send hits this
- *      bucket regardless of whether it carries a file.
- *
- *   2. Attachment rate limit (5 uploads / 30s per user). Only attachment-
- *      bearing sends hit this stricter bucket — uploads are heavier
- *      (disk I/O, image conversion, bandwidth) than text inserts and deserve
- *      their own protection. Spam-by-alternating doesn't help: text still
- *      capped at 10/10s, uploads still capped at 5/30s.
- *
- *   3. Status gate — `Settled` and `ManualReview` matches reject sends with
- *      a `ValidationException` (becomes 422 with a friendly message). The
- *      check reads `$match->fresh()` so a stale Eloquent instance can't
- *      bypass a recent settlement. Race window between fresh + insert is
- *      sub-millisecond and worst case is one stray message — acceptable.
- *
- *   4. Participant — caller's responsibility via the controller's
- *      `view` policy gate on `GameMatch`. This Action trusts that.
- *
- * Broadcast: dispatches `MessageSent` (ShouldDispatchAfterCommit) on the
- * `match.{id}` private channel. Echo subscribers receive the payload shape
- * declared in `MessageSent::broadcastWith()`.
+ * Guards: text rate limit, attachment rate limit (separate stricter bucket), status gate
+ * (`Settled` / `ManualReview` reject), participant check (controller policy). Broadcasts
+ * `MessageSent` after commit on the `match.{id}` channel.
  */
 class SendMessageAction
 {
@@ -63,10 +40,7 @@ class SendMessageAction
     private const UPLOAD_WINDOW_SECONDS = 30;
 
     /**
-     * Hard cap on how many URLs we'll unfurl per message. The fetch job
-     * is queued so the response stays fast, but every extra URL is
-     * another outbound HTTP fetch + possible image proxy + persisted
-     * card. Five is generous for normal chat and still bounds abuse.
+     * Each URL = outbound fetch + possible image proxy + persisted card. Five bounds abuse.
      */
     private const MAX_URLS_PER_MESSAGE = 5;
 
@@ -98,29 +72,15 @@ class SendMessageAction
             ]);
 
             if ($file !== null) {
-                $this->attachImage($message, $file);
-                // Ensure the in-memory model carries its media for the
-                // post-commit broadcast worker — re-hydrated from DB inside
-                // the job, but loading here also covers any same-request
-                // resource serialization.
+                self::attachFileTo($message, $file);
+                // Ensure in-memory model carries media for the post-commit broadcast worker.
                 $message->load('media');
             }
 
-            // correlation_id is client-generated (UUID) and only used by the
-            // sender's frontend to replace its optimistic pending message
-            // with the broadcast-confirmed one. Not persisted to DB; the
-            // broadcast event echoes it back in the payload.
+            // correlation_id is client-generated; broadcast event echoes it back so the
+            // sender's frontend can replace its optimistic pending message.
             MessageSent::dispatch($message, $correlationId);
 
-            // Phase 3 Slice 2 + Phase 4 paste path — queue URL enrichment.
-            // Lichess game URLs branch to FetchLichessGameMetadataJob
-            // (verified evidence card with snapshot cross-check). Everything
-            // else stays on the generic OG fetcher. A single message can
-            // dispatch BOTH job types if it carries a mix.
-            //
-            // Each job runs ShouldQueueAfterCommit so it sees the inserted
-            // row; on success each re-dispatches MessageSent so the frontend
-            // can swap the plain-link bubble for the enriched one in place.
             if ($content !== null) {
                 $this->dispatchUrlEnrichmentJobs($message, $content);
             }
@@ -128,24 +88,16 @@ class SendMessageAction
             return $message;
         });
 
-        // M16 Phase 2 — chat-send trigger for the API-only outcome flow.
-        // Any user message during Pending kicks an auto-fetch attempt; the
-        // ShouldBeUnique lock on the job dedupes back-to-back sends, and
-        // the action gates on `status === Pending` so messages on Disputed
-        // / ManualReview matches don't re-trigger the API.
+        // Chat-send trigger for auto-fetch. ShouldBeUnique on the job dedupes back-to-back sends;
+        // action gates on `status === Pending` so closed matches don't re-trigger the API.
         $this->dispatchAutoFetch->handle($match);
 
         return $message;
     }
 
     /**
-     * Partition the URLs in $content into three buckets:
-     *   - Lichess game URLs    → `FetchLichessGameMetadataJob` (verified card)
-     *   - chess.com game URLs  → `FetchChessComGameMetadataJob` (verified card)
-     *   - Everything else      → generic OG fetcher
-     *
-     * Each bucket gets its own dispatch. A message with mixed URLs fans out
-     * to multiple jobs.
+     * Partitions URLs into Lichess-game / chess.com-game / generic buckets and fans out
+     * to the matching metadata job per bucket.
      */
     private function dispatchUrlEnrichmentJobs(Message $message, string $content): void
     {
@@ -181,9 +133,7 @@ class SendMessageAction
             FetchLinkMetadataJob::dispatch($message, $otherUrls);
         }
 
-        // One job per game ID/URL — paste path is one-card-per-game, and the
-        // outer URL list is already capped at MAX_URLS_PER_MESSAGE so the
-        // fan-out is bounded.
+        // Outer URL list is capped at MAX_URLS_PER_MESSAGE so the fan-out is bounded.
         foreach (array_unique($lichessGameIds) as $gameId) {
             FetchLichessGameMetadataJob::dispatch($message, $gameId);
         }
@@ -193,10 +143,6 @@ class SendMessageAction
         }
     }
 
-    /**
-     * Sliding-window rate limit via Laravel's RateLimiter. Each `hit` decays
-     * after WINDOW_SECONDS — 10 hits within 10s blocks the 11th.
-     */
     private function assertNotRateLimited(User $user): void
     {
         $key = self::rateLimitKey($user);
@@ -211,8 +157,7 @@ class SendMessageAction
     }
 
     /**
-     * Stricter sliding-window limit for attachment-bearing sends. Hit before
-     * the DB transaction so a flood doesn't eat disk I/O before being rejected.
+     * Hit before the DB transaction so a flood doesn't eat disk I/O before being rejected.
      */
     private function assertUploadNotRateLimited(User $user): void
     {
@@ -228,10 +173,8 @@ class SendMessageAction
     }
 
     /**
-     * Status guard. Chat is read-only after a match resolves — Settled
-     * (winner or draw refund), ManualReview, AND Cancelled all lock new
-     * sends. Disputed stays open because the chat is the evidence record.
-     * Pending is the default-open state.
+     * Settled / ManualReview / Cancelled lock new sends. Disputed stays open
+     * because the chat is the evidence record.
      */
     private function assertChatIsOpen(GameMatch $match): void
     {
@@ -249,29 +192,43 @@ class SendMessageAction
     }
 
     /**
-     * Pre-process the upload through Spatie\Image to re-encode the bitmap.
-     * Re-encoding via GD/Imagick drops EXIF metadata as a side effect, so
-     * the persisted original carries no camera GPS / device fingerprint /
-     * capture-time data — the kind of detail a casual phone screenshot
-     * carries and that doesn't belong in a money-chat audit trail.
-     *
-     * The thumbnail conversion does its own re-encode on top, so both the
-     * inline preview and the original-on-lightbox land EXIF-free.
-     *
-     * Spatie's `addMedia` moves the temp file into the media disk on
-     * `toMediaCollection`, so the temp path cleans itself up.
+     * Branch attach by mime: images go through the EXIF-strip + dimension
+     * pipeline, everything else (PDFs) gets a direct store. Shared between
+     * the chat path and `OpenDisputeAction::postOpenerClaim`.
      */
-    private function attachImage(Message $message, UploadedFile $file): void
+    public static function attachFileTo(Message $message, UploadedFile $file): void
+    {
+        $isImage = str_starts_with((string) $file->getMimeType(), 'image/');
+
+        if ($isImage) {
+            self::attachImageTo($message, $file);
+
+            return;
+        }
+
+        $extension = strtolower($file->getClientOriginalExtension() ?: 'pdf');
+
+        $message
+            ->addMedia($file->getRealPath())
+            ->usingName($file->getClientOriginalName())
+            ->usingFileName(Str::uuid()->toString().'.'.$extension)
+            ->toMediaCollection(Message::ATTACHMENTS_COLLECTION);
+    }
+
+    /**
+     * Re-encode via GD/Imagick to strip EXIF (camera GPS / device fingerprint / capture time)
+     * before persisting — doesn't belong in a money-chat audit trail. Public + static so
+     * OpenDisputeAction can attach evidence to the user's dispute-opening message with the
+     * same EXIF-stripping + dimension-capture pipeline as a normal chat upload.
+     */
+    public static function attachImageTo(Message $message, UploadedFile $file): void
     {
         $extension = strtolower($file->getClientOriginalExtension());
         $tempPath = tempnam(sys_get_temp_dir(), 'stakly-chat-img-');
         $tempPathWithExt = $tempPath.'.'.$extension;
         rename($tempPath, $tempPathWithExt);
 
-        // Capture dimensions before save so the frontend can set aspect-ratio
-        // and avoid layout shift when chat history scrolls past unloaded
-        // images. Dimensions are read from the original before the re-encode
-        // — the saved file has the same dimensions (no resize on this step).
+        // Capture dimensions so the frontend can set aspect-ratio and avoid layout shift.
         $image = Image::load($file->getRealPath());
         $width = $image->getWidth();
         $height = $image->getHeight();
@@ -288,8 +245,7 @@ class SendMessageAction
     }
 
     /**
-     * Exposed so tests can clear the limiter between cases without
-     * duplicating the key construction.
+     * Exposed so tests can clear the limiter between cases without duplicating the key construction.
      */
     public static function rateLimitKey(User $user): string
     {
@@ -302,19 +258,9 @@ class SendMessageAction
     }
 
     /**
-     * Pull http(s) URLs out of message content for the OG metadata
-     * fetcher. Returns a de-duplicated, capped list of URLs that passed
-     * the cheap pre-flight SSRF check (raw `http://10.0.0.1/`-style
-     * literals never make it to the job queue).
-     *
-     * Trailing punctuation (.,!?;:'")] etc.) is stripped because chat
-     * sentences put URLs next to punctuation — `look at https://foo.com.`
-     * should detect `https://foo.com`, not `https://foo.com.` which would
-     * 404 at the provider.
-     *
-     * Exposed as a static helper (rather than buried in the dispatch
-     * block) so the URL-detection rules are testable in isolation —
-     * Slice 2 tests cover the regex without spinning a queue worker.
+     * Extracts http(s) URLs from message content for the OG metadata fetcher. Trailing
+     * punctuation is stripped because chat sentences put URLs next to punctuation
+     * (`look at https://foo.com.` should detect `https://foo.com`).
      *
      * @return list<string>
      */
@@ -327,10 +273,8 @@ class SendMessageAction
         foreach ($matches[0] as $raw) {
             $url = rtrim($raw, ".,;:!?'\"()[]{}");
 
-            // Cheap pre-flight only — full DNS-based SSRF check runs inside
-            // the queued worker before each outbound fetch. Doing the DNS
-            // lookup here would stall the request behind one resolver call
-            // per URL.
+            // Cheap pre-flight only — full DNS-based SSRF check runs inside the queued
+            // worker. Doing DNS here would stall the request behind one resolver call per URL.
             if (! SsrfGuard::isPlausiblySafe($url)) {
                 continue;
             }
@@ -350,21 +294,14 @@ class SendMessageAction
     }
 
     /**
-     * If $url is a Lichess game URL, return the 8–12 char game ID; otherwise
-     * null. Lichess uses single-segment paths for game IDs
-     * (`lichess.org/{id}`), an optional `/embed/{id}` wrapper for embeds,
-     * and post-id suffixes for color (`/white`) and move anchors (`#5`).
-     *
-     * The same length window catches a handful of reserved Lichess paths
-     * (`training`, `analysis`, `streamer`, `practice`, `tournament`). An
-     * explicit denylist excludes them — without it, `lichess.org/training`
-     * would be misrouted to the game-card pipeline.
+     * Return the 8-12 char Lichess game ID from a Lichess game URL, else null.
+     * Reserved single-segment paths (`training`, `analysis`, etc.) are denylisted
+     * because they fall in the same length window and would misroute to the game-card pipeline.
      */
     public static function extractLichessGameId(string $url): ?string
     {
-        // Delimiter is `~` (not `#`) because the pattern contains a literal
-        // `#` inside the trailing character class — `#`-delimited would
-        // close the regex early and silently misparse.
+        // Delimiter `~` (not `#`) — pattern contains a literal `#` inside the trailing
+        // character class, and `#`-delimited would close the regex early and silently misparse.
         if (! preg_match(
             '~^https?://(?:www\.)?lichess\.org/(?:embed/)?([a-zA-Z0-9]{8,12})(?:[/?#]|$)~i',
             $url,
@@ -391,16 +328,9 @@ class SendMessageAction
     }
 
     /**
-     * If $url is a chess.com game URL, return the URL unchanged for the
-     * paste-path fetcher; otherwise null. chess.com canonical formats:
-     *   - `chess.com/game/live/{numeric_id}`
-     *   - `chess.com/game/daily/{numeric_id}`
-     *   - `chess.com/live/game/{numeric_id}`              (legacy redirect)
-     *   - `chess.com/analysis/game/(live|daily)/{id}`    (analysis view)
-     *
-     * Numeric ID is the canonical game identifier. The fetcher takes a URL
-     * (not just ID) because the chess.com Published Data API doesn't expose
-     * a get-by-id endpoint — it queries per-user archives and matches by URL.
+     * Return the URL unchanged if it's a chess.com game URL, else null. The fetcher takes
+     * a URL (not just ID) because chess.com's Published Data API has no get-by-id endpoint —
+     * it queries per-user archives and matches by URL.
      */
     public static function extractChessComGameUrl(string $url): ?string
     {

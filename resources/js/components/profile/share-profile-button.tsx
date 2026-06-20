@@ -8,33 +8,26 @@ import {
     PopoverContent,
     PopoverTrigger,
 } from '@/components/ui/popover';
+import { useT } from '@/lib/i18n';
 
 interface Props {
     profileUrl: string;
     username: string;
 }
 
-/**
- * Owner-only share-profile control. Renders a button that opens a popover
- * with the profile's absolute URL (copy-to-clipboard) + a QR code for
- * cross-device handoff (phone scans the QR on a desktop, lands on the
- * profile without retyping).
- *
- * Mirrors the wallet/deposit QR treatment (white card, level M) and
- * AddressDisplay's copy pattern (Sonner toast + 2-second optimistic
- * checkmark).
- */
+/** Owner-only share button — popover with copyable URL + QR. */
 export function ShareProfileButton({ profileUrl, username }: Props) {
+    const t = useT();
     const [copied, setCopied] = useState(false);
 
     const handleCopy = async () => {
         try {
             await navigator.clipboard.writeText(profileUrl);
             setCopied(true);
-            toast.success('Profile link copied');
+            toast.success(t('Profile link copied'));
             setTimeout(() => setCopied(false), 2000);
         } catch {
-            toast.error('Could not copy — try selecting it manually.');
+            toast.error(t('Could not copy — try selecting it manually.'));
         }
     };
 
@@ -43,21 +36,22 @@ export function ShareProfileButton({ profileUrl, username }: Props) {
             <PopoverTrigger asChild>
                 <Button type="button" variant="outline" size="sm">
                     <Share2 className="size-4" aria-hidden="true" />
-                    Share profile
+                    {t('Share profile')}
                 </Button>
             </PopoverTrigger>
             <PopoverContent className="w-80 space-y-4" align="start">
                 <div>
                     <h3 className="font-display text-sm font-semibold text-foreground">
-                        Share @{username}
+                        {t('Share @:username', { username })}
                     </h3>
                     <p className="mt-1 text-xs text-muted-foreground">
-                        Anyone with this link can view your public profile.
+                        {t(
+                            'Anyone with this link can view your public profile.',
+                        )}
                     </p>
                 </div>
 
-                {/* QR on a forced-light card — phone cameras read the dark
-                    squares better on white. Mirrors wallet/deposit QR. */}
+                {/* Forced-light QR — phone cameras read dark squares better on white. */}
                 <div className="flex justify-center">
                     <div className="rounded-xl bg-white p-3 shadow-md">
                         <QRCodeSVG
@@ -81,7 +75,7 @@ export function ShareProfileButton({ profileUrl, username }: Props) {
                         variant="ghost"
                         size="icon"
                         onClick={handleCopy}
-                        aria-label={copied ? 'Link copied' : 'Copy link'}
+                        aria-label={copied ? t('Link copied') : t('Copy link')}
                         className="size-8 shrink-0"
                     >
                         {copied ? (

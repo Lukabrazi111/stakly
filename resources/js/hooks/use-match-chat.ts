@@ -7,29 +7,16 @@ import { store as sendMessageRoute } from '@/routes/matches/messages';
 import type { ChatMessage } from '@/types';
 
 /**
- * State + send for a single match's chat thread.
+ * State + send for a match chat. Listens for `.message.sent` on
+ * `private-match.{id}` (dot prefix → `broadcastAs()` name).
  *
- * Subscribes to the `private-match.{id}` channel via `useEcho` and listens
- * for `.message.sent` events (the dot prefix tells Echo to use the
- * `broadcastAs()` name on `MessageSent` rather than the auto-derived class
- * path).
+ * Optimistic UI: `send` appends a pending bubble with a client-generated
+ * `correlation_id`; the POST carries it, the broadcast echoes it back, the
+ * bubble is replaced in place on arrival. Opponent messages have no
+ * matching correlation_id and append normally.
  *
- * Optimistic UI: `send` immediately appends a `pending: true` bubble to
- * local state with a client-generated `correlation_id`. The POST carries
- * the same id; the broadcast echoes it back. On broadcast arrival, the
- * pending bubble is replaced in place (preserving order) by the server's
- * version. On error, the pending bubble flips to `failed: true` and renders
- * retry / dismiss controls. Messages from the OPPONENT don't carry a
- * matching correlation id, so they append normally.
- *
- * For attachments, the original `File` is held in a ref until the broadcast
- * confirms or the user dismisses — needed to re-POST on retry without
- * asking the user to re-pick the file.
- *
- * `preserveState` + `preserveScroll` keep the chat panel mounted and
- * pinned. The server returns a `back()` redirect that triggers a partial
- * reload — we don't read the refreshed `messages` prop because the Echo
- * broadcast is the authority for new messages.
+ * `preserveState` + `preserveScroll` keep the panel mounted; Echo, not
+ * the refreshed prop, is the authority for new messages.
  */
 export function useMatchChat(
     matchId: number,
@@ -40,19 +27,13 @@ export function useMatchChat(
     const [isPending, setIsPending] = useState(false);
     const [uploadProgress, setUploadProgress] = useState<number | null>(null);
 
-    // File references survive across retries. Cleared when the broadcast
-    // confirms the corresponding correlation_id, or when the user dismisses
-    // a failed bubble. Kept out of React state because the File doesn't
-    // need to drive renders — only the preview URL does.
+    // File refs survive retries. Kept out of state — File doesn't drive renders.
     const pendingFilesRef = useRef<Map<string, File>>(new Map());
 
     useEcho<ChatMessage>(`match.${matchId}`, '.message.sent', (payload) => {
         setMessages((prev) => {
-            // 1) Optimistic replacement: payload's correlation_id matches
-            //    a still-pending local bubble. Replace it in place so the
-            //    bubble doesn't reorder or flicker. Revoke the blob URL +
-            //    drop the held File reference now that the real
-            //    attachments URL has landed.
+            // Correlation_id matches a still-pending bubble — replace in place
+            // so it doesn't reorder/flicker; revoke blob URL + drop File ref.
             if (payload.correlation_id) {
                 const idx = prev.findIndex(
                     (m) =>
@@ -76,13 +57,9 @@ export function useMatchChat(
                 }
             }
 
-            // 2) Replace by server id — the queued link-preview
-            //    fetcher re-broadcasts the same message id with
-            //    populated `attachments` once OG metadata lands. The
-            //    bubble updates in place (no scroll, no reorder).
-            //    Also covers a redundant broadcast arriving twice
-            //    (e.g. dev StrictMode double-subscribe) — replacing
-            //    with identical payload is a no-op render.
+            // Replace by server id — the queued link-preview fetcher
+            // re-broadcasts the same id with populated `attachments` once
+            // OG metadata lands. Also covers strict-mode double-subscribe.
             const existingIdx = prev.findIndex((m) => m.id === payload.id);
 
             if (existingIdx !== -1) {
@@ -92,9 +69,8 @@ export function useMatchChat(
                 return next;
             }
 
-            // 3) Append — normal new message from the opponent, or a
-            //    sender broadcast without a correlation_id (e.g. system
-            //    message produced by a lifecycle Action).
+            // Append — opponent message, or a sender broadcast without a
+            // correlation_id (e.g. lifecycle system message).
             return [...prev, payload];
         });
     });
@@ -104,10 +80,8 @@ export function useMatchChat(
             setIsPending(true);
             setUploadProgress(file ? 0 : null);
 
-            // Typed as Inertia's RequestPayload so `router.post` accepts it
-            // without a cast. `Record<string, unknown>` (the previous
-            // annotation) is wider than the FormDataConvertible union that
-            // RequestPayload allows, and TS rightly rejects it.
+            // RequestPayload — `Record<string, unknown>` is wider than
+            // Inertia's FormDataConvertible union and TS rejects it.
             const payload: RequestPayload = {
                 correlation_id: correlationId,
             };
@@ -120,7 +94,7 @@ export function useMatchChat(
                 payload.file = file;
             }
 
-            router.post(sendMessageRoute(matchId).url, payload, {
+            router.post(sendMessageRoute({ match: matchId }).url, payload, {
                 preserveState: true,
                 preserveScroll: true,
                 forceFormData: Boolean(file),
@@ -183,8 +157,13 @@ export function useMatchChat(
                     optimistic_file: file
                         ? {
                               name: file.name,
-                              preview_url: URL.createObjectURL(file),
+                              // PDFs don't get an inline preview — the bubble
+                              // renders a file-icon tile from `mime` instead.
+                              preview_url: file.type.startsWith('image/')
+                                  ? URL.createObjectURL(file)
+                                  : null,
                               size: file.size,
+                              mime: file.type,
                           }
                         : undefined,
                 };

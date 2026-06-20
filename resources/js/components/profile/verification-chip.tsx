@@ -1,18 +1,10 @@
 import { ExternalLink } from 'lucide-react';
+import { useT } from '@/lib/i18n';
+import type { ListingPlatform } from '@/types';
 
-type Provider = 'chess_com' | 'lichess';
-
-// Provider-tinted chip tokens (M19 Phase 2). The chip's presence itself
-// means "verified" — only completed links are passed to this component
-// from the profile hero, so we don't need an additional check icon. Tint
-// colors lifted from each platform's brand identity, opacity-adjusted to
-// read on Stakly's dark surface.
-//
-// Future providers (M15 multi-game): FACEIT (orange), Riot (red), Steam
-// (blue). Tokens prepared below as commented examples so the chip system
-// extends to the next game by adding an enum case + meta entry.
+// Tint colors from each platform's brand identity, adjusted for the dark surface.
 const PROVIDER_META: Record<
-    Provider,
+    ListingPlatform,
     {
         label: string;
         href: (username: string) => string;
@@ -29,26 +21,42 @@ const PROVIDER_META: Record<
         href: (u) => `https://lichess.org/@/${u}`,
         tone: 'border-neutral-500/50 bg-neutral-500/15 text-neutral-200 hover:border-neutral-400/70 hover:bg-neutral-500/25',
     },
-    // Future (M15):
-    //   faceit: tone 'border-[#ff5500]/60 bg-[#ff5500]/15 text-[#ff9b66]'
-    //   riot:   tone 'border-[#d13639]/60 bg-[#d13639]/15 text-[#ff7a7c]'
-    //   steam:  tone 'border-[#1b6f9c]/60 bg-[#1b6f9c]/15 text-[#7fb8db]'
+    faceit: {
+        label: 'FACEIT',
+        href: (u) => `https://www.faceit.com/en/players/${u}`,
+        tone: 'border-[#ff5500]/50 bg-[#ff5500]/15 text-[#ff8a4c] hover:border-[#ff5500]/80 hover:bg-[#ff5500]/25',
+    },
+    steam: {
+        label: 'Steam',
+        href: (u) => `https://steamcommunity.com/id/${u}`,
+        tone: 'border-[#1b2838]/60 bg-[#1b2838]/40 text-[#66c0f4] hover:border-[#66c0f4]/50 hover:bg-[#1b2838]/60',
+    },
 };
 
 interface Props {
-    provider: Provider;
+    provider: ListingPlatform;
     username: string;
 }
 
 export function VerificationChip({ provider, username }: Props) {
+    const t = useT();
     const meta = PROVIDER_META[provider];
+
+    // Defensive — if a future M15 platform reaches the chip before its meta
+    // entry lands here, render nothing rather than crash on `meta.href`.
+    if (!meta) {
+        return null;
+    }
 
     return (
         <a
             href={meta.href(username)}
             target="_blank"
             rel="noopener noreferrer"
-            aria-label={`View verified ${meta.label} profile ${username} (opens in new tab)`}
+            aria-label={t(
+                'View verified :platform profile :username (opens in new tab)',
+                { platform: meta.label, username },
+            )}
             className={`group inline-flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors duration-150 ease-out focus-visible:ring-2 focus-visible:ring-primary/25 focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none ${meta.tone}`}
         >
             <span>{meta.label}</span>

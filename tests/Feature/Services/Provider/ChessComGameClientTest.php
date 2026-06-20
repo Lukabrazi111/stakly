@@ -1,7 +1,9 @@
 <?php
 
 use App\Services\Provider\ChessComGameClient;
-use App\Services\Provider\Exceptions\ProviderUnavailableException;
+use App\Services\Provider\Exceptions\PermanentProviderError;
+use App\Services\Provider\Exceptions\RateLimitedError;
+use App\Services\Provider\Exceptions\TransientProviderError;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Http;
 
@@ -67,7 +69,7 @@ test('fetchGame returns null on 404 archive (user has no games for that month)',
     expect($game)->toBeNull();
 });
 
-test('fetchGame throws ProviderUnavailable on 5xx', function () {
+test('fetchGame throws TransientProviderError on 5xx', function () {
     Http::fake([
         'api.chess.com/pub/player/*/games/*' => Http::response('', 503),
     ]);
@@ -75,7 +77,50 @@ test('fetchGame throws ProviderUnavailable on 5xx', function () {
     expect(fn () => chessComClient()->fetchGame(
         'https://www.chess.com/game/live/12345678901',
         'alice-chesscom',
-    ))->toThrow(ProviderUnavailableException::class);
+    ))->toThrow(TransientProviderError::class);
+});
+
+test('fetchGame throws RateLimitedError on 429', function () {
+    Http::fake([
+        'api.chess.com/pub/player/*/games/*' => Http::response('', 429),
+    ]);
+
+    expect(fn () => chessComClient()->fetchGame(
+        'https://www.chess.com/game/live/12345678901',
+        'alice-chesscom',
+    ))->toThrow(RateLimitedError::class);
+});
+
+test('fetchGame populates retryAt from Retry-After header on 429', function () {
+    CarbonImmutable::setTestNow('2026-06-06T12:00:00Z');
+    Http::fake([
+        'api.chess.com/pub/player/*/games/*' => Http::response('', 429, ['Retry-After' => '90']),
+    ]);
+
+    $error = null;
+    try {
+        chessComClient()->fetchGame(
+            'https://www.chess.com/game/live/12345678901',
+            'alice-chesscom',
+        );
+    } catch (RateLimitedError $e) {
+        $error = $e;
+    }
+
+    expect($error)->not->toBeNull();
+    expect($error->retryAt()->getTimestamp())
+        ->toBe(CarbonImmutable::parse('2026-06-06T12:01:30Z')->getTimestamp());
+});
+
+test('fetchGame throws PermanentProviderError on 4xx other than 429', function () {
+    Http::fake([
+        'api.chess.com/pub/player/*/games/*' => Http::response('', 403),
+    ]);
+
+    expect(fn () => chessComClient()->fetchGame(
+        'https://www.chess.com/game/live/12345678901',
+        'alice-chesscom',
+    ))->toThrow(PermanentProviderError::class);
 });
 
 test('fetchGame parses a draw result correctly', function () {
@@ -100,6 +145,31 @@ test('fetchGame parses a draw result correctly', function () {
         ->and($game->isDecisive())->toBeFalse()
         ->and($game->isDraw())->toBeTrue()
         ->and($game->status)->toBe('agreed');
+});
+
+test('fetchGame classifies abandoned games via isAborted (M14 Slice 3b)', function () {
+    Http::fake([
+        'api.chess.com/pub/player/*/games/*' => Http::response(
+            chessComArchiveFixture([
+                chessComGameFixture([
+                    'white' => ['username' => 'alice-chesscom', 'result' => 'abandoned'],
+                    'black' => ['username' => 'bob-chesscom', 'result' => 'abandoned'],
+                ]),
+            ]),
+            200,
+        ),
+    ]);
+
+    $game = chessComClient()->fetchGame(
+        'https://www.chess.com/game/live/12345678901',
+        'alice-chesscom',
+    );
+
+    expect($game->winnerColor)->toBeNull()
+        ->and($game->isDecisive())->toBeFalse()
+        ->and($game->isDraw())->toBeFalse()
+        ->and($game->isAborted())->toBeTrue()
+        ->and($game->status)->toBe('abandoned');
 });
 
 // ─── searchGamesBetween ─────────────────────────────────────────────────────
@@ -153,7 +223,7 @@ test('searchGamesBetween returns empty array when 404', function () {
     expect($games)->toBe([]);
 });
 
-test('searchGamesBetween throws ProviderUnavailable on 5xx', function () {
+test('searchGamesBetween throws TransientProviderError on 5xx', function () {
     Http::fake([
         'api.chess.com/pub/player/*/games/*' => Http::response('', 500),
     ]);
@@ -162,5 +232,29 @@ test('searchGamesBetween throws ProviderUnavailable on 5xx', function () {
         'alice-chesscom',
         'bob-chesscom',
         CarbonImmutable::now()->subHour(),
-    ))->toThrow(ProviderUnavailableException::class);
+    ))->toThrow(TransientProviderError::class);
+});
+
+test('searchGamesBetween throws RateLimitedError on 429', function () {
+    Http::fake([
+        'api.chess.com/pub/player/*/games/*' => Http::response('', 429),
+    ]);
+
+    expect(fn () => chessComClient()->searchGamesBetween(
+        'alice-chesscom',
+        'bob-chesscom',
+        CarbonImmutable::now()->subHour(),
+    ))->toThrow(RateLimitedError::class);
+});
+
+test('searchGamesBetween throws PermanentProviderError on 4xx other than 429', function () {
+    Http::fake([
+        'api.chess.com/pub/player/*/games/*' => Http::response('', 401),
+    ]);
+
+    expect(fn () => chessComClient()->searchGamesBetween(
+        'alice-chesscom',
+        'bob-chesscom',
+        CarbonImmutable::now()->subHour(),
+    ))->toThrow(PermanentProviderError::class);
 });

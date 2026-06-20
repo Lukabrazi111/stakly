@@ -2,52 +2,36 @@ import { router } from '@inertiajs/react';
 import { CheckCircle2, Loader2 } from 'lucide-react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { useEffect, useState } from 'react';
+import { useT } from '@/lib/i18n';
 import type { ListingPlatform, MatchSnapshots } from '@/types';
 
 interface WaitingForGameCardProps {
     platform: ListingPlatform;
     snapshots: MatchSnapshots;
-    /**
-     * Truthy when an auto-fetched game card has landed in chat. The action
-     * card swaps to a "found — settling now" state; the parent's poll
-     * tick catches the status flip to Settled within a few seconds and
-     * unmounts this card in favor of `SettlementSummary`.
-     */
+    /** Truthy when an auto-fetched game card has landed in chat; swaps card
+     *  to "found — settling now" until status flips to Settled. */
     hasAutoFetchedCard: boolean;
 }
 
 const PLATFORM_LABEL: Record<ListingPlatform, string> = {
     lichess: 'Lichess',
     chess_com: 'chess.com',
+    // M15 placeholders.
+    faceit: 'FACEIT',
+    steam: 'Steam',
 };
 
 const PLATFORM_PROFILE_URL: Record<ListingPlatform, (u: string) => string> = {
     lichess: (u) => `https://lichess.org/@/${encodeURIComponent(u)}`,
     chess_com: (u) => `https://www.chess.com/member/${encodeURIComponent(u)}`,
+    // M15 placeholders — best-effort profile URLs; not used on real CS2/Dota
+    // listings today since none exist in production.
+    faceit: (u) => `https://www.faceit.com/en/players/${encodeURIComponent(u)}`,
+    steam: (u) => `https://steamcommunity.com/id/${encodeURIComponent(u)}`,
 };
 
-/**
- * Pending-state action card (M16). Replaced the M6 confirm buttons —
- * matches now settle from the game-API card, no player vote required.
- *
- * Two visual states:
- *   - **Looking** — pulsing spinner, the player-pair we're polling for,
- *     a soft "last checked Ns ago" stamp. Default while a card hasn't
- *     landed.
- *   - **Found** — success-toned, "Game found — settling now…". Brief
- *     hand-off state between card-landed and status-flips-to-Settled
- *     (typically <2s before the next poll catches the flip and unmounts
- *     the whole card in favor of `SettlementSummary`).
- *
- * If a snapshot username is missing on either side, the player-pair row
- * is omitted (no broken "Looking for X vs (missing)" copy). Take + create
- * gates enforce both-sides-linked upstream, so this is a defensive UX
- * rather than a normal path.
- *
- * Animation respects `prefers-reduced-motion` — the pulse spinner
- * collapses to a static icon, the success state cross-fade collapses to
- * an instant swap.
- */
+/** Pending-state action card. Two states: Looking (default), Found (brief
+ *  hand-off before status flips to Settled). */
 export function WaitingForGameCard({
     platform,
     snapshots,
@@ -99,6 +83,7 @@ function LookingState({
     snapshots: MatchSnapshots;
     reduceMotion: boolean;
 }) {
+    const t = useT();
     const secondsAgo = useSecondsSinceLastVisit();
 
     const platformLabel = PLATFORM_LABEL[platform];
@@ -122,19 +107,23 @@ function LookingState({
 
             <div className="min-w-0 flex-1">
                 <h2 className="font-display text-lg font-semibold text-foreground">
-                    Play your match on {platformLabel}
+                    {t('Play your match on :platform', {
+                        platform: platformLabel,
+                    })}
                 </h2>
 
                 <p className="mt-1 text-sm text-muted-foreground">
-                    Stakly settles automatically as soon as your game on{' '}
-                    {platformLabel} finishes — no buttons to press.
+                    {t(
+                        'Stakly settles automatically as soon as your game on :platform finishes — no buttons to press.',
+                        { platform: platformLabel },
+                    )}
                 </p>
 
                 {snapshots.creator_username !== null &&
                     snapshots.taker_username !== null && (
                         <div className="mt-4 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border border-border/60 bg-background/40 px-3 py-2.5 text-sm">
                             <span className="text-xs tracking-wide text-muted-foreground uppercase">
-                                Watching for
+                                {t('Watching for')}
                             </span>
                             <a
                                 href={buildProfileUrl(
@@ -163,10 +152,12 @@ function LookingState({
                     aria-live="polite"
                 >
                     <span className="size-1.5 rounded-full bg-warning" />
-                    <span>Looking for your game…</span>
+                    <span>{t('Looking for your game…')}</span>
                     <span aria-hidden="true">•</span>
                     <span className="tabular-nums">
-                        Last checked {secondsAgo}s ago
+                        {t('Last checked :seconds s ago', {
+                            seconds: secondsAgo,
+                        })}
                     </span>
                 </div>
             </div>
@@ -175,6 +166,8 @@ function LookingState({
 }
 
 function FoundState({ platform }: { platform: ListingPlatform }) {
+    const t = useT();
+
     return (
         <div className="flex items-start gap-4">
             <div className="shrink-0 rounded-full bg-success/10 p-2.5 ring-1 ring-success/20">
@@ -186,33 +179,31 @@ function FoundState({ platform }: { platform: ListingPlatform }) {
 
             <div className="min-w-0 flex-1">
                 <h2 className="font-display text-lg font-semibold text-foreground">
-                    Game found — settling now…
+                    {t('Game found — settling now…')}
                 </h2>
                 <p className="mt-1 text-sm text-muted-foreground">
-                    We found your game on {PLATFORM_LABEL[platform]}. Payout and
-                    platform fee post to the ledger in a moment.
+                    {t(
+                        'We found your game on :platform. Payout and platform fee post to the ledger in a moment.',
+                        { platform: PLATFORM_LABEL[platform] },
+                    )}
                 </p>
             </div>
         </div>
     );
 }
 
-/**
- * Returns the seconds elapsed since the most recent successful Inertia
- * visit (or since mount if no visit has completed yet). Re-renders once
- * per second while mounted; resets to 0 every time Inertia's router
- * fires `success` — that fires on every successful partial reload from
- * the match page's 8s polling loop.
- *
- * Subscribing to `router.on('success', ...)` directly removes the need
- * for the parent to maintain a poll-tick counter and pass it down. The
- * timer owns its own reset signal, decoupled from prop-change detection.
- */
+/** Seconds since the most recent successful Inertia visit. Resets on every
+ *  `router.on('success', ...)` so it owns its own reset signal. */
 function useSecondsSinceLastVisit(): number {
-    const [resetAt, setResetAt] = useState(() => Date.now());
-    const [now, setNow] = useState(() => Date.now());
+    // null until mount — initializing to Date.now() would cause a hydration mismatch.
+    const [resetAt, setResetAt] = useState<number | null>(null);
+    const [now, setNow] = useState<number | null>(null);
 
     useEffect(() => {
+        const init = Date.now();
+        setResetAt(init);
+        setNow(init);
+
         return router.on('success', () => {
             setResetAt(Date.now());
             setNow(Date.now());
@@ -225,7 +216,9 @@ function useSecondsSinceLastVisit(): number {
         return () => window.clearInterval(id);
     }, []);
 
-    const elapsed = Math.max(0, Math.floor((now - resetAt) / 1000));
+    if (now === null || resetAt === null) {
+        return 0;
+    }
 
-    return elapsed;
+    return Math.max(0, Math.floor((now - resetAt) / 1000));
 }

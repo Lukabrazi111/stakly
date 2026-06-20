@@ -5,21 +5,25 @@ namespace App\Actions\GameMatch;
 use App\Actions\Message\PostSystemMessageAction;
 use App\Enums\MatchStatus;
 use App\Models\GameMatch;
+use App\Models\LobbyParticipant;
 use App\Services\Wallet;
 use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
 
 /**
- * Settles a match as a draw — refunds both players' stakes via
+ * Settles a match as a draw — refunds every escrowed stake via
  * `Wallet::release`, no platform fee, no winner. Called from:
  *   - `SettleFromCardAction` (M16) when an auto-fetched game card has
  *     `winner_color = null`.
  *   - `ResolveDisputeAction` when the game-API returns `GameApiConfidence::Drawn`.
  *
- * Conservation per match: `-A_stake + -B_stake + +A_release + +B_release = 0`.
+ * 1v1 — refunds creator + taker (legacy refs `match-draw-creator/taker`).
+ * Team play (M34 P6) — fan-out across every live `lobby_participants` row
+ * with `stake_held_at IS NOT NULL` (per-user ref `match-draw:{id}:{user_id}`).
  *
- * Idempotent: short-circuits on `Settled`. Same `ManualReview` rejection
- * guard as `SettleMatchAction` — admin tools own that state.
+ * Idempotent: short-circuits on `Settled`; per-user references are unique
+ * so re-entry returns existing rows untouched. Same `ManualReview` rejection
+ * guard as `SettleMatchAction`.
  */
 class SettleDrawMatchAction
 {
@@ -40,12 +44,12 @@ class SettleDrawMatchAction
 
             $locked->load(['listing.user', 'taker']);
 
-            $this->refundBothStakes($locked);
+            $this->refundEveryStake($locked);
             $this->markSettledAsDraw($locked);
 
             $this->postSystem->handle(
                 $locked,
-                __('Match ended as a draw. Stakes refunded to both players.'),
+                __('Match ended as a draw. Stakes refunded to every player.'),
             );
         });
     }
@@ -61,7 +65,18 @@ class SettleDrawMatchAction
         }
     }
 
-    private function refundBothStakes(GameMatch $match): void
+    private function refundEveryStake(GameMatch $match): void
+    {
+        if ($match->listing->isTeamPlay()) {
+            $this->refundTeamStakes($match);
+
+            return;
+        }
+
+        $this->refund1v1Stakes($match);
+    }
+
+    private function refund1v1Stakes(GameMatch $match): void
     {
         $stake = (string) $match->listing->stake_amount;
 
@@ -80,6 +95,33 @@ class SettleDrawMatchAction
             reference: "match-draw-taker:{$match->id}",
             description: 'Draw — taker stake refunded.',
         );
+    }
+
+    /**
+     * Per-user idempotency ref `match-draw:{match_id}:{user_id}` — survives
+     * partial-failure retries without double-refunding. Mirrors the
+     * `AcceptCancellationAction` team-refund pattern.
+     */
+    private function refundTeamStakes(GameMatch $match): void
+    {
+        $stake = (string) $match->listing->stake_amount;
+
+        $participants = LobbyParticipant::query()
+            ->where('listing_id', $match->listing_id)
+            ->live()
+            ->whereNotNull('stake_held_at')
+            ->with('user')
+            ->get();
+
+        foreach ($participants as $participant) {
+            Wallet::release(
+                user: $participant->user,
+                amount: $stake,
+                listing: $match->listing,
+                reference: "match-draw:{$match->id}:{$participant->user_id}",
+                description: 'Draw — team stake refunded.',
+            );
+        }
     }
 
     private function markSettledAsDraw(GameMatch $match): void

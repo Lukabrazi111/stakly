@@ -11,6 +11,7 @@ import {
     DialogTitle,
 } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
+import { useT } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import { request as requestCancellationRoute } from '@/routes/matches/cancellation';
 
@@ -18,19 +19,8 @@ const REASON_MAX = 200;
 
 const OTHER = 'Other';
 
-/**
- * Predefined cancellation reasons. The submitted `reason` field is the
- * literal label string — sending the visible text (not a code) keeps the
- * backend dumb (no enum to maintain on the server) and the persisted
- * value self-describing for admin / chat review. Trade: copy changes
- * here don't retroactively update historical records, which is fine —
- * the persisted reason is a snapshot of what the user picked at request
- * time.
- *
- * "Other" reveals a free-text textarea. If the user leaves it blank, the
- * persisted reason is the literal "Other" — still meaningful to the
- * opponent ("they didn't want to specify").
- */
+// Submitted `reason` is the literal label string — no server enum, persisted
+// value is self-describing. Copy changes don't retroactively update history.
 const PRESET_REASONS = [
     'Something came up, I have to go',
     'Technical / connection issues',
@@ -42,43 +32,21 @@ const PRESET_REASONS = [
 
 interface RequestCancellationButtonProps {
     matchId: number;
-    /**
-     * Set to a positive number when the viewer is mid-cooldown after a
-     * previous rejected request. The button stays visible (so the user
-     * sees the affordance) but disables with a tooltip showing the
-     * remaining minutes. `0` or `undefined` ⇒ enabled.
-     */
+    /** Positive number while mid-cooldown after a rejected request;
+     *  0/undefined → enabled. */
     cooldownMinutesRemaining?: number;
+    /** M34 P6 — drives dialog copy. 1 (default) = 1v1 wording ("both
+     *  stakes / your opponent"); >1 = team wording ("all stakes / the
+     *  opposing team"). */
+    teamSize?: number;
 }
 
-/**
- * Sibling escape hatch to `OpenDisputeButton` — same subordinate inline
- * style (small text link with icon, not a primary button), since the
- * cooperative confirm path is the intended default. The pair sits side
- * by side at the bottom of the Pending action card.
- *
- * Per-user 30-min cooldown after a rejected request is reflected here
- * via the `cooldownMinutesRemaining` prop — parent computes it from
- * `match.cancellation.rejected_at` so the value is fresh on every
- * render without a separate clock subscription.
- *
- * The reason flow is hybrid: a short radio list of preset reasons +
- * "Other" with an optional free-text fallback. Hybrid trades off:
- *
- *   - Discoverability (users don't have to think of a reason from scratch)
- *   - Speed (one click vs typing for 95% of cases)
- *   - Mild abuse mitigation (preset paths can't carry URLs / handles)
- *   - Flexibility (Other catches the long tail without forcing rigidity)
- *
- * Whitespace-only "Other" text normalizes to `null` server-side
- * (`RequestCancellationRequest::prepareForValidation`); when Other is
- * picked with no text, the submitted value is the literal string
- * "Other" so the opponent sees an intent indicator instead of a blank.
- */
 export function RequestCancellationButton({
     matchId,
     cooldownMinutesRemaining,
+    teamSize = 1,
 }: RequestCancellationButtonProps) {
+    const t = useT();
     const [open, setOpen] = useState(false);
     const [selected, setSelected] = useState<string | null>(null);
     const [otherText, setOtherText] = useState('');
@@ -106,7 +74,7 @@ export function RequestCancellationButton({
 
         setProcessing(true);
         router.post(
-            requestCancellationRoute(matchId).url,
+            requestCancellationRoute({ match: matchId }).url,
             { reason: reasonPayload },
             {
                 preserveScroll: true,
@@ -128,11 +96,19 @@ export function RequestCancellationButton({
     };
 
     const triggerLabel = isCooldown
-        ? `Request cancellation (${cooldownMinutesRemaining}m cooldown)`
-        : 'Request cancellation';
+        ? t('Request cancellation (:minutes m cooldown)', {
+              minutes: cooldownMinutesRemaining ?? 0,
+          })
+        : t('Request cancellation');
 
     const cooldownTitle = isCooldown
-        ? `You can request again in ${cooldownMinutesRemaining} minute${cooldownMinutesRemaining === 1 ? '' : 's'}.`
+        ? cooldownMinutesRemaining === 1
+            ? t('You can request again in :minutes minute.', {
+                  minutes: cooldownMinutesRemaining,
+              })
+            : t('You can request again in :minutes minutes.', {
+                  minutes: cooldownMinutesRemaining ?? 0,
+              })
         : undefined;
 
     return (
@@ -151,11 +127,17 @@ export function RequestCancellationButton({
             <Dialog open={open} onOpenChange={handleOpenChange}>
                 <DialogContent>
                     <DialogHeader>
-                        <DialogTitle>Request to cancel match</DialogTitle>
+                        <DialogTitle>
+                            {t('Request to cancel match')}
+                        </DialogTitle>
                         <DialogDescription>
-                            Both stakes will be refunded if your opponent
-                            accepts. If they decline, the match continues and
-                            you'll wait 30 minutes before you can request again.
+                            {teamSize > 1
+                                ? t(
+                                      "All stakes will be refunded if any player on the opposing team accepts. If they decline, the match continues and you'll wait 30 minutes before you can request again.",
+                                  )
+                                : t(
+                                      "Both stakes will be refunded if your opponent accepts. If they decline, the match continues and you'll wait 30 minutes before you can request again.",
+                                  )}
                         </DialogDescription>
                     </DialogHeader>
 
@@ -164,12 +146,12 @@ export function RequestCancellationButton({
                         disabled={processing}
                     >
                         <legend className="mb-1 text-sm font-medium text-foreground">
-                            Reason
+                            {t('Reason')}
                         </legend>
                         {PRESET_REASONS.map((reason) => (
                             <ReasonOption
                                 key={reason}
-                                label={reason}
+                                label={t(reason)}
                                 checked={selected === reason}
                                 onSelect={() => setSelected(reason)}
                             />
@@ -179,24 +161,18 @@ export function RequestCancellationButton({
                             <div className="mt-1 grid gap-2 pl-1">
                                 <Textarea
                                     id="cancellation-other-reason"
-                                    aria-label="Other reason"
+                                    aria-label={t('Other reason')}
                                     value={otherText}
                                     onChange={(e) =>
                                         setOtherText(
                                             e.target.value.slice(0, REASON_MAX),
                                         )
                                     }
-                                    placeholder="Optional — add a short note for your opponent."
+                                    placeholder={t(
+                                        'Optional — add a short note for your opponent.',
+                                    )}
                                     maxLength={REASON_MAX}
                                     rows={3}
-                                    // Borderless override — the radio rows
-                                    // above carry the visual hierarchy;
-                                    // textarea sits as a soft inset under
-                                    // the "Other" row without competing
-                                    // for attention with its own chrome.
-                                    // Cursor is the focus indicator
-                                    // (browsers render it regardless of
-                                    // styling).
                                     className="border-0"
                                 />
                                 <p className="text-right text-xs text-muted-foreground tabular-nums">
@@ -212,14 +188,14 @@ export function RequestCancellationButton({
                             onClick={() => setOpen(false)}
                             disabled={processing}
                         >
-                            Cancel
+                            {t('Cancel')}
                         </Button>
                         <Button
                             variant="default"
                             onClick={handleSubmit}
                             disabled={!canSubmit}
                         >
-                            {processing ? 'Sending…' : 'Send request'}
+                            {processing ? t('Sending…') : t('Send request')}
                         </Button>
                     </DialogFooter>
                 </DialogContent>
@@ -234,25 +210,8 @@ interface ReasonOptionProps {
     onSelect: () => void;
 }
 
-/**
- * Stakly-skinned radio row using a native `<input type="radio">` for
- * full keyboard + screen-reader semantics. Avoids pulling in a new
- * shadcn primitive for a single feature; we can swap to a shared
- * `RadioGroup` later if more places need radios.
- *
- * Selected state: **border color only** — no glow, no inner tint
- * beyond the shared `bg-card/40` surface. The inner radio dot fills
- * in to provide a second non-color affordance.
- *
- * Focus ring uses `has-[:focus-visible]:ring-*` (Tailwind v4 `:has()`
- * variant + `:focus-visible`) so the keyboard-focus ring **only**
- * appears when the user arrived via Tab — mouse clicks don't trigger
- * the glow. Drops the previous `focus-within:ring` which fired
- * unconditionally on click. Per the UI/UX skill's accessibility rule
- * we can't remove focus indication entirely; scoping to
- * focus-visible keeps a11y intact without showing the glow to mouse
- * users.
- */
+/** Native radio + Stakly skin. `has-[:focus-visible]` so the focus ring
+ *  only shows for keyboard users, not on mouse clicks. */
 function ReasonOption({ label, checked, onSelect }: ReasonOptionProps) {
     return (
         <label

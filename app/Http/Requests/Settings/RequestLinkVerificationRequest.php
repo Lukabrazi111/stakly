@@ -8,9 +8,9 @@ use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rules\Enum;
 
 /**
- * Validates `POST /settings/linked-accounts` — the first step of bio-code
- * linking. The action layer (`RequestLinkVerificationAction`) re-validates
- * format defensively so it stays correct if called outside HTTP context.
+ * First step of bio-code linking. The action layer
+ * (`RequestLinkVerificationAction`) re-validates format defensively so it
+ * stays correct if called outside HTTP context.
  */
 class RequestLinkVerificationRequest extends FormRequest
 {
@@ -26,9 +26,7 @@ class RequestLinkVerificationRequest extends FormRequest
                 'string',
                 'min:2',
                 'max:25',
-                // Provider-specific length/character validation is enforced
-                // by the action; loose pre-check here keeps obvious garbage
-                // off the request layer.
+                // Loose pre-check — provider-specific rules live in the action.
                 'regex:/^[a-zA-Z0-9_-]{2,25}$/',
             ],
         ];

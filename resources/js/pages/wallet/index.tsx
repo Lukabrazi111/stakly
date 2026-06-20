@@ -1,4 +1,4 @@
-import { Head, Link } from '@inertiajs/react';
+import { Link } from '@inertiajs/react';
 import {
     ArrowDownToLine,
     ArrowUpFromLine,
@@ -6,9 +6,11 @@ import {
     Wallet as WalletIcon,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
+import { PageMeta } from '@/components/site/page-meta';
 import { BalanceCard } from '@/components/wallet/balance-card';
 import { TransactionRow } from '@/components/wallet/transaction-row';
 import PlayerHubLayout from '@/layouts/player-hub-layout';
+import { useT } from '@/lib/i18n';
 import {
     deposit as depositRoute,
     history as historyRoute,
@@ -20,19 +22,24 @@ export default function WalletIndex({
     balance,
     recentTransactions,
 }: WalletIndexProps) {
+    const t = useT();
     const hasTransactions = recentTransactions.data.length > 0;
 
     return (
         <PlayerHubLayout>
-            <Head title="Wallet" />
+            <PageMeta
+                title={t('Wallet')}
+                description={t('Your wallet balance and recent transactions.')}
+                noindex
+            />
 
             <div className="mx-auto max-w-5xl px-4 py-10 md:px-6 md:py-14">
                 <header className="mb-8">
                     <h1 className="font-display text-3xl font-bold tracking-tight md:text-4xl">
-                        Wallet
+                        {t('Wallet')}
                     </h1>
                     <p className="mt-2 text-sm text-muted-foreground">
-                        Deposit, withdraw, and review your USDT activity.
+                        {t('Deposit, withdraw, and review your USDT activity.')}
                     </p>
                 </header>
 
@@ -42,34 +49,34 @@ export default function WalletIndex({
                     <ActionCard
                         href={depositRoute().url}
                         icon={ArrowDownToLine}
-                        title="Deposit"
-                        description="Add USDT via TRC20"
+                        title={t('Deposit')}
+                        description={t('Add USDT via TRC20')}
                     />
                     <ActionCard
                         href={withdrawRoute().url}
                         icon={ArrowUpFromLine}
-                        title="Withdraw"
-                        description="Send to a TRC20 address"
+                        title={t('Withdraw')}
+                        description={t('Send to a TRC20 address')}
                     />
                     <ActionCard
                         href={historyRoute().url}
                         icon={History}
-                        title="History"
-                        description="All your transactions"
+                        title={t('History')}
+                        description={t('All your transactions')}
                     />
                 </div>
 
                 <section className="mt-10">
                     <div className="mb-4 flex items-center justify-between gap-3">
                         <h2 className="font-display text-xl font-semibold text-foreground">
-                            Recent activity
+                            {t('Recent activity')}
                         </h2>
                         {hasTransactions && (
                             <Link
                                 href={historyRoute().url}
                                 className="text-sm font-medium text-primary transition-colors hover:text-primary/80"
                             >
-                                View all →
+                                {t('View all →')}
                             </Link>
                         )}
                     </div>
@@ -89,16 +96,16 @@ export default function WalletIndex({
                                 <WalletIcon className="size-5" />
                             </div>
                             <p className="mt-3 text-sm font-medium text-foreground">
-                                No transactions yet
+                                {t('No transactions yet')}
                             </p>
                             <p className="mt-1 text-sm text-muted-foreground">
-                                Make a deposit to get started.
+                                {t('Make a deposit to get started.')}
                             </p>
                             <Link
                                 href={depositRoute().url}
                                 className="mt-4 inline-block text-sm font-medium text-primary transition-colors hover:text-primary/80"
                             >
-                                Deposit USDT →
+                                {t('Deposit USDT →')}
                             </Link>
                         </div>
                     )}

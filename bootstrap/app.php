@@ -1,11 +1,17 @@
 <?php
 
+use App\Http\Middleware\HandleImpersonationExpiry;
 use App\Http\Middleware\HandleInertiaRequests;
+use App\Http\Middleware\RedirectUnprefixedLocale;
+use App\Http\Middleware\SetLocale;
 use App\Http\Middleware\ThrottleVerificationSend;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Http\Middleware\AddLinkHeadersForPreloadedAssets;
+use Illuminate\Http\Request;
+use Inertia\Inertia;
+use Symfony\Component\HttpFoundation\Response;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -15,14 +21,68 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
-        $middleware->encryptCookies(except: ['sidebar_state']);
+        // `stakly_locale` stays plaintext so a JS LocaleSwitcher (Slice C) can
+        // read it without round-tripping Inertia props. Value is a 2-char code,
+        // no security implication if tampered with — server re-validates
+        // against `config('stakly.locales')` in SetLocale anyway.
+        //
+        // `listings_view_layout` ('rows'|'grid') is written client-side via
+        // `document.cookie` in `useListingsView` so it must stay plaintext;
+        // server whitelists the value in `HandleInertiaRequests::share()`.
+        $middleware->encryptCookies(except: ['sidebar_state', 'player_sidebar_collapsed', 'listings_view_layout', SetLocale::COOKIE_NAME]);
+
+        // Registered GLOBALLY (not in the web group): unprefixed paths like
+        // `/listings` don't match any route, so the framework 404s before
+        // any group middleware runs. Global middleware fires on every
+        // request regardless of route match, so the 301 redirect lands
+        // before the router gives up.
+        $middleware->prepend(RedirectUnprefixedLocale::class);
+
+        // Trust X-Forwarded-* headers from any proxy. Required so Laravel
+        // detects HTTPS correctly when running behind an HTTPS-terminating
+        // proxy (ngrok in dev, load balancer in prod). Without this, secure
+        // cookies + URL scheme detection break behind the tunnel. Tighten
+        // to a specific IP/CIDR list once a real prod proxy is in place.
+        $middleware->trustProxies(at: '*');
 
         $middleware->web(append: [
             HandleInertiaRequests::class,
             AddLinkHeadersForPreloadedAssets::class,
             ThrottleVerificationSend::class,
+            HandleImpersonationExpiry::class,
+        ]);
+
+        // M15 P4 Slice 4 — FACEIT POSTs from outside our session, so the
+        // webhook receiver can't carry a CSRF token. Auth happens in the
+        // `VerifyFaceitWebhook` middleware via a shared-secret header.
+        $middleware->validateCsrfTokens(except: [
+            'webhooks/faceit',
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
-        //
+        // Render 403 / 404 / 500 / 503 as Inertia pages so they keep the
+        // Stakly chrome (header, footer, dark theme, locale switcher). 419
+        // (CSRF) stays on Inertia's default "session expired" toast — a
+        // full page would be the wrong UX for an in-flight form expiry.
+        // Validation (422) is left untouched: Inertia renders field errors
+        // inline. Debug mode also bypasses this so Whoops still works.
+        $exceptions->respond(function (Response $response, Throwable $exception, Request $request) {
+            if (app()->environment('local') && config('app.debug')) {
+                return $response;
+            }
+
+            if (! $request->header('X-Inertia') && ! $request->wantsJson()) {
+                return $response;
+            }
+
+            $status = $response->getStatusCode();
+
+            if (in_array($status, [403, 404, 500, 503], true)) {
+                return Inertia::render('errors/error', ['status' => $status])
+                    ->toResponse($request)
+                    ->setStatusCode($status);
+            }
+
+            return $response;
+        });
     })->create();

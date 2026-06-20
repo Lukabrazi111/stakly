@@ -7,6 +7,7 @@ import type { GameId } from '@/config/games';
 import type { ListingPlatform, Paginator, TimeControl } from '@/types/listings';
 
 export type MatchStatus =
+    | 'lobby_filling'
     | 'pending'
     | 'disputed'
     | 'settled'
@@ -32,6 +33,32 @@ export interface MatchListing {
     // indicator + drives the M16 Pending action card copy.
     platform: ListingPlatform;
     time_control: TimeControl[];
+    // M34 — drives the frontend branch between 1v1 chess UI (creator +
+    // taker) and team-play UI (team rosters). 1 for chess, 2 for Wingman,
+    // 5 for CS2 5v5.
+    team_size: number;
+}
+
+// M34 P6 — one live roster entry on a team-play match. Mirrors
+// `App\Http\Resources\GameMatchResource::buildRoster()`. Kicked
+// participants are filtered out by the resource — frontend only sees
+// the live set.
+export interface TeamMatchPlayer {
+    user_id: number;
+    username: string;
+    name: string;
+    avatar_thumb_url: string | null;
+    slot_index: number;
+    // M34 P8 Slice A — per-player skill + trust payload powering the rich
+    // roster cards on the match page. Both nullable: skill is null when
+    // the linked account has no rating; platform_stats is null when the
+    // controller skipped the batched aggregations (list contexts).
+    skill_rating: number | null;
+    platform_stats: {
+        total_matches: number;
+        win_rate: number | null;
+        completion_rate_30d: number | null;
+    } | null;
 }
 
 // M16 — snapshotted external-account handles scoped to the listing's
@@ -52,6 +79,11 @@ export interface MatchSnapshots {
 //   - `match.status === 'cancelled'` → terminal banner
 // `requested_by_id` lets the FE look up the name client-side from the
 // already-loaded creator/taker — saves a backend eager-load.
+export interface MatchDispute {
+    opened_by_id: number | null;
+    opened_at: string | null;
+}
+
 export interface MatchCancellation {
     requested_by_id: number | null;
     requested_at: string | null;
@@ -75,6 +107,15 @@ export interface Match {
     settled_at: string | null;
     created_at: string | null;
     cancellation: MatchCancellation;
+    dispute: MatchDispute;
+    // M34 P6 — team rosters and winning side. Present only when the
+    // listing is team play AND the controller eager-loaded the lobby
+    // participants (list contexts like `/matches` skip the eager-load
+    // and these fields are absent from the payload). Frontend checks
+    // `listing.team_size > 1 && team_a` to branch into TeamMatchView.
+    team_a?: TeamMatchPlayer[];
+    team_b?: TeamMatchPlayer[];
+    winning_team?: 'a' | 'b' | null;
 }
 
 // Chat messages on a match. Mirrors `App\Http\Resources\MessageResource` AND
@@ -166,11 +207,34 @@ export interface ChatDisputePromptAttachment {
     type: 'dispute_prompt';
 }
 
+// Tagged on the user-authored message that carries the disputing player's
+// reason (+ optional evidence file) at the moment they open the dispute.
+// `ChatMessageBubble` adds a "Reason for dispute" header above the bubble
+// content so opponent + admin see this is the formal claim, not just chat.
+export interface ChatDisputeOpeningAttachment {
+    type: 'dispute_opening';
+}
+
+// Non-image media (PDFs from dispute-opener evidence). Rendered as a
+// download tile rather than an inline preview — chat-input itself is still
+// image-only at the form-request layer, so this branch only fires from the
+// dispute-opening flow.
+export interface ChatFileAttachment {
+    type: 'file';
+    media_id: number;
+    name: string;
+    mime: string;
+    size: number;
+    url: string;
+}
+
 export type ChatAttachment =
     | ChatImageAttachment
     | ChatLinkAttachment
     | ChatGameCardAttachment
-    | ChatDisputePromptAttachment;
+    | ChatDisputePromptAttachment
+    | ChatDisputeOpeningAttachment
+    | ChatFileAttachment;
 
 export interface ChatMessage {
     id: number;
@@ -200,7 +264,14 @@ export interface ChatMessage {
     // Local-only mirror of the queued file used to render the optimistic
     // bubble while the upload is in flight. Replaced by the broadcast's
     // `attachments` entries when the server confirms.
-    optimistic_file?: { name: string; preview_url: string; size: number };
+    optimistic_file?: {
+        name: string;
+        // Object URL for image previews; null for non-image (PDF) attachments
+        // which render as a file-icon tile in `OptimisticAttachment`.
+        preview_url: string | null;
+        size: number;
+        mime: string;
+    };
 }
 
 export interface MatchShowProps {

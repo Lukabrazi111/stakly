@@ -26,9 +26,6 @@ use Laravel\Fortify\Fortify;
 
 class FortifyServiceProvider extends ServiceProvider
 {
-    /**
-     * Register any application services.
-     */
     public function register(): void
     {
         $this->app->singleton(RegisterResponseContract::class, RegisterResponse::class);
@@ -38,9 +35,6 @@ class FortifyServiceProvider extends ServiceProvider
         $this->app->singleton(PasswordResetResponseContract::class, PasswordResetResponse::class);
     }
 
-    /**
-     * Bootstrap any application services.
-     */
     public function boot(): void
     {
         $this->configureActions();
@@ -48,9 +42,6 @@ class FortifyServiceProvider extends ServiceProvider
         $this->configureRateLimiting();
     }
 
-    /**
-     * Configure Fortify actions.
-     */
     private function configureActions(): void
     {
         Fortify::resetUserPasswordsUsing(ResetUserPassword::class);
@@ -58,14 +49,12 @@ class FortifyServiceProvider extends ServiceProvider
     }
 
     /**
-     * Configure Fortify views.
-     *
-     * Entry-point views (login, register, forgot-password) redirect to the home page
-     * with an ?auth= query so the AuthModal opens there. Email verification doesn't
-     * use a page either — unverified users see the chip in the header, and the
-     * resend action POSTs to Fortify's verification.send route directly. Destinations
-     * users land on from email links or post-auth redirects (reset, 2fa, confirm)
-     * stay as pages.
+     * Entry-point views (login, register, forgot-password) redirect to `/`
+     * with `?auth=` so the AuthModal opens there. Email verification has no
+     * page either — unverified users see the chip in the header, and resend
+     * POSTs to Fortify's verification.send directly. Destinations users land
+     * on from email links / post-auth redirects (reset, 2fa, confirm) stay
+     * as pages.
      */
     private function configureViews(): void
     {
@@ -75,7 +64,16 @@ class FortifyServiceProvider extends ServiceProvider
 
         Fortify::requestPasswordResetLinkView(fn () => redirect('/?auth=forgot-password'));
 
-        Fortify::resetPasswordView(function (Request $request) {
+        // M26 P4 — Fortify auth routes live unprefixed at app root, so the
+        // SetLocale middleware never fires for them and `URL::defaults`
+        // isn't populated. Redirect targets to the public site must be
+        // locale-prefixed manually; default to the configured default
+        // locale (English). Users land on `/en/` and the cookie-aware
+        // RedirectUnprefixedLocale middleware preserves the choice from
+        // then on.
+        $defaultHome = '/'.config('stakly.default_locale', 'en');
+
+        Fortify::resetPasswordView(function (Request $request) use ($defaultHome) {
             $email = (string) $request->query('email', '');
             $token = (string) $request->route('token');
 
@@ -84,10 +82,10 @@ class FortifyServiceProvider extends ServiceProvider
             if (! $user || ! Password::tokenExists($user, $token)) {
                 Inertia::flash('toast', [
                     'type' => 'error',
-                    'message' => 'This password reset link is invalid or has expired.',
+                    'message' => __('This password reset link is invalid or has expired.'),
                 ]);
 
-                return redirect('/');
+                return redirect($defaultHome);
             }
 
             return Inertia::render('auth/reset-password', [
@@ -96,16 +94,13 @@ class FortifyServiceProvider extends ServiceProvider
             ]);
         });
 
-        Fortify::verifyEmailView(fn () => redirect('/'));
+        Fortify::verifyEmailView(fn () => redirect($defaultHome));
 
         Fortify::twoFactorChallengeView(fn () => Inertia::render('auth/two-factor-challenge'));
 
         Fortify::confirmPasswordView(fn () => Inertia::render('auth/confirm-password'));
     }
 
-    /**
-     * Configure rate limiting.
-     */
     private function configureRateLimiting(): void
     {
         RateLimiter::for('two-factor', function (Request $request) {

@@ -8,7 +8,7 @@ use App\Models\GameMatch;
 use App\Models\Message;
 use App\Services\Provider\ChessComGameClient;
 use App\Services\Provider\ChessComGameResult;
-use App\Services\Provider\Exceptions\ProviderUnavailableException;
+use App\Services\Provider\Exceptions\ProviderError;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueueAfterCommit;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -19,34 +19,11 @@ use Illuminate\Support\Facades\Log;
 use Throwable;
 
 /**
- * Resolves a pasted chess.com game URL to a chat evidence card (M8 Phase 4b
- * paste path). Mirror of `FetchLichessGameMetadataJob` adapted to
- * chess.com's archive-based API.
+ * Resolves a pasted chess.com game URL to a chat evidence card (paste path).
  *
- * Pipeline:
- *   1. Pick a candidate snapshotted chess.com username from the match
- *      (creator's preferred — either side's archive carries the same
- *      game record, so we just need one to query).
- *   2. Call `ChessComGameClient::fetchGame($url, $candidateUsername)`.
- *      The client queries the user's current + previous month archives
- *      (covers month-boundary games) and matches by URL.
- *   3. Cross-check both player usernames against the match's snapshotted
- *      chess.com handles. Same case-insensitive, order-independent rule
- *      as the Lichess job.
- *   4. Append a `type: 'game_card'`, `provider: 'chess_com'` entry to
- *      `attachments_json`, with `verified: true` only when both sides
- *      anchor. Re-broadcast `MessageSent`.
- *
- * Eventual consistency: chess.com archives lag 5-15s after game-end. If
- * the user pastes the URL right after the game, the archive may not yet
- * contain it — the client returns null. We don't retry here on null
- * (paste-path UX is "card appears or doesn't"); the user can re-paste
- * 30s later if it didn't resolve. Auto-fetch's job handles retries
- * (`AutoFetchChessComGameJob`) because it can't be re-triggered manually.
- *
- * Failures (game not found, provider unavailable, any throw) are logged
- * and swallowed — missing card is acceptable; a thrown job in failed-jobs
- * forever clutters the queue.
+ * No retry on null — paste-path UX is "card appears or doesn't"; the user can re-paste
+ * if archive lag (5-15s) missed it. Failures are logged + swallowed; a missing card is
+ * acceptable, a thrown job in failed-jobs forever clutters the queue.
  */
 class FetchChessComGameMetadataJob implements ShouldQueueAfterCommit
 {
@@ -71,9 +48,7 @@ class FetchChessComGameMetadataJob implements ShouldQueueAfterCommit
 
         $match->loadMissing('providerSnapshots');
 
-        // Pick the creator's snapshotted chess.com username as the archive
-        // to query — either side works (game appears in both archives), and
-        // creator is conventionally listed first.
+        // Either side's archive carries the same game — creator preferred for convention.
         $candidateUsername = $match->snapshotUsername(
             GameMatch::SIDE_CREATOR,
             LinkedAccountProvider::ChessCom,
@@ -83,14 +58,13 @@ class FetchChessComGameMetadataJob implements ShouldQueueAfterCommit
         );
 
         if ($candidateUsername === null) {
-            // Neither player has a chess.com snapshot — we can't query an
-            // archive at all. Silent skip (card just doesn't appear).
+            // Neither player has a chess.com snapshot — no archive to query. Silent skip.
             return;
         }
 
         try {
             $game = $client->fetchGame($this->gameUrl, $candidateUsername);
-        } catch (ProviderUnavailableException $e) {
+        } catch (ProviderError $e) {
             Log::info('chess.com game fetch failed (provider unavailable)', [
                 'message_id' => $this->message->id,
                 'game_url' => $this->gameUrl,
@@ -109,9 +83,7 @@ class FetchChessComGameMetadataJob implements ShouldQueueAfterCommit
         }
 
         if ($game === null) {
-            // Either URL doesn't correspond to a real game, or the game is
-            // too new and not yet in the archive. Silent skip per the
-            // paste-path doctrine (the bare URL still appears in chat).
+            // Game doesn't exist or hasn't hit the archive yet. Silent skip (bare URL still shows).
             return;
         }
 
@@ -143,9 +115,7 @@ class FetchChessComGameMetadataJob implements ShouldQueueAfterCommit
     }
 
     /**
-     * Verified iff BOTH game players' chess.com usernames map onto the
-     * match's snapshotted handles (one creator, one taker, in either
-     * color). Case-insensitive compare.
+     * Verified iff BOTH players map onto the snapshotted handles (case-insensitive, either color).
      */
     private static function isVerifiedByMatch(ChessComGameResult $game, GameMatch $match): bool
     {

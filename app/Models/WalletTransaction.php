@@ -45,4 +45,23 @@ class WalletTransaction extends Model
     {
         return $this->belongsTo(Listing::class, 'related_listing_id');
     }
+
+    /**
+     * BCMath-aware money formatter. Used by M31 admin surfaces (table column,
+     * infolist amount entries, sibling-transaction lines) so display precision
+     * stays aligned with the decimal(18,6) column without float round-tripping.
+     */
+    public static function formatAmount(string $amount): string
+    {
+        if ($amount === '') {
+            return '$0.00';
+        }
+
+        $sign = str_starts_with($amount, '-') ? '-' : '';
+        $abs = ltrim($amount, '-');
+        $truncated = bcadd($abs, '0', 2);
+        [$int, $dec] = explode('.', $truncated.'.00');
+
+        return $sign.'$'.number_format((int) $int, 0, '.', ',').'.'.substr($dec.'00', 0, 2);
+    }
 }

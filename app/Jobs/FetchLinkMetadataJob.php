@@ -26,32 +26,14 @@ use Spatie\Image\Image;
 use Throwable;
 
 /**
- * Background OG/Twitter/oEmbed metadata fetch for URLs that landed in a
- * chat message. Runs once per message — `SendMessageAction` collects all
- * URLs in the content into a single dispatch, so concurrent jobs writing
- * to the same row never race.
+ * Background OG/Twitter/oEmbed metadata fetch for URLs in a chat message.
  *
- * Each URL goes through `App\Support\SafeHttpClient` (per-hop SSRF check
- * + bounded redirect chain + GET-only) before oscarotero/embed sees it.
- * If the page exposes an `og:image`, we proxy it through Stakly: fetch
- * the bytes (separately SSRF-guarded + MIME-checked + size-capped),
- * re-encode via Spatie\Image to drop EXIF, persist on the private
- * `local` disk under `link-images/{sha256-of-url}.{ext}`. The browser
- * later resolves that file via the authenticated streaming route in
- * `App\Http\Controllers\LinkImageController`, so a third-party host
- * never sees a participant's IP and a broken-image link never leaks
- * a stale Stakly URL.
+ * URLs go through `App\Support\SafeHttpClient` (per-hop SSRF check + bounded redirects + GET-only)
+ * before the embed library sees them. OG images are proxied through Stakly (re-encoded to drop EXIF,
+ * persisted under `link-images/{sha256-of-url}.{ext}`) so the third-party host never sees a participant's IP.
  *
- * Results are cached per-URL for an hour so a popular link doesn't
- * hammer the upstream on every paste. Failures (SSRF refusal, timeout,
- * malformed HTML, bot-detection wall) are logged + swallowed — a missing
- * card is acceptable; a job that throws would put the row at the head of
- * the failed-jobs queue forever.
- *
- * On any successfully extracted entry, we re-broadcast `MessageSent`
- * with `correlation_id = null`. The frontend's match-by-id replace path
- * swaps the plain-link bubble for one with link cards in place — no
- * scroll, no reorder.
+ * Per-URL results cached for an hour. Failures are logged + swallowed — a thrown job lands in
+ * failed-jobs forever and clutters the queue.
  */
 class FetchLinkMetadataJob implements ShouldQueueAfterCommit
 {
@@ -73,17 +55,14 @@ class FetchLinkMetadataJob implements ShouldQueueAfterCommit
     private const USER_AGENT = 'StaklyLinkPreview/1.0 (+chat unfurl)';
 
     /**
-     * Single try — link previews are nice-to-have, not load-bearing.
-     * Retrying a metadata fetch buys us nothing and risks hammering the
-     * same dead URL on every redeploy of the queue worker.
+     * Single try — link previews are nice-to-have, retrying a dead URL on every redeploy is pointless.
      */
     public int $tries = 1;
 
     public int $timeout = 30;
 
     /**
-     * @param  list<string>  $urls  De-duplicated, validated, capped list of
-     *                              http(s) URLs extracted from the message's content.
+     * @param  list<string>  $urls  De-duplicated, validated, capped list of http(s) URLs.
      */
     public function __construct(
         public Message $message,
@@ -110,9 +89,7 @@ class FetchLinkMetadataJob implements ShouldQueueAfterCommit
     }
 
     /**
-     * Cache + extract + image-proxy pipeline for a single URL. Wrapped in
-     * a try/catch so any one URL's failure (DNS issue, SSRF refusal,
-     * malformed HTML, etc.) doesn't block the rest of the batch.
+     * try/catch isolates per-URL failure so one bad URL doesn't block the rest of the batch.
      *
      * @return array<string, mixed>|null
      */
@@ -143,9 +120,7 @@ class FetchLinkMetadataJob implements ShouldQueueAfterCommit
      */
     private function fetchAndCache(string $url, string $cacheKey): ?array
     {
-        // Pre-check before handing to the library — the library will also
-        // SSRF-check on every hop via our SafeHttpClient, but failing fast
-        // here avoids spawning curl handles for obviously-bad input.
+        // Fail fast before spawning curl handles — library will also per-hop SSRF-check via SafeHttpClient.
         if (! SsrfGuard::isUrlSafe($url)) {
             return null;
         }
@@ -157,9 +132,7 @@ class FetchLinkMetadataJob implements ShouldQueueAfterCommit
         $canonicalUrl = $info->url ? (string) $info->url : $url;
         $siteName = $info->providerName ?: parse_url($url, PHP_URL_HOST) ?: null;
 
-        // A card with nothing but the URL itself isn't worth showing — it's
-        // identical to the plain blue-text fallback. Demand at least a title
-        // so the unfurl carries information.
+        // A title-less card is identical to the plain blue-text fallback — not worth showing.
         if ($title === null || trim($title) === '') {
             return null;
         }
@@ -192,9 +165,8 @@ class FetchLinkMetadataJob implements ShouldQueueAfterCommit
     }
 
     /**
-     * Build a fresh `Embed` per call — the library's `Crawler` holds a
-     * cookie-jar path tied to its `CurlClient` instance, and we want a
-     * clean session per URL to avoid cross-domain cookie leaks.
+     * Fresh `Embed` per call — the Crawler's cookie-jar is tied to its CurlClient instance,
+     * so we want a clean session per URL to avoid cross-domain cookie leaks.
      */
     private function buildEmbed(): Embed
     {
@@ -211,21 +183,12 @@ class FetchLinkMetadataJob implements ShouldQueueAfterCommit
 
         $safe = new SafeHttpClient($curl);
 
-        // The Crawler's constructor accepts any PSR-18 ClientInterface; our
-        // SafeHttpClient is one. The library will use it for the initial
-        // fetch and for any canonical-equiv re-fetch it triggers internally.
         return new Embed(new Crawler($safe));
     }
 
     /**
-     * Fetch + persist an OG image. Returns `[disk_path, mime]` on success,
-     * `null` on any failure (SSRF refusal, redirect loop, oversized
-     * payload, non-image MIME, unsupported format, re-encode failure).
-     *
-     * Re-encoded through Spatie\Image — same EXIF-strip pattern as Slice 1
-     * chat image uploads. We never persist third-party image bytes
-     * verbatim because the image could embed GPS / device metadata or
-     * cute payload-in-EXIF tricks that browsers occasionally choke on.
+     * Re-encoded through Spatie\Image to strip EXIF — never persist third-party image bytes
+     * verbatim (GPS / device metadata / payload-in-EXIF tricks).
      *
      * @return array{0: string, 1: string}|null
      */
@@ -248,11 +211,8 @@ class FetchLinkMetadataJob implements ShouldQueueAfterCommit
 
         [$rawBytes, $mime] = $bytes;
 
-        // Spatie\Image needs a file path on disk, not a stream — write the
-        // download to a temp file, re-encode in place (which strips EXIF
-        // via the GD/Imagick round-trip), and only then move it to the
-        // public media disk path. The temp file unlinks via PHP's
-        // tmpfile semantics at the end of the request / handle().
+        // Spatie\Image needs a file path on disk, not a stream — temp file → re-encode in
+        // place → move to media disk. Re-encode strips EXIF via the GD/Imagick round-trip.
         $extension = $this->extensionFor($mime);
         $tempPath = tempnam(sys_get_temp_dir(), 'stakly-link-img-');
         $tempPathWithExt = $tempPath.'.'.$extension;
@@ -274,9 +234,7 @@ class FetchLinkMetadataJob implements ShouldQueueAfterCommit
         $hash = hash('sha256', $imageUrl);
         $relativePath = 'link-images/'.$hash.'.'.$extension;
 
-        // putFileAs is atomic on local-disk drivers and overwrites if the
-        // hash already exists (two messages linking the same URL share
-        // the same cached file — no waste).
+        // Two messages linking the same URL share the same cached file via the sha256 hash.
         $finalPath = Storage::disk('local')->putFileAs(
             'link-images',
             $tempPathWithExt,
@@ -293,11 +251,8 @@ class FetchLinkMetadataJob implements ShouldQueueAfterCommit
     }
 
     /**
-     * Manual redirect chain for image fetches — Guzzle's allow_redirects
-     * would skip our SSRF check on intermediate hops. Same per-hop guard
-     * pattern as `SafeHttpClient`, but the body is read into memory rather
-     * than parsed as HTML so we can't reuse SafeHttpClient (its underlying
-     * CurlClient rejects binary bodies).
+     * Manual redirect chain — Guzzle's allow_redirects would skip our SSRF check on intermediate hops.
+     * Can't reuse SafeHttpClient because its CurlClient rejects binary bodies.
      *
      * @return array{0: string, 1: string}|null [bytes, mime]
      */
@@ -357,9 +312,7 @@ class FetchLinkMetadataJob implements ShouldQueueAfterCommit
     }
 
     /**
-     * Lock the message row, append the new entries to whatever else might
-     * already be there (a second slice-2 job pile-up won't lose entries),
-     * then re-broadcast.
+     * Row lock prevents read-modify-write race on the JSON column with concurrent appenders.
      *
      * @param  list<array<string, mixed>>  $entries
      */
@@ -381,9 +334,7 @@ class FetchLinkMetadataJob implements ShouldQueueAfterCommit
         });
 
         if ($rebroadcastTarget !== null) {
-            // No correlation_id — this is not tied to a specific client send.
-            // The frontend's match-by-id replace path picks the broadcast up
-            // and swaps the cards into place on the existing bubble.
+            // No correlation_id — frontend's match-by-id replace path swaps the cards in place.
             MessageSent::dispatch($rebroadcastTarget);
         }
     }

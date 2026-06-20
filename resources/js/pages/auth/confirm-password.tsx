@@ -1,16 +1,24 @@
-import { Form, Head } from '@inertiajs/react';
+import { Form } from '@inertiajs/react';
 import { authInputClass } from '@/components/auth/input-styles';
 import InputError from '@/components/input-error';
 import PasswordInput from '@/components/password-input';
+import { PageMeta } from '@/components/site/page-meta';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
+import { useT } from '@/lib/i18n';
 import { store } from '@/routes/password/confirm';
 
 export default function ConfirmPassword() {
+    const t = useT();
+
     return (
         <>
-            <Head title="Confirm password" />
+            <PageMeta
+                title={t('Confirm password')}
+                description={t('Confirm your password.')}
+                noindex
+            />
 
             <Form
                 {...store.form()}
@@ -21,7 +29,7 @@ export default function ConfirmPassword() {
                     <>
                         <div className="flex flex-col gap-2">
                             <Label htmlFor="password" className="text-sm">
-                                Password
+                                {t('Password')}
                             </Label>
                             <PasswordInput
                                 id="password"
@@ -44,7 +52,7 @@ export default function ConfirmPassword() {
                             data-test="confirm-password-button"
                         >
                             {processing && <Spinner />}
-                            Confirm password
+                            {t('Confirm password')}
                         </Button>
                     </>
                 )}

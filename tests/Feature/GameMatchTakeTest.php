@@ -1,14 +1,18 @@
 <?php
 
+use App\Actions\Listing\CreateTeamPlayListingAction;
+use App\Enums\Game;
 use App\Enums\LinkedAccountProvider;
 use App\Enums\ListingStatus;
 use App\Enums\MatchStatus;
 use App\Enums\WalletTransactionType;
 use App\Models\GameMatch;
 use App\Models\Listing;
+use App\Models\LobbyParticipant;
 use App\Models\User;
 use App\Models\WalletTransaction;
 use App\Services\Wallet;
+use Illuminate\Support\Str;
 
 /**
  * Helper: a verified creator with a deposit + an open listing whose stake
@@ -468,6 +472,62 @@ test('match creation snapshots only the verified provider per side', function ()
 // `verified_at` is NOT NULL). The boundary is now structural, not
 // behavioural; no test needed.
 
+test('match creation snapshots provider_user_id + skill_rating for FACEIT-linked players (M15)', function () {
+    // M15 Phase 1 — when a player has a FACEIT linked account (with stable
+    // provider_user_id + current skill_rating), the snapshot captures both
+    // alongside the display username. Chess accounts on the same player
+    // continue to snapshot null for these columns. The take itself is a
+    // Lichess take because the FACEIT verify + create flow hasn't landed
+    // yet (Phase 2/3) — this test just exercises the snapshot writer.
+    $creator = User::factory()
+        ->active()
+        ->withLichess('alice-lichess')
+        ->create();
+    Wallet::deposit($creator, '500', reference: "test:deposit:creator:{$creator->id}");
+
+    $listing = Listing::factory()->open()->forLichess()->for($creator)->state([
+        'stake_amount' => '100',
+    ])->create();
+    Wallet::hold(
+        user: $creator,
+        amount: '100',
+        listing: $listing,
+        reference: "listing-create:{$listing->id}",
+    );
+
+    $faceitId = (string) Str::uuid();
+    $taker = User::factory()
+        ->withLichess('bob-lichess')
+        ->withFaceit('bob-faceit', $faceitId, 1850)
+        ->create();
+    Wallet::deposit($taker, '500', reference: "test:deposit:taker:{$taker->id}");
+
+    $this->actingAs($taker)->postJson("/listings/{$listing->id}/take")->assertRedirect();
+
+    $match = GameMatch::query()->where('listing_id', $listing->id)->firstOrFail();
+
+    // 1 creator account (lichess) + 2 taker accounts (lichess + faceit) = 3 snapshots.
+    expect($match->providerSnapshots()->count())->toBe(3);
+
+    // Chess snapshot — provider_user_id + skill_rating_snapshot stay null.
+    $takerLichess = $match->providerSnapshots()
+        ->where('side', GameMatch::SIDE_TAKER)
+        ->where('provider', LinkedAccountProvider::Lichess)
+        ->firstOrFail();
+    expect($takerLichess->username)->toBe('bob-lichess')
+        ->and($takerLichess->provider_user_id)->toBeNull()
+        ->and($takerLichess->skill_rating_snapshot)->toBeNull();
+
+    // FACEIT snapshot — provider_user_id + skill_rating_snapshot populated.
+    $takerFaceit = $match->providerSnapshots()
+        ->where('side', GameMatch::SIDE_TAKER)
+        ->where('provider', LinkedAccountProvider::Faceit)
+        ->firstOrFail();
+    expect($takerFaceit->username)->toBe('bob-faceit')
+        ->and($takerFaceit->provider_user_id)->toBe($faceitId)
+        ->and($takerFaceit->skill_rating_snapshot)->toBe(1850);
+});
+
 // ─── BCMath round-trip on the taker hold ────────────────────────────────────
 
 test('taker hold uses exact BCMath precision matching the listing stake', function () {
@@ -486,4 +546,43 @@ test('taker hold uses exact BCMath precision matching the listing stake', functi
     // Exact BCMath equality at scale 6 — no float drift on awkward stake values.
     expect(bccomp($hold->amount, '-123.450000', 6))->toBe(0)
         ->and(bccomp((string) $taker->fresh()->usdt_balance, '376.550000', 6))->toBe(0);
+});
+
+/*
+ * M34 P3.1 Slice B.1 — team-play guard. The frontend branches the CTA so
+ * real users never reach this endpoint for `team_size > 1` listings; the
+ * guard exists to keep a crafted POST from hitting the UNIQUE-constraint
+ * 500 (team-play listings already have a `LobbyFilling` GameMatch row).
+ */
+test('taking a team-play listing returns not_takeable — no match write, neutral redirect', function () {
+    User::factory()->state(['is_platform' => true])->create();
+
+    $creator = User::factory()->active()->withFaceit()->create();
+    Wallet::deposit($creator, '1000', reference: "test:teamplay-create:{$creator->id}");
+
+    $listing = app(CreateTeamPlayListingAction::class)->handle($creator, [
+        'game' => Game::Cs2->value,
+        'platform' => LinkedAccountProvider::Faceit->value,
+        'stake_amount' => '100',
+        'time_control' => [],
+        'duration_hours' => 24,
+        'team_size' => 5,
+        'creator_side' => LobbyParticipant::SIDE_A,
+        'is_public' => true,
+    ]);
+
+    $taker = User::factory()->active()->withFaceit()->create();
+    Wallet::deposit($taker, '500', reference: "test:teamplay-taker:{$taker->id}");
+
+    // Match row already exists from the team-play create flow (LobbyFilling).
+    $existingMatchId = $listing->gameMatch->id;
+
+    $this->actingAs($taker)
+        ->post(route('listings.take', ['locale' => 'en', 'listing' => $listing]))
+        ->assertRedirect(route('listings.show', ['locale' => 'en', 'listing' => $listing]));
+
+    // No second match row created, no taker hold landed.
+    expect(GameMatch::query()->where('listing_id', $listing->id)->count())->toBe(1);
+    expect(GameMatch::query()->where('listing_id', $listing->id)->value('id'))->toBe($existingMatchId);
+    expect(bccomp((string) $taker->fresh()->usdt_balance, '500.000000', 6))->toBe(0);
 });

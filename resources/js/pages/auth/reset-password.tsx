@@ -1,11 +1,13 @@
-import { Form, Head } from '@inertiajs/react';
+import { Form } from '@inertiajs/react';
 import { authInputClass } from '@/components/auth/input-styles';
 import InputError from '@/components/input-error';
 import PasswordInput from '@/components/password-input';
+import { PageMeta } from '@/components/site/page-meta';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
+import { useT } from '@/lib/i18n';
 import { update } from '@/routes/password';
 
 type Props = {
@@ -14,9 +16,15 @@ type Props = {
 };
 
 export default function ResetPassword({ token, email }: Props) {
+    const t = useT();
+
     return (
         <>
-            <Head title="Reset password" />
+            <PageMeta
+                title={t('Reset password')}
+                description={t('Reset your Stakly password.')}
+                noindex
+            />
 
             <Form
                 {...update.form()}
@@ -29,7 +37,7 @@ export default function ResetPassword({ token, email }: Props) {
                         <div className="flex flex-col gap-4">
                             <div className="flex flex-col gap-2">
                                 <Label htmlFor="email" className="text-sm">
-                                    Email
+                                    {t('Email')}
                                 </Label>
                                 <Input
                                     id="email"
@@ -45,13 +53,13 @@ export default function ResetPassword({ token, email }: Props) {
 
                             <div className="flex flex-col gap-2">
                                 <Label htmlFor="password" className="text-sm">
-                                    New password
+                                    {t('New password')}
                                 </Label>
                                 <PasswordInput
                                     id="password"
                                     name="password"
                                     autoComplete="new-password"
-                                    placeholder="At least 8 characters"
+                                    placeholder={t('At least 8 characters')}
                                     required
                                     autoFocus
                                     className={authInputClass}
@@ -64,13 +72,13 @@ export default function ResetPassword({ token, email }: Props) {
                                     htmlFor="password_confirmation"
                                     className="text-sm"
                                 >
-                                    Confirm new password
+                                    {t('Confirm new password')}
                                 </Label>
                                 <PasswordInput
                                     id="password_confirmation"
                                     name="password_confirmation"
                                     autoComplete="new-password"
-                                    placeholder="Repeat your password"
+                                    placeholder={t('Repeat your password')}
                                     required
                                     className={authInputClass}
                                 />
@@ -89,7 +97,7 @@ export default function ResetPassword({ token, email }: Props) {
                             data-test="reset-password-button"
                         >
                             {processing && <Spinner />}
-                            Reset password
+                            {t('Reset password')}
                         </Button>
                     </>
                 )}

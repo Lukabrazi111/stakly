@@ -4,7 +4,7 @@ use App\Actions\LinkedAccount\VerifyLinkedAccountAction;
 use App\Enums\LinkedAccountProvider;
 use App\Models\PendingVerification;
 use App\Models\User;
-use App\Services\Provider\Exceptions\ProviderUnavailableException;
+use App\Services\Provider\Exceptions\TransientProviderError;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Validation\ValidationException;
 
@@ -190,7 +190,7 @@ test('returns username-claimed when another user wins the UNIQUE race', function
     expect(app(VerifyLinkedAccountAction::class)->handle($user))->toBe('username-claimed');
 });
 
-test('bubbles ProviderUnavailableException when provider 500s', function () {
+test('bubbles TransientProviderError when provider 500s', function () {
     $user = pendingUserForChessCom();
 
     Http::fake([
@@ -198,7 +198,7 @@ test('bubbles ProviderUnavailableException when provider 500s', function () {
     ]);
 
     expect(fn () => app(VerifyLinkedAccountAction::class)->handle($user))
-        ->toThrow(ProviderUnavailableException::class);
+        ->toThrow(TransientProviderError::class);
 });
 
 test('throws ValidationException when no pending verification exists', function () {

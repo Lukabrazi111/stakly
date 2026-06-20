@@ -2,7 +2,10 @@ import { Link, usePage } from '@inertiajs/react';
 import { Search } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useAuthModal } from '@/components/auth/auth-modal-provider';
+import { BellButton } from '@/components/notifications/bell-button';
 import { BalanceChip } from '@/components/site/balance-chip';
+import { HowItWorksLink } from '@/components/site/how-it-works-link';
+import { LocaleSwitcher } from '@/components/site/locale-switcher';
 import { MobileMenu } from '@/components/site/mobile-menu';
 import { ProfileMenu } from '@/components/site/profile-menu';
 import { UnverifiedChip } from '@/components/site/unverified-chip';
@@ -12,12 +15,14 @@ import {
     TooltipContent,
     TooltipTrigger,
 } from '@/components/ui/tooltip';
+import { useT } from '@/lib/i18n';
 import {
     create as listingsCreate,
     index as listingsIndex,
 } from '@/routes/listings';
 
 export function SiteHeader() {
+    const t = useT();
     const { openLogin, openRegister } = useAuthModal();
     const { auth } = usePage().props;
     const user = auth.user;
@@ -28,7 +33,7 @@ export function SiteHeader() {
             <div className="mx-auto flex h-16 max-w-7xl items-center justify-between gap-6 px-4">
                 <Link
                     href="/"
-                    aria-label="Stakly home"
+                    aria-label={t('Stakly home')}
                     className="rounded-md text-gradient-primary font-display text-2xl font-bold tracking-tight focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none"
                 >
                     stakly
@@ -39,8 +44,10 @@ export function SiteHeader() {
                         <Search className="absolute top-1/2 left-4 size-4 -translate-y-1/2 text-muted-foreground" />
                         <input
                             type="search"
-                            placeholder="Search listings, players, games..."
-                            aria-label="Search"
+                            placeholder={t(
+                                'Search listings, players, games...',
+                            )}
+                            aria-label={t('Search')}
                             className="h-10 w-full rounded-full border border-border bg-card pr-4 pl-11 text-sm text-foreground transition-shadow duration-200 ease-out placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-1 focus-visible:shadow-glow-sm focus-visible:ring-ring focus-visible:outline-none"
                         />
                     </div>
@@ -51,20 +58,11 @@ export function SiteHeader() {
                         href={listingsIndex()}
                         className="px-3 py-2 text-sm text-foreground transition-colors hover:text-primary"
                     >
-                        Listings
+                        {t('Listings')}
                     </Link>
-                    <Link
-                        href="#"
-                        className="px-3 py-2 text-sm text-foreground transition-colors hover:text-primary"
-                    >
-                        How it Works
-                    </Link>
-                    <Link
-                        href="#"
-                        className="px-3 py-2 text-sm text-foreground transition-colors hover:text-primary"
-                    >
-                        Support
-                    </Link>
+                    <HowItWorksLink className="px-3 py-2 text-sm text-foreground transition-colors hover:text-primary">
+                        {t('How it works')}
+                    </HowItWorksLink>
 
                     {user && (
                         <div className="ml-2">
@@ -72,35 +70,51 @@ export function SiteHeader() {
                         </div>
                     )}
 
+                    {/* Account cluster — separated from the nav/action zone
+                        by a subtle vertical divider so the header reads as
+                        three groups (nav · action · account) at a glance.
+                        The divider only renders for authed users because
+                        guests have no left-side action button competing
+                        for the boundary. */}
                     <div className="ml-3 flex items-center gap-3">
                         {user ? (
                             <>
+                                <span
+                                    aria-hidden
+                                    className="h-6 w-px bg-border/60"
+                                />
                                 {isUnverified && <UnverifiedChip />}
                                 <BalanceChip balance={user.usdt_balance} />
+                                <BellButton />
+                                <LocaleSwitcher compact />
                                 <ProfileMenu user={user} />
                             </>
                         ) : (
                             <>
+                                <LocaleSwitcher compact />
                                 <Button
                                     variant="ghost"
                                     size="default"
                                     onClick={openLogin}
                                 >
-                                    Sign in
+                                    {t('Sign in')}
                                 </Button>
                                 <Button
                                     variant="gradient"
                                     size="pill"
                                     onClick={openRegister}
                                 >
-                                    Sign up
+                                    {t('Sign up')}
                                 </Button>
                             </>
                         )}
                     </div>
                 </nav>
 
-                <MobileMenu />
+                <div className="flex items-center gap-1 md:hidden">
+                    {user && <BellButton />}
+                    <MobileMenu />
+                </div>
             </div>
         </header>
     );
@@ -110,18 +124,14 @@ interface CreateListingCTAProps {
     isUnverified: boolean;
 }
 
-/**
- * Two states (logged-out users don't see this — Sign up covers that funnel):
- *   - Unverified → disabled with a tooltip pointing at the verification chip.
- *   - Verified   → links to `/listings/create`.
- */
 function CreateListingCTA({ isUnverified }: CreateListingCTAProps): ReactNode {
+    const t = useT();
+
     if (isUnverified) {
         return (
             <Tooltip>
                 <TooltipTrigger asChild>
-                    {/* Span wrapper because disabled buttons don't fire pointer
-                        events — the tooltip needs the parent to listen. */}
+                    {/* Span wrapper — disabled buttons don't fire pointer events. */}
                     <span tabIndex={0}>
                         <Button
                             variant="gradient"
@@ -129,12 +139,12 @@ function CreateListingCTA({ isUnverified }: CreateListingCTAProps): ReactNode {
                             disabled
                             className="pointer-events-none"
                         >
-                            Create listing
+                            {t('Create listing')}
                         </Button>
                     </span>
                 </TooltipTrigger>
                 <TooltipContent>
-                    Verify your email to create listings.
+                    {t('Verify your email to create listings.')}
                 </TooltipContent>
             </Tooltip>
         );
@@ -142,7 +152,7 @@ function CreateListingCTA({ isUnverified }: CreateListingCTAProps): ReactNode {
 
     return (
         <Button variant="gradient" size="default" asChild>
-            <Link href={listingsCreate().url}>Create listing</Link>
+            <Link href={listingsCreate().url}>{t('Create listing')}</Link>
         </Button>
     );
 }

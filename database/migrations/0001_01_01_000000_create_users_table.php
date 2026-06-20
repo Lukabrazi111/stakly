@@ -22,6 +22,12 @@ return new class extends Migration
             // collision handling — `CreateNewUser` retries on violation.
             $table->string('username', 30)->unique();
 
+            // Last time the user changed their username. Drives the 30-day
+            // cooldown enforced in `User::canChangeUsername()` /
+            // `ChangeUsernameAction`. Null on accounts that have never
+            // renamed (post-registration default).
+            $table->timestamp('username_changed_at')->nullable();
+
             // Optional 500-char bio shown on the public profile (M5 → M18).
             // Bounded length, not text — bio is never queried/filtered. Plain
             // text with line breaks; React's JSX interpolation escapes on
@@ -48,6 +54,22 @@ return new class extends Migration
             // a freshly-registered (but unverified-feeling) user from being
             // immediately takeable while they're still exploring.
             $table->boolean('is_active_mode')->default(false);
+
+            // Admin-set suspension flag (M30 P2). Null = active. Timestamp
+            // set when the admin flips the toggle. Enforced across four
+            // surfaces: `ListingController` create/store + `ProfileController`
+            // update + `ChangeUsernameAction` blocker + public marketplace
+            // scopes filter (banned creator's listings hide). Chat-send +
+            // take-listing enforcement is M21's scope on the same column.
+            $table->timestamp('banned_at')->nullable();
+
+            // Bell-dropdown badge anchor: bumped on bell open, decoupled from
+            // per-item `notifications.read_at`.
+            $table->timestamp('notifications_last_seen_at')->nullable();
+
+            // Notification sound choice. Null = system default. Special value
+            // 'off' silences all sounds. Other values map to /sounds/{value}.mp3.
+            $table->string('notification_sound', 16)->nullable();
 
             // Spendable USDT balance. NEVER written outside `App\Services\Wallet`.
             // Invariant (asserted in tests): equals SUM(wallet_transactions.amount)

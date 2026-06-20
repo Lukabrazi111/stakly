@@ -1,5 +1,6 @@
 <?php
 
+use App\Actions\GameMatch\RecordAutoFetchAttemptAction;
 use App\Actions\GameMatch\SettleFromCardAction;
 use App\Actions\Message\PostSystemMessageAction;
 use App\Enums\LinkedAccountProvider;
@@ -12,9 +13,13 @@ use App\Models\MatchProviderSnapshot;
 use App\Models\Message;
 use App\Models\User;
 use App\Services\Provider\ChessComGameClient;
+use App\Services\Provider\ProviderCircuitBreaker;
 use App\Services\Wallet;
 use Carbon\CarbonImmutable;
+use Illuminate\Cache\RateLimiting\Limit;
+use Illuminate\Queue\Middleware\RateLimited;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\RateLimiter;
 
 function chessComAutoFetchMatch(?array $snapshots = null): GameMatch
 {
@@ -25,7 +30,11 @@ function chessComAutoFetchMatch(?array $snapshots = null): GameMatch
     Wallet::deposit($creator, '500', reference: "test:deposit:c:{$creator->id}");
     Wallet::deposit($taker, '500', reference: "test:deposit:t:{$taker->id}");
 
-    $listing = Listing::factory()->taken()->forChessCom()->for($creator)->state(['stake_amount' => '100'])->create();
+    // M14 Slice 3d — TC catch-all so happy-path tests pass deterministically;
+    // tests that exercise TC mismatch override this back to a single value.
+    $listing = Listing::factory()->taken()->forChessCom()->for($creator)
+        ->state(['stake_amount' => '100', 'time_control' => ['blitz', 'rapid', 'classical']])
+        ->create();
     Wallet::hold(user: $creator, amount: '100', listing: $listing, reference: "listing-create:{$listing->id}");
     Wallet::hold(user: $taker, amount: '100', listing: $listing, reference: "match-take:{$listing->id}");
 
@@ -61,6 +70,8 @@ function runChessComAutoFetch(GameMatch $match): void
             app(ChessComGameClient::class),
             app(PostSystemMessageAction::class),
             app(SettleFromCardAction::class),
+            app(RecordAutoFetchAttemptAction::class),
+            app(ProviderCircuitBreaker::class),
         );
 }
 
@@ -149,6 +160,50 @@ test('drawn chess.com game posts a card AND settles as draw', function () {
         ->and($match->winner_user_id)->toBeNull();
 });
 
+test('abandoned chess.com game posts a card AND settles as draw (M14 Slice 3b — cooperative-exit refund)', function () {
+    $match = chessComAutoFetchMatch();
+
+    // chess.com abandoned shape: both sides have `result === 'abandoned'`.
+    Http::fake([
+        'api.chess.com/pub/player/*/games/*' => Http::response(
+            chessComArchiveFixture([
+                chessComGameFixture([
+                    'end_time' => CarbonImmutable::now()->subMinutes(5)->timestamp,
+                    'white' => [
+                        'username' => 'alice-chesscom',
+                        'rating' => 1500,
+                        'result' => 'abandoned',
+                    ],
+                    'black' => [
+                        'username' => 'bob-chesscom',
+                        'rating' => 1495,
+                        'result' => 'abandoned',
+                    ],
+                ]),
+            ]),
+            200,
+        ),
+    ]);
+
+    runChessComAutoFetch($match);
+
+    $system = Message::query()
+        ->where('match_id', $match->id)
+        ->where('type', MessageType::System)
+        ->where('content', 'Verified chess.com game record.')
+        ->first();
+
+    expect($system)->not->toBeNull()
+        ->and($system->attachments_json[0]['status'])->toBe('abandoned')
+        ->and($system->attachments_json[0]['winner_color'])->toBeNull()
+        ->and($system->attachments_json[0]['winner_username'])->toBeNull();
+
+    // Settled as draw — both stakes refunded, no winner.
+    $match->refresh();
+    expect($match->status)->toBe(MatchStatus::Settled)
+        ->and($match->winner_user_id)->toBeNull();
+});
+
 // ─── Retry-on-empty (chess.com eventual consistency) ───────────────────────
 
 test('empty archive does not post a system message (would retry in real queue)', function () {
@@ -210,4 +265,28 @@ test('idempotency check uses provider-scoped attachments_json query', function (
         ->whereJsonContains('attachments_json', [['source' => 'auto_fetch']])
         ->count())
         ->toBe(1);
+});
+
+// ─── M35 P1 — self-throttle wiring ─────────────────────────────────────────
+
+test('AutoFetchChessComGameJob declares the chess-com-api RateLimited middleware', function () {
+    $match = chessComAutoFetchMatch();
+    $job = new AutoFetchChessComGameJob($match);
+
+    $middleware = $job->middleware();
+
+    expect($middleware)->toHaveCount(1)
+        ->and($middleware[0])->toBeInstanceOf(RateLimited::class);
+});
+
+test('chess-com-api rate limiter reflects services.chess_com.requests_per_minute config', function () {
+    config(['services.chess_com.requests_per_minute' => 7]);
+
+    $resolver = RateLimiter::limiter('chess-com-api');
+    expect($resolver)->not->toBeNull();
+
+    $limit = $resolver(new stdClass);
+
+    expect($limit)->toBeInstanceOf(Limit::class)
+        ->and($limit->maxAttempts)->toBe(7);
 });

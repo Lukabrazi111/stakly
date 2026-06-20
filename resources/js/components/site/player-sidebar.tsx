@@ -1,4 +1,4 @@
-import { Link, usePage } from '@inertiajs/react';
+import { Link, router, usePage } from '@inertiajs/react';
 import {
     ListChecks,
     PanelLeftClose,
@@ -8,7 +8,7 @@ import {
     Wallet as WalletIcon,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import { Fragment, useEffect, useState } from 'react';
+import { Fragment, useState } from 'react';
 import {
     Tooltip,
     TooltipContent,
@@ -24,67 +24,51 @@ interface NavItem {
     href: string;
     label: string;
     icon: LucideIcon;
-    /**
-     * URL prefix that activates this item. Wallet's `matchPrefix = /wallet`
-     * intentionally activates the item across the entire wallet subsection
-     * (deposit, withdraw, history) — those pages are routed under /wallet/*
-     * and share the same management context.
-     */
+    /** URL prefix that activates this item. Sourced from the Wayfinder
+     *  generator so the active locale prefix is included; `startsWith`
+     *  then activates the parent across the whole subsection (eg. wallet
+     *  stays lit on `/{locale}/wallet/deposit` + `/withdraw` + `/history`). */
     matchPrefix: string;
 }
 
-const STORAGE_KEY = 'stakly:player-sidebar:collapsed';
-
-function readCollapsed(): boolean {
-    if (typeof window === 'undefined') {
-        return false;
-    }
-
-    return window.localStorage.getItem(STORAGE_KEY) === 'true';
-}
+const COOKIE_NAME = 'player_sidebar_collapsed';
+const COOKIE_MAX_AGE = 60 * 60 * 24 * 365;
 
 /**
- * Side navigation for the player management hub. Appears on /listings/mine,
- * /matches, and /wallet (and sub-pages) via PlayerHubLayout. Hidden on
- * mobile (`md:flex`) per the locked decision: mobile users navigate via the
- * hamburger menu in SiteHeader.
- *
- * Layout:
- *   - Sticky at `top-28` (just below sticky SiteHeader + MarqueeStrip).
- *   - Fills the viewport height (`h-[calc(100vh-7rem)]`) so the sidebar
- *     never feels stunted on short content pages.
- *   - Collapsible (rail mode) — toggles between `w-60` (expanded) and
- *     `w-16` (icon-only). Preference persists in localStorage so the user
- *     keeps their layout across reloads.
- *
- * Active state:
- *   - Pink left accent bar (centered vertically, w-1, rounded right edge,
- *     soft glow) — Bybit-style indicator.
- *   - Background wash (`bg-primary/15`) and brighter icon.
- *
- * When collapsed, labels become tooltips on hover so users can still
- * identify each item.
+ * Side navigation for the player hub. Sticky at `top-28` (just below
+ * SiteHeader + MarqueeStrip). Collapsible rail mode persists in a cookie
+ * shared via Inertia (`playerSidebarCollapsed`) so SSR + first paint +
+ * every subsequent navigation render the user's saved width — no
+ * post-mount transition from default → saved state on nav clicks.
  */
 export function PlayerSidebar() {
     const { url, props } = usePage();
     const username = props.auth.user?.username;
-    const [collapsed, setCollapsed] = useState(readCollapsed);
+    const [collapsed, setCollapsed] = useState(props.playerSidebarCollapsed);
 
-    useEffect(() => {
-        window.localStorage.setItem(STORAGE_KEY, String(collapsed));
-    }, [collapsed]);
+    const toggleCollapsed = () => {
+        setCollapsed((current) => {
+            const next = !current;
+            document.cookie = `${COOKIE_NAME}=${next}; max-age=${COOKIE_MAX_AGE}; path=/; samesite=lax`;
+            // Sidebar Links carry `prefetch`, which caches the full response
+            // (incl. shared props) for 30s. Without this flush, a toggle
+            // followed by a nav click within 30s would re-mount with the
+            // stale `playerSidebarCollapsed` from before the toggle.
+            router.flushAll();
 
-    // Profile is owner-specific (matchPrefix uses the auth username). Other
-    // items are user-agnostic, so they live in a static array; the profile
-    // item is prepended only when we have a username to build the URL with.
+            return next;
+        });
+    };
+
+    // Profile is owner-specific so it's prepended only when authed.
     const items: NavItem[] = [
         ...(username
             ? [
                   {
-                      href: userShow(username).url,
+                      href: userShow({ user: username }).url,
                       label: 'My profile',
                       icon: UserIcon,
-                      matchPrefix: userShow(username).url,
+                      matchPrefix: userShow({ user: username }).url,
                   },
               ]
             : []),
@@ -92,19 +76,19 @@ export function PlayerSidebar() {
             href: listingsMine().url,
             label: 'My listings',
             icon: ListChecks,
-            matchPrefix: '/listings/mine',
+            matchPrefix: listingsMine().url,
         },
         {
             href: matchesIndex().url,
             label: 'Matches',
             icon: Swords,
-            matchPrefix: '/matches',
+            matchPrefix: matchesIndex().url,
         },
         {
             href: walletIndex().url,
             label: 'Wallet',
             icon: WalletIcon,
-            matchPrefix: '/wallet',
+            matchPrefix: walletIndex().url,
         },
     ];
 
@@ -115,14 +99,12 @@ export function PlayerSidebar() {
                 collapsed ? 'md:w-16' : 'md:w-60'
             }`}
         >
-            {/* Collapse toggle. Left-aligned when expanded (Bybit-style),
-                centered when collapsed (the only thing visible in the rail). */}
             <div
                 className={`flex shrink-0 items-center p-3 ${collapsed ? 'justify-center' : 'justify-start'}`}
             >
                 <button
                     type="button"
-                    onClick={() => setCollapsed((c) => !c)}
+                    onClick={toggleCollapsed}
                     aria-label={
                         collapsed ? 'Expand sidebar' : 'Collapse sidebar'
                     }
@@ -137,8 +119,6 @@ export function PlayerSidebar() {
                 </button>
             </div>
 
-            {/* Nav. TooltipProvider scopes the tooltip context to this
-                sidebar — small delay so quick mouse passes don't flash. */}
             <TooltipProvider delayDuration={300}>
                 <nav className="flex flex-col gap-1 px-3">
                     {items.map((item) => {
@@ -158,11 +138,6 @@ export function PlayerSidebar() {
                                         : 'text-muted-foreground hover:bg-primary/10 hover:text-foreground'
                                 }`}
                             >
-                                {/* Left accent bar on active item — pink,
-                                    rounded right edge so it visually
-                                    "tucks into" the sidebar's left wall.
-                                    Soft glow ties it to Stakly's gradient
-                                    aesthetic without overwhelming the row. */}
                                 {isActive && (
                                     <span
                                         aria-hidden

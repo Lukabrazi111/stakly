@@ -1,30 +1,54 @@
-import * as CheckboxPrimitive from "@radix-ui/react-checkbox"
-import { CheckIcon } from "lucide-react"
-import * as React from "react"
+import { Check } from 'lucide-react';
+import * as React from 'react';
+import { cn } from '@/lib/utils';
 
-import { cn } from "@/lib/utils"
-
-function Checkbox({
-  className,
-  ...props
-}: React.ComponentProps<typeof CheckboxPrimitive.Root>) {
-  return (
-    <CheckboxPrimitive.Root
-      data-slot="checkbox"
-      className={cn(
-        "peer border-input data-[state=checked]:bg-primary data-[state=checked]:text-primary-foreground data-[state=checked]:border-primary focus-visible:border-ring focus-visible:ring-ring/50 aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive size-4 shrink-0 rounded-[4px] border shadow-xs transition-shadow outline-none focus-visible:ring-[3px] disabled:cursor-not-allowed disabled:opacity-50",
-        className
-      )}
-      {...props}
-    >
-      <CheckboxPrimitive.Indicator
-        data-slot="checkbox-indicator"
-        className="flex items-center justify-center text-current transition-none"
-      >
-        <CheckIcon className="size-3.5" />
-      </CheckboxPrimitive.Indicator>
-    </CheckboxPrimitive.Root>
-  )
+interface CheckboxProps
+    extends Omit<
+        React.InputHTMLAttributes<HTMLInputElement>,
+        'type' | 'onChange'
+    > {
+    onCheckedChange?: (checked: boolean) => void;
 }
 
-export { Checkbox }
+function Checkbox({
+    className,
+    checked,
+    disabled,
+    onCheckedChange,
+    ...props
+}: CheckboxProps) {
+    return (
+        <span
+            data-slot="checkbox"
+            className={cn(
+                'relative inline-flex shrink-0',
+                disabled && 'opacity-50',
+                className,
+            )}
+        >
+            <input
+                type="checkbox"
+                checked={checked}
+                disabled={disabled}
+                onChange={(e) => onCheckedChange?.(e.target.checked)}
+                className="peer sr-only"
+                {...props}
+            />
+            <span
+                aria-hidden
+                className={cn(
+                    'size-4 rounded border border-border bg-card/60 transition-colors',
+                    'peer-checked:border-primary peer-checked:bg-primary',
+                    'peer-focus-visible:ring-2 peer-focus-visible:ring-primary/25 peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-background',
+                )}
+            />
+            <Check
+                aria-hidden
+                strokeWidth={3}
+                className="pointer-events-none absolute top-1/2 left-1/2 hidden size-3 -translate-x-1/2 -translate-y-1/2 text-primary-foreground peer-checked:block"
+            />
+        </span>
+    );
+}
+
+export { Checkbox };

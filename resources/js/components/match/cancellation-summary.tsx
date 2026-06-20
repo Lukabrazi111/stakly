@@ -1,30 +1,22 @@
 import { Handshake } from 'lucide-react';
+import { useT } from '@/lib/i18n';
 import type { Match } from '@/types';
 
 interface CancellationSummaryProps {
     match: Match;
 }
 
-/**
- * Terminal banner shown on the match page when `status === 'cancelled'`.
- * Sibling to `SettlementSummary` but visually muted — no winner, no
- * payout math to display, no gradient accent. Reads more like an
- * informational closeout than a celebration.
- *
- * Per the M10 Decisions block: cancellation does NOT count toward
- * player record (distinct from a played draw). The sub-line below the
- * subtitle makes that explicit so players understand the distinction.
- */
+/** Terminal banner when `status === 'cancelled'`. Sibling to
+ *  `SettlementSummary` but muted — no winner, no payout math. */
 export function CancellationSummary({ match }: CancellationSummaryProps) {
-    const { cancellation, creator, taker, listing } = match;
+    const t = useT();
+    const { cancellation, listing } = match;
 
-    const requesterId = cancellation.requested_by_id;
-    const requester =
-        requesterId === creator.id
-            ? creator
-            : requesterId === taker.id
-              ? taker
-              : null;
+    const requesterName = resolveRequesterName(
+        match,
+        cancellation.requested_by_id,
+    );
+    const isTeam = listing.team_size > 1;
 
     return (
         <section className="rounded-2xl border border-border/60 bg-card/60 p-6">
@@ -34,19 +26,28 @@ export function CancellationSummary({ match }: CancellationSummaryProps) {
                 </span>
                 <div className="min-w-0 flex-1">
                     <h2 className="font-display text-lg font-semibold text-foreground">
-                        Match cancelled
+                        {t('Match cancelled')}
                     </h2>
                     <p className="mt-1 text-sm text-muted-foreground">
-                        By mutual agreement. Both stakes refunded — $
-                        {listing.stake_amount} returned to each player.
+                        {isTeam
+                            ? t(
+                                  'By mutual agreement. All stakes refunded — $:amount returned to each player.',
+                                  { amount: listing.stake_amount },
+                              )
+                            : t(
+                                  'By mutual agreement. Both stakes refunded — $:amount returned to each player.',
+                                  { amount: listing.stake_amount },
+                              )}
                     </p>
                     <p className="mt-2 text-xs text-muted-foreground/80">
-                        Cancellations don't count toward your match record.
+                        {t(
+                            "Cancellations don't count toward your match record.",
+                        )}
                     </p>
-                    {requester !== null && cancellation.reason !== null && (
+                    {requesterName !== null && cancellation.reason !== null && (
                         <div className="mt-4 rounded-lg border border-border/60 bg-background/40 p-3">
                             <p className="text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
-                                {requester.name}'s reason
+                                {t(":name's reason", { name: requesterName })}
                             </p>
                             <p className="mt-1 text-sm whitespace-pre-wrap text-foreground">
                                 {cancellation.reason}
@@ -57,4 +58,28 @@ export function CancellationSummary({ match }: CancellationSummaryProps) {
             </div>
         </section>
     );
+}
+
+function resolveRequesterName(
+    match: Match,
+    requesterId: number | null,
+): string | null {
+    if (requesterId === null) {
+        return null;
+    }
+
+    if (match.creator.id === requesterId) {
+        return match.creator.name;
+    }
+
+    if (match.taker.id === requesterId) {
+        return match.taker.name;
+    }
+
+    const fromRoster =
+        match.team_a?.find((p) => p.user_id === requesterId) ??
+        match.team_b?.find((p) => p.user_id === requesterId) ??
+        null;
+
+    return fromRoster?.name ?? null;
 }

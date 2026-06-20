@@ -46,6 +46,19 @@ export type User = {
         username: string;
         verified_at: string;
     }>;
+    notifications_last_seen_at: string | null;
+    unread_notifications_count: number;
+    notification_sound: string;
+    notification_sound_map: Record<string, boolean>;
+    username_edit: {
+        can_change: boolean;
+        available_at: string | null;
+        blockers: Array<'banned' | 'cooldown' | 'in_flight_match'>;
+    };
+    ban: {
+        reason: string;
+        banned_at: string;
+    } | null;
     created_at: string;
     updated_at: string;
     [key: string]: unknown;

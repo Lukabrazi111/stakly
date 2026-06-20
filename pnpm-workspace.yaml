@@ -2,3 +2,17 @@ allowBuilds:
   unrs-resolver: set this to true or false
 publicHoistPattern:
   - '@inertiajs/core'
+
+# Install native bindings for both the host platform AND the Sail container
+# platform (Linux). Without this, `pnpm install` on macOS only hoists the
+# darwin bindings to node_modules/, so rolldown (used by Vite) crashes
+# inside Sail with "Cannot find native binding." `current` keeps the
+# host-platform bindings working for any direct (non-Sail) builds.
+supportedArchitectures:
+  os:
+    - current
+    - linux
+  cpu:
+    - current
+    - arm64
+    - x64

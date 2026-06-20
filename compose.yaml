@@ -106,6 +106,64 @@ services:
             - laravel.test
             - pgsql
             - redis
+    ssr:
+        # M26 Phase 3 — Inertia SSR sidecar. Runs `php artisan inertia:start-ssr`
+        # which boots the Node process from `bootstrap/ssr/ssr.js` and serves
+        # rendered HTML to the laravel.test container on port 13714.
+        #
+        # Profile-gated so `sail up` doesn't auto-start it before the SSR
+        # bundle exists — `inertia:start-ssr` exits when there's no bundle,
+        # which without a profile would surface as a confusing "exited"
+        # container in `docker compose ps`. Run `sail npm run build:ssr`
+        # first; once the bundle is present add `COMPOSE_PROFILES=ssr` to
+        # `.env` (or pass `--profile ssr` to `sail up`) and the sidecar
+        # becomes part of the default stack.
+        #
+        # When the sidecar is NOT running, Inertia falls back to client
+        # rendering — pages still work, just no SSR (no SEO, blank link
+        # previews). In production deploys, drop the `profiles` block so
+        # this service always runs.
+        image: 'sail-8.5/app'
+        command: 'php artisan inertia:start-ssr'
+        restart: unless-stopped
+        profiles:
+            - ssr
+        environment:
+            WWWUSER: '${WWWUSER}'
+            LARAVEL_SAIL: 1
+        volumes:
+            - '.:/var/www/html'
+        networks:
+            - sail
+        depends_on:
+            - laravel.test
+    scheduler:
+        # Long-running Laravel scheduler. Reads every `Schedule::command(...)`
+        # entry in `routes/console.php` and fires them at their configured
+        # cadence (`->everyMinute()`, `->hourly()`, etc.).
+        #
+        # `schedule:work` is the container-friendly alternative to a host-cron
+        # `* * * * * php artisan schedule:run` entry — it sleeps internally and
+        # loops, so it doesn't need a `cron` daemon installed. One process per
+        # container, matches the `queue` / `reverb` / `lichess-stream` pattern.
+        #
+        # Adding a new scheduled command? Just add a `Schedule::command(...)`
+        # line in `routes/console.php` — this container picks it up on the
+        # next minute without a restart.
+        image: 'sail-8.5/app'
+        command: 'php artisan schedule:work'
+        restart: unless-stopped
+        environment:
+            WWWUSER: '${WWWUSER}'
+            LARAVEL_SAIL: 1
+        volumes:
+            - '.:/var/www/html'
+        networks:
+            - sail
+        depends_on:
+            - laravel.test
+            - pgsql
+            - redis
     lichess-stream:
         # M16 Phase 4 — long-lived consumer of Lichess's
         # `/api/stream/games-by-users` NDJSON stream. Dispatches

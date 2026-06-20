@@ -16,8 +16,8 @@ class RegisterResponse implements RegisterResponseContract
             'toast' => [
                 'type' => 'success',
                 'message' => $email
-                    ? "We've sent a verification link to {$email}."
-                    : "We've sent you a verification email.",
+                    ? __("We've sent a verification link to :email.", ['email' => $email])
+                    : __("We've sent you a verification email."),
             ],
             'verify_cooldown_seconds' => 60,
         ]);

@@ -1,17 +1,20 @@
-import { Head, router } from '@inertiajs/react';
+import { router } from '@inertiajs/react';
 import { Swords } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { MatchListRow } from '@/components/match/match-list-row';
 import { MatchListRowSkeleton } from '@/components/match/match-list-row-skeleton';
 import { MatchesFilterChips } from '@/components/match/matches-filter-chips';
 import { MatchesPagination } from '@/components/match/matches-pagination';
+import { PageMeta } from '@/components/site/page-meta';
 import PlayerHubLayout from '@/layouts/player-hub-layout';
+import { useT } from '@/lib/i18n';
 import { index as matchesIndex } from '@/routes/matches';
 import type { MatchesIndexProps } from '@/types';
 
 const SKELETON_ROW_COUNT = 4;
 
 export default function MatchesIndex({ matches, filters }: MatchesIndexProps) {
+    const t = useT();
     const [isLoading, setIsLoading] = useState(false);
 
     useEffect(() => {
@@ -51,18 +54,27 @@ export default function MatchesIndex({ matches, filters }: MatchesIndexProps) {
 
     return (
         <PlayerHubLayout>
-            <Head title="Your matches" />
+            <PageMeta
+                title={t('Your matches')}
+                description={t('Your active and historical matches on Stakly.')}
+                noindex
+            />
 
             <div className="mx-auto max-w-5xl px-4 py-10 md:px-6 md:py-14">
                 <header className="mb-8">
                     <h1 className="font-display text-3xl font-bold tracking-tight md:text-4xl">
-                        Your matches
+                        {t('Your matches')}
                     </h1>
                     <p className="mt-2 text-sm text-muted-foreground">
-                        Every match you've created or taken.{' '}
+                        {t("Every match you've created or taken.")}{' '}
                         <span className="text-foreground/70">
-                            {matches.meta.total}{' '}
-                            {matches.meta.total === 1 ? 'match' : 'matches'}
+                            {matches.meta.total === 1
+                                ? t(':count match', {
+                                      count: matches.meta.total,
+                                  })
+                                : t(':count matches', {
+                                      count: matches.meta.total,
+                                  })}
                         </span>
                     </p>
                 </header>
@@ -76,14 +88,14 @@ export default function MatchesIndex({ matches, filters }: MatchesIndexProps) {
                         {/* Column header — desktop only. Mobile rows stack
                             vertically so labeled columns don't apply. */}
                         <div className="hidden border-b border-border/40 px-5 py-3 text-xs tracking-wide text-muted-foreground uppercase md:flex md:items-center md:gap-6">
-                            <div className="md:w-52">Opponent</div>
+                            <div className="md:w-52">{t('Opponent')}</div>
                             <div className="flex flex-1 items-center gap-6">
-                                <div className="flex-1">Status</div>
+                                <div className="flex-1">{t('Status')}</div>
                                 <div className="md:w-20 md:text-right">
-                                    Date
+                                    {t('Date')}
                                 </div>
                                 <div className="md:w-28 md:text-right">
-                                    Stake
+                                    {t('Stake')}
                                 </div>
                             </div>
                         </div>
@@ -115,18 +127,24 @@ interface EmptyStateProps {
 }
 
 function EmptyState({ filtering }: EmptyStateProps) {
+    const t = useT();
+
     return (
         <div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed border-border/60 bg-card/40 px-6 py-16 text-center">
             <div className="rounded-full bg-primary/10 p-3 text-primary">
                 <Swords className="size-6" />
             </div>
             <h2 className="font-display text-xl font-semibold text-foreground">
-                {filtering ? 'No matches in this view' : 'No matches yet'}
+                {filtering ? t('No matches in this view') : t('No matches yet')}
             </h2>
             <p className="max-w-sm text-sm text-muted-foreground">
                 {filtering
-                    ? 'Try a different filter, or clear it to see every match.'
-                    : 'Create a listing or take someone else’s to start your first match.'}
+                    ? t(
+                          'Try a different filter, or clear it to see every match.',
+                      )
+                    : t(
+                          "Create a listing or take someone else's to start your first match.",
+                      )}
             </p>
         </div>
     );

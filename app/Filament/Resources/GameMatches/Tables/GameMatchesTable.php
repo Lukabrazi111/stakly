@@ -3,6 +3,7 @@
 namespace App\Filament\Resources\GameMatches\Tables;
 
 use App\Enums\MatchStatus;
+use App\Models\GameMatch;
 use Filament\Actions\ViewAction;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\SelectFilter;
@@ -10,11 +11,8 @@ use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 
 /**
- * M12 Phase 2 — dispute queue table. Default filter pre-selects Disputed +
- * ManualReview (the actual queue); admin can switch the SelectFilter to
- * see other statuses for context lookups (e.g. "what did this Settled
- * match look like?"). Sorted by `created_at` desc so the freshest disputes
- * float to the top.
+ * Dispute queue table. Default filter pre-selects Disputed + ManualReview
+ * (the actual queue); admin can widen the filter for context lookups.
  */
 class GameMatchesTable
 {
@@ -26,6 +24,9 @@ class GameMatchesTable
                 'taker',
                 'winner',
             ]))
+            // Latest matches at the top — standard admin browsing default.
+            // SLA cues live in the Age column's color badge + the OpsOverview
+            // "Aging disputes" stat, not in the row ordering.
             ->defaultSort('created_at', 'desc')
             ->columns([
                 TextColumn::make('id')
@@ -56,6 +57,7 @@ class GameMatchesTable
                 TextColumn::make('status')
                     ->badge()
                     ->color(fn (MatchStatus $state): string => match ($state) {
+                        MatchStatus::LobbyFilling => 'gray',
                         MatchStatus::Pending => 'gray',
                         MatchStatus::Disputed => 'warning',
                         MatchStatus::ManualReview => 'danger',
@@ -63,6 +65,7 @@ class GameMatchesTable
                         MatchStatus::Cancelled => 'gray',
                     })
                     ->formatStateUsing(fn (MatchStatus $state): string => match ($state) {
+                        MatchStatus::LobbyFilling => 'Lobby Filling',
                         MatchStatus::Pending => 'Pending',
                         MatchStatus::Disputed => 'Disputed',
                         MatchStatus::ManualReview => 'Manual Review',
@@ -71,9 +74,11 @@ class GameMatchesTable
                     }),
 
                 TextColumn::make('dispute_opened_at')
-                    ->label('Disputed at')
-                    ->dateTime('M j, Y H:i')
+                    ->label('Age')
                     ->since()
+                    ->placeholder('—')
+                    ->badge()
+                    ->color(fn (GameMatch $record): string => self::ageBadgeColor($record))
                     ->sortable(),
 
                 TextColumn::make('created_at')
@@ -87,6 +92,7 @@ class GameMatchesTable
                 SelectFilter::make('status')
                     ->multiple()
                     ->options([
+                        MatchStatus::LobbyFilling->value => 'Lobby Filling',
                         MatchStatus::Pending->value => 'Pending',
                         MatchStatus::Disputed->value => 'Disputed',
                         MatchStatus::ManualReview->value => 'Manual Review',
@@ -102,5 +108,30 @@ class GameMatchesTable
                 ViewAction::make(),
             ])
             ->toolbarActions([]);
+    }
+
+    /**
+     * Mirrors the OpsOverview "Aging disputes" SLA scale so admins see one
+     * consistent color story across the dashboard widget + the queue table.
+     */
+    private static function ageBadgeColor(GameMatch $record): string
+    {
+        if (! in_array($record->status, [MatchStatus::Disputed, MatchStatus::ManualReview], true)) {
+            return 'gray';
+        }
+
+        $aging = $record->dispute_opened_at ?? $record->updated_at;
+
+        if ($aging === null) {
+            return 'gray';
+        }
+
+        $hours = abs(now()->diffInHours($aging));
+
+        return match (true) {
+            $hours >= 12 => 'danger',
+            $hours >= 6 => 'warning',
+            default => 'success',
+        };
     }
 }
