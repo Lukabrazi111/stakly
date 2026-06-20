@@ -703,6 +703,29 @@ Surfaced during dogfooding: the lobby's Money block (pot / stake / win-or-lose p
 
 ---
 
+## M9 — Chain integration / billing (paused for go-ahead; provider-agnostic groundwork building now)
+
+Custodial deposits/withdrawals via a third-party crypto payment provider. Provider is **deliberately undecided** — NowPayments was the original pick (`.ai/billing-plan.md`) but its sandbox signup is currently broken, and Cryptomus (no sandbox, but free `test-webhook` endpoint + official PHP SDK) is a live alternative. The whole point of the abstraction below is that the choice costs ~one class to reverse and **doesn't block any groundwork**. Real provider clients + webhook receivers stay paused until explicit go-ahead (CLAUDE.md). The internal `App\Services\Wallet` ledger remains the source of truth regardless of provider.
+
+### Phases
+
+**Phase 0a — Payment gateway abstraction** _(provider-agnostic, building now)_
+
+Goal: a swappable `PaymentGateway` driver layer mirroring the existing `GameApi` pattern (config-driven `match()` binding in `AppServiceProvider`), so the rest of the app depends only on a stable contract + canonical DTOs, never on a provider's payload shape or SDK. Switching providers later = `PAYMENTS_DRIVER=cryptomus` + one new class.
+
+- [ ] `App\Services\Payments\PaymentGateway` contract (`ensureDepositAccount`, `createPayout`, `estimatePayoutFee`, `verifyWebhookSignature`, `parseWebhookEvent`).
+- [ ] Canonical DTOs in `App\Services\Payments\Dto` (`DepositAccount`, `PayoutResult`, `FeeEstimate`, `GatewayWebhookEvent`) + `GatewayEventType` / `GatewayPayoutStatus` enums.
+- [ ] `App\Enums\PaymentProvider` (`NowPayments`, `Cryptomus`).
+- [ ] `MockGateway` — deterministic implementation (no network); default driver. Replaces the inline mock that Phase 0b's `Withdrawals::send()` would otherwise hardcode.
+- [ ] `NowPaymentsGateway` / `CryptomusGateway` — **stubs only**, every method throws "not wired (M9)". No API/key/HTTP code until go-ahead.
+- [ ] `config/services.php` `payments` block (`driver` + per-provider sub-config incl. `circuit_breaker`/`requests_per_minute` shape for later) + `AppServiceProvider::bindPaymentGateway()` singleton.
+- [ ] Pest: driver-swap resolution proof (set `services.payments.driver`, assert resolved class) + `MockGateway` behavior.
+- **Deferred to the real-client slice (not built now):** `ProviderCircuitBreaker` key generalization + `payments-api` `RateLimiter::for(...)`. Both are outbound-call concerns with zero consumers until NowPayments/Cryptomus clients exist — refactoring the game-pipeline-shared breaker now would be risk with no caller.
+
+**Phase 0b — Ledger machinery** _(provider-agnostic; see `tmp/billing-implementation-steps.md` Steps 0.1–0.8)_ — account freeze, `withdrawals` schema/service, two-phase withdrawal UX, admin review, seeders. Routes `Withdrawals::send()` through `MockGateway`. Not started.
+
+**Phases 1–3 — provider edges (🚫 paused, need go-ahead):** deposit webhook, real payout, reconciliation/hardening. Only the concrete gateway class + webhook receiver change; everything above is reused as-is.
+
 ## M35 — Outbound third-party API rate-limit audit
 
 Sweep every outbound HTTP integration in the codebase and confirm each has:

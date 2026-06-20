@@ -8,6 +8,10 @@ use App\Services\GameApi\ChessGameApi;
 use App\Services\GameApi\FaceitGameApi;
 use App\Services\GameApi\GameApi;
 use App\Services\GameApi\MockGameApi;
+use App\Services\Payments\CryptomusGateway;
+use App\Services\Payments\MockGateway;
+use App\Services\Payments\NowPaymentsGateway;
+use App\Services\Payments\PaymentGateway;
 use App\Services\Provider\FaceitProvider;
 use Carbon\CarbonImmutable;
 use Illuminate\Cache\RateLimiting\Limit;
@@ -31,6 +35,7 @@ class AppServiceProvider extends ServiceProvider
     public function register(): void
     {
         $this->bindGameApi();
+        $this->bindPaymentGateway();
     }
 
     /**
@@ -69,6 +74,28 @@ class AppServiceProvider extends ServiceProvider
                     new ChessGameApi($app->make(MockGameApi::class)),
                 ),
                 default => throw new InvalidArgumentException("Unknown game_api_driver: {$driver}"),
+            };
+        });
+    }
+
+    /**
+     * Bind the configured `PaymentGateway` driver (M9 — billing). Mirrors
+     * `bindGameApi()`: a config-driven `match()` over `services.payments.driver`
+     * is the entire switch surface, so moving NowPayments ⇄ Cryptomus ⇄ mock is
+     * one env change plus one implementation class. Default `mock` is
+     * provider-agnostic — no signup/keys/sandbox. The real provider gateways
+     * are stubs that throw until M9 go-ahead.
+     */
+    private function bindPaymentGateway(): void
+    {
+        $this->app->singleton(PaymentGateway::class, function () {
+            $driver = config('services.payments.driver');
+
+            return match ($driver) {
+                'mock' => new MockGateway,
+                'nowpayments' => new NowPaymentsGateway,
+                'cryptomus' => new CryptomusGateway,
+                default => throw new InvalidArgumentException("Unknown payments driver: {$driver}"),
             };
         });
     }
