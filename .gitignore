@@ -12,6 +12,7 @@
 /resources/js/routes
 /resources/js/wayfinder
 /vendor
+/tmp
 .DS_Store
 .env
 .env.backup
