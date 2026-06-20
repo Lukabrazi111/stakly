@@ -148,4 +148,32 @@ describe('MockGateway', function () {
         expect(fn () => $this->gateway->parseWebhookEvent(mockWebhookRequest(['event' => 'nonsense'])))
             ->toThrow(InvalidArgumentException::class);
     });
+
+    it('fails fast when a deposit webhook is missing a required field', function (array $payload) {
+        expect(fn () => $this->gateway->parseWebhookEvent(mockWebhookRequest($payload)))
+            ->toThrow(InvalidArgumentException::class);
+    })->with([
+        'no amount' => [['event' => 'deposit', 'address' => 'Tdest', 'tx_hash' => 'abc']],
+        'no address' => [['event' => 'deposit', 'amount' => '99', 'tx_hash' => 'abc']],
+        'no tx_hash' => [['event' => 'deposit', 'amount' => '99', 'address' => 'Tdest']],
+    ]);
+
+    it('fails fast on a payout webhook with an unknown status (not a raw ValueError)', function () {
+        expect(fn () => $this->gateway->parseWebhookEvent(mockWebhookRequest([
+            'event' => 'payout',
+            'payout_id' => 'mock-payout:wd:7',
+            'status' => 'exploded',
+        ])))->toThrow(InvalidArgumentException::class);
+    });
+
+    it('synthesizes and persists a deposit address when the user has none (idempotent)', function () {
+        $user = User::factory()->create(['tron_address' => null]);
+
+        $first = $this->gateway->ensureDepositAccount($user);
+        $second = $this->gateway->ensureDepositAccount($user->fresh());
+
+        expect($first->address)->toStartWith('T')
+            ->and($first->address)->toBe($second->address)
+            ->and($user->fresh()->tron_address)->toBe($first->address);
+    });
 });

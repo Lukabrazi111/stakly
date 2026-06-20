@@ -29,10 +29,17 @@ final class MockGateway implements PaymentGateway
     public function ensureDepositAccount(User $user): DepositAccount
     {
         // Users already carry a mock TRC20 address from registration; only
-        // synthesize one for the (test) case where it's absent.
-        return new DepositAccount(
-            address: $user->tron_address ?? MockTronAddress::generate(),
-        );
+        // synthesize one for the case where it's absent — and persist it, so
+        // the contract's idempotency holds (a real gateway likewise creates +
+        // stores the provider account on first call).
+        $address = $user->tron_address;
+
+        if (! is_string($address) || $address === '') {
+            $address = MockTronAddress::generate();
+            $user->forceFill(['tron_address' => $address])->save();
+        }
+
+        return new DepositAccount(address: $address);
     }
 
     public function createPayout(string $amount, string $address, string $reference): PayoutResult
@@ -76,24 +83,55 @@ final class MockGateway implements PaymentGateway
             'deposit' => new GatewayWebhookEvent(
                 type: GatewayEventType::DepositCredited,
                 raw: $payload,
-                amount: isset($payload['amount']) ? (string) $payload['amount'] : null,
-                address: isset($payload['address']) ? (string) $payload['address'] : null,
-                txHash: isset($payload['tx_hash']) ? (string) $payload['tx_hash'] : null,
+                amount: $this->requireString($payload, 'amount'),
+                address: $this->requireString($payload, 'address'),
+                txHash: $this->requireString($payload, 'tx_hash'),
             ),
             'payout' => new GatewayWebhookEvent(
                 type: GatewayEventType::PayoutUpdated,
                 raw: $payload,
                 amount: isset($payload['amount']) ? (string) $payload['amount'] : null,
                 txHash: isset($payload['tx_hash']) ? (string) $payload['tx_hash'] : null,
-                providerPayoutId: isset($payload['payout_id']) ? (string) $payload['payout_id'] : null,
-                payoutStatus: isset($payload['status'])
-                    ? GatewayPayoutStatus::from((string) $payload['status'])
-                    : null,
+                providerPayoutId: $this->requireString($payload, 'payout_id'),
+                payoutStatus: $this->requirePayoutStatus($payload),
             ),
             default => throw new InvalidArgumentException(
                 'MockGateway: unrecognized webhook event ['.(is_scalar($event) ? $event : gettype($event)).'].',
             ),
         };
+    }
+
+    /**
+     * Pull a required scalar field as a non-empty string, failing fast — the
+     * contract promises a throw (not a half-built event) on an unmappable
+     * payload, so a downstream ledger write never sees a null key field.
+     *
+     * @param  array<string, mixed>  $payload
+     */
+    private function requireString(array $payload, string $key): string
+    {
+        $value = $payload[$key] ?? null;
+
+        if (! is_scalar($value) || (string) $value === '') {
+            throw new InvalidArgumentException("MockGateway: webhook missing required field [{$key}].");
+        }
+
+        return (string) $value;
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    private function requirePayoutStatus(array $payload): GatewayPayoutStatus
+    {
+        $raw = $this->requireString($payload, 'status');
+        $status = GatewayPayoutStatus::tryFrom($raw);
+
+        if ($status === null) {
+            throw new InvalidArgumentException("MockGateway: unknown payout status [{$raw}].");
+        }
+
+        return $status;
     }
 
     private function mockNetworkFee(): string
