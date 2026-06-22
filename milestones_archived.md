@@ -1196,6 +1196,68 @@ Operational visibility + force-cancel for the marketplace. The lowest-urgency of
 - Editing listing description / title (no fields exist today on listings — listing is just stake + skill + time control + region + languages). If a future listing schema adds free-text fields, moderation routes through M13 chat-anti-abuse patterns, not via direct admin edits.
 
 ---
+
+## M34 — Team play + lobbies ✅ shipped 2026-06-12 → 2026-06-14
+
+Production-launch dependency for CS2 (FACEIT competitive is 5v5 with no native ranked 1v1) and every future 5v5 game. Adds a **soft-join lobby** between "listing posted" and "match Pending" for `team_size > 1` listings; chess (1v1) keeps its existing `TakeListingAction` flow unchanged. CS2 = 5v5 + 2v2 Wingman. Shipped P0–P9 (+ P3.1, P3.2), suite 1330 → ~1533. Two P3.1 follow-ups remain deferred and live in `milestones.md` (country flags + per-player W/L form).
+
+### Core flow — hybrid stake-at-Ready
+
+Listing creation escrows nothing; the creator is auto-soft-joined to slot 0. Soft-join is free + reversible (no money moves). Clicking **Ready** escrows *that player's* stake in the moment — per-player atomic, so there's no all-N balance race at match start; un-Ready / leave refunds until lock. All `2 × team_size` Ready → match flips `Pending`, lobby `locked`, leaving is now a forfeit. **One active lobby per user globally.** 5-min ready-check timeout (non-Ready vacated, already-Ready keep escrow + stay; if the creator is vacated the whole lobby cancels + refunds). Owner kick with a 5-min same-listing rejoin cooldown (kicked row preserved as audit + cooldown anchor, refunded if Ready'd). 24h fill timeout cancels + refunds. Insufficient balance at Ready is a silent, penalty-free retry.
+
+### Decisions (load-bearing)
+
+- **`listings.team_size`** (int, default 1) drives lobby size (`2 × team_size`). `creator_side` ('a'|'b'), `lobby_state` (`recruiting → ready_checking → locked → cancelled/expired`), `is_public`, `invite_token` (32-char, unique) — all nullable/defaulted so legacy chess payloads stay valid.
+- **`lobby_participants` table** — `is_ready` + `stake_held_at` (null = soft-joined, set = escrowed; **the two always flip together** — no Ready-without-escrow, no orphaned hold) + `kicked_at`. Two **Postgres partial unique indexes** (`WHERE kicked_at IS NULL`) on `(listing_id, side, slot_index)` and `(listing_id, user_id)` so kicked rows don't poison live constraints (slot reclaimable, user rejoins post-cooldown). Built via `DB::statement` (Laravel has no first-class partial-index API).
+- **`MatchStatus::LobbyFilling`** — the match row exists from listing creation so chat works day 1; flips to `Pending` at lock. Every `status === Pending`-assuming consumer got an explicit carve-out (auto-fetch skip, policy view/dispute/cancel gates, `/matches/{id}` redirect, username-change in-flight check, Filament exhaustive expressions, TS unions).
+- **Per-player skill range** — each joiner's snapshotted rating must fall in `[skill_min, skill_max]`; per-team averaging explicitly rejected (one whale can't carry low-skill teammates and break the trust pitch).
+- **`match_provider_snapshots.slot_index`** populated 0..team_size-1 at lock so settlement maps snapshot → user with team identity preserved; unique constraint extended to `(match_id, side, slot_index, provider)`.
+- **Settlement (`SettleTeamMatchAction`)** — `pot = stake × team_size × 2`, `fee = pot × fee_rate`, `perPlayer = bcdiv(winnings, team_size, 6)`; the slot-0 winner absorbs the truncation remainder so the **conservation invariant `sum(payouts) + fee == pot` holds exactly** (asserted in-action). Per-player payout ref `match-payout:{match}:player-{user}` (idempotent).
+- **Real-time** — `private-lobby.{id}` channel (`LobbyChannel`, auth mirrors `ListingPolicy::viewLobby`), `LobbyUpdated` event (`ShouldBroadcast` + `ShouldDispatchAfterCommit`, minimal id-only payload — a trigger, not a transport; server `LobbyResource` stays the source of derived truth). Dispatched from every roster/state-mutating action on success only. Frontend `<LobbyRealtimeSync>` → `router.reload({ only: ['lobby'] })`, mounted only while auth + live so terminal states tear down the socket cleanly.
+
+### Phases
+
+- **P0 — Schema + lobby model.** Migrations (listings team-play columns; `lobby_participants`; `slot_index` on snapshots), `MatchStatus::LobbyFilling`, models + factories + seeder. +18 tests.
+- **P1 — Backend lobby flow.** All actions (`CreateTeamPlayListing`, `Join`, `Leave`, `ToggleReady`, `Kick`, `LobbyReadyCheck`, `LobbyReadyCheckTimeout`, `LobbyLock`, `LobbyFillTimeout`) + two cron sweeps (`lobbies:sweep-ready-check-timeouts` per-minute, `lobbies:sweep-fill-timeouts` hourly, `withoutOverlapping`) + a dedicated `scheduler` container in `compose.yaml`. Full `LobbyFilling`-consumer audit. +48 tests.
+- **P2 — Private invite links.** `Game::allowedTeamSizes()`, `StoreListingRequest` team-play fields, `store` branching, `scopeOnPublicMarketplace` hides private listings, `/lobbies/{token}` resolver. +16 tests.
+- **P3 — Frontend lobby UI.** `ListingPolicy` lobby gates, `LobbyController` endpoints, `LobbyResource`, the lobby page (5s polling at this stage — replaced in P3.2), chat reuse via an optional `participants` prop. +16 tests.
+- **P3.1 — Unify lobby into the listing page.** Collapsed `/lobbies/{id}` → canonical `/listings/{id}` (301 redirect for legacy URLs, `viewLobby` relaxed). Marketplace listing-card team-play adapter (`TeamSizeBadge` / `LobbyStateBadge` / `LobbyFillCounter`), rows↔grid view toggle (cookie-persisted, roster preview in grid), FACEIT-grade 3-col center column (Money HERO / Skill matchup / Trust / state-dependent Coordination) via `LobbyResource.aggregates`, new `ParticipantStats` service. Three dogfooding polish rounds (CS2 locked to 5v5-only; Ready/Leave folded into the Money block as traffic-light buttons; chat → participant-gated floating FAB; slot stats → Matches / Win-rate / Completion-30d; homepage "Ending soon" unified to `ListingGridCard`). **Two follow-ups deferred — now tracked in `milestones.md`.**
+- **P3.2 — Real-time lobby via Reverb.** Replaced 5s polling with `private-lobby.{id}` + `LobbyUpdated` (channel/event above). Also fixed a match-chat 403/leak (non-participants subscribing to `private-match.{id}`) by extracting `<LobbyChatPanel>`, mounted only for live participants. +18 tests.
+- **P4 — FACEIT 5v5 verification (the gating work).** Generalized the 1v1 pipeline to N-vs-N: `snapshotProviderUserIds`, strict `isOpposingTeamRosters` (all 10 Stakly GUIDs must be on the FACEIT match — strict-no-partial; a missing player → no candidate → 4h timeout → ManualReview, safer than a wrong settle), `SettleTeamMatchAction` fan-out, additive card payload (`winning_team` + `winner_user_ids` alongside legacy 1v1 fields), defensive winner-roster check in `SettleFromCardAction` (strict containment). +9 5v5 tests. **CS2 production launch unblocked.**
+- **P5 — CS2 create-form + 2v2 Wingman + private post-create UX + chat-leak fix.** Create form ships `team_size`/`creator_side`/`is_public` (segmented Format/Side/Visibility controls); `Cs2->allowedTeamSizes()` → `[2, 5]`; team-play creators redirect to the lobby with an owner-only `LobbyInviteBanner`. Closed a chat-content leak — `showTeamPlay` now gates `messages.data` on live participation (strangers/guests/kicked get `collect()`). +9 tests.
+- **P6 — Team-aware dispute + cancellation.** Team-aware `GameMatchPolicy::isParticipant` (reads the live `LobbyParticipant` roster) + same-team-accept block; `AcceptCancellationAction` refund fan-out (ref `cancel-refund:{match}:{user}`); new `MatchParticipants` service + notification fan-out across the dispute/cancellation actions; `GameMatchResource` team rosters + `winning_team` (1v1 shape preserved verbatim via `mergeWhen`); team-aware `match/show.tsx` (`TeamMatchView` / `TeamRosters` / `TeamSettlementSummary`); `SettleDrawMatchAction` + `AdminSettleToWinnerAction` + `AdminSettleDrawAction` made team-aware (Filament "Settle to Team A/B / Refund all"). +42 tests. Full lifecycle (lock → Pending → cancel/dispute → admin settle → fan-out payouts) works for 5v5 + 2v2.
+- **P7 — FACEIT-style lobby header bar.** Replaced the plain title block with a unified header (team-leader avatars + "Team {leader}" + mode chip + a state-aware countdown that morphs by `lobby_state` + Share via `navigator.share`/copy); folded the ready-check countdown out of `CoordinationPanel` into the header. `LobbyResource.match_deadline_at` added (Pending-gated). +2 tests.
+- **P8 — Team match-page polish + lobby-lock notification.** Match-page roster card brought to lobby `slot-card` parity (avatars, crowns, rating chips, stats); "Team {leader}" labels via shape-agnostic `lib/team-leader.ts`; new `TeamMatchStartedNotification` (sound-default ON) dispatched from `LobbyLockAction` to every locked-in participant.
+- **P9 — Match-details strip inside the Rosters card.** Compact horizontal strip (Pot · Stake · +win · −lose + "Verified via FACEIT" chip) at the top of the team match page's Rosters card, closing the gap where the lobby's Money block disappears at lock; `potentialWinnerPayout` computed so draws don't zero the headline.
+
+### Not in M34
+
+- Unifying chess (1v1) to the lobby model — `TakeListingAction` keeps handling `team_size = 1`; revisit only on a UX need.
+- Captain mode / explicit leader role beyond "owner can kick"; spectator slots; mid-match player replacement (FACEIT doesn't support it for our verification model); cross-server roster verification (we rely on the verified-match-record — all 10 in the same FACEIT match with correct factions is the proof); anti-collusion beyond the skill-range gate.
+
+---
+
+## M35 — Outbound third-party API rate-limit audit ✅ shipped 2026-06-11
+
+Swept every outbound HTTP integration to confirm each has: client-side self-throttle (`RateLimiter::for(...)` + `RateLimited` job middleware, default 30 req/min when the provider limit is undocumented), 429 header handling (`RateLimitHeaderParser` — `Retry-After` / `X-RateLimit-Reset`), a per-provider `ProviderCircuitBreaker`, and explicit `->timeout()` / `->connectTimeout()`. Goal: zero production 429-driven settlement freezes. All caps env-tunable via `{PROVIDER}_REQUESTS_PER_MINUTE`.
+
+### Phases
+
+- **P0 — Inventory + audit (read-only).** Per-provider gap table across every `Http::` callsite + Provider client + the link-preview job. Found: all three **game** clients had breaker + 429 + retry but **no self-throttle**; all three **profile** clients (sync, controller-driven) had timeouts only (no throttle/breaker/429-classification); `FetchLinkMetadataJob` is arbitrary-URL (global throttle only, intentional `$tries=1`).
+- **P1 — chess.com.** `RateLimiter::for('chess-com-api')` (cap from `services.chess_com.requests_per_minute`, default 30) + `RateLimited` middleware on `AutoFetchChessComGameJob` (`$tries` 7→15 to absorb throttle releases; `retryUntil()` stays the real safety net). `ChessComProfileClient` brought to game-client parity (429 → `RateLimitedError` + retry-at; 5xx → transient; 4xx → permanent; 404 → `ProfileNotFoundException`, counts as breaker success; constructor takes the breaker). +12 tests.
+- **P2 — Lichess.** Same shape; `lichess-api` cap default **60** (Lichess documents 1200/min — 20× margin). `$tries` 4→12. `LichessProfileClient` upgraded. +12 tests.
+- **P3 — FACEIT.** Same shape; `faceit-api` cap default 30 (undocumented quota; conservative-cap rule). `$tries` 7→15. `FaceitProfileClient` upgraded — graceful-null path on a missing API key preserved (no request, no breaker signal). +14 tests.
+- **P4 — Telemetry pass — skipped.** Existing `PipelineHealth` coverage is sufficient; throttle-wait visibility can land later as a small follow-up if real production caps get hit.
+
+### Decisions
+
+- **Profile-client self-throttling intentionally omitted** — called synchronously from controllers, not queued jobs, so `RateLimited` middleware doesn't fit; revisit with controller-level `throttle:` if a real abuse vector surfaces.
+
+### Not in M35
+
+- Throttling internal Stakly→Stakly APIs (covered by `throttle:` on auth routes); inbound webhook rate-limiting (per-receiver `throttle:60,1`); token-bucket vs leaky-bucket tuning (Laravel fixed-window is fine for our load).
+
+---
 ---
 
 ## Parked milestones
