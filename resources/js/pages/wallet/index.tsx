@@ -75,7 +75,7 @@ export default function WalletIndex({
                         {hasTransactions && (
                             <Link
                                 href={historyRoute().url}
-                                className="group inline-flex shrink-0 items-center gap-1.5 text-sm font-medium text-primary transition-colors hover:text-primary/80"
+                                className="group inline-flex shrink-0 items-center gap-1.5 text-sm font-medium text-muted-foreground transition-colors hover:text-primary"
                             >
                                 {t('View all')}
                                 <ArrowRight className="size-4 transition-transform duration-200 ease-out group-hover:translate-x-0.5" />
