@@ -280,8 +280,13 @@ export interface MatchShowProps {
 }
 
 // Filters echoed from the backend (IndexMatchesRequest::filters()) so the
+// M36: 'in_progress' (default) shows the active group; 'all' shows every
+// status sliced by the chips. Mirrors Bybit's Orders → In Progress / All.
+export type MatchView = 'in_progress' | 'all';
+
 // chip row can hydrate from the URL.
 export interface MatchFilters {
+    view: MatchView;
     status: MatchStatus | null;
 }
 

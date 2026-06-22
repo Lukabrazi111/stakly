@@ -17,8 +17,14 @@ export function buildMatchesQuery(
 ): Record<string, string | number> {
     const params: Record<string, string | number> = {};
 
-    if (filters.status) {
-        params['filter[status]'] = filters.status;
+    // In Progress is the default — a clean /matches URL. Only the All view
+    // (and its optional status chip) carry query params.
+    if (filters.view === 'all') {
+        params.view = 'all';
+
+        if (filters.status) {
+            params['filter[status]'] = filters.status;
+        }
     }
 
     if (options.page && options.page > 1) {

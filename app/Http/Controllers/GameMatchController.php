@@ -49,23 +49,29 @@ class GameMatchController extends Controller
     {
         $user = $request->user();
 
-        $matches = QueryBuilder::for(
-            GameMatch::query()
-                ->forParticipant($user->id)
-                ->with([
-                    'listing:id,user_id,game,stake_amount,platform,time_control,status,team_size',
-                    'listing.user:id,name,username',
-                    'taker:id,name,username',
-                    'winner:id,name,username',
-                    // GameMatchResource exposes snapshotted usernames per
-                    // listing.platform — without this eager-load the
-                    // resource transformer N+1s on the snapshot table.
-                    'providerSnapshots',
-                ]),
-        )
-            ->allowedFilters(
-                AllowedFilter::exact('status'),
-            )
+        $query = GameMatch::query()
+            ->forRosterParticipant($user->id)
+            ->with([
+                'listing:id,user_id,game,stake_amount,platform,time_control,status,team_size',
+                'listing.user:id,name,username',
+                'taker:id,name,username',
+                'winner:id,name,username',
+                // GameMatchResource exposes snapshotted usernames per
+                // listing.platform — without this eager-load the
+                // resource transformer N+1s on the snapshot table.
+                'providerSnapshots',
+            ]);
+
+        if ($request->view() === 'all') {
+            // All view: every status, sliced by the optional chip filter.
+            $query = QueryBuilder::for($query)
+                ->allowedFilters(AllowedFilter::exact('status'));
+        } else {
+            // In Progress view (default): the active group, chips ignored.
+            $query->whereIn('status', MatchStatus::inProgressValues());
+        }
+
+        $matches = $query
             ->orderByDesc('created_at')
             ->orderByDesc('id')
             ->paginate(self::MATCHES_PER_PAGE)

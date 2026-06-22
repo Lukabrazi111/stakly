@@ -119,7 +119,7 @@ test('filter[status]=pending scopes to Pending matches only', function () {
         ->create();
 
     $this->actingAs($alice)
-        ->get('/matches?filter[status]=pending')
+        ->get('/matches?view=all&filter[status]=pending')
         ->assertInertia(fn ($page) => $page
             ->has('matches.data', 1)
             ->where('matches.data.0.id', $pending->id)
@@ -146,7 +146,7 @@ test('filter[status]=settled scopes to Settled matches only', function () {
         ->create();
 
     $this->actingAs($alice)
-        ->get('/matches?filter[status]=settled')
+        ->get('/matches?view=all&filter[status]=settled')
         ->assertInertia(fn ($page) => $page
             ->has('matches.data', 1)
             ->where('matches.data.0.id', $settled->id)
