@@ -1,6 +1,7 @@
 import { Link } from '@inertiajs/react';
 import {
     ArrowDownToLine,
+    ArrowRight,
     ArrowUpFromLine,
     History,
     Wallet as WalletIcon,
@@ -74,9 +75,10 @@ export default function WalletIndex({
                         {hasTransactions && (
                             <Link
                                 href={historyRoute().url}
-                                className="text-sm font-medium text-primary transition-colors hover:text-primary/80"
+                                className="group inline-flex shrink-0 items-center gap-1.5 text-sm font-medium text-primary transition-colors hover:text-primary/80"
                             >
-                                {t('View all →')}
+                                {t('View all')}
+                                <ArrowRight className="size-4 transition-transform duration-200 ease-out group-hover:translate-x-0.5" />
                             </Link>
                         )}
                     </div>
@@ -103,9 +105,10 @@ export default function WalletIndex({
                             </p>
                             <Link
                                 href={depositRoute().url}
-                                className="mt-4 inline-block text-sm font-medium text-primary transition-colors hover:text-primary/80"
+                                className="group mt-4 inline-flex items-center gap-1.5 text-sm font-medium text-primary transition-colors hover:text-primary/80"
                             >
-                                {t('Deposit USDT →')}
+                                {t('Deposit USDT')}
+                                <ArrowRight className="size-4 transition-transform duration-200 ease-out group-hover:translate-x-0.5" />
                             </Link>
                         </div>
                     )}
