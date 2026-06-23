@@ -213,3 +213,47 @@ test('active_matches_count drops once a match leaves the in-progress set', funct
         ->get('/matches')
         ->assertInertia(fn ($page) => $page->where('auth.user.active_matches_count', 2));
 });
+
+/*
+ * M37 — `in_flight_games` shared prop: the distinct games the viewer is
+ * currently mid-match in. Gates the Take button (one active match per game).
+ */
+
+test('in_flight_games lists the games the user is currently mid-match in', function () {
+    $alice = m36AliceWithEveryStatus(); // 3 in-progress chess matches + 2 terminal
+
+    $this->actingAs($alice)
+        ->get('/matches')
+        ->assertInertia(fn ($page) => $page
+            ->where('auth.user.in_flight_games', ['chess'])
+        );
+});
+
+test('in_flight_games spans every game the user is mid-match in (chess + CS2)', function () {
+    $user = User::factory()->create();
+
+    // A live chess match (as taker).
+    GameMatch::factory()
+        ->for(Listing::factory()->taken()->for(User::factory()))
+        ->for($user, 'taker')
+        ->create();
+
+    // A live CS2 match (as a side-B roster member).
+    $cs2Listing = Listing::factory()->teamPlay(2)->lobbyLocked()->for(User::factory())->create();
+    GameMatch::factory()->for($cs2Listing)->create([
+        'taker_user_id' => $cs2Listing->user_id,
+        'status' => MatchStatus::Pending,
+    ]);
+    LobbyParticipant::factory()->sideB()->create([
+        'listing_id' => $cs2Listing->id,
+        'user_id' => $user->id,
+        'slot_index' => 0,
+    ]);
+
+    $this->actingAs($user)
+        ->get('/matches')
+        ->assertInertia(fn ($page) => $page
+            ->where('auth.user.active_matches_count', 2)
+            ->has('auth.user.in_flight_games', 2)
+        );
+});

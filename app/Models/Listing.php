@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Enums\Game;
 use App\Enums\LinkedAccountProvider;
 use App\Enums\ListingStatus;
+use App\Enums\MatchStatus;
 use App\Enums\TimeControl;
 use Database\Factories\ListingFactory;
 use Illuminate\Database\Eloquent\Builder;
@@ -133,6 +134,36 @@ class Listing extends Model
             ->whereHas('user', fn (Builder $q) => $q
                 ->where('is_active_mode', true)
                 ->whereNull('banned_at'),
-            );
+            )
+            ->whereCreatorNotBusyForGame();
+    }
+
+    /**
+     * M37 — hide a listing while its creator is mid-match for THIS game, so the
+     * board / homepage / visitor profile never offer a take that the
+     * concurrency guard (`TakeListingAction`) would reject. Per game: a chess
+     * listing hides while its owner is in a chess match, but their CS2 offers
+     * stay up (and vice-versa). The owner still sees their own hidden listings
+     * on their own profile, which uses `scopeOpen`, not this.
+     *
+     * Correlated anti-join: drop the listing if its creator participates (as
+     * creator OR taker) in an in-progress match whose listing is the same game.
+     * 1v1 matches only have a creator + taker, so no lobby-roster branch is
+     * needed — team listings can't dangle (the create/join guards already block
+     * a second concurrent team engagement, and a locked team listing is `Taken`,
+     * not `Open`).
+     */
+    public function scopeWhereCreatorNotBusyForGame(Builder $query): Builder
+    {
+        return $query->whereNotExists(function ($sub) {
+            $sub->selectRaw('1')
+                ->from('game_matches')
+                ->join('listings as busy_listing', 'busy_listing.id', '=', 'game_matches.listing_id')
+                ->whereColumn('busy_listing.game', 'listings.game')
+                ->whereIn('game_matches.status', MatchStatus::inProgressValues())
+                ->where(fn ($p) => $p
+                    ->whereColumn('game_matches.taker_user_id', 'listings.user_id')
+                    ->orWhereColumn('busy_listing.user_id', 'listings.user_id'));
+        });
     }
 }

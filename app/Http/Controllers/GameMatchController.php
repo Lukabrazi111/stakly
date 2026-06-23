@@ -93,6 +93,10 @@ class GameMatchController extends Controller
      *   - `'race_lost'`        → listing state changed during the request
      *                            (Taken / Expired / Cancelled / past-expiry).
      *   - `'owner_inactive'`   → owner flipped to Inactive Mode mid-flight.
+     *   - `'already_in_match'` → taker is already in an in-flight match for this
+     *                            game (M37 one-active-match-per-game).
+     *   - `'owner_busy'`       → the listing owner is already in an in-flight
+     *                            match for this game.
      *
      * `InsufficientBalanceException` is the rare race where balance dropped
      * between TakeRequest's pre-check and the wallet's row-locked re-check
@@ -132,6 +136,26 @@ class GameMatchController extends Controller
             Inertia::flash('toast', [
                 'type' => 'info',
                 'message' => __('This player is currently inactive. Their listings are temporarily unavailable.'),
+            ]);
+
+            return to_route('listings.show', $listing);
+        }
+
+        if ($result === 'already_in_match') {
+            Inertia::flash('toast', [
+                'type' => 'warning',
+                'message' => __('Finish your current :game match before taking another.', [
+                    'game' => $listing->game->displayName(),
+                ]),
+            ]);
+
+            return to_route('listings.show', $listing);
+        }
+
+        if ($result === 'owner_busy') {
+            Inertia::flash('toast', [
+                'type' => 'info',
+                'message' => __('This player is in another match right now. Their listing will be available again soon.'),
             ]);
 
             return to_route('listings.show', $listing);

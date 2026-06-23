@@ -51,6 +51,9 @@ export type User = {
     // M36: matches the user is mid-flight on (Pending / Disputed /
     // ManualReview). Powers the sidebar "Matches" badge + the In Progress tab.
     active_matches_count: number;
+    // M37: the games the user is currently mid-match in (e.g. ['chess']) —
+    // gates the Take button (one active match per game).
+    in_flight_games: string[];
     notification_sound: string;
     notification_sound_map: Record<string, boolean>;
     username_edit: {

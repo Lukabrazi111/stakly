@@ -79,6 +79,21 @@ export function TakeButton({ listing, className = '' }: Props) {
         );
     }
 
+    // M37 — viewer is already in an in-flight match for this game; the take
+    // would be rejected server-side. Show a disabled cue, not a live CTA.
+    if (!isTeamPlay && user.in_flight_games?.includes(listing.game)) {
+        return (
+            <Button
+                variant="outline"
+                size="pill"
+                disabled
+                className={`rounded-full ${className}`.trim()}
+            >
+                {t('In a match')}
+            </Button>
+        );
+    }
+
     // `linked_platforms` is chess-only by design (FACEIT/Steam linking is
     // M15 work). For CS2/Dota listings the `.includes()` always returns
     // false → the chip renders the (non-actionable) "Link FACEIT to take"

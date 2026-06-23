@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\Game;
 use App\Enums\LinkedAccountProvider;
 use App\Enums\MatchStatus;
 use App\Notifications\PlayerNotification;
@@ -191,6 +192,23 @@ class User extends Authenticatable implements FilamentUser, HasMedia, MustVerify
                     ->orWhereDoesntHave('gameMatch', fn ($m) => $m
                         ->whereIn('status', $terminalMatchStatuses))))
             ->first();
+    }
+
+    /**
+     * M37 — is this user currently in an in-flight match for `$game`? Powers
+     * the "one active match per game" rule: a chess match and a CS2 match at
+     * once is fine, two of the same game is not. Team-aware (creator / taker /
+     * live lobby roster); counts the in-progress set (Pending / Disputed /
+     * ManualReview) for listings of that game. The username-rename blocker uses
+     * a game-agnostic version instead — any in-flight match blocks a rename.
+     */
+    public function hasInFlightMatchForGame(Game $game): bool
+    {
+        return GameMatch::query()
+            ->forRosterParticipant($this->id)
+            ->whereIn('status', MatchStatus::inProgressValues())
+            ->whereHas('listing', fn ($q) => $q->where('game', $game->value))
+            ->exists();
     }
 
     /**
