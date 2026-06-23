@@ -2,6 +2,7 @@
 
 namespace App\Providers;
 
+use App\Listeners\LogCacheFailover;
 use App\Listeners\RecordImpersonationEnd;
 use App\Listeners\RecordImpersonationStart;
 use App\Services\GameApi\ChessGameApi;
@@ -10,6 +11,7 @@ use App\Services\GameApi\GameApi;
 use App\Services\GameApi\MockGameApi;
 use App\Services\Provider\FaceitProvider;
 use Carbon\CarbonImmutable;
+use Illuminate\Cache\Events\CacheFailedOver;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\DB;
@@ -82,6 +84,19 @@ class AppServiceProvider extends ServiceProvider
         $this->registerImpersonationListeners();
         $this->registerSocialiteListeners();
         $this->registerProviderRateLimiters();
+        $this->registerCacheFailoverListener();
+    }
+
+    /**
+     * Surface a Redis outage (M38). The default cache is a `redis → array`
+     * failover store; when Redis is unreachable Laravel degrades to the array
+     * tail and fires `CacheFailedOver`. We log it loudly so the blip is
+     * alertable — while degraded the circuit breaker is per-process and
+     * settlement timing is affected, even though nothing 500s.
+     */
+    private function registerCacheFailoverListener(): void
+    {
+        Event::listen(CacheFailedOver::class, LogCacheFailover::class);
     }
 
     /**

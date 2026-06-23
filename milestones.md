@@ -26,7 +26,7 @@ Frontend-first build. UI against real DB infrastructure + seeded fake data; back
 
 **Active / upcoming:**
 
-- **M38 — Redis for queue, cache & sessions (launch-readiness)** _(next)_. Move the hot infra (queue, cache, sessions) off the Postgres `database` driver onto Redis (already in the stack, idle today) — faster settlement pipeline isolated from the money ledger, atomic rate-limiting, + Horizon-grade queue observability before launch. Reverb scaling stays out (single-node). Detail below.
+- **M38 — Redis for queue, cache & sessions (launch-readiness)** — **P1 + P2 shipped 2026-06-23; P3 (Horizon) next.** Moved the hot infra (queue, cache, sessions) off the Postgres `database` driver onto Redis (distinct logical DBs) — faster settlement pipeline isolated from the money ledger, atomic rate-limiting, with a `redis → array` failover cache store so a Redis blip degrades gracefully instead of 500ing. P3 adds Horizon-grade queue observability; P4 is prod wiring (managed Redis + eviction policy). Reverb scaling stays out (single-node). Detail below.
 - **M34 P3.1 follow-ups** — deferred lobby-page polish scoped out of M34 (each needs its own data plumbing; the lobby shipped cleanly without them). Slot into a follow-up phase on user demand or when the data lands for another reason.
     - **Country flags per player** — a small flag next to each roster name. Source: FACEIT profile `country` (ISO-3166 two-letter), pulled during `FaceitProfileClient::fetch()` and persisted on a new `linked_accounts.country` column; render via a flag-emoji helper or SVG pack. Cheap, but needs a migration + a backfill of existing linked accounts.
     - **Per-player recent W/L form** (`W L W W L` chips on each slot card) — last 5 FACEIT matches via `/players/{guid}/history?game=cs2&limit=5`. Expensive at scale (10 players × per-page-load = 10 FACEIT Data API calls); needs a per-player cache (~1h TTL) + an off-band refresher job so the lobby page never blocks on FACEIT. Momentum / tilt signal.
@@ -339,7 +339,7 @@ Redis is provisioned in the stack (`compose.yaml`, `REDIS_HOST=redis`, `phpredis
 
 - **Separate Redis logical DBs per concern (queue / cache / sessions).** A naive single-DB flip means `php artisan cache:clear` (or a cache `FLUSHDB`) could wipe queued settlement jobs or log everyone out. Laravel's default `cache` connection uses `REDIS_CACHE_DB`; queue uses `default`. Pin queue, cache, session to distinct DB indexes (or instances).
 - **Eviction policy — the launch gotcha.** The cache DB can be `allkeys-lru` (evictable). The **queue + session DBs must be `noeviction`** — evicting a queued settlement job under memory pressure = lost money work; evicting sessions = mass logout. Set per-DB, or use separate instances.
-- **Circuit-breaker fail-mode when Redis is unreachable — DECIDED: fail-open + log/alert** (2026-06-23). On a Redis blip the breaker reads as not-tripped and provider calls go through, with a logged alert — a transient hiccup shouldn't freeze settlement, and the providers' own 429s + our retries still protect us. Wrap breaker / limiter / catalog reads so a Redis exception degrades gracefully (never 500s a settlement job or the homepage).
+- **Circuit-breaker fail-mode when Redis is unreachable — DECIDED: fail-open + log/alert** (2026-06-23). On a Redis blip the breaker reads as not-tripped and provider calls go through, with a logged alert — a transient hiccup shouldn't freeze settlement, and the providers' own 429s + our retries still protect us. **Implemented (P2) via Laravel 13's native `failover` cache store (`redis → array`), not hand-rolled try/catch** — the `array` tail is infallible so no cache call can throw; fail-open + catalog-recompute + limiter-allow all fall out for free, and the `CacheFailedOver` event is the alert hook (`LogCacheFailover`). This is why no breaker/controller/limiter code changed. **Caveat — sessions + queue are not under the failover net** (the cache store covers cache only): a Redis outage logs everyone out for its duration (ephemeral, no money-loss, self-heals) and pauses the queue (workers retry). Queue-failover was rejected (splits jobs across redis+postgres, needs a second drainer).
 - **Breaker atomicity (optional hardening).** The breaker does `Cache::get` array → append → `Cache::put` — read-modify-write that races on *any* backend (a lost increment just trips the breaker slightly later; not money-loss). Redis *enables* a clean fix (atomic list/sorted-set or `Cache::lock`); do it here or note as follow-up. The rate limiter is already atomic on Redis.
 - **Keep CI hermetic.** Confirm `phpunit.xml` pins cache=array, queue=sync/database, session=array so the suite never needs a live Redis and `RefreshDatabase` stays on Postgres. The `.env` flip must not leak into tests.
 
@@ -347,17 +347,17 @@ Redis is provisioned in the stack (`compose.yaml`, `REDIS_HOST=redis`, `phpredis
 
 > **P1 + P2 ship as one slice.** The driver flip and the graceful-degradation wrapping go together — flipping to Redis without the resilience net would briefly make the homepage + settlement depend on Redis with no fallback. P3 (Horizon) + P4 (prod wiring) follow.
 
-**Phase 1 — Driver flip + connection hygiene**
+**Phase 1 — Driver flip + connection hygiene** — ✅ shipped 2026-06-23
 
-- [ ] `QUEUE_CONNECTION` / `CACHE_STORE` / `SESSION_DRIVER` → `redis`; distinct logical DBs per concern; `CACHE_PREFIX` sanity.
-- [ ] Confirm test env stays array/sync (CI needs no live Redis); full suite green post-flip.
-- [ ] Dev smoke test: dispatch a job, hit a cached page, log in/out — all through Redis.
+- [x] `QUEUE_CONNECTION` / `CACHE_STORE` / `SESSION_DRIVER` → `redis` (`.env` + `.env.example`); `CACHE_STORE=failover` (see P2). Distinct logical DBs: `0` default/locks/Horizon · `1` cache · `2` queue (new `queue` connection) · `3` session (new `session` connection), wired via `config/database.php` + `REDIS_QUEUE_CONNECTION=queue` / `SESSION_CONNECTION=session`. `CACHE_PREFIX` default (`stakly-cache-`) left as-is.
+- [x] Test env stays array/sync/array (`phpunit.xml` already pinned — the `.env` flip can't leak in); full suite **1554 → 1557** green post-flip.
+- [x] Dev smoke: cache write → DB 1, queued job → DB 2, real web request → session on DB 3. All confirmed via the named Redis connections.
 
-**Phase 2 — Settlement-path resilience**
+**Phase 2 — Settlement-path resilience** — ✅ shipped 2026-06-23
 
-- [ ] Implement breaker fail-open on Redis-down (decided above) + graceful-degrade wrapping on breaker / limiter / catalog reads, so a Redis exception never 500s a settlement job or the homepage.
-- [ ] (Optional) make the breaker's window-counting atomic.
-- [ ] Tests for the degraded path (Redis throws → no 500, sane breaker behavior).
+- [x] **Done at the infra layer, not by wrapping app code.** `CACHE_STORE=failover` (`redis → array`): Laravel 13's `FailoverStore` catches `Throwable` on a Redis error and falls through to the infallible in-memory `array` tail, so the breaker reads fail-open (empty → not tripped), the 4 catalog/CMS `Cache::remember` sites recompute from Postgres, and the rate limiter stops blocking — **all without touching `ProviderCircuitBreaker`, the controllers, or the limiter.** Writes return on the first working store (normal op = redis only). The fall-through fires `CacheFailedOver` once per outage → `App\Listeners\LogCacheFailover` logs `critical` (the "log/alert").
+- [ ] (Optional, deferred) make the breaker's window-counting atomic. Failover already covers the resilience requirement; the read-modify-write race is non-money-loss (a lost increment just trips slightly later), so this is a clean-up, not a blocker.
+- [x] Tests for the degraded path: `tests/Feature/Infrastructure/CacheFailoverResilienceTest.php` (+ `tests/Support/ThrowingCacheStore.php`) — a `throwing → array` failover proves cached reads survive an outage + `CacheFailedOver` fires, the breaker reads fail-open, and the homepage returns 200 with the cache backend down.
 
 **Phase 3 — Horizon (queue observability)** — confirmed in (2026-06-23)
 
