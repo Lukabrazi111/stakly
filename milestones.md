@@ -25,6 +25,7 @@ Frontend-first build. UI against real DB infrastructure + seeded fake data; back
 **Active / upcoming:**
 
 - **M36 — Active-matches quick access** _(shipped 2026-06-23)_. Live count badge on the player-hub sidebar's **Matches** item + an "In Progress / All" toggle on `/matches` (defaults to In Progress), mirroring Bybit's P2P "Orders → In Progress". In progress = Pending + Disputed + ManualReview. Reuses the shared-props count pattern + Reverb. Detail below.
+- **M37 — One active match per game** _(in flight)_. Fixes a concurrency hole: chess `TakeListingAction` had no "already in a match" guard, so a player could take unlimited simultaneous chess matches (CS2 already blocks this via the lobby). Policy (confirmed 2026-06-23): **one active match _per game_** — a chess match + a CS2 match at once is fine, two of the same game is not (two same-game matches are where API settlement can mis-attribute a result). Per-game guard on taker + owner, then hide a busy player's same-game listings. Detail below.
 - **M34 P3.1 follow-ups** — deferred lobby-page polish scoped out of M34 (each needs its own data plumbing; the lobby shipped cleanly without them). Slot into a follow-up phase on user demand or when the data lands for another reason.
     - **Country flags per player** — a small flag next to each roster name. Source: FACEIT profile `country` (ISO-3166 two-letter), pulled during `FaceitProfileClient::fetch()` and persisted on a new `linked_accounts.country` column; render via a flag-emoji helper or SVG pack. Cheap, but needs a migration + a backfill of existing linked accounts.
     - **Per-player recent W/L form** (`W L W W L` chips on each slot card) — last 5 FACEIT matches via `/players/{guid}/history?game=cs2&limit=5`. Expensive at scale (10 players × per-page-load = 10 FACEIT Data API calls); needs a per-player cache (~1h TTL) + an off-band refresher job so the lobby page never blocks on FACEIT. Momentum / tilt signal.
@@ -362,6 +363,42 @@ Surface "what am I doing right now" the way Bybit's P2P "Orders → In Progress"
 - A separate dedicated route / page — we reuse `/matches`; the sidebar item stays single, Bybit-style, with tabs.
 - Desktop push / browser notifications for active-match changes — the bell already covers event signalling.
 - Live-refreshing the `/matches` **list rows** themselves (a just-settled match lingering in the In Progress list until the next navigation). P3 live-refreshes the **badge count** via shared `auth`; the list is a per-page prop, not shared, so refreshing it on broadcast is a separate concern. Revisit if the stale row reads as broken in practice (cheap follow-up: have `match/index` also `router.reload({ only: ['matches'] })` on the same events when mounted).
+
+---
+
+## M37 — One active match per game
+
+A player could take an unlimited number of simultaneous **chess** matches — `TakeListingAction` never checked whether the taker (or the listing's owner) was already mid-match. CS2 team play already blocks this (`User::activeLobbyParticipation()` in `JoinLobbyAction` / `CreateTeamPlayListingAction`), but that guard is team-only and doesn't see chess. This brings chess up to the same bar.
+
+**Policy — one active match _per game_** (confirmed with the user 2026-06-23). A player can be in **one chess match and one CS2 match at the same time** (different providers, separate settlement pipelines — they can't be confused for each other), but never **two of the same game**. This is the cheapest rule that kills the real risk: two concurrent *same-game* matches are where API settlement can mis-attribute a result — the auto-fetch picks the game closest to each match's start time, so two Alice-vs-Bob games in overlapping windows can settle the wrong match. Different-game concurrency has no such overlap.
+
+### Decisions / things this touches
+
+- **"In-flight for a game" = `User::hasInFlightMatchForGame(Game)`** — team-aware (creator / taker / live lobby roster), counts `Pending / Disputed / ManualReview` for listings of that game. Mirrors the existing `usernameChangeBlockers()` in-flight definition but scoped per game (the rename blocker stays global — any match blocks a rename).
+- **CS2 needs no change.** `activeLobbyParticipation()` already enforces one-CS2-at-a-time and already allows a chess match alongside (it's team-only). The "one per game" policy falls out: chess take blocked only by an in-flight chess match; CS2 join blocked only by a CS2 lobby/match; cross-game allowed.
+- **The guard is the fix; hiding is polish.** The authoritative, race-safe guard lives inside `TakeListingAction`'s locked transaction (mirrors the existing `owner_inactive` gate). Hiding busy players' listings from the board is a separate UX layer on top — it never replaces the guard (direct URLs, stale tabs, and the split-second double-take race still hit the guard).
+- **Deadlock-safety.** The take now locks the owner + taker user rows up front in ascending-id order, so two concurrent takes touching the same pair in opposite roles (A takes B's listing while B takes A's) serialize instead of deadlocking.
+
+### Phases
+
+**Phase 1 — The lock (per-game concurrency guard)** ✅ shipped 2026-06-23
+
+- [x] `User::hasInFlightMatchForGame(Game)` — team-aware, in-progress set, per game.
+- [x] `TakeListingAction`: per-game guard on taker (`already_in_match`) + listing owner (`owner_busy`), inside the locked tx, with stable-order (ascending-id) participant locks to prevent deadlock; folded the existing `ownerIsActive` check onto the same locked row. New sentinels mapped to toasts in `GameMatchController::take` (+ 2 `lang/en.json` strings). CS2 unchanged (already correct).
+- [x] Pest (+5 in `GameMatchTakeTest`): taker-busy blocked (no double-charge, no 2nd match); owner-busy blocked; in a CS2 match → can still take chess; owner in a CS2 match → listing still takeable; terminal (settled) match doesn't block. Full suite 1549 green.
+
+**Phase 2 — The busy sign (hide same-game listings)**
+
+- [ ] A busy player's **same-game** open listings drop off the marketplace board (`scopeOnPublicMarketplace`), reappearing when the match resolves. CS2 offers stay up while in a chess match. Verify the board query stays cheap (subquery vs. a denormalized signal) + test.
+
+**Phase 3 — Frontend gating**
+
+- [ ] Disable the Take button (and reflect on the listing detail page) when the viewer is already in that game's match, with a clear reason. Shared signal: the games the viewer is currently in-flight for.
+
+### Not in M37
+
+- Raising the per-game cap above 1 (allowing N concurrent same-game matches) — would first require hardening settlement attribution (store + validate the opponent identity per game so back-to-back games can't mis-settle), then a config cap. Revisit only with real demand.
+- Pausing a hidden listing's expiry timer while its owner is busy — a listing can still expire (and refund) during a long match. Acceptable for now; revisit if it bites.
 
 ---
 
