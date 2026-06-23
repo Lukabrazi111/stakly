@@ -24,6 +24,7 @@ Frontend-first build. UI against real DB infrastructure + seeded fake data; back
 
 **Active / upcoming:**
 
+- **M36 — Active-matches quick access** _(shipped 2026-06-23)_. Live count badge on the player-hub sidebar's **Matches** item + an "In Progress / All" toggle on `/matches` (defaults to In Progress), mirroring Bybit's P2P "Orders → In Progress". In progress = Pending + Disputed + ManualReview. Reuses the shared-props count pattern + Reverb. Detail below.
 - **M34 P3.1 follow-ups** — deferred lobby-page polish scoped out of M34 (each needs its own data plumbing; the lobby shipped cleanly without them). Slot into a follow-up phase on user demand or when the data lands for another reason.
     - **Country flags per player** — a small flag next to each roster name. Source: FACEIT profile `country` (ISO-3166 two-letter), pulled during `FaceitProfileClient::fetch()` and persisted on a new `linked_accounts.country` column; render via a flag-emoji helper or SVG pack. Cheap, but needs a migration + a backfill of existing linked accounts.
     - **Per-player recent W/L form** (`W L W W L` chips on each slot card) — last 5 FACEIT matches via `/players/{guid}/history?game=cs2&limit=5`. Expensive at scale (10 players × per-page-load = 10 FACEIT Data API calls); needs a per-player cache (~1h TTL) + an off-band refresher job so the lobby page never blocks on FACEIT. Momentum / tilt signal.
@@ -66,19 +67,19 @@ Stakly currently sends almost no user-facing notifications (Fortify email-verifi
 
 **Phase 1 — Notification infrastructure**
 
-- [ ] Queue + driver setup (Postgres queue already exists via Sail; mail via Mailpit in dev, real SMTP later).
-- [ ] Base `Mail` classes with Stakly branding (logo, dark-mode-friendly template, footer with unsubscribe / preferences link).
-- [ ] Test infrastructure for email assertions (`Mail::fake()` patterns).
+- [x] Queue + driver setup (Postgres queue already exists via Sail; mail via Mailpit in dev, real SMTP later).
+- [x] Base `Mail` classes with Stakly branding (logo, dark-mode-friendly template, footer with unsubscribe / preferences link).
+- [x] Test infrastructure for email assertions (`Mail::fake()` patterns).
 
 **Phase 2 — Triggers**
 
-- [ ] Match taken (creator notified when someone takes their listing).
-- [ ] Match settled (both players notified, with payout / loss outcome).
-- [ ] Dispute opened (other player notified).
-- [ ] Cancellation requested (other player notified).
-- [ ] Cancellation accepted / rejected (requester notified).
-- [ ] ManualReview flagged (both players notified — match is in admin queue).
-- [ ] Deposit confirmed (when M9 lands — chain integration writes a real ledger entry).
+- [x] Match taken (creator notified when someone takes their listing).
+- [x] Match settled (both players notified, with payout / loss outcome).
+- [x] Dispute opened (other player notified).
+- [x] Cancellation requested (other player notified).
+- [x] Cancellation accepted / rejected (requester notified).
+- [x] ManualReview flagged (both players notified — match is in admin queue).
+- [x] Deposit confirmed (when M9 lands — chain integration writes a real ledger entry).
 
 **Phase 3 — Preferences UI**
 
@@ -114,14 +115,14 @@ Block specific users from interacting with you. Real safety feature with abuse-v
 
 **Phase 1 — Schema + block list model**
 
-- [ ] `blocks` table: `id`, `blocker_user_id` (restrict-delete), `blocked_user_id` (set-null), `blocked_provider` + `blocked_username` (identity snapshot for unlink-survival), `reason` nullable, `created_at`. UNIQUE(blocker, blocked).
-- [ ] `Block` model with relations + a `blocksUserOrIdentity()` query helper.
+- [x] `blocks` table: `id`, `blocker_user_id` (restrict-delete), `blocked_user_id` (set-null), `blocked_provider` + `blocked_username` (identity snapshot for unlink-survival), `reason` nullable, `created_at`. UNIQUE(blocker, blocked).
+- [x] `Block` model with relations + a `blocksUserOrIdentity()` query helper.
 
 **Phase 2 — Take-listing + chat-send guards**
 
-- [ ] `TakeListingAction` checks: does the listing creator block this taker (by user_id OR by current linked-account username)? Abort with a 403 + neutral message ("This listing is no longer available") — don't leak the block.
-- [ ] `SendMessageAction` checks: is the recipient blocking this sender? Soft error.
-- [ ] Tests for both guards (block-by-id and block-by-username paths).
+- [x] `TakeListingAction` checks: does the listing creator block this taker (by user_id OR by current linked-account username)? Abort with a 403 + neutral message ("This listing is no longer available") — don't leak the block.
+- [x] `SendMessageAction` checks: is the recipient blocking this sender? Soft error.
+- [x] Tests for both guards (block-by-id and block-by-username paths).
 
 **Phase 3 — Marketplace + profile visibility**
 
@@ -293,25 +294,25 @@ Not CMS-managed on purpose. The Filament CMS template (`cms/page.tsx`) is intent
 
 **Phase 1 — Page scaffold + content + interactive calculator**
 
-- [ ] `FeesController::show()` returns `Inertia::render('fees/page', ['feeRate' => config('stakly.platform_fee_rate')])`.
-- [ ] Route `Route::get('/fees', [FeesController::class, 'show'])->name('fees')`.
-- [ ] React `pages/fees/page.tsx` inside `SiteLayout` with hero, calculator, "How fees work" walkthrough, comparison block, FAQ, bottom CTA.
-- [ ] Hero — display headline ("5–10%. That's it." or similar), gradient accent on the percentage, lede paragraph explaining the rate honestly (no buried costs).
-- [ ] Calculator component — controlled `stake` input (USDT, min $5), instant breakdown: stake / platform fee / your take-home. Visual treatment (gradient on take-home, muted on fee).
-- [ ] "When the rate varies" section — what determines 5% vs 10% (TBD: stake size? player rating? listing time-to-fill?). User-supplied content; ship with reasonable placeholders.
-- [ ] Honest comparison strip — Stakly vs typical online betting/gaming platforms. Positioning: "we take less, transparently". No misleading claims — list real numbers we can defend.
-- [ ] FAQ accordion (shadcn `Accordion` component, already in the project) — 5–6 entries: When is the fee charged? Who pays it? What if the match is cancelled? Is the rate ever waived? Do you ever take more? What about deposit/withdrawal fees?
-- [ ] Bottom CTA — single gradient button "Browse listings" or "Create your first listing" (links to `/listings` if guest, `/listings/create` if authed).
-- [ ] Header swap: remove `Support` from `SiteHeader` and `MobileMenu` nav arrays, add `Fees` → `/fees`.
-- [ ] Tests: route resolves, page renders with the correct fee rate prop, calculator math holds (extract `calculatePayout(stake, feeRate)` to a pure helper and unit-test it).
+- [x] `FeesController::show()` returns `Inertia::render('fees/page', ['feeRate' => config('stakly.platform_fee_rate')])`.
+- [x] Route `Route::get('/fees', [FeesController::class, 'show'])->name('fees')`.
+- [x] React `pages/fees/page.tsx` inside `SiteLayout` with hero, calculator, "How fees work" walkthrough, comparison block, FAQ, bottom CTA.
+- [x] Hero — display headline ("5–10%. That's it." or similar), gradient accent on the percentage, lede paragraph explaining the rate honestly (no buried costs).
+- [x] Calculator component — controlled `stake` input (USDT, min $5), instant breakdown: stake / platform fee / your take-home. Visual treatment (gradient on take-home, muted on fee).
+- [x] "When the rate varies" section — what determines 5% vs 10% (TBD: stake size? player rating? listing time-to-fill?). User-supplied content; ship with reasonable placeholders.
+- [x] Honest comparison strip — Stakly vs typical online betting/gaming platforms. Positioning: "we take less, transparently". No misleading claims — list real numbers we can defend.
+- [x] FAQ accordion (shadcn `Accordion` component, already in the project) — 5–6 entries: When is the fee charged? Who pays it? What if the match is cancelled? Is the rate ever waived? Do you ever take more? What about deposit/withdrawal fees?
+- [x] Bottom CTA — single gradient button "Browse listings" or "Create your first listing" (links to `/listings` if guest, `/listings/create` if authed).
+- [x] Header swap: remove `Support` from `SiteHeader` and `MobileMenu` nav arrays, add `Fees` → `/fees`.
+- [x] Tests: route resolves, page renders with the correct fee rate prop, calculator math holds (extract `calculatePayout(stake, feeRate)` to a pure helper and unit-test it).
 
 **Phase 2 — Animations + scroll-triggered polish**
 
-- [ ] Scroll-triggered reveals via `motion` (Framer Motion) — each section fades / slides in as it enters viewport. Stagger within sections (calculator inputs cascade in, FAQ entries cascade).
-- [ ] Calculator output transitions — numbers count up via spring animation when the stake changes. Reuse the `useReducedMotion` hook to collapse to instant updates for users who prefer it.
-- [ ] Hover / focus states polished — the calculator input has the gradient glow on focus, the CTA pulses subtly on hero entry.
-- [ ] Subtle atmospheric background — single soft gradient blob behind the hero (the M26 lesson: subtle blobs work, multi-layered aurora meshes overkill).
-- [ ] Verify Lighthouse perf doesn't regress — animation work shouldn't push the page past the budget. Check before / after.
+- [x] Scroll-triggered reveals via `motion` (Framer Motion) — each section fades / slides in as it enters viewport. Stagger within sections (calculator inputs cascade in, FAQ entries cascade).
+- [x] Calculator output transitions — numbers count up via spring animation when the stake changes. Reuse the `useReducedMotion` hook to collapse to instant updates for users who prefer it.
+- [x] Hover / focus states polished — the calculator input has the gradient glow on focus, the CTA pulses subtly on hero entry.
+- [x] Subtle atmospheric background — single soft gradient blob behind the hero (the M26 lesson: subtle blobs work, multi-layered aurora meshes overkill).
+- [x] Verify Lighthouse perf doesn't regress — animation work shouldn't push the page past the budget. Check before / after.
 
 ### Not in M28
 
@@ -319,6 +320,48 @@ Not CMS-managed on purpose. The Filament CMS template (`cms/page.tsx`) is intent
 - A/B testing infrastructure for headline copy. Premature for a page that isn't even live yet.
 - Affiliate / referral fee tracking. Different scope; if revenue-share programs ship, they own their own page.
 - Localised currency conversion ("how much is this in EUR?"). USDT is the unit on every Stakly surface; introducing currency conversion UI confuses the platform's denomination.
+
+---
+
+## M36 — Active-matches quick access
+
+Surface "what am I doing right now" the way Bybit's P2P "Orders → In Progress" does, so a player never has to hunt for the match they're mid-flight on. Two surfaces: a **live count badge** on the player-hub sidebar's existing **Matches** item, and an **"In Progress / All" toggle** on `/matches` that **defaults to In Progress**. Reuses the existing sidebar, the `/matches` page, the shared-props count pattern (mirrors `unread_notifications_count`), and Reverb — no new route, no new section.
+
+**"In progress" = Pending + Disputed + ManualReview** — any match that has started and isn't finished (money may still be escrowed). Excludes Settled / Cancelled (terminal) and team lobbies that haven't locked into a match yet (`LobbyFilling`). Confirmed with the user 2026-06-22.
+
+### Decisions / things this touches
+
+- **Team-aware participant resolution — via a dedicated scope.** The matches list + active-count need a 5v5 member who isn't the creator/taker to still count as in the match, but the existing `GameMatch::scopeForParticipant` (creator OR taker) is also used by the public profile's settled-match history + stats hero and the username-change blocker. Rather than widen it (and silently change public-facing numbers), M36 adds a sibling `scopeForRosterParticipant` (creator OR taker OR live `LobbyParticipant`, kicked excluded) used **only** by `GameMatchController::index` + the shared count. Mirrors the team-aware `GameMatchPolicy::isParticipant` (M34 P6). Net effect: team members now see their team matches in `/matches` with zero change to profile / username / admin.
+- **`/matches` default view flips to In Progress.** Today it lands on All. Bybit lands on In Progress; we match that. "All" is one toggle away and keeps the existing status-filter chips.
+- **Count is on the hot shared-props path.** Computed once per request alongside `unread_notifications_count`. Kept to one team-aware count query (indexed on `game_matches.status`, `taker_user_id`, `listings.user_id`, `lobby_participants(user_id, kicked_at)`) — no N+1.
+
+### Phases
+
+**Phase 1 — Backend: definition + team-aware participant + shared count + In Progress view** ✅ shipped 2026-06-23
+
+- [x] `MatchStatus::inProgress(): array` → `[Pending, Disputed, ManualReview]` (+ `isTerminal()` if useful). Single source for "active" everywhere.
+- [x] Team-aware participant resolution on `GameMatch` (creator OR taker OR live lobby participant); update `GameMatchController::index` + any other consumer.
+- [x] `active_matches_count` on `auth.user` shared props in `HandleInertiaRequests` (team-aware count; one query).
+- [x] `IndexMatchesRequest` + `GameMatchController::index` support the In Progress group view (default) vs All (existing chips). URL contract: default = In Progress group; `?view=all` reveals the chips.
+- [x] Pest tests: `inProgress()` set; team-aware scope (creator / taker / team member counted, kicked excluded, terminal excluded); shared-count correctness; In Progress view returns only the active group + is team-aware.
+
+**Phase 2 — Frontend: sidebar badge + In Progress / All toggle** ✅ shipped 2026-06-23
+
+- [x] `player-sidebar.tsx`: count badge on the Matches item — expanded = small pill with the number after the label; collapsed rail = a dot on the icon. Reads `active_matches_count`. aria-label carries the count (not colour-only); no layout shift; Stakly pink treatment.
+- [x] `match/index.tsx`: "In Progress / All" segmented toggle, default In Progress. In Progress = active group (no chips); All = existing status chips. (`ui-ux-pro-max` for the toggle + badge treatment.)
+- [x] Empty state for the In Progress view ("Nothing live right now").
+
+**Phase 3 — Real-time live badge via Reverb** ✅ shipped 2026-06-23
+
+- [x] Badge + count refresh live: `NotificationProvider` fires `router.reload({ only: ['auth'] })` (scroll + state preserved by default in Inertia v3) on the match notifications that **cross the in-progress boundary** — `listing_taken`, `team_match_started`, `match_settled`, `dispute_resolved`, `cancellation_accepted` — reusing the existing moderation-reload path (set-membership check, no new channel). Same-set transitions (`dispute_opened` / `match_manual_review` / `cancellation_requested` / `cancellation_rejected`) are excluded — they don't move the count, so a reload would be wasted. The actor's own count refreshes via their action's Inertia response; the broadcast covers the counterparty who didn't just act. 2 Pest guards pin the shared-`auth` dependency (count rides global `auth` from any page + is recomputed per request, not cached). No JS test runner exists, so the event set itself is guarded by TypeScript (`Set<NotificationEventType>`).
+
+### Not in M36
+
+- Counting open team lobbies (recruiting / ready-checking) in the badge — they live on the listing page; revisit if users want a unified "everything I'm in" count.
+- Making the public profile (settled-match history + stats hero), the username-change blocker, or the Filament admin match queries team-aware — those keep the narrower creator-or-taker `forParticipant`. Whether team matches should surface on public profiles is a separate decision.
+- A separate dedicated route / page — we reuse `/matches`; the sidebar item stays single, Bybit-style, with tabs.
+- Desktop push / browser notifications for active-match changes — the bell already covers event signalling.
+- Live-refreshing the `/matches` **list rows** themselves (a just-settled match lingering in the In Progress list until the next navigation). P3 live-refreshes the **badge count** via shared `auth`; the list is a per-page prop, not shared, so refreshing it on broadcast is a separate concern. Revisit if the stale row reads as broken in practice (cheap follow-up: have `match/index` also `router.reload({ only: ['matches'] })` on the same events when mounted).
 
 ---
 

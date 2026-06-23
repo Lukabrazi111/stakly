@@ -48,6 +48,9 @@ export type User = {
     }>;
     notifications_last_seen_at: string | null;
     unread_notifications_count: number;
+    // M36: matches the user is mid-flight on (Pending / Disputed /
+    // ManualReview). Powers the sidebar "Matches" badge + the In Progress tab.
+    active_matches_count: number;
     notification_sound: string;
     notification_sound_map: Record<string, boolean>;
     username_edit: {

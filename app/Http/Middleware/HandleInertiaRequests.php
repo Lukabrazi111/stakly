@@ -2,6 +2,8 @@
 
 namespace App\Http\Middleware;
 
+use App\Enums\MatchStatus;
+use App\Models\GameMatch;
 use App\Notifications\PlayerNotification;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\App;
@@ -82,6 +84,13 @@ class HandleInertiaRequests extends Middleware
                     'notifications_last_seen_at' => $user->notifications_last_seen_at?->toIso8601String(),
                     'unread_notifications_count' => $user->playerNotifications()
                         ->where('created_at', '>', $user->notifications_last_seen_at ?? '1970-01-01')
+                        ->count(),
+                    // M36: matches the user is mid-flight on (Pending / Disputed
+                    // / ManualReview), team-aware. Powers the sidebar "Matches"
+                    // badge. One query on the hot shared-props path.
+                    'active_matches_count' => GameMatch::query()
+                        ->forRosterParticipant($user->id)
+                        ->whereIn('status', MatchStatus::inProgressValues())
                         ->count(),
                     'notification_sound' => $user->notification_sound ?? PlayerNotification::DEFAULT_SOUND_CHOICE,
                     'notification_sound_map' => collect(PlayerNotification::EVENT_TYPES)

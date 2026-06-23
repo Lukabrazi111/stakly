@@ -188,4 +188,22 @@ class GameMatch extends Model
                 ->orWhereHas('listing', fn (Builder $inner) => $inner->where('user_id', $userId));
         });
     }
+
+    /**
+     * Team-aware participant set: creator OR taker OR a live (non-kicked) lobby
+     * roster member — so a team-play member who isn't the creator/taker still
+     * counts as being in the match. Mirrors GameMatchPolicy::isParticipant
+     * (M34 P6); powers the M36 matches list + active-count badge. 1v1 listings
+     * have no lobby_participants, so the roster branch is a no-op for chess.
+     * Deliberately separate from forParticipant so the profile / username /
+     * admin surfaces keep the narrower creator-or-taker semantics.
+     */
+    public function scopeForRosterParticipant(Builder $query, int $userId): Builder
+    {
+        return $query->where(function (Builder $q) use ($userId) {
+            $q->where('taker_user_id', $userId)
+                ->orWhereHas('listing', fn (Builder $inner) => $inner->where('user_id', $userId))
+                ->orWhereHas('listing.lobbyParticipants', fn (Builder $inner) => $inner->where('user_id', $userId)->whereNull('kicked_at'));
+        });
+    }
 }

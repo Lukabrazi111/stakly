@@ -37,4 +37,28 @@ enum MatchStatus: string
     case Settled = 'settled';
     case ManualReview = 'manual_review';
     case Cancelled = 'cancelled';
+
+    /**
+     * Non-terminal states where a participant is mid-flight: the match has
+     * started but hasn't reached Settled / Cancelled. Drives the M36
+     * "In Progress" matches view + the sidebar active-count badge.
+     * LobbyFilling is excluded — the lobby owns that phase, no match is being
+     * played yet.
+     *
+     * @return array<int, self>
+     */
+    public static function inProgress(): array
+    {
+        return [self::Pending, self::Disputed, self::ManualReview];
+    }
+
+    /**
+     * The string values of {@see self::inProgress()}, for `whereIn` queries.
+     *
+     * @return array<int, string>
+     */
+    public static function inProgressValues(): array
+    {
+        return array_map(fn (self $status): string => $status->value, self::inProgress());
+    }
 }
