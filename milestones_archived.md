@@ -1258,6 +1258,48 @@ Swept every outbound HTTP integration to confirm each has: client-side self-thro
 - Throttling internal Stakly→Stakly APIs (covered by `throttle:` on auth routes); inbound webhook rate-limiting (per-receiver `throttle:60,1`); token-bucket vs leaky-bucket tuning (Laravel fixed-window is fine for our load).
 
 ---
+
+## M36 — Active-matches quick access ✅ shipped 2026-06-23
+
+Surfaced "what am I doing right now" Bybit-style: a **live count badge** on the player-hub sidebar's **Matches** item + an **"In Progress / All" toggle** on `/matches` that defaults to In Progress. "In progress" = `Pending + Disputed + ManualReview` (started, not finished, money may be escrowed); excludes terminals + unlocked team lobbies (`LobbyFilling`). Reused the existing sidebar, `/matches` page, the shared-props count pattern (mirrors `unread_notifications_count`), and Reverb — no new route or section.
+
+### Phases
+
+- **P1 — Backend.** `MatchStatus::inProgress()` / `inProgressValues()` as the single source of "active". New `GameMatch::scopeForRosterParticipant` (creator OR taker OR live `LobbyParticipant`) — a sibling to `scopeForParticipant`, used only by the matches index + shared count so public-profile / username-blocker / admin numbers stay on the narrower creator-or-taker scope. `active_matches_count` on `auth.user` shared props. `IndexMatchesRequest` + `GameMatchController::index` gained the In Progress (default) vs All (`?view=all` → status chips) view contract.
+- **P2 — Frontend.** Sidebar count badge (expanded pill / collapsed-rail dot; aria-label carries the count). `match/index.tsx` underline-tab "In Progress / All" toggle matching `MineTabs`. "Nothing live right now" empty state.
+- **P3 — Real-time.** `NotificationProvider` fires `router.reload({ only: ['auth'] })` (scroll/state preserved) on the match notifications that cross the in-progress boundary — `listing_taken`, `team_match_started`, `match_settled`, `dispute_resolved`, `cancellation_accepted` — reusing the existing moderation-reload path (no new channel). Same-set transitions excluded (count unchanged). Actor refreshes via their own Inertia response; the broadcast covers the counterparty.
+
+### Decisions
+
+- **Sibling scope, not a widened one** — `scopeForRosterParticipant` exists precisely so team-awareness doesn't leak into public-facing profile / username / admin counts.
+- **Count rides global shared `auth`** so the live badge reload works from any page; recomputed per request (not cached), pinned by Pest guards.
+
+### Not in M36
+
+- Counting unlocked team lobbies in the badge; making profile / username-blocker / admin queries team-aware; a dedicated route; desktop push; live-refreshing the `/matches` list *rows* (badge refreshes via shared `auth`; the list is a per-page prop — separate concern, cheap follow-up noted).
+
+---
+
+## M37 — One active match per game ✅ shipped 2026-06-23
+
+Closed a concurrency hole: chess `TakeListingAction` had no "already in a match" guard, so a player could take unlimited simultaneous chess matches (CS2 already blocked this via the lobby). **Policy — one active match _per game_:** a chess match + a CS2 match at once is fine, two of the same game is not. Two concurrent *same-game* matches are where API settlement can mis-attribute a result (auto-fetch picks the game closest to each match's start time — two Alice-vs-Bob games in overlapping windows can settle the wrong match); different games never overlap. Full suite 1554 green (+10).
+
+### Phases
+
+- **P1 — The lock.** `User::hasInFlightMatchForGame(Game)` (team-aware, in-progress set, per game). `TakeListingAction` guards the taker (`already_in_match`) + listing owner (`owner_busy`) inside the locked tx, with stable-order (ascending-id) participant locks to prevent deadlock; folded the existing `ownerIsActive` check onto the same locked row. New sentinels → toasts in `GameMatchController::take`. CS2 unchanged (`activeLobbyParticipation` already enforced one-CS2-at-a-time + allowed a chess match alongside). +5 Pest.
+- **P2 — The busy sign.** `Listing::scopeWhereCreatorNotBusyForGame` (correlated `whereNotExists` anti-join) composed into `scopeOnPublicMarketplace` — the board, homepage, and visitor profile drop a creator's same-game listings while they're mid-match, reappearing when it resolves; CS2 offers stay up during a chess match; the owner still sees their own listings on their own profile (that path uses `scopeOpen`). 1v1-only correlation — team listings can't dangle. +3 Pest.
+- **P3 — Frontend gating.** Shared `auth.user.in_flight_games` (distinct games the viewer is mid-match in), derived from a single in-flight-matches fetch in `HandleInertiaRequests` that now also feeds `active_matches_count` (one query, not two). Detail-page Take CTA (`show.tsx`) → disabled "Already in a match" + "View your matches →"; marketplace card (`take-button.tsx`) → disabled "In a match". Server stays authoritative. +2 Pest.
+
+### Decisions
+
+- **The guard is the fix; hiding is polish.** The authoritative, race-safe guard lives in the locked take transaction; board-hiding never replaces it (direct URLs, stale tabs, double-take races still hit the guard).
+- **Per-game, not global** — `hasInFlightMatchForGame` is scoped per game; the username-rename blocker stays global (any match blocks a rename).
+
+### Not in M37
+
+- Raising the per-game cap above 1 (would first need settlement attribution hardened — store + validate opponent identity per game — then a config cap). Pausing a hidden listing's expiry timer while its owner is busy (a listing can still expire + refund mid-match; acceptable for now).
+
+---
 ---
 
 ## Parked milestones

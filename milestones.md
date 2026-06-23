@@ -2,7 +2,7 @@
 
 Frontend-first build. UI against real DB infrastructure + seeded fake data; backend logic (escrow, payouts, on-chain integration) lands per page once the UI is validated. Milestones are work-chunk labels, not version commitments — decisions inside any of them are revisitable.
 
-> **Shipped milestones live in `milestones_archived.md`** (M1, M2, M2.5, M3, M3.5, M4, M5, M6, M7, M8 all phases, M10, M11, M12 all phases, M14 all phases, M16 all phases, M17, M18, M19, M22, M23, M24, M25, M26 all phases, M27 all phases, M29 all phases, M30 all phases, M31 all phases, M32 all phases, M34 all phases, M35 all phases). **Parked milestones** (work that isn't being picked up right now) also live in the archive — currently M13. This file is for active + upcoming work + the cross-cutting architectural decisions that earlier milestones established.
+> **Shipped milestones live in `milestones_archived.md`** (M1, M2, M2.5, M3, M3.5, M4, M5, M6, M7, M8 all phases, M10, M11, M12 all phases, M14 all phases, M16 all phases, M17, M18, M19, M22, M23, M24, M25, M26 all phases, M27 all phases, M29 all phases, M30 all phases, M31 all phases, M32 all phases, M34 all phases, M35 all phases, M36 all phases, M37 all phases). **Parked milestones** (work that isn't being picked up right now) also live in the archive — currently M13. This file is for active + upcoming work + the cross-cutting architectural decisions that earlier milestones established.
 
 ## Phases (map)
 
@@ -21,11 +21,12 @@ Frontend-first build. UI against real DB infrastructure + seeded fake data; back
 - **M34 Phase 5 + chat-leak follow-up** — CS2 create-form team-play extension, 2v2 Wingman enable, private-listing post-create UX, and the chat-content leak fix (2026-06-13). **Chat-leak:** `ListingController::showTeamPlay` now gates the `messages.data` payload on viewer being a live participant (reuses `$userIds` already computed for trust/stats — no extra query). Strangers, guests, and kicked users get `collect()`. +5 Pest cases pinning owner / live-non-owner / authed-stranger / unauthed-visitor / kicked-former-participant. **P5 Slice 1:** create-form props ship `allowed_team_sizes` per game (chess `[1]` / CS2 `[2, 5]` / Dota2 `[1]`) sourced from `Game::allowedTeamSizes()`. **P5 Slice 2:** `pages/listings/create.tsx` gained `team_size` / `creator_side` / `is_public` to `useForm`; new Format / Your side / Visibility sections (Stakly-skinned `ToggleGroup` segmented controls, Format hides when `allowed_team_sizes.length === 1`); submit-button label adapts (`"Open lobby"` for team-play, `"Create listing"` for 1v1). **P5 Slice 3:** `Game::Cs2->allowedTeamSizes()` flipped `[5]` → `[2, 5]` — Wingman is creatable through the UI; seeder grew to 29 main users + a 2v2 Wingman lobby; +2 Pest tests for the 2v2 e2e via real actions through `SettleTeamMatchAction` with conservation invariant. **P5 Slice 4:** team-play creators now redirect to the lobby (`/listings/{id}`) instead of `/listings/mine` since they're auto-soft-joined into slot 0; new owner-only `LobbyInviteBanner` (`border-glow` + Copy button via `useClipboard`) surfaces the invite URL above the 3-col grid when the listing is private and state is recruiting / ready_checking. **+9 Pest tests overall** (1468 → 1477). All CI gates clean (Pint / Prettier / ESLint / TypeScript). **M34 P0–P5 (+ P3.1 + P3.2) shipped end-to-end.**
 - **M34 Phase 6** — Team-aware dispute + cancellation backend + UI + admin (all 6 slices, 2026-06-14). Slice A team-aware `GameMatchPolicy::isParticipant` + `MatchChannel::join` reading live `LobbyParticipant` roster, plus same-team-accept block on `canRespondToCancellation`. Slice B `AcceptCancellationAction` refund fan-out across the full team roster (per-user idempotency ref `cancel-refund:{match}:{user}`). Slice C new `App\Services\MatchParticipants` primitive + notification fan-out across `OpenDisputeAction` / `RequestCancellationAction` / `AcceptCancellationAction` (`RejectCancellationAction` unchanged per design). Slice D `GameMatchResource` ships team rosters + `winning_team` (gated via `mergeWhen`, 1v1 shape preserved verbatim) + `listing.team_size`. Slice E team-aware `match/show.tsx` branch (`TeamMatchView` + `TeamRosters` + `TeamSettlementSummary`), team-aware cancellation banners (same-team viewers see passive "your team-mate requested" variant), `RequestCancellationButton` / `OpenDisputeButton` `teamSize` prop for copy swap, lobby `CoordinationPanel` gained "View match page →" CTA post-lock. Slice F `SettleDrawMatchAction` + `AdminSettleToWinnerAction` + `AdminSettleDrawAction` made team-aware (Filament UI shows "Settle to Team A / Team B / Refund all" on team matches; admin picks a representative winner user, action derives the full winning roster from `LobbyParticipant`), plus end-to-end dispute-resolution test asserting ledger-conservation invariant. **+42 Pest tests** (1477 → 1519). CS2 5v5 + 2v2 Wingman matches now fully support the full lifecycle: lock → Pending → cancel/dispute → admin settle → payouts fan out, with all 10 (or 4) refunds / payouts / notifications correct.
 - **i18n hotfix — Livewire 3 hashed-prefix bypass** (2026-06-14). `RedirectUnprefixedLocale::shouldSkip()` exempt list had `'livewire'` (exact first-segment match) which didn't catch Livewire 3's cache-busted asset prefix `livewire-{hash}/livewire.js`. Result: Filament admin login page tried to load Livewire JS, got 301'd to `/en/livewire-{hash}/...` → 404 → admin login form non-interactive (password show/hide broken, form submit no-ops). Fix: added `str_starts_with($firstSegment, 'livewire-')` prefix check. +2 Pest tests guarding the bypass (real hash returns 200; bogus hash returns non-301) so a future Livewire version bump doesn't silently re-break admin login. Full suite **1519 → 1521**.
+- **M36** — Active-matches quick access (all 3 phases, 2026-06-23). Sidebar **Matches** live count badge + "In Progress / All" toggle on `/matches` (Bybit-style, defaults to In Progress), team-aware `scopeForRosterParticipant` + `active_matches_count` shared prop, live badge refresh off the existing notification broadcasts. Detail in archive.
+- **M37** — One active match per game (all 3 phases, 2026-06-23). Closed the chess-concurrency hole: per-game race-safe guard on `TakeListingAction` (taker + owner), busy-creator listings hidden from board/home/visitor-profile, Take button greyed when the viewer's already in that game. Policy: one chess + one CS2 at once is fine, two of the same game isn't. Full suite 1554. Detail in archive.
 
 **Active / upcoming:**
 
-- **M36 — Active-matches quick access** _(shipped 2026-06-23)_. Live count badge on the player-hub sidebar's **Matches** item + an "In Progress / All" toggle on `/matches` (defaults to In Progress), mirroring Bybit's P2P "Orders → In Progress". In progress = Pending + Disputed + ManualReview. Reuses the shared-props count pattern + Reverb. Detail below.
-- **M37 — One active match per game** _(shipped 2026-06-23)_. Fixes a concurrency hole: chess `TakeListingAction` had no "already in a match" guard, so a player could take unlimited simultaneous chess matches (CS2 already blocks this via the lobby). Policy (confirmed 2026-06-23): **one active match _per game_** — a chess match + a CS2 match at once is fine, two of the same game is not (two same-game matches are where API settlement can mis-attribute a result). Per-game guard on taker + owner, then hide a busy player's same-game listings. Detail below.
+- **M38 — Redis for queue, cache & sessions (launch-readiness)** _(next)_. Move the hot infra (queue, cache, sessions) off the Postgres `database` driver onto Redis (already in the stack, idle today) — faster settlement pipeline isolated from the money ledger, atomic rate-limiting, + Horizon-grade queue observability before launch. Reverb scaling stays out (single-node). Detail below.
 - **M34 P3.1 follow-ups** — deferred lobby-page polish scoped out of M34 (each needs its own data plumbing; the lobby shipped cleanly without them). Slot into a follow-up phase on user demand or when the data lands for another reason.
     - **Country flags per player** — a small flag next to each roster name. Source: FACEIT profile `country` (ISO-3166 two-letter), pulled during `FaceitProfileClient::fetch()` and persisted on a new `linked_accounts.country` column; render via a flag-emoji helper or SVG pack. Cheap, but needs a migration + a backfill of existing linked accounts.
     - **Per-player recent W/L form** (`W L W W L` chips on each slot card) — last 5 FACEIT matches via `/players/{guid}/history?game=cs2&limit=5`. Expensive at scale (10 players × per-page-load = 10 FACEIT Data API calls); needs a per-player cache (~1h TTL) + an off-band refresher job so the lobby page never blocks on FACEIT. Momentum / tilt signal.
@@ -324,81 +325,53 @@ Not CMS-managed on purpose. The Filament CMS template (`cms/page.tsx`) is intent
 
 ---
 
-## M36 — Active-matches quick access
+## M38 — Redis for queue, cache & sessions (launch-readiness)
 
-Surface "what am I doing right now" the way Bybit's P2P "Orders → In Progress" does, so a player never has to hunt for the match they're mid-flight on. Two surfaces: a **live count badge** on the player-hub sidebar's existing **Matches** item, and an **"In Progress / All" toggle** on `/matches` that **defaults to In Progress**. Reuses the existing sidebar, the `/matches` page, the shared-props count pattern (mirrors `unread_notifications_count`), and Reverb — no new route, no new section.
+Redis is provisioned in the stack (`compose.yaml`, `REDIS_HOST=redis`, `phpredis` in Sail) but **unused** — `QUEUE_CONNECTION` / `CACHE_STORE` / `SESSION_DRIVER` all point at the Postgres `database` driver. This milestone flips the hot, latency- and correctness-sensitive infra onto Redis so the settlement pipeline is fast and isolated from the money ledger, the rate-limiter/breaker run on atomic ops, and we get queue observability before launch.
 
-**"In progress" = Pending + Disputed + ManualReview** — any match that has started and isn't finished (money may still be escrowed). Excludes Settled / Cancelled (terminal) and team lobbies that haven't locked into a match yet (`LobbyFilling`). Confirmed with the user 2026-06-22.
+**Why each one moves:**
 
-### Decisions / things this touches
-
-- **Team-aware participant resolution — via a dedicated scope.** The matches list + active-count need a 5v5 member who isn't the creator/taker to still count as in the match, but the existing `GameMatch::scopeForParticipant` (creator OR taker) is also used by the public profile's settled-match history + stats hero and the username-change blocker. Rather than widen it (and silently change public-facing numbers), M36 adds a sibling `scopeForRosterParticipant` (creator OR taker OR live `LobbyParticipant`, kicked excluded) used **only** by `GameMatchController::index` + the shared count. Mirrors the team-aware `GameMatchPolicy::isParticipant` (M34 P6). Net effect: team members now see their team matches in `/matches` with zero change to profile / username / admin.
-- **`/matches` default view flips to In Progress.** Today it lands on All. Bybit lands on In Progress; we match that. "All" is one toggle away and keeps the existing status-filter chips.
-- **Count is on the hot shared-props path.** Computed once per request alongside `unread_notifications_count`. Kept to one team-aware count query (indexed on `game_matches.status`, `taker_user_id`, `listings.user_id`, `lobby_participants(user_id, kicked_at)`) — no N+1.
-
-### Phases
-
-**Phase 1 — Backend: definition + team-aware participant + shared count + In Progress view** ✅ shipped 2026-06-23
-
-- [x] `MatchStatus::inProgress(): array` → `[Pending, Disputed, ManualReview]` (+ `isTerminal()` if useful). Single source for "active" everywhere.
-- [x] Team-aware participant resolution on `GameMatch` (creator OR taker OR live lobby participant); update `GameMatchController::index` + any other consumer.
-- [x] `active_matches_count` on `auth.user` shared props in `HandleInertiaRequests` (team-aware count; one query).
-- [x] `IndexMatchesRequest` + `GameMatchController::index` support the In Progress group view (default) vs All (existing chips). URL contract: default = In Progress group; `?view=all` reveals the chips.
-- [x] Pest tests: `inProgress()` set; team-aware scope (creator / taker / team member counted, kicked excluded, terminal excluded); shared-count correctness; In Progress view returns only the active group + is team-aware.
-
-**Phase 2 — Frontend: sidebar badge + In Progress / All toggle** ✅ shipped 2026-06-23
-
-- [x] `player-sidebar.tsx`: count badge on the Matches item — expanded = small pill with the number after the label; collapsed rail = a dot on the icon. Reads `active_matches_count`. aria-label carries the count (not colour-only); no layout shift; Stakly pink treatment.
-- [x] `match/index.tsx`: "In Progress / All" segmented toggle, default In Progress. In Progress = active group (no chips); All = existing status chips. (`ui-ux-pro-max` for the toggle + badge treatment.)
-- [x] Empty state for the In Progress view ("Nothing live right now").
-
-**Phase 3 — Real-time live badge via Reverb** ✅ shipped 2026-06-23
-
-- [x] Badge + count refresh live: `NotificationProvider` fires `router.reload({ only: ['auth'] })` (scroll + state preserved by default in Inertia v3) on the match notifications that **cross the in-progress boundary** — `listing_taken`, `team_match_started`, `match_settled`, `dispute_resolved`, `cancellation_accepted` — reusing the existing moderation-reload path (set-membership check, no new channel). Same-set transitions (`dispute_opened` / `match_manual_review` / `cancellation_requested` / `cancellation_rejected`) are excluded — they don't move the count, so a reload would be wasted. The actor's own count refreshes via their action's Inertia response; the broadcast covers the counterparty who didn't just act. 2 Pest guards pin the shared-`auth` dependency (count rides global `auth` from any page + is recomputed per request, not cached). No JS test runner exists, so the event set itself is guarded by TypeScript (`Set<NotificationEventType>`).
-
-### Not in M36
-
-- Counting open team lobbies (recruiting / ready-checking) in the badge — they live on the listing page; revisit if users want a unified "everything I'm in" count.
-- Making the public profile (settled-match history + stats hero), the username-change blocker, or the Filament admin match queries team-aware — those keep the narrower creator-or-taker `forParticipant`. Whether team matches should surface on public profiles is a separate decision.
-- A separate dedicated route / page — we reuse `/matches`; the sidebar item stays single, Bybit-style, with tabs.
-- Desktop push / browser notifications for active-match changes — the bell already covers event signalling.
-- Live-refreshing the `/matches` **list rows** themselves (a just-settled match lingering in the In Progress list until the next navigation). P3 live-refreshes the **badge count** via shared `auth`; the list is a per-page prop, not shared, so refreshing it on broadcast is a separate concern. Revisit if the stale row reads as broken in practice (cheap follow-up: have `match/index` also `router.reload({ only: ['matches'] })` on the same events when mounted).
-
----
-
-## M37 — One active match per game
-
-A player could take an unlimited number of simultaneous **chess** matches — `TakeListingAction` never checked whether the taker (or the listing's owner) was already mid-match. CS2 team play already blocks this (`User::activeLobbyParticipation()` in `JoinLobbyAction` / `CreateTeamPlayListingAction`), but that guard is team-only and doesn't see chess. This brings chess up to the same bar.
-
-**Policy — one active match _per game_** (confirmed with the user 2026-06-23). A player can be in **one chess match and one CS2 match at the same time** (different providers, separate settlement pipelines — they can't be confused for each other), but never **two of the same game**. This is the cheapest rule that kills the real risk: two concurrent *same-game* matches are where API settlement can mis-attribute a result — the auto-fetch picks the game closest to each match's start time, so two Alice-vs-Bob games in overlapping windows can settle the wrong match. Different-game concurrency has no such overlap.
+- **Queue** — runs the settlement auto-fetch jobs (12–15 retries + backoff) + all notifications. `database` queue *polls* Postgres (pickup latency) and contends with the ledger for connections/locks; Redis uses blocking pops (instant pickup) and isolates job churn from money writes. Also unlocks **Horizon**.
+- **Cache** — backs `ProviderCircuitBreaker` (read on *every* outbound provider call — `app/Services/Provider/ProviderCircuitBreaker.php`) + the `RateLimiter::for` limiters + the catalog / CMS read caches. The limiter gets atomic increment for free on Redis (Laravel's `Limit`).
+- **Sessions** — a Postgres write per authenticated request today; Redis offloads it.
 
 ### Decisions / things this touches
 
-- **"In-flight for a game" = `User::hasInFlightMatchForGame(Game)`** — team-aware (creator / taker / live lobby roster), counts `Pending / Disputed / ManualReview` for listings of that game. Mirrors the existing `usernameChangeBlockers()` in-flight definition but scoped per game (the rename blocker stays global — any match blocks a rename).
-- **CS2 needs no change.** `activeLobbyParticipation()` already enforces one-CS2-at-a-time and already allows a chess match alongside (it's team-only). The "one per game" policy falls out: chess take blocked only by an in-flight chess match; CS2 join blocked only by a CS2 lobby/match; cross-game allowed.
-- **The guard is the fix; hiding is polish.** The authoritative, race-safe guard lives inside `TakeListingAction`'s locked transaction (mirrors the existing `owner_inactive` gate). Hiding busy players' listings from the board is a separate UX layer on top — it never replaces the guard (direct URLs, stale tabs, and the split-second double-take race still hit the guard).
-- **Deadlock-safety.** The take now locks the owner + taker user rows up front in ascending-id order, so two concurrent takes touching the same pair in opposite roles (A takes B's listing while B takes A's) serialize instead of deadlocking.
+- **Separate Redis logical DBs per concern (queue / cache / sessions).** A naive single-DB flip means `php artisan cache:clear` (or a cache `FLUSHDB`) could wipe queued settlement jobs or log everyone out. Laravel's default `cache` connection uses `REDIS_CACHE_DB`; queue uses `default`. Pin queue, cache, session to distinct DB indexes (or instances).
+- **Eviction policy — the launch gotcha.** The cache DB can be `allkeys-lru` (evictable). The **queue + session DBs must be `noeviction`** — evicting a queued settlement job under memory pressure = lost money work; evicting sessions = mass logout. Set per-DB, or use separate instances.
+- **Circuit-breaker fail-mode when Redis is unreachable — DECIDED: fail-open + log/alert** (2026-06-23). On a Redis blip the breaker reads as not-tripped and provider calls go through, with a logged alert — a transient hiccup shouldn't freeze settlement, and the providers' own 429s + our retries still protect us. Wrap breaker / limiter / catalog reads so a Redis exception degrades gracefully (never 500s a settlement job or the homepage).
+- **Breaker atomicity (optional hardening).** The breaker does `Cache::get` array → append → `Cache::put` — read-modify-write that races on *any* backend (a lost increment just trips the breaker slightly later; not money-loss). Redis *enables* a clean fix (atomic list/sorted-set or `Cache::lock`); do it here or note as follow-up. The rate limiter is already atomic on Redis.
+- **Keep CI hermetic.** Confirm `phpunit.xml` pins cache=array, queue=sync/database, session=array so the suite never needs a live Redis and `RefreshDatabase` stays on Postgres. The `.env` flip must not leak into tests.
 
 ### Phases
 
-**Phase 1 — The lock (per-game concurrency guard)** ✅ shipped 2026-06-23
+> **P1 + P2 ship as one slice.** The driver flip and the graceful-degradation wrapping go together — flipping to Redis without the resilience net would briefly make the homepage + settlement depend on Redis with no fallback. P3 (Horizon) + P4 (prod wiring) follow.
 
-- [x] `User::hasInFlightMatchForGame(Game)` — team-aware, in-progress set, per game.
-- [x] `TakeListingAction`: per-game guard on taker (`already_in_match`) + listing owner (`owner_busy`), inside the locked tx, with stable-order (ascending-id) participant locks to prevent deadlock; folded the existing `ownerIsActive` check onto the same locked row. New sentinels mapped to toasts in `GameMatchController::take` (+ 2 `lang/en.json` strings). CS2 unchanged (already correct).
-- [x] Pest (+5 in `GameMatchTakeTest`): taker-busy blocked (no double-charge, no 2nd match); owner-busy blocked; in a CS2 match → can still take chess; owner in a CS2 match → listing still takeable; terminal (settled) match doesn't block. Full suite 1549 green.
+**Phase 1 — Driver flip + connection hygiene**
 
-**Phase 2 — The busy sign (hide same-game listings)** ✅ shipped 2026-06-23
+- [ ] `QUEUE_CONNECTION` / `CACHE_STORE` / `SESSION_DRIVER` → `redis`; distinct logical DBs per concern; `CACHE_PREFIX` sanity.
+- [ ] Confirm test env stays array/sync (CI needs no live Redis); full suite green post-flip.
+- [ ] Dev smoke test: dispatch a job, hit a cached page, log in/out — all through Redis.
 
-- [x] `Listing::scopeWhereCreatorNotBusyForGame` (correlated `whereNotExists` anti-join) composed into `scopeOnPublicMarketplace` — the board, homepage, and visitor profile all drop a creator's same-game listings while they're mid-match; they reappear when it resolves. CS2 offers stay up during a chess match. The owner still sees their own listings on their own profile (that path uses `scopeOpen`). 1v1-only correlation (creator/taker) — team listings can't dangle. +3 Pest (`MarketplaceBusyHidingTest`). Perf: anti-join over the small in-progress set; if the board ever degrades, swap to a denormalized per-user-per-game flag (noted, not needed yet).
+**Phase 2 — Settlement-path resilience**
 
-**Phase 3 — Frontend gating** ✅ shipped 2026-06-23
+- [ ] Implement breaker fail-open on Redis-down (decided above) + graceful-degrade wrapping on breaker / limiter / catalog reads, so a Redis exception never 500s a settlement job or the homepage.
+- [ ] (Optional) make the breaker's window-counting atomic.
+- [ ] Tests for the degraded path (Redis throws → no 500, sane breaker behavior).
 
-- [x] Shared `auth.user.in_flight_games` (distinct games the viewer is mid-match in) — derived from a single in-flight-matches fetch in `HandleInertiaRequests` that now also feeds `active_matches_count` (one query, not two). The listing-detail Take CTA (`show.tsx`) shows a disabled "Already in a match" + "View your matches →" when the viewer is busy in that game; the marketplace card (`take-button.tsx`) shows a disabled "In a match". Server stays authoritative. +2 Pest (`in_flight_games` correctness) + 3 `lang/en.json` strings; tsc / Prettier clean.
+**Phase 3 — Horizon (queue observability)** — confirmed in (2026-06-23)
 
-### Not in M37
+- [ ] `laravel/horizon`; admin-gated dashboard (`/admin`-gated, same admin role as Filament); prod worker/supervisor config. Surfaces retrying/failed settlement + notification jobs, throughput, wait times — eyes on the money pipeline before launch.
 
-- Raising the per-game cap above 1 (allowing N concurrent same-game matches) — would first require hardening settlement attribution (store + validate the opponent identity per game so back-to-back games can't mis-settle), then a config cap. Revisit only with real demand.
-- Pausing a hidden listing's expiry timer while its owner is busy — a listing can still expire (and refund) during a long match. Acceptable for now; revisit if it bites.
+**Phase 4 — Production wiring**
+
+- [ ] Managed Redis on the deploy target (Laravel Cloud provides one) + `ext-redis` (or `predis`); per-env auth/TLS; per-DB eviction policy (cache evictable, queue + session `noeviction`).
+
+### Not in M38
+
+- **Reverb horizontal scaling via Redis pub/sub** — single-node today; the trigger is running >1 Reverb process (`REVERB_SCALING_ENABLED` + a Redis connection). Revisit then.
+- Moving ledger / business data off Postgres — never; Postgres stays the source of truth.
+- Cache tags — no current usage; Redis supports them if a need arises.
 
 ---
 
