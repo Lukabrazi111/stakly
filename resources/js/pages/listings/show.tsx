@@ -34,7 +34,7 @@ import {
     index as listingsIndex,
     take as takeRoute,
 } from '@/routes/listings';
-import { show as matchShow } from '@/routes/matches';
+import { index as matchesIndex, show as matchShow } from '@/routes/matches';
 import { show as userShow } from '@/routes/users';
 import { deposit as walletDeposit } from '@/routes/wallet';
 import type { ListingPlatform, ListingShowProps, ListingStatus } from '@/types';
@@ -185,6 +185,12 @@ function ChessBranch({ listing, match }: ChessBranchProps) {
     // now, instead of clicking Take and getting a redirect with a toast.
     // Server remains the authoritative enforcement.
     const isOwnerInactive = isOpen && !listing.creator.is_active_mode;
+    // M37 — the viewer is already in an in-flight match for this listing's
+    // game, so the server would reject a take (one active match per game).
+    // Surface it up front; `GameMatchController::take` stays authoritative.
+    const isBusyInGame = Boolean(
+        auth.user?.in_flight_games?.includes(listing.game),
+    );
 
     const [takeOpen, setTakeOpen] = useState(false);
     const [takeProcessing, setTakeProcessing] = useState(false);
@@ -545,6 +551,29 @@ function ChessBranch({ listing, match }: ChessBranchProps) {
                                     {isOpen &&
                                         !isOwnerInactive &&
                                         auth.user &&
+                                        isBusyInGame && (
+                                            <>
+                                                <Button
+                                                    variant="gradient"
+                                                    size="pill"
+                                                    disabled
+                                                    className="w-full"
+                                                >
+                                                    {t('Already in a match')}
+                                                </Button>
+                                                <Link
+                                                    href={matchesIndex().url}
+                                                    className="text-center text-xs text-muted-foreground transition-colors hover:text-foreground"
+                                                >
+                                                    {t('View your matches →')}
+                                                </Link>
+                                            </>
+                                        )}
+
+                                    {isOpen &&
+                                        !isOwnerInactive &&
+                                        auth.user &&
+                                        !isBusyInGame &&
                                         !hasMatchingPlatform && (
                                             // M23 Phase 2 — single clickable
                                             // outline pill, matches the
@@ -581,6 +610,7 @@ function ChessBranch({ listing, match }: ChessBranchProps) {
                                     {isOpen &&
                                         !isOwnerInactive &&
                                         auth.user &&
+                                        !isBusyInGame &&
                                         hasMatchingPlatform &&
                                         hasEnoughBalance && (
                                             <Dialog
@@ -646,6 +676,7 @@ function ChessBranch({ listing, match }: ChessBranchProps) {
                                     {isOpen &&
                                         !isOwnerInactive &&
                                         auth.user &&
+                                        !isBusyInGame &&
                                         hasMatchingPlatform &&
                                         !hasEnoughBalance && (
                                             <>

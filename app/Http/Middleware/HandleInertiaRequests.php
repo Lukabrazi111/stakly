@@ -2,6 +2,7 @@
 
 namespace App\Http\Middleware;
 
+use App\Enums\Game;
 use App\Enums\MatchStatus;
 use App\Models\GameMatch;
 use App\Notifications\PlayerNotification;
@@ -53,6 +54,19 @@ class HandleInertiaRequests extends Middleware
             $user->load('latestBanLog');
         }
 
+        // M36/M37 — the user's in-flight matches (Pending / Disputed /
+        // ManualReview), team-aware, fetched once. The count powers the sidebar
+        // "Matches" badge; the distinct games gate the Take button (M37, one
+        // active match per game). At most a couple rows under the per-game cap,
+        // so the eager-load is cheap.
+        $inFlightMatches = $user !== null
+            ? GameMatch::query()
+                ->forRosterParticipant($user->id)
+                ->whereIn('status', MatchStatus::inProgressValues())
+                ->with('listing:id,game')
+                ->get(['id', 'listing_id'])
+            : collect();
+
         return [
             ...parent::share($request),
             'name' => config('app.name'),
@@ -87,11 +101,17 @@ class HandleInertiaRequests extends Middleware
                         ->count(),
                     // M36: matches the user is mid-flight on (Pending / Disputed
                     // / ManualReview), team-aware. Powers the sidebar "Matches"
-                    // badge. One query on the hot shared-props path.
-                    'active_matches_count' => GameMatch::query()
-                        ->forRosterParticipant($user->id)
-                        ->whereIn('status', MatchStatus::inProgressValues())
-                        ->count(),
+                    // badge. Derived from the single `$inFlightMatches` fetch.
+                    'active_matches_count' => $inFlightMatches->count(),
+                    // M37: the distinct games the user is currently mid-match in
+                    // — gates the Take button (one active match per game).
+                    'in_flight_games' => $inFlightMatches
+                        ->pluck('listing.game')
+                        ->filter()
+                        ->map(fn (Game $game) => $game->value)
+                        ->unique()
+                        ->values()
+                        ->all(),
                     'notification_sound' => $user->notification_sound ?? PlayerNotification::DEFAULT_SOUND_CHOICE,
                     'notification_sound_map' => collect(PlayerNotification::EVENT_TYPES)
                         ->mapWithKeys(fn (string $eventType) => [

@@ -25,7 +25,7 @@ Frontend-first build. UI against real DB infrastructure + seeded fake data; back
 **Active / upcoming:**
 
 - **M36 — Active-matches quick access** _(shipped 2026-06-23)_. Live count badge on the player-hub sidebar's **Matches** item + an "In Progress / All" toggle on `/matches` (defaults to In Progress), mirroring Bybit's P2P "Orders → In Progress". In progress = Pending + Disputed + ManualReview. Reuses the shared-props count pattern + Reverb. Detail below.
-- **M37 — One active match per game** _(in flight)_. Fixes a concurrency hole: chess `TakeListingAction` had no "already in a match" guard, so a player could take unlimited simultaneous chess matches (CS2 already blocks this via the lobby). Policy (confirmed 2026-06-23): **one active match _per game_** — a chess match + a CS2 match at once is fine, two of the same game is not (two same-game matches are where API settlement can mis-attribute a result). Per-game guard on taker + owner, then hide a busy player's same-game listings. Detail below.
+- **M37 — One active match per game** _(shipped 2026-06-23)_. Fixes a concurrency hole: chess `TakeListingAction` had no "already in a match" guard, so a player could take unlimited simultaneous chess matches (CS2 already blocks this via the lobby). Policy (confirmed 2026-06-23): **one active match _per game_** — a chess match + a CS2 match at once is fine, two of the same game is not (two same-game matches are where API settlement can mis-attribute a result). Per-game guard on taker + owner, then hide a busy player's same-game listings. Detail below.
 - **M34 P3.1 follow-ups** — deferred lobby-page polish scoped out of M34 (each needs its own data plumbing; the lobby shipped cleanly without them). Slot into a follow-up phase on user demand or when the data lands for another reason.
     - **Country flags per player** — a small flag next to each roster name. Source: FACEIT profile `country` (ISO-3166 two-letter), pulled during `FaceitProfileClient::fetch()` and persisted on a new `linked_accounts.country` column; render via a flag-emoji helper or SVG pack. Cheap, but needs a migration + a backfill of existing linked accounts.
     - **Per-player recent W/L form** (`W L W W L` chips on each slot card) — last 5 FACEIT matches via `/players/{guid}/history?game=cs2&limit=5`. Expensive at scale (10 players × per-page-load = 10 FACEIT Data API calls); needs a per-player cache (~1h TTL) + an off-band refresher job so the lobby page never blocks on FACEIT. Momentum / tilt signal.
@@ -387,13 +387,13 @@ A player could take an unlimited number of simultaneous **chess** matches — `T
 - [x] `TakeListingAction`: per-game guard on taker (`already_in_match`) + listing owner (`owner_busy`), inside the locked tx, with stable-order (ascending-id) participant locks to prevent deadlock; folded the existing `ownerIsActive` check onto the same locked row. New sentinels mapped to toasts in `GameMatchController::take` (+ 2 `lang/en.json` strings). CS2 unchanged (already correct).
 - [x] Pest (+5 in `GameMatchTakeTest`): taker-busy blocked (no double-charge, no 2nd match); owner-busy blocked; in a CS2 match → can still take chess; owner in a CS2 match → listing still takeable; terminal (settled) match doesn't block. Full suite 1549 green.
 
-**Phase 2 — The busy sign (hide same-game listings)**
+**Phase 2 — The busy sign (hide same-game listings)** ✅ shipped 2026-06-23
 
-- [ ] A busy player's **same-game** open listings drop off the marketplace board (`scopeOnPublicMarketplace`), reappearing when the match resolves. CS2 offers stay up while in a chess match. Verify the board query stays cheap (subquery vs. a denormalized signal) + test.
+- [x] `Listing::scopeWhereCreatorNotBusyForGame` (correlated `whereNotExists` anti-join) composed into `scopeOnPublicMarketplace` — the board, homepage, and visitor profile all drop a creator's same-game listings while they're mid-match; they reappear when it resolves. CS2 offers stay up during a chess match. The owner still sees their own listings on their own profile (that path uses `scopeOpen`). 1v1-only correlation (creator/taker) — team listings can't dangle. +3 Pest (`MarketplaceBusyHidingTest`). Perf: anti-join over the small in-progress set; if the board ever degrades, swap to a denormalized per-user-per-game flag (noted, not needed yet).
 
-**Phase 3 — Frontend gating**
+**Phase 3 — Frontend gating** ✅ shipped 2026-06-23
 
-- [ ] Disable the Take button (and reflect on the listing detail page) when the viewer is already in that game's match, with a clear reason. Shared signal: the games the viewer is currently in-flight for.
+- [x] Shared `auth.user.in_flight_games` (distinct games the viewer is mid-match in) — derived from a single in-flight-matches fetch in `HandleInertiaRequests` that now also feeds `active_matches_count` (one query, not two). The listing-detail Take CTA (`show.tsx`) shows a disabled "Already in a match" + "View your matches →" when the viewer is busy in that game; the marketplace card (`take-button.tsx`) shows a disabled "In a match". Server stays authoritative. +2 Pest (`in_flight_games` correctness) + 3 `lang/en.json` strings; tsc / Prettier clean.
 
 ### Not in M37
 
