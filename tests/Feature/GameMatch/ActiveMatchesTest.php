@@ -172,3 +172,44 @@ test('active_matches_count includes a team member\'s locked match', function () 
             ->where('auth.user.active_matches_count', 1)
         );
 });
+
+/*
+ * M36 Phase 3 — the live badge. When a match notification lands, the frontend
+ * fires `router.reload({ only: ['auth'] })` to re-pull the count without a
+ * navigation. These pin the two server-side guarantees that reload depends on:
+ * the count rides the global shared `auth` (so the reload works from ANY page),
+ * and it's recomputed per request (so it reflects the latest state, not a cache).
+ */
+
+test('active_matches_count is shared on every page, not just /matches', function () {
+    $alice = m36AliceWithEveryStatus();
+
+    // The badge reload fires wherever the user is when a match notification
+    // arrives, so the count must ride global shared `auth`, not the /matches
+    // controller. /wallet is a different Inertia component entirely.
+    $this->actingAs($alice)
+        ->get('/wallet')
+        ->assertInertia(fn ($page) => $page
+            ->where('auth.user.active_matches_count', 3)
+        );
+});
+
+test('active_matches_count drops once a match leaves the in-progress set', function () {
+    $alice = m36AliceWithEveryStatus();
+
+    $this->actingAs($alice)
+        ->get('/matches')
+        ->assertInertia(fn ($page) => $page->where('auth.user.active_matches_count', 3));
+
+    // A settling match is exactly what a `match_settled` broadcast signals; the
+    // next `auth` fetch must reflect the smaller count. Status-only flip — this
+    // pins the count query's freshness, not settlement money.
+    GameMatch::query()
+        ->where('status', MatchStatus::Pending)
+        ->firstOrFail()
+        ->update(['status' => MatchStatus::Settled]);
+
+    $this->actingAs($alice)
+        ->get('/matches')
+        ->assertInertia(fn ($page) => $page->where('auth.user.active_matches_count', 2));
+});

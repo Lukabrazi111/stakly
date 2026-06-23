@@ -24,7 +24,7 @@ Frontend-first build. UI against real DB infrastructure + seeded fake data; back
 
 **Active / upcoming:**
 
-- **M36 — Active-matches quick access** _(in flight)_. Live count badge on the player-hub sidebar's **Matches** item + an "In Progress / All" toggle on `/matches` (defaults to In Progress), mirroring Bybit's P2P "Orders → In Progress". In progress = Pending + Disputed + ManualReview. Reuses the shared-props count pattern + Reverb. Detail below.
+- **M36 — Active-matches quick access** _(shipped 2026-06-23)_. Live count badge on the player-hub sidebar's **Matches** item + an "In Progress / All" toggle on `/matches` (defaults to In Progress), mirroring Bybit's P2P "Orders → In Progress". In progress = Pending + Disputed + ManualReview. Reuses the shared-props count pattern + Reverb. Detail below.
 - **M34 P3.1 follow-ups** — deferred lobby-page polish scoped out of M34 (each needs its own data plumbing; the lobby shipped cleanly without them). Slot into a follow-up phase on user demand or when the data lands for another reason.
     - **Country flags per player** — a small flag next to each roster name. Source: FACEIT profile `country` (ISO-3166 two-letter), pulled during `FaceitProfileClient::fetch()` and persisted on a new `linked_accounts.country` column; render via a flag-emoji helper or SVG pack. Cheap, but needs a migration + a backfill of existing linked accounts.
     - **Per-player recent W/L form** (`W L W W L` chips on each slot card) — last 5 FACEIT matches via `/players/{guid}/history?game=cs2&limit=5`. Expensive at scale (10 players × per-page-load = 10 FACEIT Data API calls); needs a per-player cache (~1h TTL) + an off-band refresher job so the lobby page never blocks on FACEIT. Momentum / tilt signal.
@@ -351,9 +351,9 @@ Surface "what am I doing right now" the way Bybit's P2P "Orders → In Progress"
 - [x] `match/index.tsx`: "In Progress / All" segmented toggle, default In Progress. In Progress = active group (no chips); All = existing status chips. (`ui-ux-pro-max` for the toggle + badge treatment.)
 - [x] Empty state for the In Progress view ("Nothing live right now").
 
-**Phase 3 — Real-time live badge via Reverb**
+**Phase 3 — Real-time live badge via Reverb** ✅ shipped 2026-06-23
 
-- [ ] Badge + count update live off the existing notification broadcasts (match taken / settled / disputed / cancelled already push to the user). `NotificationProvider` refreshes `auth` (→ `active_matches_count`) on match-state notifications, the way it already does for moderation events. No new channel.
+- [x] Badge + count refresh live: `NotificationProvider` fires `router.reload({ only: ['auth'] })` (scroll + state preserved by default in Inertia v3) on the match notifications that **cross the in-progress boundary** — `listing_taken`, `team_match_started`, `match_settled`, `dispute_resolved`, `cancellation_accepted` — reusing the existing moderation-reload path (set-membership check, no new channel). Same-set transitions (`dispute_opened` / `match_manual_review` / `cancellation_requested` / `cancellation_rejected`) are excluded — they don't move the count, so a reload would be wasted. The actor's own count refreshes via their action's Inertia response; the broadcast covers the counterparty who didn't just act. 2 Pest guards pin the shared-`auth` dependency (count rides global `auth` from any page + is recomputed per request, not cached). No JS test runner exists, so the event set itself is guarded by TypeScript (`Set<NotificationEventType>`).
 
 ### Not in M36
 
@@ -361,6 +361,7 @@ Surface "what am I doing right now" the way Bybit's P2P "Orders → In Progress"
 - Making the public profile (settled-match history + stats hero), the username-change blocker, or the Filament admin match queries team-aware — those keep the narrower creator-or-taker `forParticipant`. Whether team matches should surface on public profiles is a separate decision.
 - A separate dedicated route / page — we reuse `/matches`; the sidebar item stays single, Bybit-style, with tabs.
 - Desktop push / browser notifications for active-match changes — the bell already covers event signalling.
+- Live-refreshing the `/matches` **list rows** themselves (a just-settled match lingering in the In Progress list until the next navigation). P3 live-refreshes the **badge count** via shared `auth`; the list is a per-page prop, not shared, so refreshing it on broadcast is a separate concern. Revisit if the stale row reads as broken in practice (cheap follow-up: have `match/index` also `router.reload({ only: ['matches'] })` on the same events when mounted).
 
 ---
 

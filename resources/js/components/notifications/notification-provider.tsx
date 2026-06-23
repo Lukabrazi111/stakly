@@ -21,6 +21,22 @@ interface BroadcastPayload {
     related_id: number | null;
 }
 
+// Events whose arrival changes a value in the shared `auth` prop, so the
+// provider re-pulls it (scroll/state preserved) rather than waiting for the next
+// navigation. Moderation flips the ban banner; the match events cross the
+// in-progress boundary (Pending/Disputed/ManualReview), moving
+// `active_matches_count` (sidebar + tab badge). Same-set shifts (dispute_opened,
+// manual_review, cancellation requested/rejected) don't change it — excluded.
+const AUTH_RESYNC_EVENTS = new Set<NotificationEventType>([
+    'account_banned',
+    'account_restored',
+    'listing_taken',
+    'team_match_started',
+    'match_settled',
+    'dispute_resolved',
+    'cancellation_accepted',
+]);
+
 interface NotificationContextValue {
     unreadCount: number;
     clearUnread: () => void;
@@ -110,13 +126,7 @@ function AuthedNotificationProvider({
                 playSound();
             }
 
-            // Account moderation events flip the persistent banner + the
-            // marketplace guards in shared data. Reload `auth` so the new
-            // state lands without waiting for the next navigation.
-            if (
-                payload.event_type === 'account_banned' ||
-                payload.event_type === 'account_restored'
-            ) {
+            if (AUTH_RESYNC_EVENTS.has(payload.event_type)) {
                 router.reload({ only: ['auth'] });
             }
         },
