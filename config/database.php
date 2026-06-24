@@ -154,6 +154,7 @@ return [
         ],
 
         'default' => [
+            'scheme' => env('REDIS_SCHEME', 'tcp'),
             'url' => env('REDIS_URL'),
             'host' => env('REDIS_HOST', '127.0.0.1'),
             'username' => env('REDIS_USERNAME'),
@@ -167,6 +168,7 @@ return [
         ],
 
         'cache' => [
+            'scheme' => env('REDIS_SCHEME', 'tcp'),
             'url' => env('REDIS_URL'),
             'host' => env('REDIS_HOST', '127.0.0.1'),
             'username' => env('REDIS_USERNAME'),
@@ -183,6 +185,7 @@ return [
         // (DB 1) can never evict queued settlement jobs (DB 2) or log everyone
         // out (DB 3). DB 0 (`default`) stays free for general use / Horizon.
         'queue' => [
+            'scheme' => env('REDIS_SCHEME', 'tcp'),
             'url' => env('REDIS_URL'),
             'host' => env('REDIS_HOST', '127.0.0.1'),
             'username' => env('REDIS_USERNAME'),
@@ -196,6 +199,7 @@ return [
         ],
 
         'session' => [
+            'scheme' => env('REDIS_SCHEME', 'tcp'),
             'url' => env('REDIS_URL'),
             'host' => env('REDIS_HOST', '127.0.0.1'),
             'username' => env('REDIS_USERNAME'),
