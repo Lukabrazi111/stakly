@@ -26,7 +26,7 @@ Frontend-first build. UI against real DB infrastructure + seeded fake data; back
 
 **Active / upcoming:**
 
-- **M38 — Redis for queue, cache & sessions (launch-readiness)** — **P1 + P2 shipped 2026-06-23; P3 (Horizon) next.** Moved the hot infra (queue, cache, sessions) off the Postgres `database` driver onto Redis (distinct logical DBs) — faster settlement pipeline isolated from the money ledger, atomic rate-limiting, with a `redis → array` failover cache store so a Redis blip degrades gracefully instead of 500ing. P3 adds Horizon-grade queue observability; P4 is prod wiring (managed Redis + eviction policy). Reverb scaling stays out (single-node). Detail below.
+- **M38 — Redis for queue, cache & sessions (launch-readiness)** — **P1 + P2 + P3 shipped 2026-06-23; P4 (prod wiring) is the remainder.** Moved the hot infra (queue, cache, sessions) off the Postgres `database` driver onto Redis (distinct logical DBs) — faster settlement pipeline isolated from the money ledger, atomic rate-limiting, with a `redis → array` failover cache store so a Redis blip degrades gracefully instead of 500ing. P3 added Horizon (admin-gated `/horizon`, snapshot scheduling) for eyes on the money pipeline. P4 = managed Redis + per-DB eviction policy + the prod Horizon worker, done on the deploy target. Reverb scaling stays out (single-node). Detail below.
 - **M34 P3.1 follow-ups** — deferred lobby-page polish scoped out of M34 (each needs its own data plumbing; the lobby shipped cleanly without them). Slot into a follow-up phase on user demand or when the data lands for another reason.
     - **Country flags per player** — a small flag next to each roster name. Source: FACEIT profile `country` (ISO-3166 two-letter), pulled during `FaceitProfileClient::fetch()` and persisted on a new `linked_accounts.country` column; render via a flag-emoji helper or SVG pack. Cheap, but needs a migration + a backfill of existing linked accounts.
     - **Per-player recent W/L form** (`W L W W L` chips on each slot card) — last 5 FACEIT matches via `/players/{guid}/history?game=cs2&limit=5`. Expensive at scale (10 players × per-page-load = 10 FACEIT Data API calls); needs a per-player cache (~1h TTL) + an off-band refresher job so the lobby page never blocks on FACEIT. Momentum / tilt signal.
@@ -327,6 +327,8 @@ Not CMS-managed on purpose. The Filament CMS template (`cms/page.tsx`) is intent
 
 ## M38 — Redis for queue, cache & sessions (launch-readiness)
 
+> **Status: paused at P3 (2026-06-23).** P1–P3 shipped — queue / cache / sessions run on Redis (distinct logical DBs), a `redis → array` failover store degrades gracefully on a Redis blip, and the Horizon dashboard (`/horizon`, admin-gated) watches the money pipeline. The local dev stack is fully on Redis today; nothing is blocked. **Only P4 — production wiring — remains, and it's deliberately deferred: its trigger is standing up the production deploy target (Laravel Cloud), where managed Redis, the per-DB eviction policy, and the prod Horizon worker get configured against real infra.**
+
 Redis is provisioned in the stack (`compose.yaml`, `REDIS_HOST=redis`, `phpredis` in Sail) but **unused** — `QUEUE_CONNECTION` / `CACHE_STORE` / `SESSION_DRIVER` all point at the Postgres `database` driver. This milestone flips the hot, latency- and correctness-sensitive infra onto Redis so the settlement pipeline is fast and isolated from the money ledger, the rate-limiter/breaker run on atomic ops, and we get queue observability before launch.
 
 **Why each one moves:**
@@ -359,13 +361,23 @@ Redis is provisioned in the stack (`compose.yaml`, `REDIS_HOST=redis`, `phpredis
 - [ ] (Optional, deferred) make the breaker's window-counting atomic. Failover already covers the resilience requirement; the read-modify-write race is non-money-loss (a lost increment just trips slightly later), so this is a clean-up, not a blocker.
 - [x] Tests for the degraded path: `tests/Feature/Infrastructure/CacheFailoverResilienceTest.php` (+ `tests/Support/ThrowingCacheStore.php`) — a `throwing → array` failover proves cached reads survive an outage + `CacheFailedOver` fires, the breaker reads fail-open, and the homepage returns 200 with the cache backend down.
 
-**Phase 3 — Horizon (queue observability)** — confirmed in (2026-06-23)
+**Phase 3 — Horizon (queue observability)** — ✅ shipped 2026-06-23
 
-- [ ] `laravel/horizon`; admin-gated dashboard (`/admin`-gated, same admin role as Filament); prod worker/supervisor config. Surfaces retrying/failed settlement + notification jobs, throughput, wait times — eyes on the money pipeline before launch.
+- [x] `laravel/horizon` v5.47 installed; dashboard at `/horizon`. Watches the `redis` queue (single `default` supervisor — every job runs on `default`, no custom queues). Horizon's own meta lives on Redis DB 0 (`use => default`, reserved for it in P1).
+- [x] **Admin-gated, reusing the Filament check.** Extracted `User::isAdmin()` (`! is_platform && hasRole('admin')`) as the single source of truth; both `canAccessPanel()` (Filament) and the new `viewHorizon` gate (`HorizonServiceProvider`) call it. Dashboard exposes job payloads + retry/delete, so it's locked exactly like `/admin`. **+5 Pest tests** (`HorizonDashboardAccessTest`) pin the boundary: admin 200, non-admin / platform-user / guest all 403.
+- [x] `/horizon` added to the locale-prefix exempt list — **two places**: `RedirectUnprefixedLocale::EXEMPT_FIRST_SEGMENTS` (runtime) **and** `TestCase::EXEMPT_FIRST_SEGMENTS` (the manually-synced test mirror; without it `get('/horizon')` was rewritten to `/en/horizon` → CMS catch-all → 404). Assets at `/vendor/horizon/*` already covered by the `vendor` exemption.
+- [x] `horizon:snapshot` scheduled every 5 min in `routes/console.php` (metrics graphs stay blank otherwise). Timeout chain verified already-correct: job `timeout` 30 < supervisor `timeout` 60 < redis `retry_after` 90.
 
-**Phase 4 — Production wiring**
+_Carried out of P3 (not P3 scope):_
 
-- [ ] Managed Redis on the deploy target (Laravel Cloud provides one) + `ext-redis` (or `predis`); per-env auth/TLS; per-DB eviction policy (cache evictable, queue + session `noeviction`).
+- The **prod Horizon worker** (running `php artisan horizon` under a process monitor) moves to **P4** — it's deploy-target work. No Forge-style `.conf` committed since the target is Laravel Cloud (managed worker).
+- **Optional follow-up — LongWaitDetected alerting.** `config/horizon.php` `waits` (`redis:default => 60s`) fires when a queue backs up, but nothing receives it yet. Wire `Horizon::routeMailNotificationsTo()` / Slack in `HorizonServiceProvider::boot()` once a channel is chosen (overlaps M20 email). Dashboard-visible until then. Doable any time — not gated on P4.
+
+**Phase 4 — Production wiring** — deferred; trigger: standing up the production deploy target (Laravel Cloud)
+
+- [ ] Managed Redis on the deploy target (Laravel Cloud provides one) + `ext-redis` (or `predis`); per-env auth/TLS.
+- [ ] Per-DB eviction policy: cache DB `allkeys-lru` (evictable), **queue + session DBs `noeviction`** — evicting a queued settlement job under memory pressure = lost money work; evicting sessions = mass logout.
+- [ ] Prod Horizon worker (carried from P3): `php artisan horizon` under the platform's process monitor + `php artisan horizon:terminate` on each deploy. Laravel Cloud = managed worker set in the dashboard; a VPS would use a Supervisor `.conf`.
 
 ### Not in M38
 

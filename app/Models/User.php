@@ -57,17 +57,23 @@ class User extends Authenticatable implements FilamentUser, HasMedia, MustVerify
     protected $appends = ['avatar_url', 'avatar_thumb_url'];
 
     /**
+     * Single source of truth for "is this user an admin?" — consumed by the
+     * Filament panel gate (`canAccessPanel`) and the Horizon dashboard gate
+     * (`viewHorizon` in `HorizonServiceProvider`). The platform user
+     * (`is_platform = true`) is excluded even if somehow admin-roled — same
+     * posture as the wallet routes' `is_platform → 403` gate, defense in depth.
+     */
+    public function isAdmin(): bool
+    {
+        return ! $this->is_platform && $this->hasRole('admin');
+    }
+
+    /**
      * Filament panel access gate. Only `admin`-roled users reach `/admin/*`.
-     * The platform user (`is_platform = true`) is also blocked — same posture
-     * as the wallet routes' `is_platform → 403` gate, defense in depth.
      */
     public function canAccessPanel(Panel $panel): bool
     {
-        if ($this->is_platform) {
-            return false;
-        }
-
-        return $this->hasRole('admin');
+        return $this->isAdmin();
     }
 
     public const USERNAME_CHANGE_COOLDOWN_DAYS = 30;
