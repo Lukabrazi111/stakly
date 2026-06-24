@@ -121,6 +121,8 @@ abstract class TestCase extends BaseTestCase
         // webhook receiver) sits outside the locale-prefix group because
         // external services don't know about Stakly locales.
         'webhooks',
+        // M38 P3 — Horizon dashboard at `/horizon`, no locale prefix.
+        'horizon',
     ];
 
     private const EXEMPT_FILES = [

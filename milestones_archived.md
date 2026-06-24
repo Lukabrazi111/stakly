@@ -1302,6 +1302,34 @@ Closed a concurrency hole: chess `TakeListingAction` had no "already in a match"
 ---
 ---
 
+## M15 — Multi-game expansion (CS2 via FACEIT) ✅ phases 0–5 shipped 2026-06-07 → 2026-06-11
+
+The multi-game realization of M8's per-provider adapter pattern: chess (M8) joined by CS2 via FACEIT, with the same shape reused for every future game. Phase 0 FACEIT API research → Phase 1 schema extension (`linked_accounts.provider_user_id` + `skill_rating`; `match_provider_snapshots.provider_user_id` + `skill_rating_snapshot`) → Phase 2 FACEIT OAuth link flow (`socialiteproviders/faceit` + local PKCE `FaceitProvider`) → Phase 3 per-game create form + listing-creation gating → Phase 4 FACEIT outcome pipeline (`FaceitGameClient`, `AutoFetchFaceitGameJob`, `FaceitGameApi` adapter, `/webhooks/faceit` receiver scaffold) → Phase 5 dispute fast-path + telemetry (`Game::hasArbitrationDriver()` gate, `FaceitGameApi → ChessGameApi → MockGameApi` composition chain, per-provider circuit-breaker config, `PipelineHealth` per-provider breakdown). CS2 5v5 settles end-to-end through the polling pipeline; **CS2 production launch was unblocked by M34 P4** (lobby + multi-player stake collection). Two non-blocking follow-ups remain (tracked in `milestones.md` Active): lock the webhook `event_id` field name + idempotency decision, and the webhook egress IP-allowlist.
+
+### Decisions / reference (load-bearing for future game adapters)
+
+- **Trust pitch — strongest anti-cheat per game.** Stakly only stakes matches on the strongest available anti-cheat platform: Chess → chess.com/Lichess; CS2 → FACEIT (FACEIT AC); Dota 2 → FACEIT Hub or Steam-ranked (OpenDota verify); Valorant/LoL → Vanguard + Riot API. Games without both a usable anti-cheat AND a verification API stay out of scope.
+- **Per-player AC gate, not per-queue.** Phase 4's filter rejects matches where any roster entry has `anticheat_required === false` (FACEIT AC is mandatory on matchmaking but opt-in on Hubs) — the per-player roster boolean is the only reliable signal.
+- **FACEIT API specifics** (Phase 0/2): OAuth is PKCE-mandatory (confidential client; `code_verifier` in body AND Basic auth header) — Stakly's `App\Services\Provider\FaceitProvider` re-adds the `code_verifier` the upstream package drops. Data API needs a server-side API key (OAuth user tokens 403 against it); host `open.faceit.com`. Winner in one call: `results.winner ∈ {faction1,faction2}` + `teams.*.roster[]`. Webhook (`match_status_finished`) has NO HMAC — static shared secret only, so every settle re-fetches `GET /matches/{id}` before releasing escrow. One redirect URI per OAuth app → separate dev + prod FACEIT apps; HTTPS-only redirect URIs.
+- **`match_provider_snapshots` extension** — for non-chess identifiers, add nullable per-identifier columns (`steam_id`, `faceit_id`, `riot_region`, `mmr_at_snapshot`) OR a `provider_data` JSONB column; decide per-adapter. Current `username` sized 64 covers Riot IDs + Steam vanity URLs.
+- **Per-game filter UI** — extract chess-specific widgets into siblings (`ChessFormatFilter` etc.) and branch per game; no premature generic-filter abstraction (the variable shape emerges from the second game). Narrow `ChessProvider` vs wide `ListingPlatform` type discipline already in place.
+- **Aggregator-as-a-service (PandaScore/Bayes/Abios) — parked.** Reconsider only if per-game maintenance gets painful and revenue absorbs the cost.
+
+---
+
+## M38 — Redis for queue, cache & sessions (launch-readiness) ✅ P1–P3 shipped 2026-06-23 · paused at P4 (2026-06-24)
+
+Moved the hot, latency- and correctness-sensitive infra (queue, cache, sessions) off the Postgres `database` driver onto Redis, on distinct logical DBs (0 default/locks/Horizon · 1 cache · 2 queue · 3 session) so a `cache:clear` can't evict queued settlement jobs or log everyone out. **P1** driver flip + connection hygiene (new `queue`/`session` Redis connections; CI stays array/sync/array via `phpunit.xml` so the `.env` flip never leaks into tests). **P2** settlement-path resilience via Laravel 13's native `failover` cache store (`redis → array`) — the infallible in-memory tail means a Redis blip degrades gracefully (breaker reads fail-open, catalog/CMS caches recompute from Postgres, limiter stops blocking) with zero app-code changes; `CacheFailedOver` → `LogCacheFailover` is the alert hook. **P3** Horizon (admin-gated `/horizon` reusing `User::isAdmin()`, `horizon:snapshot` every 5 min). **P4 (production wiring) is deferred to deploy day** — host configuration that can only happen on the live DigitalOcean target. The one repo-side P4 prerequisite shipped early: TLS-capable Redis config (`'scheme' => env('REDIS_SCHEME', 'tcp')` on all four connections; `tls` in prod for DO Managed Redis), since DO requires TLS and Laravel never enables it automatically.
+
+### Decisions
+
+- **Failover store, not hand-rolled try/catch** — the `array` tail is infallible so no cache call can throw; fail-open + recompute + limiter-allow fall out for free. **Caveat:** sessions + queue are NOT under the failover net (it covers cache only) — a Redis outage logs everyone out for its duration (ephemeral, no money-loss) and pauses the queue (workers retry). Queue-failover was rejected (splits jobs across redis+postgres).
+- **Target = DigitalOcean** (chosen 2026-06-24); recommend Droplet + Laravel Forge (one-click Horizon + Reverb daemons fit the app's three long-lived processes — Horizon worker · Reverb · scheduler).
+- **Eviction policy (deploy-day):** Redis `maxmemory-policy` is per-instance, not per-logical-DB, so the cache-`allkeys-lru` / queue+session-`noeviction` split needs **two Redis instances**. Evicting a queued settlement job = lost money work; evicting sessions = mass logout.
+- **P4 deploy-day checklist** (if M38 is resumed): provision Redis (two instances), set `REDIS_SCHEME=tls` + auth, configure eviction per-instance, run `php artisan horizon` under Forge's daemon + `horizon:terminate` on deploy, smoke-test a real settlement + a Redis-blip degrade. **Not in M38:** Reverb horizontal scaling (single-node today).
+
+---
+
 ## Parked milestones
 
 Work that has a clear shape but isn't being picked up right now. Lives in the archive so the active milestones list stays focused on what we can act on; revisit if priorities shift.

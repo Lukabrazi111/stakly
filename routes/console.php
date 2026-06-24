@@ -44,3 +44,8 @@ Schedule::command('lobbies:sweep-ready-check-timeouts')
 Schedule::command('lobbies:sweep-fill-timeouts')
     ->hourly()
     ->withoutOverlapping();
+
+// M38 P3 — Horizon metrics snapshot. The dashboard's throughput / runtime
+// graphs stay blank until snapshots accumulate; 5-min cadence matches
+// Horizon's documented default + the `metrics.trim_snapshots` retention.
+Schedule::command('horizon:snapshot')->everyFiveMinutes();

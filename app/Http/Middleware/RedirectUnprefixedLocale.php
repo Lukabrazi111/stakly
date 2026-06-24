@@ -52,6 +52,10 @@ class RedirectUnprefixedLocale
         'livewire',
         'filament',
         'filament-impersonate',
+        // M38 P3 — Horizon dashboard lives at `/horizon`; like `/admin` it's
+        // an operator surface with no locale prefix. (Its assets under
+        // `/vendor/horizon/*` are already covered by the `vendor` exemption.)
+        'horizon',
         // M15 Phase 2 — `/auth/{provider}/callback` OAuth callbacks must
         // be locale-agnostic because external IdPs only support a single
         // redirect URI per app. Future Riot/Discord/etc. callbacks land
