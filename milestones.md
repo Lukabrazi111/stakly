@@ -20,6 +20,8 @@ Frontend-first build. UI against real DB infrastructure + seeded fake data; back
 - **M20** — Email notifications. **Spec materially shrunk**: M27 P5 already shipped the in-app preferences UI + `notification_preferences` table + 9 `PlayerNotification` classes; M30 P4 wired the `mail` channel for ban notifications. What's left = branded HTML email templates, flip `'mail'` into `via()` on the remaining PlayerNotification subclasses, production SMTP config. Realistically 2–3 days.
 - **M21** — Blacklist + safety. Block users from listings + chat, with anti-evasion considerations. Has open design questions (block semantics + multi-account evasion) — needs alignment before coding.
 - **M33** — Listing time-control contract. Make Stakly's accepted time controls (blitz / rapid / classical) explicit in the listing-creation form, surface `time_control_mismatch` as a player-facing banner on stuck matches, and optionally re-enable Slice 3d strictness behind a per-listing opt-in. Reverted from M14 on 2026-06-06 — friction (legitimate correspondence / bullet games rejected silently) outweighed the small sandbag attack surface at this stage. Revisit when launch scale or a real abuse incident makes it relevant.
+- **M40 — Create-listing form UI polish** — segmented-control (Platform / Format / Your side / Visibility) affordance + brand pass on `listings/create`: one reusable `SegmentedOption` with a strong selected state (solid border + corner check, no color-only cue), brighter idle text, official chess.com / Lichess logos + Globe / Lock icons, and inline Public/Private descriptions. **P1 built 2026-06-25 — pending visual sign-off.** Full spec in the section below.
+
 > Active milestone keeps a detailed task list. Future milestones expand when started. Any of this can shift — flag the change, update the doc.
 
 ---
@@ -180,3 +182,33 @@ Not CMS-managed on purpose. The Filament CMS template (`cms/page.tsx`) is intent
 - Localised currency conversion ("how much is this in EUR?"). USDT is the unit on every Stakly surface; introducing currency conversion UI confuses the platform's denomination.
 
 ---
+
+## M40 — Create-listing form UI polish
+
+Tightening the segmented controls on `listings/create` (raised during a UI review 2026-06-25). The same shadcn `ToggleGroup` pattern powers Platform, Format, Your side, and Visibility.
+
+### Phase 1 — Segmented control affordance + brand ✅ built 2026-06-25 (pending visual sign-off)
+
+**Problem.** The two-option toggles leaned entirely on a thin pink border for the selected state; the unselected option sat in `text-muted-foreground` (reads as disabled); and there were no icons/logos — lots of dead space per pill, low scannability, no brand feel. Visibility's Public/Private tradeoff was only legible via a helper line that changed with selection, so you couldn't compare without toggling.
+
+**Fix.** One reusable `SegmentedOption` (wraps `ToggleGroupItem`), applied to all four controls:
+
+- [x] Strong selected affordance — solid `border-primary` + `bg-primary/15` + a corner check (state no longer relies on color alone → a11y).
+- [x] Brighter idle text (`text-foreground/70`) so the unselected option stops looking disabled.
+- [x] Optional `icon` — official chess.com / Lichess marks (Simple Icons, `currentColor` → grey idle, primary when active) on Platform; Globe / Lock on Visibility.
+- [x] Optional `description` → two-line "option card"; used on Visibility (helper line removed, descriptions inline, grid stacks on mobile).
+- [x] `components/shared/platform-logos.tsx` (`ChessComLogo`, `LichessLogo`) + `components/listings/segmented-option.tsx`; dropped the local `SEGMENTED_ITEM_CLASS`.
+- [ ] User visual sign-off → then archive.
+
+**Also done:** FACEIT "F" lettermark → official FACEIT logo (`FaceitLogo` in `platform-logos.tsx`), kept in the pink `bg-primary/15` square on the CS2 platform card. Game card (`GamePicker`) now shows real game art (DB `poster_path`, same source as the homepage tiles) via a `GameThumb` — no more lucide game icons; falls back to a gradient initial when a poster isn't set.
+
+### Phase 2 — Bybit-inspired refinement ✅ built 2026-06-25 (pending visual sign-off)
+
+Reference: Bybit's P2P ad-creation form — the win there is **structure + restraint**, not more decoration.
+
+- [x] Format + Your side → compact inline **radio group** (`OptionRadioGroup`), the Bybit Pricing/Status pattern. Reuses a shared `RadioIndicator` dot **extracted from the notification-sound list** (`settings/notifications` now imports it too) so radios read identically app-wide. (First shipped a solid-fill segmented toggle here; too heavy per feedback — replaced with radios, `SegmentedToggle` deleted.)
+- [x] Live **Deal summary** (`deal-summary.tsx`): pink-tinted callout showing Pot · Platform fee (10%) · Payout if you win, updating from stake + format, shown once a stake is entered. Backend passes `feeRate` (single source = `config('stakly.platform_fee_rate')`, the value settlement uses) so the preview can't drift from the real payout. Test: `ListingStoreTest` asserts the prop.
+- [ ] Offered but not built (larger): Bybit's left-rail labeled-section layout — separate refactor on demand.
+- [ ] User visual sign-off → then archive.
+
+**Follow-ups if liked:** reuse `SegmentedOption` on the filter bars (`chess-format-filter`, skill-range toggles) for one segmented language site-wide.

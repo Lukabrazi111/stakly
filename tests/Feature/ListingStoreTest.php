@@ -51,6 +51,8 @@ test('verified users see the create form with balance + option lists', function 
         ->has('regions')
         ->has('languages')
         ->has('durations')
+        // M40 — fee rate drives the live Deal summary; single source = config.
+        ->where('feeRate', (float) config('stakly.platform_fee_rate'))
     );
 });
 

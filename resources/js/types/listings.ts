@@ -211,6 +211,10 @@ export interface ListingCreateProps {
             allowed_team_sizes: number[];
         }
     >;
+    // M40 — platform fee rate (float, from config('stakly.platform_fee_rate'))
+    // powering the live Deal summary. Single source: the same value settlement
+    // uses, so the in-form payout preview can't drift from the real payout.
+    feeRate: number;
 }
 
 // Tab values for the /listings/mine page (M6 Phase 6.5).

@@ -3,6 +3,7 @@ import { Bell, BellRing, Lock, Music, Play, VolumeX } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { useEffect } from 'react';
 import { toast } from 'sonner';
+import { RadioIndicator } from '@/components/shared/radio-indicator';
 import { PageMeta } from '@/components/site/page-meta';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -534,16 +535,7 @@ function SoundRow({ meta, selected, onSelect, onPreview, t }: SoundRowProps) {
                         <Play className="size-4" />
                     </button>
                 )}
-                <span
-                    aria-hidden
-                    className={cn(
-                        'relative inline-flex size-4 shrink-0 items-center justify-center rounded-full border transition-colors',
-                        'after:absolute after:rounded-full after:transition-all after:duration-150',
-                        selected
-                            ? 'border-primary bg-primary/10 after:size-2 after:bg-primary'
-                            : 'border-border bg-card/60 after:size-0',
-                    )}
-                />
+                <RadioIndicator selected={selected} />
             </div>
         </label>
     );

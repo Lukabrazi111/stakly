@@ -1,11 +1,19 @@
 import { Link, useForm } from '@inertiajs/react';
-import { AlertCircle, Link2 } from 'lucide-react';
+import { AlertCircle, Globe, Link2, Lock } from 'lucide-react';
 import type { ReactNode } from 'react';
 import InputError from '@/components/input-error';
 import { ChessFormatFilter } from '@/components/listings/chess-format-filter';
 import { ChessSkillRangeFilter } from '@/components/listings/chess-skill-range-filter';
 import { Cs2SkillRangeFilter } from '@/components/listings/cs2-skill-range-filter';
+import { DealSummary } from '@/components/listings/deal-summary';
 import { GamePicker } from '@/components/listings/game-picker';
+import { OptionRadioGroup } from '@/components/listings/option-radio-group';
+import { SegmentedOption } from '@/components/listings/segmented-option';
+import {
+    ChessComLogo,
+    FaceitLogo,
+    LichessLogo,
+} from '@/components/shared/platform-logos';
 import { PageMeta } from '@/components/site/page-meta';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -42,6 +50,11 @@ type ChessProvider = Extract<ListingPlatform, 'chess_com' | 'lichess'>;
 function isChessProvider(platform: ListingPlatform): platform is ChessProvider {
     return platform === 'chess_com' || platform === 'lichess';
 }
+
+const PLATFORM_ICON: Record<ChessProvider, ReactNode> = {
+    chess_com: <ChessComLogo className="size-5" />,
+    lichess: <LichessLogo className="size-5" />,
+};
 
 /**
  * Picks a sensible default platform for a game: prefer one the user is already
@@ -91,9 +104,6 @@ function defaultTeamSizeFor(allowedSizes: number[]): number {
     return allowedSizes.length > 0 ? Math.max(...allowedSizes) : 1;
 }
 
-const SEGMENTED_ITEM_CLASS =
-    'h-12 rounded-xl border border-border/60 data-[state=on]:border-primary data-[state=on]:bg-primary/10 data-[state=on]:text-foreground';
-
 export default function ListingsCreate({
     balance,
     regions,
@@ -104,6 +114,7 @@ export default function ListingsCreate({
     linkedPlatforms,
     games,
     requirementsByGame,
+    feeRate,
 }: ListingCreateProps) {
     const t = useT();
     const atCap = activeListingsCount >= maxActiveListings;
@@ -302,13 +313,12 @@ export default function ListingsCreate({
                                         className="grid grid-cols-2 gap-2"
                                     >
                                         {linkedChessProviders.map((p) => (
-                                            <ToggleGroupItem
+                                            <SegmentedOption
                                                 key={p}
                                                 value={p}
-                                                className="h-12 rounded-xl border border-border/60 data-[state=on]:border-primary data-[state=on]:bg-primary/10 data-[state=on]:text-foreground"
-                                            >
-                                                {PROVIDER_LABEL[p]}
-                                            </ToggleGroupItem>
+                                                label={PROVIDER_LABEL[p]}
+                                                icon={PLATFORM_ICON[p]}
+                                            />
                                         ))}
                                     </ToggleGroup>
                                     <p className="mt-2 text-xs text-muted-foreground">
@@ -329,8 +339,8 @@ export default function ListingsCreate({
                             {data.game === 'cs2' && (
                                 <FormSection title={t('Platform')}>
                                     <div className="flex items-center gap-3 rounded-xl border border-border/60 bg-card/60 p-4">
-                                        <span className="inline-flex size-9 items-center justify-center rounded-lg bg-primary/15 text-sm font-bold text-primary">
-                                            F
+                                        <span className="inline-flex size-9 items-center justify-center rounded-lg bg-primary/15 text-primary">
+                                            <FaceitLogo className="size-5" />
                                         </span>
                                         <div className="space-y-0.5">
                                             <div className="font-semibold text-foreground">
@@ -348,28 +358,22 @@ export default function ListingsCreate({
 
                             {allowedTeamSizes.length > 1 && (
                                 <FormSection title={t('Format')}>
-                                    <ToggleGroup
-                                        type="single"
+                                    <OptionRadioGroup
+                                        name="team_size"
+                                        ariaLabel={t('Format')}
                                         value={String(data.team_size)}
-                                        onValueChange={(value) => {
-                                            if (value === '') {
-                                                return;
-                                            }
-
-                                            handleTeamSizeChange(Number(value));
-                                        }}
-                                        className="grid grid-cols-2 gap-2"
-                                    >
-                                        {allowedTeamSizes.map((size) => (
-                                            <ToggleGroupItem
-                                                key={size}
-                                                value={String(size)}
-                                                className={SEGMENTED_ITEM_CLASS}
-                                            >
-                                                {formatTeamSizeLabel(size)}
-                                            </ToggleGroupItem>
-                                        ))}
-                                    </ToggleGroup>
+                                        onChange={(value) =>
+                                            handleTeamSizeChange(Number(value))
+                                        }
+                                        options={allowedTeamSizes.map(
+                                            (size) => ({
+                                                value: String(size),
+                                                label: formatTeamSizeLabel(
+                                                    size,
+                                                ),
+                                            }),
+                                        )}
+                                    />
                                     <p className="mt-2 text-xs text-muted-foreground">
                                         {data.team_size === 1
                                             ? t('Direct 1v1 match — no lobby.')
@@ -383,10 +387,11 @@ export default function ListingsCreate({
 
                             {data.team_size > 1 && (
                                 <FormSection title={t('Your side')}>
-                                    <ToggleGroup
-                                        type="single"
+                                    <OptionRadioGroup
+                                        name="creator_side"
+                                        ariaLabel={t('Your side')}
                                         value={data.creator_side ?? 'a'}
-                                        onValueChange={(value) => {
+                                        onChange={(value) => {
                                             if (
                                                 value === 'a' ||
                                                 value === 'b'
@@ -394,21 +399,11 @@ export default function ListingsCreate({
                                                 setData('creator_side', value);
                                             }
                                         }}
-                                        className="grid grid-cols-2 gap-2"
-                                    >
-                                        <ToggleGroupItem
-                                            value="a"
-                                            className={SEGMENTED_ITEM_CLASS}
-                                        >
-                                            {t('Team A')}
-                                        </ToggleGroupItem>
-                                        <ToggleGroupItem
-                                            value="b"
-                                            className={SEGMENTED_ITEM_CLASS}
-                                        >
-                                            {t('Team B')}
-                                        </ToggleGroupItem>
-                                    </ToggleGroup>
+                                        options={[
+                                            { value: 'a', label: t('Team A') },
+                                            { value: 'b', label: t('Team B') },
+                                        ]}
+                                    />
                                     <p className="mt-2 text-xs text-muted-foreground">
                                         {t(
                                             "You'll be auto-joined to slot 1 of this team. Teammates join the empty slots from the lobby page.",
@@ -470,6 +465,12 @@ export default function ListingsCreate({
                                     <InputError message={errors.stake_amount} />
                                 </div>
                             </FormSection>
+
+                            <DealSummary
+                                stake={stakeNumber}
+                                teamSize={data.team_size}
+                                feeRate={feeRate}
+                            />
 
                             <FormSection title={t('Match preferences')}>
                                 <div className="space-y-5">
@@ -596,30 +597,25 @@ export default function ListingsCreate({
                                             setData('is_public', false);
                                         }
                                     }}
-                                    className="grid grid-cols-2 gap-2"
+                                    className="grid grid-cols-1 gap-2 sm:grid-cols-2"
                                 >
-                                    <ToggleGroupItem
+                                    <SegmentedOption
                                         value="public"
-                                        className={SEGMENTED_ITEM_CLASS}
-                                    >
-                                        {t('Public')}
-                                    </ToggleGroupItem>
-                                    <ToggleGroupItem
+                                        icon={<Globe className="size-5" />}
+                                        label={t('Public')}
+                                        description={t(
+                                            'Listed in the marketplace for anyone matching your skill range.',
+                                        )}
+                                    />
+                                    <SegmentedOption
                                         value="private"
-                                        className={SEGMENTED_ITEM_CLASS}
-                                    >
-                                        {t('Private')}
-                                    </ToggleGroupItem>
+                                        icon={<Lock className="size-5" />}
+                                        label={t('Private')}
+                                        description={t(
+                                            'Hidden — only people with your invite link can see it.',
+                                        )}
+                                    />
                                 </ToggleGroup>
-                                <p className="mt-2 text-xs text-muted-foreground">
-                                    {data.is_public
-                                        ? t(
-                                              'Listed in the marketplace for anyone matching your skill range.',
-                                          )
-                                        : t(
-                                              'Hidden from the marketplace — only people with your invite link can see it.',
-                                          )}
-                                </p>
                                 <InputError message={errors.is_public} />
                             </FormSection>
 
