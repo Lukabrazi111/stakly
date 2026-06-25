@@ -106,6 +106,11 @@ export interface Match {
     winner: MatchPlayer | null;
     settled_at: string | null;
     created_at: string | null;
+    // API-resolution deadline (created_at + stakly.match_confirmation_timeout_hours),
+    // backend-computed in GameMatchResource so the MatchTimer countdown can't
+    // drift from the cron that enforces it. Null unless the match is Pending
+    // (the timer only renders inside the polling window).
+    match_deadline_at: string | null;
     cancellation: MatchCancellation;
     dispute: MatchDispute;
     // M34 P6 — team rosters and winning side. Present only when the

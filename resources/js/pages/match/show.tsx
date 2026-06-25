@@ -150,11 +150,11 @@ function ChessMatchShow({ match, messages }: MatchShowProps) {
     // stake). For wins, it's pot minus platform fee.
     const winnerPayout = isDraw ? match.listing.stake_amount : pot - fee;
 
-    // 4-hour deadline from match creation. `ResolveMatchTimeoutAction`
-    // flips Pending matches past this to ManualReview via the
-    // `matches:resolve-timeouts` cron sweep.
-    const matchDeadline = match.created_at
-        ? new Date(new Date(match.created_at).getTime() + 4 * 60 * 60 * 1000)
+    // API-resolution deadline. Backend-computed (`GameMatchResource`) from
+    // `stakly.match_confirmation_timeout_hours` so this clock can't drift from
+    // the `matches:resolve-timeouts` cron that enforces it. Null unless Pending.
+    const matchDeadline = match.match_deadline_at
+        ? new Date(match.match_deadline_at)
         : null;
 
     // Polling: refresh the match resource every 8s while Pending so the

@@ -46,6 +46,29 @@ test('match creator + taker carry avatar_thumb_url for chat bubbles (M18)', func
         );
 });
 
+test('match_deadline_at is exposed for the MatchTimer while Pending (M39 P2)', function () {
+    $createdAt = now()->subHour();
+    $match = GameMatch::factory()->create(['created_at' => $createdAt]);
+    $creator = $match->listing->user;
+
+    $expected = $createdAt->copy()
+        ->addHours((int) config('stakly.match_confirmation_timeout_hours'))
+        ->toIso8601String();
+
+    $this->actingAs($creator)
+        ->get(route('matches.show', $match))
+        ->assertInertia(fn ($page) => $page->where('match.match_deadline_at', $expected));
+});
+
+test('match_deadline_at is null once the match leaves Pending (M39 P2)', function () {
+    $match = GameMatch::factory()->settled()->create();
+    $creator = $match->listing->user;
+
+    $this->actingAs($creator)
+        ->get(route('matches.show', $match))
+        ->assertInertia(fn ($page) => $page->where('match.match_deadline_at', null));
+});
+
 test('non-participant gets 404 (not 403 — never leak match existence)', function () {
     $match = GameMatch::factory()->create();
     $stranger = User::factory()->create();

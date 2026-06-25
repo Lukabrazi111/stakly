@@ -230,7 +230,7 @@ function ReadOnlyFooter() {
     return (
         <div className="flex items-center gap-2 border-t border-border/60 px-4 py-3 text-xs text-muted-foreground">
             <Lock className="size-3.5" />
-            <span>{t('This match is settled — chat is read-only.')}</span>
+            <span>{t('This match has ended — chat is read-only.')}</span>
         </div>
     );
 }

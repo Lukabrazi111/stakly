@@ -128,10 +128,11 @@ export function TeamMatchView({ match, messages }: TeamMatchViewProps) {
     // perPlayerPayout zeroes out) shouldn't collapse the headline number.
     const potentialWinnerPayout = (pot - pot * match.fee_rate) / teamSize;
 
-    // 4h auto-fetch deadline mirrors 1v1 — `ResolveMatchTimeoutAction`
-    // flips stuck Pending to ManualReview at this boundary.
-    const matchDeadline = match.created_at
-        ? new Date(new Date(match.created_at).getTime() + 4 * 60 * 60 * 1000)
+    // API-resolution deadline — same backend-computed `match_deadline_at` as
+    // 1v1 (`GameMatchResource`), so the team clock can't drift from the
+    // `matches:resolve-timeouts` cron. Null unless Pending.
+    const matchDeadline = match.match_deadline_at
+        ? new Date(match.match_deadline_at)
         : null;
 
     // Polling: same 8s tick as 1v1 while Pending so the page picks up

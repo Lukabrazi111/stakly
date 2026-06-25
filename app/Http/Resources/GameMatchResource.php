@@ -97,6 +97,13 @@ class GameMatchResource extends JsonResource
             ] : null,
             'settled_at' => $this->settled_at?->toIso8601String(),
             'created_at' => $this->created_at?->toIso8601String(),
+            // API-resolution deadline driving the frontend `MatchTimer`
+            // countdown. Single source = `stakly.match_confirmation_timeout_hours`
+            // (the same value the `matches:resolve-timeouts` cron + auto-fetch
+            // retry windows read), so the on-screen clock can't drift from the
+            // job that enforces it. Pending-only — null once the match leaves
+            // the polling window. Mirrors `LobbyResource::matchDeadlineAt()`.
+            'match_deadline_at' => $this->matchDeadlineAt(),
             // Mutual cancellation state. FE infers open-request / cooldown
             // / terminal banner from the combination. `requested_by_id`
             // is enough — FE looks up the name from creator / taker
@@ -120,6 +127,23 @@ class GameMatchResource extends JsonResource
             // omit these fields entirely.
             ...$this->teamRosterFields(),
         ];
+    }
+
+    /**
+     * The instant a Pending match flips to ManualReview if no API-verified
+     * result lands: `created_at` + `stakly.match_confirmation_timeout_hours`.
+     * Null outside Pending so the FE countdown only renders while the match
+     * is actually in the polling window (matches the cron's `Pending` filter).
+     */
+    private function matchDeadlineAt(): ?string
+    {
+        if ($this->status !== MatchStatus::Pending || $this->created_at === null) {
+            return null;
+        }
+
+        $hours = (int) config('stakly.match_confirmation_timeout_hours');
+
+        return $this->created_at->copy()->addHours($hours)->toIso8601String();
     }
 
     /**

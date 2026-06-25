@@ -26,7 +26,7 @@ use Spatie\Image\Image;
  * messages — system messages go through a separate Action so the type is never caller-supplied.
  *
  * Guards: text rate limit, attachment rate limit (separate stricter bucket), status gate
- * (`Settled` / `ManualReview` reject), participant check (controller policy). Broadcasts
+ * (`Settled` / `Cancelled` reject), participant check (controller policy). Broadcasts
  * `MessageSent` after commit on the `match.{id}` channel.
  */
 class SendMessageAction
@@ -173,14 +173,15 @@ class SendMessageAction
     }
 
     /**
-     * Settled / ManualReview / Cancelled lock new sends. Disputed stays open
-     * because the chat is the evidence record.
+     * Only terminal states lock new sends: Settled (paid) + Cancelled (refunded).
+     * Disputed AND ManualReview stay open — the chat is the evidence record while
+     * an admin resolves, and the timeout / dispute system messages explicitly ask
+     * the players to post evidence (screenshot, game URL, PGN) in chat.
      */
     private function assertChatIsOpen(GameMatch $match): void
     {
         $closedStatuses = [
             MatchStatus::Settled,
-            MatchStatus::ManualReview,
             MatchStatus::Cancelled,
         ];
 
