@@ -2,11 +2,11 @@
 
 Frontend-first build. UI against real DB infrastructure + seeded fake data; backend logic (escrow, payouts, on-chain integration) lands per page once the UI is validated. Milestones are work-chunk labels, not version commitments — decisions inside any of them are revisitable.
 
-> **Shipped milestones live in `milestones_archived.md`** (M1, M2, M2.5, M3, M3.5, M4, M5, M6, M7, M8 all phases, M10, M11, M12 all phases, M14 all phases, M15 all phases, M16 all phases, M17, M18, M19, M22, M23, M24, M25, M26 all phases, M27 all phases, M29 all phases, M30 all phases, M31 all phases, M32 all phases, M34 all phases, M35 all phases, M36 all phases, M37 all phases, M38 P1–P3 (paused at P4)). **Parked milestones** (work that isn't being picked up right now) also live in the archive — currently M13. This file is for active + upcoming work + the cross-cutting architectural decisions that earlier milestones established.
+> **Shipped milestones live in `milestones_archived.md`** (M1, M2, M2.5, M3, M3.5, M4, M5, M6, M7, M8 all phases, M10, M11, M12 all phases, M14 all phases, M15 all phases, M16 all phases, M17, M18, M19, M22, M23, M24, M25, M26 all phases, M27 all phases, M29 all phases, M30 all phases, M31 all phases, M32 all phases, M34 all phases, M35 all phases, M36 all phases, M37 all phases, M38 P1–P3 (paused at P4), M39 all phases). **Parked milestones** (work that isn't being picked up right now) also live in the archive — currently M13. This file is for active + upcoming work + the cross-cutting architectural decisions that earlier milestones established.
 
 ## Phases (map)
 
-**Recently shipped** — full per-milestone summaries live in `milestones_archived.md`. Latest: **M36** (active-matches quick access), **M37** (one active match per game), **M38 P1–P3** (Redis for queue/cache/sessions + `redis→array` failover + admin-gated Horizon), and **M15** (multi-game / CS2 via FACEIT) — all through 2026-06-24.
+**Recently shipped** — full per-milestone summaries live in `milestones_archived.md`. Latest: **M37** (one active match per game), **M38 P1–P3** (Redis for queue/cache/sessions + `redis→array` failover + admin-gated Horizon), **M15** (multi-game / CS2 via FACEIT), and **M39** (match-page pipeline fixes — ManualReview chat + single-source deadline) — through 2026-06-25.
 
 **Active / upcoming:**
 
@@ -20,8 +20,6 @@ Frontend-first build. UI against real DB infrastructure + seeded fake data; back
 - **M20** — Email notifications. **Spec materially shrunk**: M27 P5 already shipped the in-app preferences UI + `notification_preferences` table + 9 `PlayerNotification` classes; M30 P4 wired the `mail` channel for ban notifications. What's left = branded HTML email templates, flip `'mail'` into `via()` on the remaining PlayerNotification subclasses, production SMTP config. Realistically 2–3 days.
 - **M21** — Blacklist + safety. Block users from listings + chat, with anti-evasion considerations. Has open design questions (block semantics + multi-account evasion) — needs alignment before coding.
 - **M33** — Listing time-control contract. Make Stakly's accepted time controls (blitz / rapid / classical) explicit in the listing-creation form, surface `time_control_mismatch` as a player-facing banner on stuck matches, and optionally re-enable Slice 3d strictness behind a per-listing opt-in. Reverted from M14 on 2026-06-06 — friction (legitimate correspondence / bullet games rejected silently) outweighed the small sandbag attack surface at this stage. Revisit when launch scale or a real abuse incident makes it relevant.
-- **M39 — Match-page pipeline fixes** — two small correctness/UX fixes surfaced during a full architecture review. **P1 + P2 shipped 2026-06-25** (1570 tests green). **P1** — chat stays open in `ManualReview` (the app asked for evidence "in chat" then locked it). **P2** — single-sourced the match deadline (the 4h window was hardcoded again in two React files, drifting from the backend config). Neither moves money. Full spec in the section below.
-
 > Active milestone keeps a detailed task list. Future milestones expand when started. Any of this can shift — flag the change, update the doc.
 
 ---
@@ -180,36 +178,5 @@ Not CMS-managed on purpose. The Filament CMS template (`cms/page.tsx`) is intent
 - A/B testing infrastructure for headline copy. Premature for a page that isn't even live yet.
 - Affiliate / referral fee tracking. Different scope; if revenue-share programs ship, they own their own page.
 - Localised currency conversion ("how much is this in EUR?"). USDT is the unit on every Stakly surface; introducing currency conversion UI confuses the platform's denomination.
-
----
-
-## M39 — Match-page pipeline fixes
-
-Two small fixes surfaced during a full architecture review (2026-06-25). Both touch the match page; neither moves money.
-
-### Phase 1 — Chat stays open in Manual Review ✅ shipped 2026-06-25
-
-**Problem.** When a match times out (`ResolveMatchTimeoutAction`) — or a dispute resolves to `Unknown` (`ResolveDisputeAction`) — it flips to `ManualReview` and the chat locks read-only. But both paths post a system message that says *"Submit evidence in chat — screenshot, game URL, or PGN. An admin will review."* The app asks for evidence and then removes the only channel to provide it. `ManualReview` is exactly the window where the admin needs player evidence.
-
-**Fix.** Treat `ManualReview` like `Disputed` — the chat **is** the evidence record while resolution is pending, so keep it open. Lock only truly terminal states: `Settled` (paid) + `Cancelled` (refunded).
-
-- [x] Backend: drop `ManualReview` from `SendMessageAction::assertChatIsOpen()` closed set (+ docblocks).
-- [x] Frontend: drop `manual_review` from `isMatchChatReadOnly()` (`resources/js/lib/match-chat-readonly.ts`).
-- [x] Copy: `ReadOnlyFooter` said "This match is settled — chat is read-only" even for cancelled matches → neutral "This match has ended…".
-- [x] Safe by construction: auto-fetch is NOT re-triggered on send (`DispatchAutoFetchAction` gates on `Pending`).
-- [x] Tests: inverted the `ManualReview` send test (now allowed); added a `Cancelled`-locks test to cover the new closed set.
-
-### Phase 2 — Single-source match deadline (kill hardcoded 4h drift) ✅ shipped 2026-06-25
-
-**Problem.** The 4h confirmation window is one backend config value (`stakly.match_confirmation_timeout_hours`) read by the timeout cron, the 3 auto-fetch retry windows, the backstop cron, and `LobbyResource`. But the on-screen countdown re-computes `created_at + 4h` by hand in two React files (`match/show.tsx`, `team-match-view.tsx`). Change the config and the player-facing timer silently disagrees with when the system actually acts.
-
-**Fix.** Expose `match_deadline_at` from `GameMatchResource` (Pending-only, `created_at + config(hours)`, mirroring `LobbyResource::matchDeadlineAt()`); the FE reads it instead of hardcoding 4h. One source of truth.
-
-- [x] Backend: add `match_deadline_at` to `GameMatchResource` (null unless `Pending`).
-- [x] Frontend: both match views read `match.match_deadline_at`; added the field to the `Match` TS type.
-- [x] Update the now-stale `config/stakly.php` comment that warned about the frontend hardcode.
-- [x] Test: `GameMatchShowTest` asserts the prop is present + correct while Pending, null otherwise.
-
-**Not made Filament-editable.** The same value drives the job retry windows (hidden coupling — shrinking it would truncate auto-fetch retries mid-window) and is already changeable via one env var. A money-timing knob is safer as a deliberate config value than a casual dashboard toggle. Revisit only if per-game timeouts are ever needed.
 
 ---

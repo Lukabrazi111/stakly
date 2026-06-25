@@ -1330,6 +1330,17 @@ Moved the hot, latency- and correctness-sensitive infra (queue, cache, sessions)
 
 ---
 
+## M39 — Match-page pipeline fixes ✅ shipped 2026-06-25
+
+Two small correctness/UX fixes on the match page surfaced during a full architecture review; neither moves money. **P1 — chat stays open in `ManualReview`.** A timed-out match (`ResolveMatchTimeoutAction`) or a dispute the API can't decide (`ResolveDisputeAction` → `Unknown`) flips to `ManualReview` and posts a *"submit evidence in chat"* system message — but the chat was locked read-only, so players couldn't provide the evidence the admin needs. Now `ManualReview` behaves like `Disputed` (the chat IS the evidence record): only the truly terminal `Settled` (paid) + `Cancelled` (refunded) states lock sends. Touched `SendMessageAction::assertChatIsOpen()` (backend), `isMatchChatReadOnly()` (frontend), and the read-only footer copy ("This match has ended…"). Safe by construction — a ManualReview send doesn't re-trigger the API (`DispatchAutoFetchAction` gates on `Pending`). **P2 — single-sourced the match deadline.** The 4h confirmation window (`stakly.match_confirmation_timeout_hours` — read by the timeout cron, the 3 auto-fetch retry windows, the backstop cron, and `LobbyResource`) was re-hardcoded as `created_at + 4h` in two React files, free to drift from the backend. `GameMatchResource` now exposes a Pending-only `match_deadline_at` (mirroring `LobbyResource::matchDeadlineAt()`) that the `MatchTimer` reads, so the on-screen clock always matches the cron that enforces it. 1570 tests green.
+
+### Decisions
+
+- **`ManualReview` joins `Disputed` as a chat-open state.** Only paid/refunded matches are "done"; while money is frozen pending admin resolution, the chat stays open as the evidence channel.
+- **Timeout left as a config/env value, NOT a Filament toggle.** The same value drives the auto-fetch job retry windows (hidden coupling — shrinking it would truncate retries mid-window) and is already changeable via one env var. A money-timing knob is safer as a deliberate config change than a casual dashboard edit. Revisit only if per-game timeouts are ever needed.
+
+---
+
 ## Parked milestones
 
 Work that has a clear shape but isn't being picked up right now. Lives in the archive so the active milestones list stays focused on what we can act on; revisit if priorities shift.
