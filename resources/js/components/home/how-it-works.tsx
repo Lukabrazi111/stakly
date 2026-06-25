@@ -1,5 +1,6 @@
 import { FileText, Handshake, Trophy } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
+import { motion, useReducedMotion } from 'motion/react';
 
 interface Step {
     number: string;
@@ -13,14 +14,14 @@ const steps: Step[] = [
         number: '01',
         title: 'Post a listing',
         description:
-            'Set your stake in USDT, your rating range, and your preferred time control. Your stake is escrowed the moment your listing goes live.',
+            'Set your stake in USDT, your skill range, and your match preferences. Your stake is escrowed the moment your listing goes live.',
         icon: FileText,
     },
     {
         number: '02',
         title: 'Match an opponent',
         description:
-            'An opponent takes your listing. Both stakes are held in escrow and the match starts instantly on chess.com or Lichess.',
+            'An opponent takes your listing. Both stakes are held in escrow and the match starts instantly on chess.com, Lichess, or FACEIT.',
         icon: Handshake,
     },
     {
@@ -33,6 +34,8 @@ const steps: Step[] = [
 ];
 
 export function HowItWorks() {
+    const reduceMotion = useReducedMotion();
+
     return (
         <section id="how-it-works" className="scroll-mt-28">
             <div className="mx-auto max-w-7xl px-4 py-12 md:py-16">
@@ -58,15 +61,31 @@ export function HowItWorks() {
                     {steps.map((step, index) => {
                         const Icon = step.icon;
 
+                        // Scroll-triggered cascade (01 → 02 → 03). Suppressed
+                        // under prefers-reduced-motion — the card just renders.
+                        const motionProps = reduceMotion
+                            ? {}
+                            : {
+                                  initial: { opacity: 0, y: 16 },
+                                  whileInView: { opacity: 1, y: 0 },
+                                  viewport: { once: true, amount: 0.4 },
+                                  transition: {
+                                      duration: 0.4,
+                                      ease: 'easeOut' as const,
+                                      delay: index * 0.12,
+                                  },
+                              };
+
                         return (
-                            <li
+                            <motion.li
                                 key={step.number}
-                                className="relative overflow-hidden rounded-2xl border border-border bg-card p-6 transition-colors hover:border-primary/40 md:p-8"
+                                {...motionProps}
+                                className="relative overflow-hidden rounded-2xl border border-border bg-card p-6 transition-all duration-200 ease-out hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-glow-sm md:p-8"
                             >
                                 <div className="absolute -top-12 -right-12 size-40 rounded-full bg-primary/5 blur-3xl" />
 
                                 <div className="relative flex items-center justify-between">
-                                    <span className="font-display text-5xl font-extrabold tracking-tight text-muted-foreground/40">
+                                    <span className="font-display text-5xl font-extrabold tracking-tight text-primary/30">
                                         {step.number}
                                     </span>
                                     <span className="inline-flex size-11 items-center justify-center rounded-full border border-border/60 bg-background/60">
@@ -91,7 +110,7 @@ export function HowItWorks() {
                                         className="absolute top-1/2 -right-3 hidden h-px w-6 -translate-y-1/2 bg-gradient-to-r from-border to-transparent md:block"
                                     />
                                 )}
-                            </li>
+                            </motion.li>
                         );
                     })}
                 </ol>
