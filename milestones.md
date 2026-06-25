@@ -229,4 +229,12 @@ When every time control is selected, cards showed three chips (Blitz · Rapid ·
 - [x] Applied to every card surface: preview, grid card, listing row, /mine row, profile listing row, match list row, profile match row.
 - [x] The form selector is unchanged — you still pick individual controls; only the *display* collapses. (Skill already shows "Any skill"; languages already truncate to `2 +N`, so no all-collapse needed there.)
 
+### Phase 5 — Marquee scoped to marketing surfaces + sticky-offset fix ✅ built 2026-06-25 (pending visual sign-off)
+
+The always-on sticky ticker was noise on focused task pages and its z-band overlapped the new sticky preview heading.
+
+- [x] `SiteLayout` gains `showMarquee` (default **off**); only the homepage (`welcome`) + listings board (`listings/index`) opt in. Every task / detail page (create, wallet, settings, match, lobby, player hub, listing detail, profile, notifications, cms) no longer renders it.
+- [x] With the marquee gone from those pages, every marquee-coupled sticky offset dropped from `top-28` / `7rem` (header + marquee) to `top-16` / `4rem` (header only): `player-sidebar`, the create preview aside, the 1v1 + team match chat asides, and the listing-detail booking widget (`md:top-24` → `md:top-16`).
+- [x] Refreshed marquee copy — added **Chess & CS2**, **API-verified** ("the game's own API decides the winner"), **Auto-settled** ("winner paid the moment the result lands"); "listing created" → "posted". Six value-prop / trust-signal items.
+
 **Follow-ups if liked:** reuse `SegmentedOption` on the filter bars (`chess-format-filter`, skill-range toggles) for one segmented language site-wide.

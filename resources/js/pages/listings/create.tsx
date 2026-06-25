@@ -718,7 +718,7 @@ export default function ListingsCreate({
                         )}
                     </form>
 
-                    <aside className="space-y-4 lg:sticky lg:top-24">
+                    <aside className="space-y-4 lg:sticky lg:top-16">
                         <h2 className="font-display text-lg font-bold text-foreground">
                             {t('Listing preview')}
                         </h2>

@@ -38,8 +38,8 @@ const COOKIE_NAME = 'player_sidebar_collapsed';
 const COOKIE_MAX_AGE = 60 * 60 * 24 * 365;
 
 /**
- * Side navigation for the player hub. Sticky at `top-28` (just below
- * SiteHeader + MarqueeStrip). Collapsible rail mode persists in a cookie
+ * Side navigation for the player hub. Sticky at `top-16` (just below the
+ * SiteHeader — the marquee is homepage/listings-only). Collapsible rail mode persists in a cookie
  * shared via Inertia (`playerSidebarCollapsed`) so SSR + first paint +
  * every subsequent navigation render the user's saved width — no
  * post-mount transition from default → saved state on nav clicks.
@@ -100,7 +100,7 @@ export function PlayerSidebar() {
     return (
         <aside
             aria-label="Player management navigation"
-            className={`sticky top-28 hidden h-[calc(100vh-7rem)] shrink-0 self-start border-r border-border/60 bg-card/40 transition-[width] duration-200 ease-out md:flex md:flex-col ${
+            className={`sticky top-16 hidden h-[calc(100vh-4rem)] shrink-0 self-start border-r border-border/60 bg-card/40 transition-[width] duration-200 ease-out md:flex md:flex-col ${
                 collapsed ? 'md:w-16' : 'md:w-60'
             }`}
         >

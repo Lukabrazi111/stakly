@@ -336,17 +336,13 @@ function ChessMatchShow({ match, messages }: MatchShowProps) {
                         </div>
                     </div>
 
-                    {/* Desktop right-rail chat. Sticky at top-28 (112px) so
-                        the panel docks immediately below the marquee strip
-                        (which is sticky at top-16, ~46px tall, ending around
-                        110px). Using top-24 like before would tuck the chat
-                        UNDER the marquee's z-40 band, causing the marquee
-                        text to overlap the chat header on scroll. Fixed
-                        600px height keeps the panel compact rather than
-                        dominating viewport; internal scroll handles message
-                        overflow. */}
+                    {/* Desktop right-rail chat, sticky just below the header
+                        (top-16 — the marquee is homepage/listings-only now, so
+                        there's no marquee band to clear here). Fixed height keeps
+                        the panel compact rather than dominating the viewport;
+                        internal scroll handles message overflow. */}
                     {auth.user && (
-                        <aside className="hidden lg:sticky lg:top-28 lg:block lg:h-[750px]">
+                        <aside className="hidden lg:sticky lg:top-16 lg:block lg:h-[750px]">
                             <ChatPanel
                                 messages={chat.messages}
                                 viewerId={auth.user.id}

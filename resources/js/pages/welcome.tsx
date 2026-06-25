@@ -39,7 +39,7 @@ export default function Welcome({ featured, games }: Props) {
     }, [featured.data, tiles, selectedSlug]);
 
     return (
-        <SiteLayout>
+        <SiteLayout showMarquee>
             <PageMeta
                 title="Stake your skill. Find your match."
                 description="Peer-to-peer chess staking marketplace. Post a listing, escrow your stake, play your opponent on chess.com or Lichess, and get paid when you win."
