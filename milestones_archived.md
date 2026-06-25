@@ -1341,6 +1341,19 @@ Two small correctness/UX fixes on the match page surfaced during a full architec
 
 ---
 
+## M40 — Create-listing form UI polish ✅ shipped 2026-06-25 (Bybit-inspired)
+
+A multi-pass redesign of `listings/create`, anchored on Bybit's P2P ad-creation form (structure + restraint, not decoration). **P1** — segmented-control affordance + brand: one reusable `SegmentedOption` (solid `border-primary` + corner check, brighter idle text); official chess.com / Lichess / FACEIT brand marks (`components/shared/platform-logos.tsx`, Simple Icons) on Platform; Globe/Lock on Visibility; Public/Private as two-line option cards; the Game card (`GamePicker`) shows real game art (DB `poster_path`, same source as the homepage tiles) via a `GameThumb` instead of lucide icons. **P2** — Format + Your side became a compact inline radio group (`OptionRadioGroup`) reusing a shared `RadioIndicator` extracted from the notification-sound list (a solid-fill segmented toggle was tried first, deemed too heavy, and removed); plus a live **Deal summary** (`deal-summary.tsx`) showing Pot · fee · payout, fed `feeRate` from `config('stakly.platform_fee_rate')` so the preview can't drift from settlement. **P3** — two-column layout with a sticky live-preview right rail (`ListingPreviewCard`, a non-interactive twin of `ListingGridCard` driven by form state). **P4** — all-selected time controls collapse to one "Any time control" chip across every card surface (`isAllTimeControls()` / `timeControlChipLabels()` in `listings-format.ts`). **P5** — marquee scoped to homepage + listings only (`SiteLayout` `showMarquee` prop, default off) and every marquee-coupled sticky offset dropped from `top-28`/`7rem` to `top-16`/`4rem`; refreshed ticker copy.
+
+### Decisions
+
+- **Right control per choice type** (Bybit's lesson): roomy `SegmentedOption` cards where the choice carries a logo or a tradeoff (Platform, Visibility); compact `OptionRadioGroup` radios for short labels (Format, Your side); never a wide half-empty pill.
+- **Preview reuses the real card's components + formatters** so it can't visually drift from the marketplace board; shows the chosen duration ("24h"), not a `Date.now()` countdown (SSR-safe).
+- **Marquee belongs on marketing/discovery surfaces only** — a permanent ticker on focused task pages is noise and permanently spends vertical space; default-off, opt-in on homepage + listings board.
+- **Open follow-ups:** reuse `SegmentedOption` on the filter bars for one segmented language site-wide; optionally move the Post button into the sticky panel à la Bybit. (Homepage hero live-dot + multi-game badge copy and the "How it works" refresh shipped alongside but were intentionally left un-milestoned.)
+
+---
+
 ## Parked milestones
 
 Work that has a clear shape but isn't being picked up right now. Lives in the archive so the active milestones list stays focused on what we can act on; revisit if priorities shift.

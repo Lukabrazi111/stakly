@@ -2,11 +2,11 @@
 
 Frontend-first build. UI against real DB infrastructure + seeded fake data; backend logic (escrow, payouts, on-chain integration) lands per page once the UI is validated. Milestones are work-chunk labels, not version commitments — decisions inside any of them are revisitable.
 
-> **Shipped milestones live in `milestones_archived.md`** (M1, M2, M2.5, M3, M3.5, M4, M5, M6, M7, M8 all phases, M10, M11, M12 all phases, M14 all phases, M15 all phases, M16 all phases, M17, M18, M19, M22, M23, M24, M25, M26 all phases, M27 all phases, M29 all phases, M30 all phases, M31 all phases, M32 all phases, M34 all phases, M35 all phases, M36 all phases, M37 all phases, M38 P1–P3 (paused at P4), M39 all phases). **Parked milestones** (work that isn't being picked up right now) also live in the archive — currently M13. This file is for active + upcoming work + the cross-cutting architectural decisions that earlier milestones established.
+> **Shipped milestones live in `milestones_archived.md`** (M1, M2, M2.5, M3, M3.5, M4, M5, M6, M7, M8 all phases, M10, M11, M12 all phases, M14 all phases, M15 all phases, M16 all phases, M17, M18, M19, M22, M23, M24, M25, M26 all phases, M27 all phases, M29 all phases, M30 all phases, M31 all phases, M32 all phases, M34 all phases, M35 all phases, M36 all phases, M37 all phases, M38 P1–P3 (paused at P4), M39 all phases, M40 all phases). **Parked milestones** (work that isn't being picked up right now) also live in the archive — currently M13. This file is for active + upcoming work + the cross-cutting architectural decisions that earlier milestones established.
 
 ## Phases (map)
 
-**Recently shipped** — full per-milestone summaries live in `milestones_archived.md`. Latest: **M37** (one active match per game), **M38 P1–P3** (Redis for queue/cache/sessions + `redis→array` failover + admin-gated Horizon), **M15** (multi-game / CS2 via FACEIT), and **M39** (match-page pipeline fixes — ManualReview chat + single-source deadline) — through 2026-06-25.
+**Recently shipped** — full per-milestone summaries live in `milestones_archived.md`. Latest: **M38 P1–P3** (Redis for queue/cache/sessions + `redis→array` failover + admin-gated Horizon), **M15** (multi-game / CS2 via FACEIT), **M39** (match-page pipeline fixes — ManualReview chat + single-source deadline), and **M40** (create-listing form UI polish — Bybit-inspired) — through 2026-06-26.
 
 **Active / upcoming:**
 
@@ -20,7 +20,8 @@ Frontend-first build. UI against real DB infrastructure + seeded fake data; back
 - **M20** — Email notifications. **Spec materially shrunk**: M27 P5 already shipped the in-app preferences UI + `notification_preferences` table + 9 `PlayerNotification` classes; M30 P4 wired the `mail` channel for ban notifications. What's left = branded HTML email templates, flip `'mail'` into `via()` on the remaining PlayerNotification subclasses, production SMTP config. Realistically 2–3 days.
 - **M21** — Blacklist + safety. Block users from listings + chat, with anti-evasion considerations. Has open design questions (block semantics + multi-account evasion) — needs alignment before coding.
 - **M33** — Listing time-control contract. Make Stakly's accepted time controls (blitz / rapid / classical) explicit in the listing-creation form, surface `time_control_mismatch` as a player-facing banner on stuck matches, and optionally re-enable Slice 3d strictness behind a per-listing opt-in. Reverted from M14 on 2026-06-06 — friction (legitimate correspondence / bullet games rejected silently) outweighed the small sandbag attack surface at this stage. Revisit when launch scale or a real abuse incident makes it relevant.
-- **M40 — Create-listing form UI polish** — segmented-control (Platform / Format / Your side / Visibility) affordance + brand pass on `listings/create`: one reusable `SegmentedOption` with a strong selected state (solid border + corner check, no color-only cue), brighter idle text, official chess.com / Lichess logos + Globe / Lock icons, and inline Public/Private descriptions. **P1 built 2026-06-25 — pending visual sign-off.** Full spec in the section below.
+
+- **M41 — Verified skill ratings (anti-deception)** — pull real ratings/ranks from the provider on link (FACEIT ELO + level; chess.com / Lichess per-time-control ratings) so the create-listing skill range stops being free-typed and gameable; display on listings, enforce the opponent band against the taker's *real* rating. Spun out of a 2026-06-26 discussion — direction decision pending (full spec in the section below).
 
 > Active milestone keeps a detailed task list. Future milestones expand when started. Any of this can shift — flag the change, update the doc.
 
@@ -183,58 +184,8 @@ Not CMS-managed on purpose. The Filament CMS template (`cms/page.tsx`) is intent
 
 ---
 
-## M40 — Create-listing form UI polish
+## M41 — Verified skill ratings (anti-deception)
 
-Tightening the segmented controls on `listings/create` (raised during a UI review 2026-06-25). The same shadcn `ToggleGroup` pattern powers Platform, Format, Your side, and Visibility.
+> Spun out of a 2026-06-26 discussion; **not started** — spec pending the direction decision (display-only vs display + enforce, FACEIT-first phasing, optional constrain-band anti-sandbag).
 
-### Phase 1 — Segmented control affordance + brand ✅ built 2026-06-25 (pending visual sign-off)
-
-**Problem.** The two-option toggles leaned entirely on a thin pink border for the selected state; the unselected option sat in `text-muted-foreground` (reads as disabled); and there were no icons/logos — lots of dead space per pill, low scannability, no brand feel. Visibility's Public/Private tradeoff was only legible via a helper line that changed with selection, so you couldn't compare without toggling.
-
-**Fix.** One reusable `SegmentedOption` (wraps `ToggleGroupItem`), applied to all four controls:
-
-- [x] Strong selected affordance — solid `border-primary` + `bg-primary/15` + a corner check (state no longer relies on color alone → a11y).
-- [x] Brighter idle text (`text-foreground/70`) so the unselected option stops looking disabled.
-- [x] Optional `icon` — official chess.com / Lichess marks (Simple Icons, `currentColor` → grey idle, primary when active) on Platform; Globe / Lock on Visibility.
-- [x] Optional `description` → two-line "option card"; used on Visibility (helper line removed, descriptions inline, grid stacks on mobile).
-- [x] `components/shared/platform-logos.tsx` (`ChessComLogo`, `LichessLogo`) + `components/listings/segmented-option.tsx`; dropped the local `SEGMENTED_ITEM_CLASS`.
-- [ ] User visual sign-off → then archive.
-
-**Also done:** FACEIT "F" lettermark → official FACEIT logo (`FaceitLogo` in `platform-logos.tsx`), kept in the pink `bg-primary/15` square on the CS2 platform card. Game card (`GamePicker`) now shows real game art (DB `poster_path`, same source as the homepage tiles) via a `GameThumb` — no more lucide game icons; falls back to a gradient initial when a poster isn't set.
-
-### Phase 2 — Bybit-inspired refinement ✅ built 2026-06-25 (pending visual sign-off)
-
-Reference: Bybit's P2P ad-creation form — the win there is **structure + restraint**, not more decoration.
-
-- [x] Format + Your side → compact inline **radio group** (`OptionRadioGroup`), the Bybit Pricing/Status pattern. Reuses a shared `RadioIndicator` dot **extracted from the notification-sound list** (`settings/notifications` now imports it too) so radios read identically app-wide. (First shipped a solid-fill segmented toggle here; too heavy per feedback — replaced with radios, `SegmentedToggle` deleted.)
-- [x] Live **Deal summary** (`deal-summary.tsx`): pink-tinted callout showing Pot · Platform fee (10%) · Payout if you win, updating from stake + format, shown once a stake is entered. Backend passes `feeRate` (single source = `config('stakly.platform_fee_rate')`, the value settlement uses) so the preview can't drift from the real payout. Test: `ListingStoreTest` asserts the prop.
-- [ ] Offered but not built (larger): Bybit's left-rail labeled-section layout — separate refactor on demand.
-- [ ] User visual sign-off → then archive.
-
-### Phase 3 — Live "Ad to be posted" preview ✅ built 2026-06-25 (pending visual sign-off)
-
-Reference: Bybit's two-column Post-Ads page — form left, live "Ad to Be Posted" panel right, each on its own surface ("zone").
-
-- [x] Two-column layout on `listings/create` (`max-w-5xl`): form on the left inside a `bg-card/40` panel; sticky right rail (`lg:sticky lg:top-24`). Stacks on mobile (preview drops below the form).
-- [x] `ListingPreviewCard` (`listing-preview-card.tsx`) — non-interactive twin of `ListingGridCard` (no overlay link / Take button), live from form state + the signed-in user. Reuses the same chips + skill formatter so the preview can't drift from the real board card. Shows a stable duration label ("24h") rather than a `Date.now()` countdown (SSR-safe; avoids the "23h 59m" a live countdown prints the instant after posting).
-- [x] Deal summary moved into the right rail under the preview (consolidates the "what you get" info, Bybit-style).
-- [ ] Post button left at the bottom of the form for now — could move into the sticky panel à la Bybit on demand.
-- [ ] User visual sign-off → then archive.
-
-### Phase 4 — "Any time control" collapse ✅ built 2026-06-25 (pending visual sign-off)
-
-When every time control is selected, cards showed three chips (Blitz · Rapid · Classical) — noise. Now they collapse to a single **"Any time control"** chip, mirroring the existing "Any skill" behavior, so preview + listing cards stay clean.
-
-- [x] `isAllTimeControls()` + `timeControlChipLabels()` in `listings-format.ts` (single source of the all-vs-some collapse); `formatTimeControls()` collapses too (covers string sites: `match-info-card`, listing detail).
-- [x] Applied to every card surface: preview, grid card, listing row, /mine row, profile listing row, match list row, profile match row.
-- [x] The form selector is unchanged — you still pick individual controls; only the *display* collapses. (Skill already shows "Any skill"; languages already truncate to `2 +N`, so no all-collapse needed there.)
-
-### Phase 5 — Marquee scoped to marketing surfaces + sticky-offset fix ✅ built 2026-06-25 (pending visual sign-off)
-
-The always-on sticky ticker was noise on focused task pages and its z-band overlapped the new sticky preview heading.
-
-- [x] `SiteLayout` gains `showMarquee` (default **off**); only the homepage (`welcome`) + listings board (`listings/index`) opt in. Every task / detail page (create, wallet, settings, match, lobby, player hub, listing detail, profile, notifications, cms) no longer renders it.
-- [x] With the marquee gone from those pages, every marquee-coupled sticky offset dropped from `top-28` / `7rem` (header + marquee) to `top-16` / `4rem` (header only): `player-sidebar`, the create preview aside, the 1v1 + team match chat asides, and the listing-detail booking widget (`md:top-24` → `md:top-16`).
-- [x] Refreshed marquee copy — added **Chess & CS2**, **API-verified** ("the game's own API decides the winner"), **Auto-settled** ("winner paid the moment the result lands"); "listing created" → "posted". Six value-prop / trust-signal items.
-
-**Follow-ups if liked:** reuse `SegmentedOption` on the filter bars (`chess-format-filter`, skill-range toggles) for one segmented language site-wide.
+The create-listing **skill range (Elo)** is free-typed and unverified — a sandbag/abuse vector. Idea: pull each player's real rating/rank from the provider on link (FACEIT ELO + level today; chess.com / Lichess ratings, which are per-time-control), display it on listings/profiles, and enforce the opponent band against the taker's **real** rating server-side. Extends existing scaffolding (`linked_accounts.skill_rating`, `match_provider_snapshots.skill_rating_snapshot`, FACEIT rating already fetched on link). Open decisions before coding: display-only vs display+enforce; whether to constrain the creator's band around their own rating (hard anti-sandbag); FACEIT-first phasing.
