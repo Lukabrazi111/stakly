@@ -28,8 +28,11 @@ export function Hero() {
 
             <div className="mx-auto flex max-w-5xl flex-col items-center px-4 pt-24 pb-20 text-center md:pt-32 md:pb-28">
                 <p className="mb-8 inline-flex items-center gap-2 rounded-full border border-border/60 bg-card/60 px-4 py-1.5 text-xs tracking-widest text-muted-foreground uppercase backdrop-blur">
-                    <span className="inline-block size-1.5 rounded-full bg-success" />
-                    {t('Live · chess.com & Lichess verified')}
+                    <span className="relative flex size-1.5">
+                        <span className="absolute inline-flex h-full w-full rounded-full bg-success opacity-75 motion-safe:animate-ping" />
+                        <span className="relative inline-flex size-1.5 rounded-full bg-success" />
+                    </span>
+                    {t('Live · chess.com, Lichess & FACEIT verified')}
                 </p>
 
                 <h1 className="font-display text-4xl leading-[0.95] font-extrabold tracking-tight text-balance text-foreground sm:text-5xl md:text-7xl lg:text-8xl">

@@ -438,7 +438,7 @@ function ChessBranch({ listing, match }: ChessBranchProps) {
                         column — without it the stake card's breakdown rows
                         could grow the grid cell past viewport on mobile. */}
                     <aside className="min-w-0 md:col-span-1">
-                        <div className="rounded-2xl border border-border/60 bg-card p-6 md:sticky md:top-24">
+                        <div className="rounded-2xl border border-border/60 bg-card p-6 md:sticky md:top-16">
                             <div className="text-center">
                                 <div className="text-[11px] tracking-widest text-muted-foreground uppercase">
                                     {t('Stake')}

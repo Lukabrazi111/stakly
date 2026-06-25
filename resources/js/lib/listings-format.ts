@@ -7,13 +7,40 @@ export const timeControlLabels: Record<TimeControl, string> = {
     classical: 'Classical',
 };
 
+const TIME_CONTROL_COUNT = Object.keys(timeControlLabels).length;
+
+/**
+ * True when every time control is selected — display collapses to a single
+ * "Any time control" tag instead of one per control, keeping listing / preview
+ * cards from filling with redundant chips.
+ */
+export function isAllTimeControls(values: TimeControl[]): boolean {
+    return values.length >= TIME_CONTROL_COUNT;
+}
+
+/**
+ * Chip labels for a listing's time controls: a single "Any time control" when
+ * all are selected, otherwise one label per control. Cards own the chip markup;
+ * this owns the all-vs-some collapse so every surface stays consistent.
+ */
+export function timeControlChipLabels(
+    values: TimeControl[],
+    t?: TranslationFn,
+): string[] {
+    if (isAllTimeControls(values)) {
+        return [t ? t('Any time control') : 'Any time control'];
+    }
+
+    return values.map((v) =>
+        t ? t(timeControlLabels[v]) : timeControlLabels[v],
+    );
+}
+
 export function formatTimeControls(
     values: TimeControl[],
     t?: TranslationFn,
 ): string {
-    return values
-        .map((v) => (t ? t(timeControlLabels[v]) : timeControlLabels[v]))
-        .join(', ');
+    return timeControlChipLabels(values, t).join(', ');
 }
 
 export function formatTimeRemaining(

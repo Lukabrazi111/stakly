@@ -323,6 +323,10 @@ class ListingController extends Controller
             'linkedPlatforms' => $linkedPlatforms,
             'games' => ['data' => $games],
             'requirementsByGame' => $requirementsByGame,
+            // Single source for the create-form Deal summary (M40) — the same
+            // config the wallet ledger uses at settlement. Float at the JSON
+            // boundary only; internal money math stays BCMath.
+            'feeRate' => (float) config('stakly.platform_fee_rate'),
         ]);
     }
 

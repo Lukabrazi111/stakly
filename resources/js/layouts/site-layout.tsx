@@ -13,11 +13,19 @@ import { useT } from '@/lib/i18n';
 interface SiteLayoutProps {
     children: ReactNode;
     marqueeItems?: MarqueeItem[];
+    /**
+     * The marquee ticker is brand energy for marketing / discovery surfaces
+     * (homepage, listings board) — opt in there. Off by default so focused
+     * task pages (create, wallet, settings, match, lobby, player hub) stay
+     * calm and don't permanently spend vertical space on a ticker.
+     */
+    showMarquee?: boolean;
 }
 
 export default function SiteLayout({
     children,
     marqueeItems,
+    showMarquee = false,
 }: SiteLayoutProps) {
     const t = useT();
     useFlashToast();
@@ -32,16 +40,24 @@ export default function SiteLayout({
             value: t('Stake USDT on your own results'),
         },
         {
+            label: t('Chess & CS2'),
+            value: t('Find opponents at your skill level'),
+        },
+        {
+            label: t('API-verified'),
+            value: t("The game's own API decides the winner"),
+        },
+        {
             label: t('USDT escrow'),
-            value: t('Stakes locked the moment a listing is created'),
+            value: t('Stakes locked the moment a listing is posted'),
         },
         {
             label: t('Auto-refund'),
             value: t('Unmatched listings refund on expiry'),
         },
         {
-            label: t('1v1 chess'),
-            value: t('Find an opponent at your skill level'),
+            label: t('Auto-settled'),
+            value: t('Winner paid the moment the result lands'),
         },
     ];
 
@@ -50,7 +66,7 @@ export default function SiteLayout({
             <div className="flex min-h-screen flex-col bg-background text-foreground">
                 {ban && <BannedBanner reason={ban.reason} />}
                 <SiteHeader />
-                <MarqueeStrip items={items} />
+                {showMarquee && <MarqueeStrip items={items} />}
                 <main className="flex-1">{children}</main>
                 <SiteFooter />
                 <AuthModal />
