@@ -37,14 +37,14 @@ export function DealSummary({ stake, teamSize, feeRate }: DealSummaryProps) {
     const isTeam = teamSize > 1;
 
     return (
-        <div className="space-y-2.5 rounded-xl border border-primary/20 bg-primary/5 p-4">
+        <div className="space-y-2.5 rounded-xl border border-border/60 bg-card/60 p-4">
             <SummaryRow label={t('Pot')} value={formatUsd(pot)} />
             <SummaryRow
                 label={t('Platform fee (:pct%)', { pct: feePercent })}
                 value={`−${formatUsd(fee)}`}
                 muted
             />
-            <div className="border-t border-primary/15 pt-2.5">
+            <div className="border-t border-border/60 pt-2.5">
                 <SummaryRow
                     label={
                         isTeam

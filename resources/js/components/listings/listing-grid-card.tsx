@@ -13,7 +13,7 @@ import {
     formatSkillRange,
     formatTimeRemaining,
     getTimeUrgency,
-    timeControlLabels,
+    timeControlChipLabels,
 } from '@/lib/listings-format';
 import { show as showListing } from '@/routes/listings';
 import { show as userShow } from '@/routes/users';
@@ -145,15 +145,17 @@ export function ListingGridCard({ listing }: Props) {
                 </span>
 
                 {!isTeamPlay &&
-                    listing.time_control.map((tc) => (
-                        <span
-                            key={tc}
-                            className="inline-flex items-center gap-1 rounded-full border border-border/60 bg-background/60 px-2.5 py-0.5 text-xs font-medium text-muted-foreground"
-                        >
-                            <Clock className="size-3" aria-hidden="true" />
-                            {t(timeControlLabels[tc])}
-                        </span>
-                    ))}
+                    timeControlChipLabels(listing.time_control, t).map(
+                        (label) => (
+                            <span
+                                key={label}
+                                className="inline-flex items-center gap-1 rounded-full border border-border/60 bg-background/60 px-2.5 py-0.5 text-xs font-medium text-muted-foreground"
+                            >
+                                <Clock className="size-3" aria-hidden="true" />
+                                {label}
+                            </span>
+                        ),
+                    )}
 
                 {listing.language && listing.language.length > 0 && (
                     <span className="inline-flex items-center gap-1 rounded-full border border-border/60 bg-background/60 px-2.5 py-0.5 text-xs font-medium text-muted-foreground">

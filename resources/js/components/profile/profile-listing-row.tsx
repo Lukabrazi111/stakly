@@ -7,7 +7,7 @@ import {
     formatSkillRange,
     formatTimeRemaining,
     getTimeUrgency,
-    timeControlLabels,
+    timeControlChipLabels,
 } from '@/lib/listings-format';
 import { show as showListing } from '@/routes/listings';
 import type { Listing, ListingStatus } from '@/types';
@@ -80,13 +80,13 @@ export function ProfileListingRow({ listing }: Props) {
                     {formatSkillRange(listing.skill_min, listing.skill_max, t)}
                 </span>
 
-                {listing.time_control.map((tc) => (
+                {timeControlChipLabels(listing.time_control, t).map((label) => (
                     <span
-                        key={tc}
+                        key={label}
                         className="inline-flex items-center gap-1 rounded-full border border-border/60 bg-background/60 px-2.5 py-0.5 text-xs font-medium text-muted-foreground"
                     >
                         <Clock className="size-3" aria-hidden="true" />
-                        {t(timeControlLabels[tc])}
+                        {label}
                     </span>
                 ))}
             </div>

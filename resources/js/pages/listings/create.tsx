@@ -7,6 +7,7 @@ import { ChessSkillRangeFilter } from '@/components/listings/chess-skill-range-f
 import { Cs2SkillRangeFilter } from '@/components/listings/cs2-skill-range-filter';
 import { DealSummary } from '@/components/listings/deal-summary';
 import { GamePicker } from '@/components/listings/game-picker';
+import { ListingPreviewCard } from '@/components/listings/listing-preview-card';
 import { OptionRadioGroup } from '@/components/listings/option-radio-group';
 import { SegmentedOption } from '@/components/listings/segmented-option';
 import {
@@ -230,7 +231,7 @@ export default function ListingsCreate({
                 noindex
             />
 
-            <div className="mx-auto max-w-2xl px-4 py-10 md:py-14">
+            <div className="mx-auto max-w-5xl px-4 py-10 md:py-14">
                 <header className="mb-8">
                     <h1 className="font-display text-3xl font-bold tracking-tight md:text-4xl">
                         {t('Create a listing')}
@@ -272,221 +273,261 @@ export default function ListingsCreate({
                     </div>
                 )}
 
-                <form
-                    onSubmit={(e) => {
-                        e.preventDefault();
-                        post(storeListing().url);
-                    }}
-                    className="space-y-8"
-                >
-                    <FormSection title={t('Game')}>
-                        <GamePicker
-                            games={games.data}
-                            selected={data.game}
-                            onSelect={handleGameChange}
-                            requirementsByGame={requirementsByGame}
-                        />
-                        <InputError message={errors.game} />
-                    </FormSection>
+                <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px] lg:items-start">
+                    <form
+                        onSubmit={(e) => {
+                            e.preventDefault();
+                            post(storeListing().url);
+                        }}
+                        className="space-y-8 rounded-2xl border border-border/60 bg-card/40 p-5 md:p-6"
+                    >
+                        <FormSection title={t('Game')}>
+                            <GamePicker
+                                games={games.data}
+                                selected={data.game}
+                                onSelect={handleGameChange}
+                                requirementsByGame={requirementsByGame}
+                            />
+                            <InputError message={errors.game} />
+                        </FormSection>
 
-                    {!isGameVerified ? (
-                        <LinkGateNotice requiredProviders={requiredProviders} />
-                    ) : (
-                        <>
-                            {showChessPlatformPicker && (
-                                <FormSection title={t('Platform')}>
-                                    <ToggleGroup
-                                        type="single"
-                                        value={data.platform}
-                                        onValueChange={(value) => {
-                                            if (
-                                                isChessProvider(
-                                                    value as ListingPlatform,
-                                                )
-                                            ) {
-                                                setData(
-                                                    'platform',
-                                                    value as ListingPlatform,
-                                                );
-                                            }
-                                        }}
-                                        className="grid grid-cols-2 gap-2"
-                                    >
-                                        {linkedChessProviders.map((p) => (
-                                            <SegmentedOption
-                                                key={p}
-                                                value={p}
-                                                label={PROVIDER_LABEL[p]}
-                                                icon={PLATFORM_ICON[p]}
-                                            />
-                                        ))}
-                                    </ToggleGroup>
-                                    <p className="mt-2 text-xs text-muted-foreground">
-                                        {t(
-                                            'Match outcome will be verified against :platform.',
-                                            {
-                                                platform:
-                                                    PROVIDER_LABEL[
-                                                        data.platform
-                                                    ],
-                                            },
-                                        )}
-                                    </p>
-                                    <InputError message={errors.platform} />
-                                </FormSection>
-                            )}
-
-                            {data.game === 'cs2' && (
-                                <FormSection title={t('Platform')}>
-                                    <div className="flex items-center gap-3 rounded-xl border border-border/60 bg-card/60 p-4">
-                                        <span className="inline-flex size-9 items-center justify-center rounded-lg bg-primary/15 text-primary">
-                                            <FaceitLogo className="size-5" />
-                                        </span>
-                                        <div className="space-y-0.5">
-                                            <div className="font-semibold text-foreground">
-                                                FACEIT
-                                            </div>
-                                            <p className="text-xs text-muted-foreground">
-                                                {t(
-                                                    'Match outcome will be verified against FACEIT.',
-                                                )}
-                                            </p>
-                                        </div>
-                                    </div>
-                                </FormSection>
-                            )}
-
-                            {allowedTeamSizes.length > 1 && (
-                                <FormSection title={t('Format')}>
-                                    <OptionRadioGroup
-                                        name="team_size"
-                                        ariaLabel={t('Format')}
-                                        value={String(data.team_size)}
-                                        onChange={(value) =>
-                                            handleTeamSizeChange(Number(value))
-                                        }
-                                        options={allowedTeamSizes.map(
-                                            (size) => ({
-                                                value: String(size),
-                                                label: formatTeamSizeLabel(
-                                                    size,
-                                                ),
-                                            }),
-                                        )}
-                                    />
-                                    <p className="mt-2 text-xs text-muted-foreground">
-                                        {data.team_size === 1
-                                            ? t('Direct 1v1 match — no lobby.')
-                                            : t(
-                                                  'Team lobby — pick your side, recruit teammates, ready up together.',
-                                              )}
-                                    </p>
-                                    <InputError message={errors.team_size} />
-                                </FormSection>
-                            )}
-
-                            {data.team_size > 1 && (
-                                <FormSection title={t('Your side')}>
-                                    <OptionRadioGroup
-                                        name="creator_side"
-                                        ariaLabel={t('Your side')}
-                                        value={data.creator_side ?? 'a'}
-                                        onChange={(value) => {
-                                            if (
-                                                value === 'a' ||
-                                                value === 'b'
-                                            ) {
-                                                setData('creator_side', value);
-                                            }
-                                        }}
-                                        options={[
-                                            { value: 'a', label: t('Team A') },
-                                            { value: 'b', label: t('Team B') },
-                                        ]}
-                                    />
-                                    <p className="mt-2 text-xs text-muted-foreground">
-                                        {t(
-                                            "You'll be auto-joined to slot 1 of this team. Teammates join the empty slots from the lobby page.",
-                                        )}
-                                    </p>
-                                    <InputError message={errors.creator_side} />
-                                </FormSection>
-                            )}
-
-                            <FormSection title={t('Stake')}>
-                                <div className="space-y-2">
-                                    <Label htmlFor="stake_amount">
-                                        {t('Amount in USDT')}
-                                    </Label>
-                                    <div className="relative">
-                                        <Input
-                                            id="stake_amount"
-                                            name="stake_amount"
-                                            type="number"
-                                            inputMode="decimal"
-                                            min={1}
-                                            max={100000}
-                                            placeholder="100"
-                                            value={data.stake_amount}
-                                            onChange={(e) =>
-                                                setData(
-                                                    'stake_amount',
-                                                    e.target.value,
-                                                )
-                                            }
-                                            className="pr-16"
-                                            aria-invalid={
-                                                exceedsBalance || undefined
-                                            }
-                                        />
-                                        <span className="pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 text-sm font-medium text-muted-foreground">
-                                            USDT
-                                        </span>
-                                    </div>
-                                    <div className="text-xs text-muted-foreground">
-                                        {t('Available:')}{' '}
-                                        <span
-                                            className={
-                                                exceedsBalance
-                                                    ? 'font-medium text-destructive'
-                                                    : 'font-medium text-foreground'
-                                            }
+                        {!isGameVerified ? (
+                            <LinkGateNotice
+                                requiredProviders={requiredProviders}
+                            />
+                        ) : (
+                            <>
+                                {showChessPlatformPicker && (
+                                    <FormSection title={t('Platform')}>
+                                        <ToggleGroup
+                                            type="single"
+                                            value={data.platform}
+                                            onValueChange={(value) => {
+                                                if (
+                                                    isChessProvider(
+                                                        value as ListingPlatform,
+                                                    )
+                                                ) {
+                                                    setData(
+                                                        'platform',
+                                                        value as ListingPlatform,
+                                                    );
+                                                }
+                                            }}
+                                            className="grid grid-cols-2 gap-2"
                                         >
-                                            ${balanceNumber.toFixed(2)} USDT
-                                        </span>
-                                    </div>
-                                    {exceedsBalance && (
-                                        <p className="text-xs text-destructive">
+                                            {linkedChessProviders.map((p) => (
+                                                <SegmentedOption
+                                                    key={p}
+                                                    value={p}
+                                                    label={PROVIDER_LABEL[p]}
+                                                    icon={PLATFORM_ICON[p]}
+                                                />
+                                            ))}
+                                        </ToggleGroup>
+                                        <p className="mt-2 text-xs text-muted-foreground">
                                             {t(
-                                                'Stake exceeds your available balance.',
+                                                'Match outcome will be verified against :platform.',
+                                                {
+                                                    platform:
+                                                        PROVIDER_LABEL[
+                                                            data.platform
+                                                        ],
+                                                },
                                             )}
                                         </p>
-                                    )}
-                                    <InputError message={errors.stake_amount} />
-                                </div>
-                            </FormSection>
+                                        <InputError message={errors.platform} />
+                                    </FormSection>
+                                )}
 
-                            <DealSummary
-                                stake={stakeNumber}
-                                teamSize={data.team_size}
-                                feeRate={feeRate}
-                            />
+                                {data.game === 'cs2' && (
+                                    <FormSection title={t('Platform')}>
+                                        <div className="flex items-center gap-3 rounded-xl border border-border/60 bg-card/60 p-4">
+                                            <span className="inline-flex size-9 items-center justify-center rounded-lg bg-primary/15 text-primary">
+                                                <FaceitLogo className="size-5" />
+                                            </span>
+                                            <div className="space-y-0.5">
+                                                <div className="font-semibold text-foreground">
+                                                    FACEIT
+                                                </div>
+                                                <p className="text-xs text-muted-foreground">
+                                                    {t(
+                                                        'Match outcome will be verified against FACEIT.',
+                                                    )}
+                                                </p>
+                                            </div>
+                                        </div>
+                                    </FormSection>
+                                )}
 
-                            <FormSection title={t('Match preferences')}>
-                                <div className="space-y-5">
-                                    {data.game === 'chess' && (
-                                        <>
-                                            <ChessFormatFilter
-                                                value={data.time_control}
-                                                onChange={(next) =>
+                                {allowedTeamSizes.length > 1 && (
+                                    <FormSection title={t('Format')}>
+                                        <OptionRadioGroup
+                                            name="team_size"
+                                            ariaLabel={t('Format')}
+                                            value={String(data.team_size)}
+                                            onChange={(value) =>
+                                                handleTeamSizeChange(
+                                                    Number(value),
+                                                )
+                                            }
+                                            options={allowedTeamSizes.map(
+                                                (size) => ({
+                                                    value: String(size),
+                                                    label: formatTeamSizeLabel(
+                                                        size,
+                                                    ),
+                                                }),
+                                            )}
+                                        />
+                                        <p className="mt-2 text-xs text-muted-foreground">
+                                            {data.team_size === 1
+                                                ? t(
+                                                      'Direct 1v1 match — no lobby.',
+                                                  )
+                                                : t(
+                                                      'Team lobby — pick your side, recruit teammates, ready up together.',
+                                                  )}
+                                        </p>
+                                        <InputError
+                                            message={errors.team_size}
+                                        />
+                                    </FormSection>
+                                )}
+
+                                {data.team_size > 1 && (
+                                    <FormSection title={t('Your side')}>
+                                        <OptionRadioGroup
+                                            name="creator_side"
+                                            ariaLabel={t('Your side')}
+                                            value={data.creator_side ?? 'a'}
+                                            onChange={(value) => {
+                                                if (
+                                                    value === 'a' ||
+                                                    value === 'b'
+                                                ) {
                                                     setData(
-                                                        'time_control',
-                                                        next,
+                                                        'creator_side',
+                                                        value,
+                                                    );
+                                                }
+                                            }}
+                                            options={[
+                                                {
+                                                    value: 'a',
+                                                    label: t('Team A'),
+                                                },
+                                                {
+                                                    value: 'b',
+                                                    label: t('Team B'),
+                                                },
+                                            ]}
+                                        />
+                                        <p className="mt-2 text-xs text-muted-foreground">
+                                            {t(
+                                                "You'll be auto-joined to slot 1 of this team. Teammates join the empty slots from the lobby page.",
+                                            )}
+                                        </p>
+                                        <InputError
+                                            message={errors.creator_side}
+                                        />
+                                    </FormSection>
+                                )}
+
+                                <FormSection title={t('Stake')}>
+                                    <div className="space-y-2">
+                                        <Label htmlFor="stake_amount">
+                                            {t('Amount in USDT')}
+                                        </Label>
+                                        <div className="relative">
+                                            <Input
+                                                id="stake_amount"
+                                                name="stake_amount"
+                                                type="number"
+                                                inputMode="decimal"
+                                                min={1}
+                                                max={100000}
+                                                placeholder="100"
+                                                value={data.stake_amount}
+                                                onChange={(e) =>
+                                                    setData(
+                                                        'stake_amount',
+                                                        e.target.value,
                                                     )
                                                 }
-                                                error={errors.time_control}
+                                                className="pr-16"
+                                                aria-invalid={
+                                                    exceedsBalance || undefined
+                                                }
                                             />
-                                            <ChessSkillRangeFilter
+                                            <span className="pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 text-sm font-medium text-muted-foreground">
+                                                USDT
+                                            </span>
+                                        </div>
+                                        <div className="text-xs text-muted-foreground">
+                                            {t('Available:')}{' '}
+                                            <span
+                                                className={
+                                                    exceedsBalance
+                                                        ? 'font-medium text-destructive'
+                                                        : 'font-medium text-foreground'
+                                                }
+                                            >
+                                                ${balanceNumber.toFixed(2)} USDT
+                                            </span>
+                                        </div>
+                                        {exceedsBalance && (
+                                            <p className="text-xs text-destructive">
+                                                {t(
+                                                    'Stake exceeds your available balance.',
+                                                )}
+                                            </p>
+                                        )}
+                                        <InputError
+                                            message={errors.stake_amount}
+                                        />
+                                    </div>
+                                </FormSection>
+
+                                <FormSection title={t('Match preferences')}>
+                                    <div className="space-y-5">
+                                        {data.game === 'chess' && (
+                                            <>
+                                                <ChessFormatFilter
+                                                    value={data.time_control}
+                                                    onChange={(next) =>
+                                                        setData(
+                                                            'time_control',
+                                                            next,
+                                                        )
+                                                    }
+                                                    error={errors.time_control}
+                                                />
+                                                <ChessSkillRangeFilter
+                                                    min={data.skill_min}
+                                                    max={data.skill_max}
+                                                    onMinChange={(next) =>
+                                                        setData(
+                                                            'skill_min',
+                                                            next,
+                                                        )
+                                                    }
+                                                    onMaxChange={(next) =>
+                                                        setData(
+                                                            'skill_max',
+                                                            next,
+                                                        )
+                                                    }
+                                                    errors={{
+                                                        min: errors.skill_min,
+                                                        max: errors.skill_max,
+                                                    }}
+                                                />
+                                            </>
+                                        )}
+
+                                        {data.game === 'cs2' && (
+                                            <Cs2SkillRangeFilter
                                                 min={data.skill_min}
                                                 max={data.skill_max}
                                                 onMinChange={(next) =>
@@ -500,187 +541,208 @@ export default function ListingsCreate({
                                                     max: errors.skill_max,
                                                 }}
                                             />
-                                        </>
-                                    )}
+                                        )}
+                                    </div>
+                                </FormSection>
 
-                                    {data.game === 'cs2' && (
-                                        <Cs2SkillRangeFilter
-                                            min={data.skill_min}
-                                            max={data.skill_max}
-                                            onMinChange={(next) =>
-                                                setData('skill_min', next)
+                                <FormSection title={t('Audience')}>
+                                    <div className="space-y-5">
+                                        <div className="space-y-2">
+                                            <Label htmlFor="region">
+                                                {t('Region')}
+                                            </Label>
+                                            <Select
+                                                value={data.region}
+                                                onValueChange={(value) =>
+                                                    setData('region', value)
+                                                }
+                                            >
+                                                <SelectTrigger
+                                                    id="region"
+                                                    className="w-full"
+                                                >
+                                                    <SelectValue />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                    {regions.map((region) => (
+                                                        <SelectItem
+                                                            key={region}
+                                                            value={region}
+                                                        >
+                                                            {region}
+                                                        </SelectItem>
+                                                    ))}
+                                                </SelectContent>
+                                            </Select>
+                                            <InputError
+                                                message={errors.region}
+                                            />
+                                        </div>
+                                        <div className="space-y-2">
+                                            <Label>{t('Languages')}</Label>
+                                            <ToggleGroup
+                                                type="multiple"
+                                                variant="outline"
+                                                value={data.language}
+                                                onValueChange={(value) =>
+                                                    setData('language', value)
+                                                }
+                                                className="flex flex-wrap"
+                                            >
+                                                {languages.map((lang) => (
+                                                    <ToggleGroupItem
+                                                        key={lang}
+                                                        value={lang}
+                                                        className="rounded-full px-4 py-2"
+                                                    >
+                                                        {lang}
+                                                    </ToggleGroupItem>
+                                                ))}
+                                            </ToggleGroup>
+                                            <p className="text-xs text-muted-foreground">
+                                                {t(
+                                                    'Pick one or more, or leave empty for any language.',
+                                                )}
+                                            </p>
+                                            <InputError
+                                                message={errors.language}
+                                            />
+                                        </div>
+                                    </div>
+                                </FormSection>
+
+                                <FormSection title={t('Visibility')}>
+                                    <ToggleGroup
+                                        type="single"
+                                        value={
+                                            data.is_public
+                                                ? 'public'
+                                                : 'private'
+                                        }
+                                        onValueChange={(value) => {
+                                            if (value === 'public') {
+                                                setData('is_public', true);
+                                            } else if (value === 'private') {
+                                                setData('is_public', false);
                                             }
-                                            onMaxChange={(next) =>
-                                                setData('skill_max', next)
-                                            }
-                                            errors={{
-                                                min: errors.skill_min,
-                                                max: errors.skill_max,
-                                            }}
+                                        }}
+                                        className="grid grid-cols-1 gap-2 sm:grid-cols-2"
+                                    >
+                                        <SegmentedOption
+                                            value="public"
+                                            icon={<Globe className="size-5" />}
+                                            label={t('Public')}
+                                            description={t(
+                                                'Listed in the marketplace for anyone matching your skill range.',
+                                            )}
                                         />
-                                    )}
-                                </div>
-                            </FormSection>
+                                        <SegmentedOption
+                                            value="private"
+                                            icon={<Lock className="size-5" />}
+                                            label={t('Private')}
+                                            description={t(
+                                                'Hidden — only people with your invite link can see it.',
+                                            )}
+                                        />
+                                    </ToggleGroup>
+                                    <InputError message={errors.is_public} />
+                                </FormSection>
 
-                            <FormSection title={t('Audience')}>
-                                <div className="space-y-5">
+                                <FormSection title={t('Listing expires after')}>
                                     <div className="space-y-2">
-                                        <Label htmlFor="region">
-                                            {t('Region')}
-                                        </Label>
                                         <Select
-                                            value={data.region}
+                                            value={String(data.duration_hours)}
                                             onValueChange={(value) =>
-                                                setData('region', value)
+                                                setData(
+                                                    'duration_hours',
+                                                    Number(value),
+                                                )
                                             }
                                         >
-                                            <SelectTrigger
-                                                id="region"
-                                                className="w-full"
-                                            >
+                                            <SelectTrigger className="w-full">
                                                 <SelectValue />
                                             </SelectTrigger>
                                             <SelectContent>
-                                                {regions.map((region) => (
+                                                {durations.map((hours) => (
                                                     <SelectItem
-                                                        key={region}
-                                                        value={region}
+                                                        key={hours}
+                                                        value={String(hours)}
                                                     >
-                                                        {region}
+                                                        {hours === 1
+                                                            ? t('1 hour')
+                                                            : t(
+                                                                  ':hours hours',
+                                                                  {
+                                                                      hours,
+                                                                  },
+                                                              )}
                                                     </SelectItem>
                                                 ))}
                                             </SelectContent>
                                         </Select>
-                                        <InputError message={errors.region} />
-                                    </div>
-                                    <div className="space-y-2">
-                                        <Label>{t('Languages')}</Label>
-                                        <ToggleGroup
-                                            type="multiple"
-                                            variant="outline"
-                                            value={data.language}
-                                            onValueChange={(value) =>
-                                                setData('language', value)
-                                            }
-                                            className="flex flex-wrap"
-                                        >
-                                            {languages.map((lang) => (
-                                                <ToggleGroupItem
-                                                    key={lang}
-                                                    value={lang}
-                                                    className="rounded-full px-4 py-2"
-                                                >
-                                                    {lang}
-                                                </ToggleGroupItem>
-                                            ))}
-                                        </ToggleGroup>
                                         <p className="text-xs text-muted-foreground">
                                             {t(
-                                                'Pick one or more, or leave empty for any language.',
+                                                'The listing auto-expires if nobody takes it. Your stake is refunded automatically.',
                                             )}
                                         </p>
-                                        <InputError message={errors.language} />
+                                        <InputError
+                                            message={errors.duration_hours}
+                                        />
                                     </div>
-                                </div>
-                            </FormSection>
+                                </FormSection>
 
-                            <FormSection title={t('Visibility')}>
-                                <ToggleGroup
-                                    type="single"
-                                    value={
-                                        data.is_public ? 'public' : 'private'
-                                    }
-                                    onValueChange={(value) => {
-                                        if (value === 'public') {
-                                            setData('is_public', true);
-                                        } else if (value === 'private') {
-                                            setData('is_public', false);
-                                        }
-                                    }}
-                                    className="grid grid-cols-1 gap-2 sm:grid-cols-2"
-                                >
-                                    <SegmentedOption
-                                        value="public"
-                                        icon={<Globe className="size-5" />}
-                                        label={t('Public')}
-                                        description={t(
-                                            'Listed in the marketplace for anyone matching your skill range.',
-                                        )}
-                                    />
-                                    <SegmentedOption
-                                        value="private"
-                                        icon={<Lock className="size-5" />}
-                                        label={t('Private')}
-                                        description={t(
-                                            'Hidden — only people with your invite link can see it.',
-                                        )}
-                                    />
-                                </ToggleGroup>
-                                <InputError message={errors.is_public} />
-                            </FormSection>
-
-                            <FormSection title={t('Listing expires after')}>
-                                <div className="space-y-2">
-                                    <Select
-                                        value={String(data.duration_hours)}
-                                        onValueChange={(value) =>
-                                            setData(
-                                                'duration_hours',
-                                                Number(value),
-                                            )
-                                        }
+                                <div className="flex items-center justify-between gap-3 pt-2">
+                                    <Button
+                                        type="button"
+                                        variant="ghost"
+                                        asChild
                                     >
-                                        <SelectTrigger className="w-full">
-                                            <SelectValue />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            {durations.map((hours) => (
-                                                <SelectItem
-                                                    key={hours}
-                                                    value={String(hours)}
-                                                >
-                                                    {hours === 1
-                                                        ? t('1 hour')
-                                                        : t(':hours hours', {
-                                                              hours,
-                                                          })}
-                                                </SelectItem>
-                                            ))}
-                                        </SelectContent>
-                                    </Select>
-                                    <p className="text-xs text-muted-foreground">
-                                        {t(
-                                            'The listing auto-expires if nobody takes it. Your stake is refunded automatically.',
-                                        )}
-                                    </p>
-                                    <InputError
-                                        message={errors.duration_hours}
-                                    />
+                                        <Link href={listingsIndex().url}>
+                                            {t('Cancel')}
+                                        </Link>
+                                    </Button>
+                                    <Button
+                                        type="submit"
+                                        variant="gradient"
+                                        size="pill"
+                                        disabled={!canSubmit}
+                                    >
+                                        {processing
+                                            ? t('Creating…')
+                                            : data.team_size > 1
+                                              ? t('Open lobby')
+                                              : t('Create listing')}
+                                    </Button>
                                 </div>
-                            </FormSection>
+                            </>
+                        )}
+                    </form>
 
-                            <div className="flex items-center justify-between gap-3 pt-2">
-                                <Button type="button" variant="ghost" asChild>
-                                    <Link href={listingsIndex().url}>
-                                        {t('Cancel')}
-                                    </Link>
-                                </Button>
-                                <Button
-                                    type="submit"
-                                    variant="gradient"
-                                    size="pill"
-                                    disabled={!canSubmit}
-                                >
-                                    {processing
-                                        ? t('Creating…')
-                                        : data.team_size > 1
-                                          ? t('Open lobby')
-                                          : t('Create listing')}
-                                </Button>
-                            </div>
-                        </>
-                    )}
-                </form>
+                    <aside className="space-y-4 lg:sticky lg:top-24">
+                        <h2 className="font-display text-lg font-bold text-foreground">
+                            {t('Listing preview')}
+                        </h2>
+                        <ListingPreviewCard
+                            game={data.game}
+                            platform={data.platform}
+                            teamSize={data.team_size}
+                            stakeAmount={data.stake_amount}
+                            skillMin={data.skill_min}
+                            skillMax={data.skill_max}
+                            timeControl={data.time_control}
+                            region={data.region}
+                            language={data.language}
+                            durationHours={data.duration_hours}
+                            isPublic={data.is_public}
+                            verified={isGameVerified}
+                        />
+                        <DealSummary
+                            stake={stakeNumber}
+                            teamSize={data.team_size}
+                            feeRate={feeRate}
+                        />
+                    </aside>
+                </div>
             </div>
         </SiteLayout>
     );

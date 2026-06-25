@@ -211,4 +211,22 @@ Reference: Bybit's P2P ad-creation form — the win there is **structure + restr
 - [ ] Offered but not built (larger): Bybit's left-rail labeled-section layout — separate refactor on demand.
 - [ ] User visual sign-off → then archive.
 
+### Phase 3 — Live "Ad to be posted" preview ✅ built 2026-06-25 (pending visual sign-off)
+
+Reference: Bybit's two-column Post-Ads page — form left, live "Ad to Be Posted" panel right, each on its own surface ("zone").
+
+- [x] Two-column layout on `listings/create` (`max-w-5xl`): form on the left inside a `bg-card/40` panel; sticky right rail (`lg:sticky lg:top-24`). Stacks on mobile (preview drops below the form).
+- [x] `ListingPreviewCard` (`listing-preview-card.tsx`) — non-interactive twin of `ListingGridCard` (no overlay link / Take button), live from form state + the signed-in user. Reuses the same chips + skill formatter so the preview can't drift from the real board card. Shows a stable duration label ("24h") rather than a `Date.now()` countdown (SSR-safe; avoids the "23h 59m" a live countdown prints the instant after posting).
+- [x] Deal summary moved into the right rail under the preview (consolidates the "what you get" info, Bybit-style).
+- [ ] Post button left at the bottom of the form for now — could move into the sticky panel à la Bybit on demand.
+- [ ] User visual sign-off → then archive.
+
+### Phase 4 — "Any time control" collapse ✅ built 2026-06-25 (pending visual sign-off)
+
+When every time control is selected, cards showed three chips (Blitz · Rapid · Classical) — noise. Now they collapse to a single **"Any time control"** chip, mirroring the existing "Any skill" behavior, so preview + listing cards stay clean.
+
+- [x] `isAllTimeControls()` + `timeControlChipLabels()` in `listings-format.ts` (single source of the all-vs-some collapse); `formatTimeControls()` collapses too (covers string sites: `match-info-card`, listing detail).
+- [x] Applied to every card surface: preview, grid card, listing row, /mine row, profile listing row, match list row, profile match row.
+- [x] The form selector is unchanged — you still pick individual controls; only the *display* collapses. (Skill already shows "Any skill"; languages already truncate to `2 +N`, so no all-collapse needed there.)
+
 **Follow-ups if liked:** reuse `SegmentedOption` on the filter bars (`chess-format-filter`, skill-range toggles) for one segmented language site-wide.

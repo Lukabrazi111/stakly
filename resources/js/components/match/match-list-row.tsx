@@ -4,7 +4,7 @@ import { GameChip } from '@/components/listings/game-chip';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { useInitials } from '@/hooks/use-initials';
 import { useT } from '@/lib/i18n';
-import { timeControlLabels } from '@/lib/listings-format';
+import { timeControlChipLabels } from '@/lib/listings-format';
 import {
     formatMatchDate,
     matchStatusLabel,
@@ -76,15 +76,17 @@ export function MatchListRow({ match }: Props) {
                         {t(matchStatusLabel[match.status])}
                     </span>
 
-                    {match.listing.time_control.map((tc) => (
-                        <span
-                            key={tc}
-                            className="inline-flex items-center gap-1.5 rounded-full border border-border/60 bg-background/60 px-3 py-1 text-xs font-medium text-muted-foreground"
-                        >
-                            <Clock className="size-3" />
-                            {t(timeControlLabels[tc])}
-                        </span>
-                    ))}
+                    {timeControlChipLabels(match.listing.time_control, t).map(
+                        (label) => (
+                            <span
+                                key={label}
+                                className="inline-flex items-center gap-1.5 rounded-full border border-border/60 bg-background/60 px-3 py-1 text-xs font-medium text-muted-foreground"
+                            >
+                                <Clock className="size-3" />
+                                {label}
+                            </span>
+                        ),
+                    )}
 
                     {(youWon || youLost || isDraw) && (
                         <span
