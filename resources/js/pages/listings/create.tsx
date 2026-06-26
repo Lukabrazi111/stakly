@@ -5,7 +5,6 @@ import InputError from '@/components/input-error';
 import { ChessFormatFilter } from '@/components/listings/chess-format-filter';
 import { ChessSkillRangeFilter } from '@/components/listings/chess-skill-range-filter';
 import { DealSummary } from '@/components/listings/deal-summary';
-import { FaceitRatingBadge } from '@/components/listings/faceit-rating-badge';
 import { GamePicker } from '@/components/listings/game-picker';
 import { ListingPreviewCard } from '@/components/listings/listing-preview-card';
 import { OptionRadioGroup } from '@/components/listings/option-radio-group';
@@ -490,58 +489,40 @@ export default function ListingsCreate({
                                     </div>
                                 </FormSection>
 
-                                <FormSection title={t('Match preferences')}>
-                                    <div className="space-y-5">
-                                        {data.game === 'chess' && (
-                                            <>
-                                                <ChessFormatFilter
-                                                    value={data.time_control}
-                                                    onChange={(next) =>
-                                                        setData(
-                                                            'time_control',
-                                                            next,
-                                                        )
-                                                    }
-                                                    error={errors.time_control}
-                                                />
-                                                <ChessSkillRangeFilter
-                                                    min={data.skill_min}
-                                                    max={data.skill_max}
-                                                    onMinChange={(next) =>
-                                                        setData(
-                                                            'skill_min',
-                                                            next,
-                                                        )
-                                                    }
-                                                    onMaxChange={(next) =>
-                                                        setData(
-                                                            'skill_max',
-                                                            next,
-                                                        )
-                                                    }
-                                                    errors={{
-                                                        min: errors.skill_min,
-                                                        max: errors.skill_max,
-                                                    }}
-                                                />
-                                            </>
-                                        )}
-
-                                        {data.game === 'cs2' && (
-                                            <div className="flex items-center gap-3 rounded-xl border border-border/60 bg-card/60 p-4">
-                                                <FaceitRatingBadge
-                                                    rating={userFaceitRating}
-                                                    variant="compact"
-                                                />
-                                                <p className="text-xs text-muted-foreground">
-                                                    {t(
-                                                        'Opponents match against your verified FACEIT rating — there’s no skill range to set.',
-                                                    )}
-                                                </p>
-                                            </div>
-                                        )}
-                                    </div>
-                                </FormSection>
+                                {/* Match preferences are chess-only — CS2 has no
+                                    time-control or skill input; opponents match
+                                    against the creator's verified FACEIT rating,
+                                    which the Listing preview already shows. */}
+                                {data.game === 'chess' && (
+                                    <FormSection title={t('Match preferences')}>
+                                        <div className="space-y-5">
+                                            <ChessFormatFilter
+                                                value={data.time_control}
+                                                onChange={(next) =>
+                                                    setData(
+                                                        'time_control',
+                                                        next,
+                                                    )
+                                                }
+                                                error={errors.time_control}
+                                            />
+                                            <ChessSkillRangeFilter
+                                                min={data.skill_min}
+                                                max={data.skill_max}
+                                                onMinChange={(next) =>
+                                                    setData('skill_min', next)
+                                                }
+                                                onMaxChange={(next) =>
+                                                    setData('skill_max', next)
+                                                }
+                                                errors={{
+                                                    min: errors.skill_min,
+                                                    max: errors.skill_max,
+                                                }}
+                                            />
+                                        </div>
+                                    </FormSection>
+                                )}
 
                                 <FormSection title={t('Audience')}>
                                     <div className="space-y-5">
