@@ -84,3 +84,19 @@ it('does not dispatch when the FACEIT circuit breaker is open', function () {
     expect(app(RefreshLinkedAccountRatingAction::class)->handle($account))->toBeFalse();
     Queue::assertNotPushed(RefreshFaceitRatingJob::class);
 });
+
+it('treats a rating synced just under the TTL boundary as fresh', function () {
+    $user = User::factory()->withFaceit('alice', 'guid-under', 1500, now()->subHours(24)->addMinute())->create();
+    $account = $user->linkedAccounts()->firstOrFail();
+
+    expect(app(RefreshLinkedAccountRatingAction::class)->handle($account))->toBeFalse();
+    Queue::assertNotPushed(RefreshFaceitRatingJob::class);
+});
+
+it('treats a rating synced just past the TTL boundary as stale', function () {
+    $user = User::factory()->withFaceit('alice', 'guid-over', 1500, now()->subHours(24)->subMinute())->create();
+    $account = $user->linkedAccounts()->firstOrFail();
+
+    expect(app(RefreshLinkedAccountRatingAction::class)->handle($account))->toBeTrue();
+    Queue::assertPushed(RefreshFaceitRatingJob::class);
+});

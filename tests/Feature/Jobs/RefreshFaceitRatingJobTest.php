@@ -4,10 +4,14 @@ use App\Enums\LinkedAccountProvider;
 use App\Jobs\RefreshFaceitRatingJob;
 use App\Models\LinkedAccount;
 use App\Models\User;
+use App\Services\Provider\Exceptions\RateLimitedError;
 use App\Services\Provider\Exceptions\TransientProviderError;
 use App\Services\Provider\FaceitProfileClient;
 use App\Services\Provider\ProviderCircuitBreaker;
+use Illuminate\Cache\RateLimiting\Limit;
+use Illuminate\Queue\Middleware\RateLimited;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\RateLimiter;
 
 beforeEach(function () {
     config(['services.faceit.api_key' => 'test-faceit-api-key']);
@@ -75,14 +79,15 @@ it('keeps the last-known rating and does not mark synced when no api key is set'
         ->and($account->skill_rating_synced_at)->toBeNull();
 });
 
-it('keeps the last-known rating on a 404 (identity gone)', function () {
+it('keeps the last-known rating on a 404 (identity gone) without marking synced', function () {
     $account = faceitRatingAccount(1500, 'guid-404');
     Http::fake(['open.faceit.com/data/v4/players/guid-404' => Http::response([], 404)]);
 
     runRatingRefresh($account);
 
     $account->refresh();
-    expect($account->skill_rating)->toBe(1500);
+    expect($account->skill_rating)->toBe(1500)
+        ->and($account->skill_rating_synced_at->lt(now()->subHours(1)))->toBeTrue();
 });
 
 it('rethrows a transient 5xx error for retry and keeps the last-known rating', function () {
@@ -129,4 +134,62 @@ it('only touches the rating fields, leaving identity columns intact', function (
     expect($account->username)->toBe('alice')
         ->and($account->provider_user_id)->toBe('guid-scope')
         ->and($account->skill_rating)->toBe(1600);
+});
+
+it('releases the job honoring Retry-After on a 429, preserving the rating', function () {
+    $this->freezeTime();
+    $account = faceitRatingAccount(1500, 'guid-429');
+    Http::fake([
+        'open.faceit.com/data/v4/players/guid-429' => Http::response([], 429, ['Retry-After' => '30']),
+    ]);
+
+    $job = (new RefreshFaceitRatingJob($account))->withFakeQueueInteractions();
+    $job->handle(app(FaceitProfileClient::class), app(ProviderCircuitBreaker::class));
+
+    $job->assertReleased(30);
+    $account->refresh();
+    expect($account->skill_rating)->toBe(1500);
+});
+
+it('rethrows a 429 with no Retry-After so it retries via backoff, preserving the rating', function () {
+    $account = faceitRatingAccount(1500, 'guid-429-nohdr');
+    Http::fake(['open.faceit.com/data/v4/players/guid-429-nohdr' => Http::response([], 429)]);
+
+    expect(fn () => runRatingRefresh($account))->toThrow(RateLimitedError::class);
+
+    $account->refresh();
+    expect($account->skill_rating)->toBe(1500);
+});
+
+it('permanently fails on a 403, preserving the rating', function () {
+    $account = faceitRatingAccount(1500, 'guid-403');
+    Http::fake(['open.faceit.com/data/v4/players/guid-403' => Http::response([], 403)]);
+
+    $job = (new RefreshFaceitRatingJob($account))->withFakeQueueInteractions();
+    $job->handle(app(FaceitProfileClient::class), app(ProviderCircuitBreaker::class));
+
+    $job->assertFailed();
+    $account->refresh();
+    expect($account->skill_rating)->toBe(1500);
+});
+
+test('RefreshFaceitRatingJob declares the faceit-rating-api RateLimited middleware', function () {
+    $job = new RefreshFaceitRatingJob(faceitRatingAccount());
+
+    $middleware = $job->middleware();
+
+    expect($middleware)->toHaveCount(1)
+        ->and($middleware[0])->toBeInstanceOf(RateLimited::class);
+});
+
+test('the faceit-rating-api limiter reflects services.faceit.rating_requests_per_minute config', function () {
+    config(['services.faceit.rating_requests_per_minute' => 17]);
+
+    $resolver = RateLimiter::limiter('faceit-rating-api');
+    expect($resolver)->not->toBeNull();
+
+    $limit = $resolver(new stdClass);
+
+    expect($limit)->toBeInstanceOf(Limit::class)
+        ->and($limit->maxAttempts)->toBe(17);
 });
