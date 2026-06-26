@@ -6,6 +6,7 @@ use App\Enums\LinkedAccountProvider;
 use App\Models\LinkedAccount;
 use App\Models\User;
 use App\Support\MockTronAddress;
+use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Factories\Factory;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
@@ -138,15 +139,19 @@ class UserFactory extends Factory
      * but expected for non-chess adapters. Used by Phase 1 snapshot tests
      * until the Phase 2 OAuth callback writes real values.
      */
-    public function withFaceit(?string $username = null, ?string $providerUserId = null, ?int $skillRating = null): static
+    public function withFaceit(?string $username = null, ?string $providerUserId = null, ?int $skillRating = null, ?CarbonInterface $syncedAt = null): static
     {
-        return $this->afterCreating(function (User $user) use ($username, $providerUserId, $skillRating) {
+        return $this->afterCreating(function (User $user) use ($username, $providerUserId, $skillRating, $syncedAt) {
             LinkedAccount::create([
                 'user_id' => $user->id,
                 'provider' => LinkedAccountProvider::Faceit->value,
                 'username' => $username ?? Str::slug(fake()->unique()->userName()),
                 'provider_user_id' => $providerUserId ?? (string) Str::uuid(),
                 'skill_rating' => $skillRating ?? fake()->numberBetween(800, 2200),
+                // M41 P1 — default to a fresh sync so existing factory-built
+                // FACEIT users aren't treated as stale by the refresh gate;
+                // pass an older time to exercise the staleness path.
+                'skill_rating_synced_at' => $syncedAt ?? now(),
                 'verified_at' => now(),
             ]);
         });

@@ -141,6 +141,17 @@ return [
          */
         'requests_per_minute' => (int) env('FACEIT_REQUESTS_PER_MINUTE', 30),
 
+        /*
+         * M41 P1 — rating-refresh self-throttle + freshness TTL. The rating
+         * limiter is SEPARATE from `requests_per_minute` so a refresh burst
+         * can never consume the budget money-critical settlement
+         * (`AutoFetchFaceitGameJob`) depends on. Rating refresh is low-volume,
+         * hence the lower default cap. `rating_ttl_hours` is how long a cached
+         * rating is considered fresh before the lazy path re-pulls it.
+         */
+        'rating_requests_per_minute' => (int) env('FACEIT_RATING_REQUESTS_PER_MINUTE', 20),
+        'rating_ttl_hours' => (int) env('FACEIT_RATING_TTL_HOURS', 24),
+
         // Per-provider `ProviderCircuitBreaker` thresholds (M15 P5 Item 3).
         'circuit_breaker' => [
             'window_seconds' => (int) env('FACEIT_BREAKER_WINDOW_SECONDS', 600),

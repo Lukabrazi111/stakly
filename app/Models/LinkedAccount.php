@@ -21,6 +21,7 @@ class LinkedAccount extends Model
         'username',
         'provider_user_id',
         'skill_rating',
+        'skill_rating_synced_at',
         'verified_at',
     ];
 
@@ -28,6 +29,7 @@ class LinkedAccount extends Model
     {
         return [
             'provider' => LinkedAccountProvider::class,
+            'skill_rating_synced_at' => 'datetime',
             'verified_at' => 'datetime',
         ];
     }

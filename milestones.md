@@ -21,7 +21,7 @@ Frontend-first build. UI against real DB infrastructure + seeded fake data; back
 - **M21** — Blacklist + safety. Block users from listings + chat, with anti-evasion considerations. Has open design questions (block semantics + multi-account evasion) — needs alignment before coding.
 - **M33** — Listing time-control contract. Make Stakly's accepted time controls (blitz / rapid / classical) explicit in the listing-creation form, surface `time_control_mismatch` as a player-facing banner on stuck matches, and optionally re-enable Slice 3d strictness behind a per-listing opt-in. Reverted from M14 on 2026-06-06 — friction (legitimate correspondence / bullet games rejected silently) outweighed the small sandbag attack surface at this stage. Revisit when launch scale or a real abuse incident makes it relevant.
 
-- **M41 — Verified skill ratings (display)** — replace the free-typed create-listing skill range with each player's **real, API-pulled rating** (FACEIT ELO + level; chess.com / Lichess per-time-control ratings), shown on listings + profiles. **Display-only — never gates a match** (taker's choice); the self-typed skill inputs come off the create form. FACEIT first, chess second. Carries an **Under review** sub-idea — asymmetric "punch-up-only" matching (stronger players can't take weaker players' listings). Spun out of a 2026-06-26 discussion; full spec + phases in the section below.
+- **M41 — Verified skill ratings (display)** — replace the free-typed create-listing skill range with each player's **real, API-pulled rating** (FACEIT ELO + derived level; chess.com / Lichess per-time-control ratings), shown on listings + profiles. **Display-only — never gates a match** (taker's choice); the self-typed skill inputs come off the create form. FACEIT first, chess second. **Decided 2026-06-26:** chess listings become **single time-control** (one platform + TC → one unambiguous rating); the asymmetric "punch-up-only" gate is **deferred** (ship display first; revisit only as a non-blocking mismatch *warning*, never a block). P1 in progress; full spec + phases in the section below.
 
 > Active milestone keeps a detailed task list. Future milestones expand when started. Any of this can shift — flag the change, update the doc.
 
@@ -186,65 +186,62 @@ Not CMS-managed on purpose. The Filament CMS template (`cms/page.tsx`) is intent
 
 ## M41 — Verified skill ratings (display)
 
-Spun out of a 2026-06-26 discussion. **Not started.** The create-listing skill range (Elo) is free-typed → unverifiable and a sandbag vector (a 2100 can type "1200–1500" to fish for weaker players). Replace self-reported skill with each player's **real, API-pulled rating**, shown everywhere their listing appears. Extends existing scaffolding: `linked_accounts.skill_rating`, `match_provider_snapshots.skill_rating_snapshot`, and FACEIT ELO already fetched on link (M15).
+Spun out of a 2026-06-26 discussion; **decisions locked 2026-06-26, P1 in progress.** The create-listing skill range (Elo) is free-typed → unverifiable and a sandbag vector (a 2100 can type "1200–1500" to fish for weaker players). Replace self-reported skill with each player's **real, API-pulled rating**, shown everywhere their listing appears. Extends existing scaffolding: `linked_accounts.skill_rating` (FACEIT ELO already fetched on link — M15), `match_provider_snapshots.skill_rating_snapshot` (exists + populated at match-take).
 
 ### Decisions (2026-06-26)
 
-- **Display, never gate.** Show real ratings; anyone verified can take any listing — the taker decides for themselves. No creator-set bands, no blocking. (Asymmetric gating is parked under review below.)
-- **Remove the self-typed skill inputs** (`Cs2SkillRangeFilter` + `ChessSkillRangeFilter`) from `listings/create` entirely. Skill stops being something the creator invents.
-- **FACEIT first, chess second.** FACEIT = one ELO + level (clean). Chess = per-time-control ratings (chess.com & Lichess scales differ ~150–300 pts; never compared cross-site since a match is on one platform) + provisional handling.
-- **Marketplace skill filter → real ratings.** Keep the `/listings` skill filter but point it at the creator's verified rating ("listings from 1500–2000 players"), not a self-set band.
-- **Snapshot the creator's rating onto the listing at creation** (stable + auditable, like match snapshots), with a periodic throttled refresh; not read live per render.
-- **Unrated / provisional accounts → "Unrated" badge.** Still postable + takeable; the taker decides. No blocking.
-- **Chess per-TC display:** show the rating for the listing's time control(s) — compact cards show the headline TC, the detail page can show each. Revisit if it reads noisy.
-- **Cost:** more provider calls → cache + refresh-on-link + a throttled off-band refresher (per the self-throttle rule); keep the match-time snapshot for audit.
+- **Display, never gate.** Show real ratings; anyone verified can take any listing — the taker decides. No creator-set bands, no blocking.
+- **Remove the self-typed skill inputs** (`Cs2SkillRangeFilter` + `ChessSkillRangeFilter`) from `listings/create`. Skill stops being something the creator invents.
+- **FACEIT first, chess second.** FACEIT = one ELO (+ level **derived from ELO**, not stored). Chess = per-time-control ratings.
+- **Chess listings become single time-control (Option A).** One chess listing = one platform + one TC → exactly one rating to show, filter, and snapshot. Wanting blitz *and* rapid = two listings (stake is escrowed per listing anyway). **Reverses M40's multi-TC + "Any time control"** for chess create. (FACEIT/CS2 listings have no time control — unaffected.)
+- **Chess ratings stored per-TC per player.** Each player still has separate blitz/rapid/classical ratings; a new normalized `linked_account_ratings` table holds them (indexable for the filter). FACEIT keeps the scalar `skill_rating` for now (revisit unifying in P6).
+- **Listing rating read live (no per-listing snapshot column).** Listings show the creator's *cached* `linked_accounts` rating via join — one source of truth, always current-ish. The match-time `skill_rating_snapshot` stays for audit/history.
+- **Refresh:** pull on link, then lazily re-pull if the cached rating is older than ~24h via a throttled queued job (reuses `RateLimiter` + `ProviderCircuitBreaker`; a failed refresh keeps the last-known rating, never nulls it).
+- **Unrated / provisional → "Unrated" badge.** Still postable + takeable; the taker decides. No blocking.
+- **Marketplace skill filter → real ratings**, game- and TC-scoped (CS2 → FACEIT ELO; chess → the selected platform+TC rating). Drops the old self-set overlap semantics.
 
 ### Phases
 
-**P1 — FACEIT rating capture**
+**P1 — FACEIT rating capture + refresh (backend)** — *done 2026-06-26*
 
-- [ ] Confirm FACEIT ELO + level are pulled + stored on link (`linked_accounts.skill_rating`); add a refresh path.
-- [ ] Snapshot the creator's rating onto the listing at creation (new column / snapshot).
+- [x] FACEIT ELO pulled + stored on link (`LinkFaceitAccountAction` → `linked_accounts.skill_rating`); link now also stamps `skill_rating_synced_at` (only on a successful API answer). Regression test added.
+- [x] Refresh path: `RefreshLinkedAccountRatingAction` (dispatch gate) + `RefreshFaceitRatingJob` — throttled on a dedicated `faceit-rating-api` limiter (20/min, separate from settlement's `faceit-api`), deduped via `ShouldBeUnique`, circuit-breaker aware. Lazy refresh when the cached rating is stale (>24h, `faceit.rating_ttl_hours`). A failed / 404 / rate-limited / keyless fetch **preserves the last-known value — never nulls it**.
+- [x] FACEIT level derived from ELO via `App\Support\FaceitLevel` (no stored column).
+- [x] Listing-create trigger wired into `CreateTeamPlayListingAction` (CS2 is team-only, so 1v1 `CreateListingAction` never sees a FACEIT listing). Listings read the creator's cached rating live — no per-listing snapshot column.
 
 **P2 — FACEIT display + remove the CS2 skill input**
 
-- [ ] Show ELO + level on listing cards, the live preview, profile, and listing detail.
-- [ ] Drop `Cs2SkillRangeFilter` from the create form.
+- [ ] Expose the creator's FACEIT rating (ELO + derived level) via `ListingResource` (+ profile + listing detail); render on cards, the live preview, profile, and detail. "Unrated" when null.
+- [ ] Drop `Cs2SkillRangeFilter` from the create form (stop writing `skill_min/max` on the CS2 path; columns retire in P6).
 
-**P3 — Chess rating capture**
+**P3 — Chess: single-TC listings + per-TC rating capture**
 
-- [ ] Pull chess.com / Lichess **per-time-control** ratings on link (new — the chess profile clients don't fetch ratings today); store per format; flag provisional/unrated.
+- [ ] Make chess listings single time-control: create form TC → single-select, validation, storage, seeders/factories.
+- [ ] Pull chess.com + Lichess **per-time-control** ratings on link (extend the profile clients — they don't fetch ratings today); store in the new normalized `linked_account_ratings` table; flag provisional/unrated (Lichess `prov`/`rd`; chess.com games/rd). Refresh path covers chess too.
 
 **P4 — Chess display + remove the chess skill input**
 
-- [ ] Show the rating for the listing's time control; drop `ChessSkillRangeFilter` from create.
+- [ ] Show the rating for the listing's platform + TC on cards, preview, profile, detail; "Unrated" when missing/provisional.
+- [ ] Drop `ChessSkillRangeFilter` from create.
 
 **P5 — Marketplace skill filter rework**
 
-- [ ] Re-point the `/listings` skill filter at real ratings (or drop if it's not pulling its weight).
+- [ ] Re-point the `/listings` skill filter at real ratings — a range filter on the creator's rating, game/TC-scoped (CS2 → FACEIT ELO; chess → selected platform+TC). Drop the overlap semantics (or drop the filter if it's not pulling its weight).
 
 **P6 — Data cleanup**
 
-- [ ] Retire `listings.skill_min` / `skill_max`; update seeders + factories; finalize the snapshot column + the "Unrated" empty state.
+- [ ] Retire `listings.skill_min` / `skill_max`; update seeders + factories; finalize the "Unrated" empty states.
+- [ ] Consider unifying FACEIT onto `linked_account_ratings` and deprecating the scalar `skill_rating` (update the `TakeListingAction` snapshot read accordingly).
 
-### Under review — asymmetric "punch-up-only" matching
+### Deferred — asymmetric "punch-up-only" matching
 
-> **Not decided — discuss before committing.** This *contradicts* the "display, never gate" decision above (it gates), but only asymmetrically: it blocks the **stronger** player from punching down, never the weaker player's choice to challenge up. Depends on the M41 verified-rating work landing first.
+> **Decided 2026-06-26: deferred, not built.** Ship the verified-rating display first (that's the real anti-sandbag win). A hard gate mostly constrains *honest* strong players (a real sandbagger already shows a low verified number), costs liquidity (on a money platform everyone wants to punch down), and has an unrated loophole (any gate must treat unrated as ungated). If post-launch data shows real sharking, revisit as a **non-blocking mismatch *warning*** at take time ("You're 2000, they're 1200 — big gap"), **not** a block — informs without killing liquidity and sidesteps the unrated hole.
 
-**Idea:** a player may only **take** a listing whose creator is **equal or higher** rank than themselves — punch up, never down.
-
-- **Example:** user1 = 500, user2 = 200. user2 (lower) *can* take user1's listing (challenging someone stronger ✅). user1 (higher) *cannot* take user2's listing (a stronger player can't hunt a weaker one ❌).
-- **Why:** protects weaker players from being preyed on by sandbaggers, while preserving a weaker player's choice to test themselves against a stronger opponent.
-
-**Open questions:**
-
-- It re-introduces blocking — acceptable as a one-directional carve-out (only stops punch-down)?
-- **Unrated players** — how does the rule apply when either side has no rating? (Allow freely? Treat unrated as lowest? as highest?)
-- **Which rating to compare** — chess is per-time-control, so compare on the listing's platform + TC; cross-game never compares.
-- **Liquidity** — a strong player can then only get matches by *posting* (weaker players choose to take them) or *taking* equal/stronger listings; they lose the ability to take weaker listings. Acceptable trade for fairness?
+**Original idea (kept for reference):** a player may only take a listing whose creator is equal-or-higher rated — punch up, never down. Example: user1 = 2000, user2 = 1200; user2 *can* take user1's listing (challenge up ✅), user1 *cannot* take user2's (no hunting down ❌).
 
 ### Not in M41
 
-- Enforcing a creator-set opponent band (we removed bands entirely — skill is the verified number, not a range).
+- Enforcing a creator-set opponent band (removed — skill is the verified number, not a range).
 - Cross-game / cross-platform rating comparison (each match is one game on one platform).
-- A composite "Stakly rating" of our own — we display the providers' ratings, we don't compute our own.
+- A composite "Stakly rating" of our own — we display the providers' ratings, not our own.
+- A hard punch-up/punch-down gate (deferred above; a non-blocking warning is the next step if needed).

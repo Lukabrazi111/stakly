@@ -62,6 +62,10 @@ class LinkFaceitAccountAction
                 'username' => $oauthUser->nickname,
                 'provider_user_id' => $oauthUser->id,
                 'skill_rating' => $profile?->cs2Elo,
+                // M41 P1 — stamp the sync time only when the Data API actually
+                // answered (profile non-null). Dev without an API key leaves it
+                // NULL so the lazy refresh path fetches once a key is set.
+                'skill_rating_synced_at' => $profile !== null ? now() : null,
                 'verified_at' => now(),
             ],
         );

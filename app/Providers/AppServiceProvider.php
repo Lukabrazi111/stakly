@@ -122,6 +122,12 @@ class AppServiceProvider extends ServiceProvider
         RateLimiter::for('faceit-api', fn () => Limit::perMinute(
             (int) config('services.faceit.requests_per_minute', 30),
         ));
+
+        // M41 P1 — rating refresh runs on its own budget so a refresh burst
+        // can't starve the settlement-critical `faceit-api` limiter above.
+        RateLimiter::for('faceit-rating-api', fn () => Limit::perMinute(
+            (int) config('services.faceit.rating_requests_per_minute', 20),
+        ));
     }
 
     /**
