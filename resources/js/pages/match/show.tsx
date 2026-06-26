@@ -336,13 +336,14 @@ function ChessMatchShow({ match, messages }: MatchShowProps) {
                         </div>
                     </div>
 
-                    {/* Desktop right-rail chat, sticky just below the header
-                        (top-16 — the marquee is homepage/listings-only now, so
-                        there's no marquee band to clear here). Fixed height keeps
-                        the panel compact rather than dominating the viewport;
-                        internal scroll handles message overflow. */}
+                    {/* Desktop right-rail chat, sticky below the header with a
+                        small gap (top-20 = header height + ~16px breathing room;
+                        the marquee is homepage/listings-only so there's no
+                        marquee band to clear here). Fixed height keeps the panel
+                        compact rather than dominating the viewport; internal
+                        scroll handles message overflow. */}
                     {auth.user && (
-                        <aside className="hidden lg:sticky lg:top-16 lg:block lg:h-[750px]">
+                        <aside className="hidden lg:sticky lg:top-20 lg:block lg:h-[750px]">
                             <ChatPanel
                                 messages={chat.messages}
                                 viewerId={auth.user.id}
