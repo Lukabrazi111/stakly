@@ -12,9 +12,10 @@ interface Props {
 }
 
 /**
- * Chess skill-range filter (Elo min/max). Lifted out of
- * `pages/listings/create.tsx` during M15 Phase 3 so the create form can swap
- * the chess-specific Elo input for the FACEIT ELO equivalent (`Cs2SkillRangeFilter`).
+ * Chess skill-range filter (Elo min/max) on the create form. Self-typed and
+ * transitional — M41 replaces self-reported skill with the verified, API-pulled
+ * rating: CS2 already shows the FACEIT rating badge (M41 P2); chess retires this
+ * input for its real chess.com / Lichess rating in M41 P4.
  */
 export function ChessSkillRangeFilter({
     min,

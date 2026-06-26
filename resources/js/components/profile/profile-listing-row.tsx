@@ -1,5 +1,6 @@
 import { Link } from '@inertiajs/react';
 import { Clock, Gamepad2, Trophy } from 'lucide-react';
+import { FaceitRatingBadge } from '@/components/listings/faceit-rating-badge';
 import { VerifiedPlatformChip } from '@/components/listings/verified-platform-chip';
 import { findGame } from '@/config/games';
 import { useT } from '@/lib/i18n';
@@ -75,10 +76,21 @@ export function ProfileListingRow({ listing }: Props) {
 
                 <VerifiedPlatformChip platform={listing.platform} />
 
-                <span className="inline-flex items-center gap-1 rounded-full border border-border/60 bg-background/60 px-2.5 py-0.5 text-xs font-medium text-muted-foreground">
-                    <Trophy className="size-3" aria-hidden="true" />
-                    {formatSkillRange(listing.skill_min, listing.skill_max, t)}
-                </span>
+                {listing.game === 'cs2' ? (
+                    <FaceitRatingBadge
+                        rating={listing.creator.faceit_rating}
+                        variant="compact"
+                    />
+                ) : (
+                    <span className="inline-flex items-center gap-1 rounded-full border border-border/60 bg-background/60 px-2.5 py-0.5 text-xs font-medium text-muted-foreground">
+                        <Trophy className="size-3" aria-hidden="true" />
+                        {formatSkillRange(
+                            listing.skill_min,
+                            listing.skill_max,
+                            t,
+                        )}
+                    </span>
+                )}
 
                 {timeControlChipLabels(listing.time_control, t).map((label) => (
                     <span

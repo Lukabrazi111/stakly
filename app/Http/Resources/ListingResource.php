@@ -2,7 +2,10 @@
 
 namespace App\Http\Resources;
 
+use App\Enums\Game;
+use App\Enums\LinkedAccountProvider;
 use App\Models\Listing;
+use App\Support\FaceitLevel;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -101,7 +104,37 @@ class ListingResource extends JsonResource
                         ->values()
                         ->all()
                     : [],
+                // M41 P2 — verified FACEIT rating for CS2 listings (null for
+                // chess, which still carries skill_min/max until P4). Level is
+                // derived from ELO; "Unrated" when the creator has no FACEIT
+                // link or no CS2 ELO yet.
+                'faceit_rating' => $this->game === Game::Cs2
+                    ? $this->getFaceitRating()
+                    : null,
             ],
+        ];
+    }
+
+    /**
+     * The creator's verified FACEIT rating for a CS2 listing — ELO + a level
+     * derived from it + an unrated flag. Reads the eager-loaded `linkedAccounts`
+     * relation only (no query); returns the unrated shape when the FACEIT link
+     * or its ELO is missing.
+     *
+     * @return array{elo: int|null, level: int|null, is_unrated: bool}
+     */
+    private function getFaceitRating(): array
+    {
+        $faceit = $this->user->relationLoaded('linkedAccounts')
+            ? $this->user->linkedAccounts->firstWhere('provider', LinkedAccountProvider::Faceit)
+            : null;
+
+        $elo = $faceit?->skill_rating;
+
+        return [
+            'elo' => $elo,
+            'level' => FaceitLevel::fromElo($elo),
+            'is_unrated' => $elo === null,
         ];
     }
 }

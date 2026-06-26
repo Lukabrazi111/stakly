@@ -4,8 +4,8 @@ import type { ReactNode } from 'react';
 import InputError from '@/components/input-error';
 import { ChessFormatFilter } from '@/components/listings/chess-format-filter';
 import { ChessSkillRangeFilter } from '@/components/listings/chess-skill-range-filter';
-import { Cs2SkillRangeFilter } from '@/components/listings/cs2-skill-range-filter';
 import { DealSummary } from '@/components/listings/deal-summary';
+import { FaceitRatingBadge } from '@/components/listings/faceit-rating-badge';
 import { GamePicker } from '@/components/listings/game-picker';
 import { ListingPreviewCard } from '@/components/listings/listing-preview-card';
 import { OptionRadioGroup } from '@/components/listings/option-radio-group';
@@ -116,6 +116,7 @@ export default function ListingsCreate({
     games,
     requirementsByGame,
     feeRate,
+    userFaceitRating,
 }: ListingCreateProps) {
     const t = useT();
     const atCap = activeListingsCount >= maxActiveListings;
@@ -527,20 +528,17 @@ export default function ListingsCreate({
                                         )}
 
                                         {data.game === 'cs2' && (
-                                            <Cs2SkillRangeFilter
-                                                min={data.skill_min}
-                                                max={data.skill_max}
-                                                onMinChange={(next) =>
-                                                    setData('skill_min', next)
-                                                }
-                                                onMaxChange={(next) =>
-                                                    setData('skill_max', next)
-                                                }
-                                                errors={{
-                                                    min: errors.skill_min,
-                                                    max: errors.skill_max,
-                                                }}
-                                            />
+                                            <div className="flex items-center gap-3 rounded-xl border border-border/60 bg-card/60 p-4">
+                                                <FaceitRatingBadge
+                                                    rating={userFaceitRating}
+                                                    variant="compact"
+                                                />
+                                                <p className="text-xs text-muted-foreground">
+                                                    {t(
+                                                        'Opponents match against your verified FACEIT rating — there’s no skill range to set.',
+                                                    )}
+                                                </p>
+                                            </div>
                                         )}
                                     </div>
                                 </FormSection>
@@ -735,6 +733,7 @@ export default function ListingsCreate({
                             durationHours={data.duration_hours}
                             isPublic={data.is_public}
                             verified={isGameVerified}
+                            faceitRating={userFaceitRating}
                         />
                         <DealSummary
                             stake={stakeNumber}

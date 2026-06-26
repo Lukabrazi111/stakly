@@ -18,6 +18,17 @@ export type ListingSort =
     | 'lowest_stake'
     | 'ending_soon';
 
+// M41 P2 — a creator's verified FACEIT rating. Present on CS2 listings only
+// (chess listings carry skill_min/max until P4). `elo`/`level` are null +
+// `is_unrated` true when the CS2 creator has no FACEIT link or no CS2 ELO yet,
+// so the badge renders "Unrated". `level` is derived from ELO server-side
+// (App\Support\FaceitLevel).
+export interface FaceitRating {
+    elo: number | null;
+    level: number | null;
+    is_unrated: boolean;
+}
+
 export interface ListingCreator {
     id: number;
     name: string;
@@ -54,6 +65,8 @@ export interface ListingCreator {
     bio: string | null;
     member_since: string | null;
     linked_accounts: Array<{ provider: ListingPlatform; username: string }>;
+    // M41 P2 — verified FACEIT rating; populated on CS2 listings, null for chess.
+    faceit_rating: FaceitRating | null;
 }
 
 // Chess-only linked-account providers. Distinct from `ListingPlatform` below
@@ -215,6 +228,10 @@ export interface ListingCreateProps {
     // powering the live Deal summary. Single source: the same value settlement
     // uses, so the in-form payout preview can't drift from the real payout.
     feeRate: number;
+    // M41 P2 — the current user's own FACEIT rating, for the create-form CS2
+    // preview + the in-form "your rating" note. Null when they have no FACEIT
+    // link (in which case they can't post CS2 anyway).
+    userFaceitRating: FaceitRating | null;
 }
 
 // Tab values for the /listings/mine page (M6 Phase 6.5).

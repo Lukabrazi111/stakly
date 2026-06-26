@@ -1,5 +1,6 @@
 import { Link } from '@inertiajs/react';
 import { Clock, Globe, Languages, Trophy } from 'lucide-react';
+import { FaceitRatingBadge } from '@/components/listings/faceit-rating-badge';
 import { GameChip } from '@/components/listings/game-chip';
 import { ReadyCheckBanner } from '@/components/listings/ready-check-banner';
 import { SellerTrustMeta } from '@/components/listings/seller-trust-meta';
@@ -135,14 +136,21 @@ export function ListingRow({ listing }: Props) {
 
                         <VerifiedPlatformChip platform={listing.platform} />
 
-                        <span className="inline-flex items-center gap-1.5 rounded-full border border-border/60 bg-background/60 px-3 py-1 text-xs font-medium text-muted-foreground">
-                            <Trophy className="size-3" aria-hidden="true" />
-                            {formatSkillRange(
-                                listing.skill_min,
-                                listing.skill_max,
-                                t,
-                            )}
-                        </span>
+                        {listing.game === 'cs2' ? (
+                            <FaceitRatingBadge
+                                rating={listing.creator.faceit_rating}
+                                variant="compact"
+                            />
+                        ) : (
+                            <span className="inline-flex items-center gap-1.5 rounded-full border border-border/60 bg-background/60 px-3 py-1 text-xs font-medium text-muted-foreground">
+                                <Trophy className="size-3" aria-hidden="true" />
+                                {formatSkillRange(
+                                    listing.skill_min,
+                                    listing.skill_max,
+                                    t,
+                                )}
+                            </span>
+                        )}
 
                         {timeControlChipLabels(listing.time_control, t).map(
                             (label) => (

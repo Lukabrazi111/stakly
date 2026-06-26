@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Actions\LinkedAccount\RefreshDisplayedRatingsAction;
 use App\Enums\MatchStatus;
 use App\Http\Resources\GameMatchResource;
 use App\Http\Resources\ListingResource;
@@ -66,6 +67,11 @@ class UserController extends Controller
         // Pre-set the `user` relation so `ListingResource` renders the
         // creator chip without re-querying (saves one IN-query).
         $openListings->each(fn (Listing $listing) => $listing->setRelation('user', $user));
+
+        // M41 P2 — refresh-on-view: keep the profile's CS2 listing ratings
+        // fresh (stale-gated + deduped + throttled), same policy as the
+        // marketplace surfaces, shared via the action.
+        app(RefreshDisplayedRatingsAction::class)->forListings($openListings);
 
         // Settled-only — exposing pending matches would leak "user X is
         // currently in a $500 match with Y" to the world. Disputed /

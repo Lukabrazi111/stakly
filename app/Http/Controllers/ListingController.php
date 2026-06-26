@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Actions\LinkedAccount\RefreshDisplayedRatingsAction;
 use App\Actions\Listing\CancelListingAction;
 use App\Actions\Listing\CreateListingAction;
 use App\Actions\Listing\CreateTeamPlayListingAction;
@@ -21,6 +22,7 @@ use App\Services\ParticipantStats;
 use App\Services\SellerTrust;
 use App\Services\Wallet;
 use App\Support\BanGuard;
+use App\Support\FaceitLevel;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -91,6 +93,10 @@ class ListingController extends Controller
         // `seller_trust` attribute that `ListingResource` reads.
         SellerTrust::attachTo($listings);
 
+        // M41 P2 — keep displayed FACEIT ratings fresh (CS2 only). Stale-gated
+        // + deduped + throttled, so this is safe on the read path.
+        app(RefreshDisplayedRatingsAction::class)->forListings($listings->getCollection());
+
         // Reuse the homepage's resolved-array cache — `Game::booted` already
         // invalidates it on save/delete, so admin tile edits land here too.
         $games = Cache::remember(
@@ -150,6 +156,9 @@ class ListingController extends Controller
 
         // M22 Phase 1 — seller trust on the listing detail (single-row batch).
         SellerTrust::attachTo([$listing]);
+
+        // M41 P2 — refresh-on-view (no-op for chess: the action gates on CS2).
+        app(RefreshDisplayedRatingsAction::class)->forListings([$listing]);
 
         $user = $request->user();
         $match = $listing->gameMatch;
@@ -220,6 +229,16 @@ class ListingController extends Controller
             );
         }
 
+        // M41 P2 — refresh-on-view for the lobby: the creator + every live
+        // participant whose rating shows in the roster.
+        $refreshRatings = app(RefreshDisplayedRatingsAction::class);
+        $refreshRatings->forListings([$listing]);
+        $refreshRatings->forAccounts(
+            collect($listing->lobbyParticipants)
+                ->whereNull('kicked_at')
+                ->flatMap(fn ($participant) => $participant->user->linkedAccounts)
+        );
+
         // Chat content is participant-only — strangers, guests, and kicked
         // users get an empty collection. Without this gate the messages.data
         // payload would render on the page JSON for anyone with the URL,
@@ -283,6 +302,15 @@ class ListingController extends Controller
             ->values()
             ->all();
 
+        // M41 P2 — the creator's own FACEIT rating drives the CS2 live preview
+        // + the in-form "your verified rating" note. Null when no FACEIT link.
+        $faceit = $user->linkedAccounts->firstWhere('provider', LinkedAccountProvider::Faceit);
+        $userFaceitRating = $faceit === null ? null : [
+            'elo' => $faceit->skill_rating,
+            'level' => FaceitLevel::fromElo($faceit->skill_rating),
+            'is_unrated' => $faceit->skill_rating === null,
+        ];
+
         // Reuse the homepage's resolved-array cache — `Game::booted` already
         // invalidates it on save/delete, so admin tile edits land here too.
         $games = Cache::remember(
@@ -327,6 +355,7 @@ class ListingController extends Controller
             // config the wallet ledger uses at settlement. Float at the JSON
             // boundary only; internal money math stays BCMath.
             'feeRate' => (float) config('stakly.platform_fee_rate'),
+            'userFaceitRating' => $userFaceitRating,
         ]);
     }
 
@@ -376,6 +405,9 @@ class ListingController extends Controller
         // all rows on this page (single creator), so the batch trivially
         // collapses to one aggregate.
         SellerTrust::attachTo($listings);
+
+        // M41 P2 — refresh-on-view (CS2 only; gated/deduped/throttled).
+        app(RefreshDisplayedRatingsAction::class)->forListings($listings->getCollection());
 
         // Counts both Open and Paused — the cap is about "listings holding
         // your capital that aren't yet concluded." Mirrors the rule in

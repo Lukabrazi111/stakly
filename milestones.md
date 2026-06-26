@@ -209,10 +209,12 @@ Spun out of a 2026-06-26 discussion; **decisions locked 2026-06-26, P1 in progre
 - [x] FACEIT level derived from ELO via `App\Support\FaceitLevel` (no stored column).
 - [x] Listing-create trigger wired into `CreateTeamPlayListingAction` (CS2 is team-only, so 1v1 `CreateListingAction` never sees a FACEIT listing). Listings read the creator's cached rating live — no per-listing snapshot column.
 
-**P2 — FACEIT display + remove the CS2 skill input**
+**P2 — FACEIT display + remove the CS2 skill input + refresh-on-view** — *done 2026-06-26*
 
-- [ ] Expose the creator's FACEIT rating (ELO + derived level) via `ListingResource` (+ profile + listing detail); render on cards, the live preview, profile, and detail. "Unrated" when null.
-- [ ] Drop `Cs2SkillRangeFilter` from the create form (stop writing `skill_min/max` on the CS2 path; columns retire in P6).
+- [x] `ListingResource.creator.faceit_rating` (elo + derived level + `is_unrated`) — CS2 only, null for chess. Rendered via a new `FaceitRatingBadge` (compact + detail variants, brand-banded grey→pink→purple — never FACEIT's amber/red, which collide with Stakly's dispute/loss palette next to a stake) on grid cards, listing rows, profile rows, and the create live-preview. "Unrated" pill when null.
+- [x] **Refresh-on-view** (decided this session): viewing the board / a listing / a profile's listings / my-listings queues a stale-gated FACEIT refresh for the displayed CS2 creators (deduped + 24h gate + 20/min throttle — safe on a read path). Batched in the controller over `$listings->getCollection()`, never in the resource.
+- [x] Removed `Cs2SkillRangeFilter` from the create form (deleted the orphaned component); the CS2 "Match preferences" section now shows a read-only "your verified FACEIT rating" note. `skill_min/max` columns retire in P6.
+- [x] Note: CS2 is team-only, so a CS2 listing never reaches the 1v1 detail page — the badge's marketplace home is the cards + create preview; lobby rosters already show per-player ratings (left as-is). The badge's `detail` variant is built + ready for chess listing detail in P4.
 
 **P3 — Chess: single-TC listings + per-TC rating capture**
 

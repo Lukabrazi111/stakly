@@ -1,5 +1,6 @@
 import { Link } from '@inertiajs/react';
 import { Clock, Globe, Languages, Trophy } from 'lucide-react';
+import { FaceitRatingBadge } from '@/components/listings/faceit-rating-badge';
 import { GameChip } from '@/components/listings/game-chip';
 import { ReadyCheckBanner } from '@/components/listings/ready-check-banner';
 import { SellerTrustMeta } from '@/components/listings/seller-trust-meta';
@@ -139,10 +140,21 @@ export function ListingGridCard({ listing }: Props) {
             {/* Match meta — skill + (time-controls | languages). Fill counter
                 moved out of this row to sit beside the roster avatars. */}
             <div className="pointer-events-none relative flex flex-wrap items-center gap-1.5">
-                <span className="inline-flex items-center gap-1 rounded-full border border-border/60 bg-background/60 px-2.5 py-0.5 text-xs font-medium text-muted-foreground">
-                    <Trophy className="size-3" aria-hidden="true" />
-                    {formatSkillRange(listing.skill_min, listing.skill_max, t)}
-                </span>
+                {listing.game === 'cs2' ? (
+                    <FaceitRatingBadge
+                        rating={listing.creator.faceit_rating}
+                        variant="compact"
+                    />
+                ) : (
+                    <span className="inline-flex items-center gap-1 rounded-full border border-border/60 bg-background/60 px-2.5 py-0.5 text-xs font-medium text-muted-foreground">
+                        <Trophy className="size-3" aria-hidden="true" />
+                        {formatSkillRange(
+                            listing.skill_min,
+                            listing.skill_max,
+                            t,
+                        )}
+                    </span>
+                )}
 
                 {!isTeamPlay &&
                     timeControlChipLabels(listing.time_control, t).map(

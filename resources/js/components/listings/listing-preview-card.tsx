@@ -7,6 +7,7 @@ import {
     Lock,
     Trophy,
 } from 'lucide-react';
+import { FaceitRatingBadge } from '@/components/listings/faceit-rating-badge';
 import { GameChip } from '@/components/listings/game-chip';
 import { VerifiedPlatformChip } from '@/components/listings/verified-platform-chip';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -15,7 +16,11 @@ import { useInitials } from '@/hooks/use-initials';
 import { useT } from '@/lib/i18n';
 import { formatSkillRange, timeControlChipLabels } from '@/lib/listings-format';
 import type { User } from '@/types/auth';
-import type { ListingPlatform, TimeControl } from '@/types/listings';
+import type {
+    FaceitRating,
+    ListingPlatform,
+    TimeControl,
+} from '@/types/listings';
 
 interface Props {
     game: GameId;
@@ -30,6 +35,9 @@ interface Props {
     durationHours: number;
     isPublic: boolean;
     verified: boolean;
+    // M41 P2 — the creator's own FACEIT rating, shown on the CS2 preview in
+    // place of the skill chip. Null when they have no FACEIT link.
+    faceitRating: FaceitRating | null;
 }
 
 /**
@@ -54,6 +62,7 @@ export function ListingPreviewCard({
     durationHours,
     isPublic,
     verified,
+    faceitRating,
 }: Props) {
     const t = useT();
     const getInitials = useInitials();
@@ -123,10 +132,17 @@ export function ListingPreviewCard({
             </div>
 
             <div className="flex flex-wrap items-center gap-1.5">
-                <span className="inline-flex items-center gap-1 rounded-full border border-border/60 bg-background/60 px-2.5 py-0.5 text-xs font-medium text-muted-foreground">
-                    <Trophy className="size-3" aria-hidden="true" />
-                    {skill}
-                </span>
+                {game === 'cs2' ? (
+                    <FaceitRatingBadge
+                        rating={faceitRating}
+                        variant="compact"
+                    />
+                ) : (
+                    <span className="inline-flex items-center gap-1 rounded-full border border-border/60 bg-background/60 px-2.5 py-0.5 text-xs font-medium text-muted-foreground">
+                        <Trophy className="size-3" aria-hidden="true" />
+                        {skill}
+                    </span>
+                )}
 
                 {!isTeamPlay &&
                     timeControlChipLabels(timeControl, t).map((label) => (
