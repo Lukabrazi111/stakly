@@ -21,7 +21,7 @@ Frontend-first build. UI against real DB infrastructure + seeded fake data; back
 - **M21** — Blacklist + safety. Block users from listings + chat, with anti-evasion considerations. Has open design questions (block semantics + multi-account evasion) — needs alignment before coding.
 - **M33** — Listing time-control contract. Make Stakly's accepted time controls (blitz / rapid / classical) explicit in the listing-creation form, surface `time_control_mismatch` as a player-facing banner on stuck matches, and optionally re-enable Slice 3d strictness behind a per-listing opt-in. Reverted from M14 on 2026-06-06 — friction (legitimate correspondence / bullet games rejected silently) outweighed the small sandbag attack surface at this stage. Revisit when launch scale or a real abuse incident makes it relevant.
 
-- **M41 — Verified skill ratings (display)** — replace the free-typed create-listing skill range with each player's **real, API-pulled rating** (FACEIT ELO + derived level; chess.com / Lichess per-time-control ratings), shown on listings + profiles. **Display-only — never gates a match** (taker's choice); the self-typed skill inputs come off the create form. FACEIT first, chess second. **Decided 2026-06-26:** chess listings become **single time-control** (one platform + TC → one unambiguous rating); the asymmetric "punch-up-only" gate is **deferred** (ship display first; revisit only as a non-blocking mismatch *warning*, never a block). P1 in progress; full spec + phases in the section below.
+- **M41 — Verified skill ratings (display)** — replace the free-typed create-listing skill range with each player's **real, API-pulled rating** (FACEIT ELO + derived level; chess.com / Lichess per-time-control ratings), shown on listings + profiles. **Display-only — never gates a match** (taker's choice); the self-typed skill inputs come off the create form. FACEIT first, chess second. **Decided 2026-06-26:** chess listings become **single time-control** (one platform + TC → one unambiguous rating); the asymmetric "punch-up-only" gate is **deferred** (ship display first; revisit only as a non-blocking mismatch *warning*, never a block). **P1–P4 done (2026-06-26): FACEIT + chess capture + display shipped end-to-end; P5 (filter rework) + P6 (data cleanup) remain.** Full spec + phases in the section below.
 
 > Active milestone keeps a detailed task list. Future milestones expand when started. Any of this can shift — flag the change, update the doc.
 
@@ -251,10 +251,12 @@ Time-control set: **Bullet / Blitz / Rapid** (`App\Enums\TimeControl`).
 **P5 — Marketplace skill filter rework**
 
 - [ ] Re-point the `/listings` skill filter at real ratings — a range filter on the creator's rating, game/TC-scoped (CS2 → FACEIT ELO; chess → selected platform+TC). Drop the overlap semantics (or drop the filter if it's not pulling its weight).
+- [ ] *Concrete starting point (from P4):* the sidebar "Skill range (Elo)" filter (`listing-filters.tsx` + `skill_range` in `config/games.ts` + `skillMin/Max` overlap callbacks in `ListingController`) is now **dead** — it filters `skill_min/max`, which chess no longer surfaces (and CS2 never did). Replace or remove.
 
 **P6 — Data cleanup**
 
 - [ ] Retire `listings.skill_min` / `skill_max`; update seeders + factories; finalize the "Unrated" empty states.
+- [ ] *Concrete (from P4):* `skill_min/skill_max` are now **dead** in the create form (`create.tsx` useForm state + reset + the `ListingPreviewCard` `skillMin/Max` props, which only feed the never-reached Dota-2 preview branch) — remove them; stop `ListingFactory` seeding chess `skill_min/max`.
 - [ ] Consider unifying FACEIT onto `linked_account_ratings` and deprecating the scalar `skill_rating` (update the `TakeListingAction` snapshot read accordingly).
 
 ### Deferred — asymmetric "punch-up-only" matching
