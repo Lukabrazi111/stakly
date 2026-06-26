@@ -46,6 +46,7 @@ it('exposes the creator rating for the listing platform + time control', functio
 
     expect($data['creator']['chess_rating'])->toBe([
         'rating' => 1850,
+        'is_provisional' => false,
         'is_unrated' => false,
     ]);
 });
@@ -65,11 +66,12 @@ it('marks a chess creator with no rating for that time control as unrated', func
 
     expect($data['creator']['chess_rating'])->toBe([
         'rating' => null,
+        'is_provisional' => false,
         'is_unrated' => true,
     ]);
 });
 
-it('treats a provisional rating as unrated (no number shown)', function () {
+it('shows a provisional rating with its number + the provisional flag (not hidden)', function () {
     $creator = User::factory()->withLichess('carol')->create();
     $creator->linkedAccounts()->firstOrFail()->ratings()->create([
         'time_control' => TimeControl::Blitz->value,
@@ -82,8 +84,9 @@ it('treats a provisional rating as unrated (no number shown)', function () {
     $data = (new ListingResource(chessListingFor($creator, TimeControl::Blitz)))->resolve();
 
     expect($data['creator']['chess_rating'])->toBe([
-        'rating' => null,
-        'is_unrated' => true,
+        'rating' => 1400,
+        'is_provisional' => true,
+        'is_unrated' => false,
     ]);
 });
 

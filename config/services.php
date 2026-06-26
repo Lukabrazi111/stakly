@@ -75,6 +75,10 @@ return [
          */
         'rating_requests_per_minute' => (int) env('LICHESS_RATING_REQUESTS_PER_MINUTE', 30),
         'rating_ttl_hours' => (int) env('LICHESS_RATING_TTL_HOURS', 24),
+        // M41 P4 revision — a perf with fewer than this many games is
+        // "provisional" (shown with a "?"); Lichess's own `prov` flag (rd-based)
+        // no longer decides it, so a rusty-but-established perf isn't hidden.
+        'provisional_min_games' => (int) env('LICHESS_PROVISIONAL_MIN_GAMES', 20),
 
         /*
          * Per-provider `ProviderCircuitBreaker` thresholds (M15 P5 Item 3).
@@ -105,13 +109,14 @@ return [
          * M41 P3b — chess rating-refresh self-throttle + freshness TTL on a
          * SEPARATE budget from settlement's `chess-com-api`. chess.com asks for
          * serial requests with no numeric quota; 30/min is the conservative
-         * default. `provisional_rd_threshold` is the Glicko rating-deviation
-         * cutoff above which a `/stats` rating is treated as provisional
-         * (chess.com exposes no `prov` flag — Lichess uses rd > 110 internally).
+         * default. `provisional_min_games` (M41 P4 revision): a rating with fewer
+         * than this many games is "provisional" (shown with a "?"); `rd` no
+         * longer decides it — an established-but-rusty rating has inflated rd but
+         * is NOT provisional.
          */
         'rating_requests_per_minute' => (int) env('CHESS_COM_RATING_REQUESTS_PER_MINUTE', 30),
         'rating_ttl_hours' => (int) env('CHESS_COM_RATING_TTL_HOURS', 24),
-        'provisional_rd_threshold' => (int) env('CHESS_COM_PROVISIONAL_RD_THRESHOLD', 110),
+        'provisional_min_games' => (int) env('CHESS_COM_PROVISIONAL_MIN_GAMES', 20),
 
         // Per-provider `ProviderCircuitBreaker` thresholds (M15 P5 Item 3).
         'circuit_breaker' => [

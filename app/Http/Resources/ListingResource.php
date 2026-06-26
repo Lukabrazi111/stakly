@@ -146,10 +146,11 @@ class ListingResource extends JsonResource
     /**
      * The creator's verified chess rating for THIS listing's platform + time
      * control (M41 P4). Reads the eager-loaded `linkedAccounts.ratings` only
-     * (no query). Provisional ratings + a missing row both surface as
-     * "Unrated" — the rating is null in that case so the FE can't show a number.
+     * (no query). A real rating ALWAYS surfaces its number — provisional ones
+     * (`is_provisional`) get a "?" marker in the UI rather than being hidden.
+     * `is_unrated` means only "no rating row for this time control".
      *
-     * @return array{rating: int|null, is_unrated: bool}
+     * @return array{rating: int|null, is_provisional: bool, is_unrated: bool}
      */
     private function getChessRating(): array
     {
@@ -161,11 +162,10 @@ class ListingResource extends JsonResource
             ? $account->ratings->firstWhere('time_control', $this->time_control)
             : null;
 
-        $rated = $row !== null && ! $row->is_provisional;
-
         return [
-            'rating' => $rated ? $row->rating : null,
-            'is_unrated' => ! $rated,
+            'rating' => $row?->rating,
+            'is_provisional' => (bool) $row?->is_provisional,
+            'is_unrated' => $row === null,
         ];
     }
 }

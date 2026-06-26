@@ -58,10 +58,13 @@ class LichessProfileClient implements ProfileClient
      * Per-time-control ratings from the SAME `/api/user` payload the bio
      * verify uses — `perfs.{bullet,blitz,rapid}` (M41 P3b). Only time controls
      * the player has actually played (`games > 0`) are returned; Lichess marks
-     * low-confidence ratings with `prov: true` (present only when provisional).
-     * Perfs we don't stake on (classical, correspondence, variants, puzzle
-     * modes) are ignored — and puzzle modes (storm/racer/streak) don't carry a
-     * `rating` field at all, so the `games`/`rating` guards skip them safely.
+     * "Provisional" is decided by GAME COUNT (`games` below
+     * `provisional_min_games`), NOT Lichess's own `prov` flag (rd-based) — so a
+     * rusty-but-established perf isn't flagged. Provisional ratings still return
+     * the number; the UI shows them with a "?". Perfs we don't stake on
+     * (classical, correspondence, variants, puzzle modes) are ignored — and
+     * puzzle modes (storm/racer/streak) don't carry a `rating` field at all, so
+     * the `games`/`rating` guards skip them safely.
      *
      * @throws ProfileNotFoundException
      */
@@ -69,16 +72,15 @@ class LichessProfileClient implements ProfileClient
     {
         $data = $this->requestUser($username, recordHealth: false);
         $perfs = $data['perfs'] ?? [];
+        $minGames = (int) config('services.lichess.provisional_min_games', 20);
 
         $ratings = [];
 
         foreach (TimeControl::cases() as $timeControl) {
             $perf = $perfs[$timeControl->value] ?? null;
+            $games = (int) ($perf['games'] ?? 0);
 
-            if (! is_array($perf)
-                || ! isset($perf['rating'])
-                || (int) ($perf['games'] ?? 0) === 0
-            ) {
+            if (! is_array($perf) || ! isset($perf['rating']) || $games === 0) {
                 continue;
             }
 
@@ -86,7 +88,7 @@ class LichessProfileClient implements ProfileClient
                 timeControl: $timeControl,
                 rating: (int) $perf['rating'],
                 rd: isset($perf['rd']) ? (int) $perf['rd'] : null,
-                isProvisional: ($perf['prov'] ?? false) === true,
+                isProvisional: $games < $minGames,
             );
         }
 

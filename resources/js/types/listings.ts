@@ -30,11 +30,13 @@ export interface FaceitRating {
 }
 
 // M41 P4 — a creator's verified chess rating for a listing's platform + time
-// control. `rating` is null + `is_unrated` true when there's no rating for that
-// time control or it's provisional (both render "Unrated"). No level — chess
-// providers expose an ELO number only.
+// control. The number ALWAYS shows when present; `is_provisional` (few games)
+// renders a "?" marker rather than hiding it. `is_unrated` (rating null) means
+// only "no rating for that time control". No level — chess providers expose an
+// ELO number only.
 export interface ChessRating {
     rating: number | null;
+    is_provisional: boolean;
     is_unrated: boolean;
 }
 

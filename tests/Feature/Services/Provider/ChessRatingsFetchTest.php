@@ -18,8 +18,8 @@ use Illuminate\Support\Facades\Http;
 it('chess.com fetchRatings hits the /stats endpoint and maps categories to time controls', function () {
     Http::fake([
         'api.chess.com/pub/player/bob/stats' => Http::response([
-            'chess_blitz' => ['last' => ['rating' => 1950, 'rd' => 40]],
-            'chess_daily' => ['last' => ['rating' => 1600, 'rd' => 50]],
+            'chess_blitz' => ['last' => ['rating' => 1950, 'rd' => 40], 'record' => ['win' => 300, 'loss' => 200, 'draw' => 20]],
+            'chess_daily' => ['last' => ['rating' => 1600, 'rd' => 50], 'record' => ['win' => 5, 'loss' => 3, 'draw' => 0]],
         ], 200),
     ]);
 

@@ -323,8 +323,9 @@ class ListingController extends Controller
             ->mapWithKeys(fn (LinkedAccount $account) => [
                 $account->provider->value => $account->ratings->mapWithKeys(fn (LinkedAccountRating $row) => [
                     $row->time_control->value => [
-                        'rating' => $row->is_provisional ? null : $row->rating,
-                        'is_unrated' => $row->is_provisional,
+                        'rating' => $row->rating,
+                        'is_provisional' => $row->is_provisional,
+                        'is_unrated' => false,
                     ],
                 ])->all(),
             ])

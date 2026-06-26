@@ -62,8 +62,10 @@ class ChessComProfileClient implements ProfileClient
      * `chess_{bullet,blitz,rapid}.last.{rating,rd}` map to our time controls
      * (chess.com has no online classical — and we don't offer it). A category
      * key is absent when the player has never played it → no rating returned.
-     * chess.com exposes no provisional flag, so we derive it from a high Glicko
-     * deviation (`rd` over `services.chess_com.provisional_rd_threshold`).
+     * "Provisional" is decided by GAME COUNT (`record` w+l+d below
+     * `provisional_min_games`), not `rd`: a rusty established rating has inflated
+     * rd but is not provisional. Provisional ratings still return the number —
+     * the UI shows them with a "?" rather than hiding them.
      *
      * @throws ProfileNotFoundException
      */
@@ -74,24 +76,28 @@ class ChessComProfileClient implements ProfileClient
             $username,
             recordHealth: false,
         );
-        $threshold = (int) config('services.chess_com.provisional_rd_threshold', 110);
+        $minGames = (int) config('services.chess_com.provisional_min_games', 20);
 
         $ratings = [];
 
         foreach (TimeControl::cases() as $timeControl) {
-            $last = $data["chess_{$timeControl->value}"]['last'] ?? null;
+            $category = $data["chess_{$timeControl->value}"] ?? null;
+            $last = $category['last'] ?? null;
 
             if (! is_array($last) || ! isset($last['rating'])) {
                 continue;
             }
 
-            $rd = isset($last['rd']) ? (int) $last['rd'] : null;
+            $record = $category['record'] ?? [];
+            $games = (int) ($record['win'] ?? 0)
+                + (int) ($record['loss'] ?? 0)
+                + (int) ($record['draw'] ?? 0);
 
             $ratings[] = new ChessTimeControlRating(
                 timeControl: $timeControl,
                 rating: (int) $last['rating'],
-                rd: $rd,
-                isProvisional: $rd !== null && $rd > $threshold,
+                rd: isset($last['rd']) ? (int) $last['rd'] : null,
+                isProvisional: $games < $minGames,
             );
         }
 

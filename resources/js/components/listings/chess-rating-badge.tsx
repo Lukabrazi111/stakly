@@ -7,10 +7,11 @@ import type { ChessRating } from '@/types/listings';
  * old self-typed skill range — the rating for the listing's platform + time
  * control (the TC itself shows as its own chip beside this). Chess providers
  * expose an ELO number only (no FACEIT-style level), so this is a minimal
- * tier-tinted number: entry (<1400) muted, mid (1400–1999) pink, elite (≥2000)
- * purple — the number stays the actual signal, so it's colorblind-safe.
- * Provisional / missing ratings render "Unrated". Non-interactive metadata: no
- * hover, cursor, or glow (matches the sibling time-control + GameChip).
+ * tier-tinted number: entry (<1400) / mid (1400–1999) / elite (≥2000) shown via
+ * the pill wash, number kept high-contrast. A PROVISIONAL rating (few games)
+ * still shows its number with a trailing "?" marker — never hidden — matching
+ * chess.com/Lichess. "Unrated" renders ONLY when there's no rating at all.
+ * Non-interactive metadata: no hover, cursor, or glow.
  */
 
 type ChessTier = 'entry' | 'mid' | 'elite';
@@ -63,15 +64,36 @@ export function ChessRatingBadge({ rating }: Props) {
     }
 
     const value = rating!.rating!;
+    const provisional = rating!.is_provisional;
     const tier = tierFor(value);
 
     return (
         <span
             className={`inline-flex shrink-0 items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold tabular-nums ${PILL_TONE[tier]}`}
-            title={t('Verified rating: :rating', { rating: value })}
-            aria-label={t('Verified rating :rating', { rating: value })}
+            title={
+                provisional
+                    ? t('Verified rating: :rating (provisional — few games)', {
+                          rating: value,
+                      })
+                    : t('Verified rating: :rating', { rating: value })
+            }
+            aria-label={
+                provisional
+                    ? t('Verified rating :rating, provisional', {
+                          rating: value,
+                      })
+                    : t('Verified rating :rating', { rating: value })
+            }
         >
             {value}
+            {provisional && (
+                <span
+                    className="ml-0.5 font-normal text-muted-foreground"
+                    aria-hidden="true"
+                >
+                    ?
+                </span>
+            )}
         </span>
     );
 }

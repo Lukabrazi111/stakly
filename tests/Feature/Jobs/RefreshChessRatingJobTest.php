@@ -64,20 +64,23 @@ it('upserts per-time-control rows + bumps synced_at from Lichess perfs', functio
     expect($account->fresh()->skill_rating_synced_at)->not->toBeNull();
 });
 
-it('flags a Lichess perf with prov=true as provisional', function () {
+it('flags a Lichess perf with few games as provisional (not the prov flag)', function () {
     $account = lichessAccount('alice');
     Http::fake([
         'lichess.org/api/user/alice' => Http::response([
             'perfs' => [
-                'blitz' => ['games' => 4, 'rating' => 1500, 'rd' => 140, 'prov' => true],
+                // 4 games < min (20) → provisional, regardless of Lichess's prov.
+                'blitz' => ['games' => 4, 'rating' => 1500, 'rd' => 140],
+                // 300 games → established even if rd is high.
+                'rapid' => ['games' => 300, 'rating' => 1700, 'rd' => 140, 'prov' => true],
             ],
         ], 200),
     ]);
 
     runChessRatingRefresh($account);
 
-    $blitz = $account->ratings()->where('time_control', TimeControl::Blitz->value)->firstOrFail();
-    expect($blitz->is_provisional)->toBeTrue();
+    expect($account->ratings()->where('time_control', 'blitz')->value('is_provisional'))->toBeTrue()
+        ->and($account->ratings()->where('time_control', 'rapid')->value('is_provisional'))->toBeFalse();
 });
 
 it('skips Lichess time controls with zero games', function () {
@@ -102,11 +105,11 @@ it('upserts rows from the chess.com /stats endpoint', function () {
     $account = chessComAccount('bob');
     Http::fake([
         'api.chess.com/pub/player/bob/stats' => Http::response([
-            'chess_bullet' => ['last' => ['rating' => 2000, 'rd' => 35]],
-            'chess_blitz' => ['last' => ['rating' => 1950, 'rd' => 40]],
-            'chess_rapid' => ['last' => ['rating' => 1800, 'rd' => 45]],
+            'chess_bullet' => ['last' => ['rating' => 2000, 'rd' => 35], 'record' => ['win' => 200, 'loss' => 150, 'draw' => 10]],
+            'chess_blitz' => ['last' => ['rating' => 1950, 'rd' => 40], 'record' => ['win' => 300, 'loss' => 250, 'draw' => 20]],
+            'chess_rapid' => ['last' => ['rating' => 1800, 'rd' => 45], 'record' => ['win' => 50, 'loss' => 40, 'draw' => 5]],
             // daily = correspondence; not one of our time controls.
-            'chess_daily' => ['last' => ['rating' => 1600, 'rd' => 50]],
+            'chess_daily' => ['last' => ['rating' => 1600, 'rd' => 50], 'record' => ['win' => 5, 'loss' => 5, 'draw' => 0]],
         ], 200),
     ]);
 
@@ -119,20 +122,24 @@ it('upserts rows from the chess.com /stats endpoint', function () {
         ->and((int) $ratings['rapid'])->toBe(1800);
 });
 
-it('flags a chess.com rating with rd over the threshold as provisional', function () {
-    config(['services.chess_com.provisional_rd_threshold' => 110]);
+it('flags a chess.com rating as provisional by GAME COUNT, not rd', function () {
     $account = chessComAccount('bob');
     Http::fake([
         'api.chess.com/pub/player/bob/stats' => Http::response([
-            'chess_blitz' => ['last' => ['rating' => 1500, 'rd' => 130]],
-            'chess_rapid' => ['last' => ['rating' => 1700, 'rd' => 60]],
+            // Few games → provisional, even with a low rd.
+            'chess_blitz' => ['last' => ['rating' => 1500, 'rd' => 40], 'record' => ['win' => 4, 'loss' => 3, 'draw' => 0]],
+            // Many games → established, even with an inflated rd (the rusty-
+            // veteran case that the old rd>110 rule wrongly hid).
+            'chess_rapid' => ['last' => ['rating' => 712, 'rd' => 126], 'record' => ['win' => 217, 'loss' => 290, 'draw' => 30]],
         ], 200),
     ]);
 
     runChessRatingRefresh($account);
 
     expect($account->ratings()->where('time_control', 'blitz')->value('is_provisional'))->toBeTrue()
-        ->and($account->ratings()->where('time_control', 'rapid')->value('is_provisional'))->toBeFalse();
+        ->and($account->ratings()->where('time_control', 'rapid')->value('is_provisional'))->toBeFalse()
+        // The established rapid rating still stores its real number.
+        ->and((int) $account->ratings()->where('time_control', 'rapid')->value('rating'))->toBe(712);
 });
 
 it('skips chess.com categories the player has never played', function () {
