@@ -2,6 +2,8 @@ import { Link, router, usePage } from '@inertiajs/react';
 import { Clock, Globe, Languages, Trophy } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useState } from 'react';
+import { ChessRatingBadge } from '@/components/listings/chess-rating-badge';
+import { FaceitRatingBadge } from '@/components/listings/faceit-rating-badge';
 import { SellerTrustMeta } from '@/components/listings/seller-trust-meta';
 import { VerifiedPlatformChip } from '@/components/listings/verified-platform-chip';
 import { TeamPlayLobbyView } from '@/components/lobby/team-play-lobby-view';
@@ -224,14 +226,6 @@ function ChessBranch({ listing, match }: ChessBranchProps) {
         stake: listing.stake_amount,
         platform: platformLabel,
     });
-    const skillFragment =
-        listing.skill_min !== null && listing.skill_max !== null
-            ? ' ' +
-              t(':min–:max Elo.', {
-                  min: listing.skill_min,
-                  max: listing.skill_max,
-              })
-            : '';
     const completionFragment =
         listing.creator.completion_rate_30d !== null &&
         listing.creator.settled_lifetime > 0
@@ -249,7 +243,7 @@ function ChessBranch({ listing, match }: ChessBranchProps) {
             timeControl: timeControlText.toLowerCase(),
             platform: platformLabel,
         },
-    )}${skillFragment}${completionFragment} ${t('Both stakes escrowed.')}`;
+    )}${completionFragment} ${t('Both stakes escrowed.')}`;
 
     return (
         <SiteLayout>
@@ -381,15 +375,47 @@ function ChessBranch({ listing, match }: ChessBranchProps) {
                                 {t('Match details')}
                             </h2>
                             <dl className="grid gap-5 sm:grid-cols-2">
-                                <Detail
-                                    label={t('Skill range')}
-                                    icon={<Trophy className="size-4" />}
-                                    value={formatSkillRange(
-                                        listing.skill_min,
-                                        listing.skill_max,
-                                        t,
-                                    )}
-                                />
+                                {/* Rating row branches on game like the cards
+                                    do — this detail view also serves non-chess
+                                    1v1 listings (e.g. Dota 2), which must NOT
+                                    render the chess badge. */}
+                                {listing.game === 'chess' ? (
+                                    <Detail
+                                        label={t('Verified rating')}
+                                        icon={<Trophy className="size-4" />}
+                                        value={
+                                            <ChessRatingBadge
+                                                rating={
+                                                    listing.creator.chess_rating
+                                                }
+                                            />
+                                        }
+                                    />
+                                ) : listing.game === 'cs2' ? (
+                                    <Detail
+                                        label={t('Verified rating')}
+                                        icon={<Trophy className="size-4" />}
+                                        value={
+                                            <FaceitRatingBadge
+                                                rating={
+                                                    listing.creator
+                                                        .faceit_rating
+                                                }
+                                                variant="compact"
+                                            />
+                                        }
+                                    />
+                                ) : (
+                                    <Detail
+                                        label={t('Skill range')}
+                                        icon={<Trophy className="size-4" />}
+                                        value={formatSkillRange(
+                                            listing.skill_min,
+                                            listing.skill_max,
+                                            t,
+                                        )}
+                                    />
+                                )}
                                 <Detail
                                     label={t('Time control')}
                                     icon={<Clock className="size-4" />}
@@ -785,7 +811,7 @@ function ChessBranch({ listing, match }: ChessBranchProps) {
 interface DetailProps {
     label: string;
     icon: ReactNode;
-    value: string;
+    value: ReactNode;
     valueClass?: string;
 }
 

@@ -3,7 +3,6 @@ import { AlertCircle, Globe, Link2, Lock } from 'lucide-react';
 import type { ReactNode } from 'react';
 import InputError from '@/components/input-error';
 import { ChessFormatFilter } from '@/components/listings/chess-format-filter';
-import { ChessSkillRangeFilter } from '@/components/listings/chess-skill-range-filter';
 import { DealSummary } from '@/components/listings/deal-summary';
 import { GamePicker } from '@/components/listings/game-picker';
 import { ListingPreviewCard } from '@/components/listings/listing-preview-card';
@@ -116,6 +115,7 @@ export default function ListingsCreate({
     requirementsByGame,
     feeRate,
     userFaceitRating,
+    userChessRatings,
 }: ListingCreateProps) {
     const t = useT();
     const atCap = activeListingsCount >= maxActiveListings;
@@ -174,6 +174,13 @@ export default function ListingsCreate({
     const balanceNumber = Number(balance);
     const exceedsBalance = stakeNumber > balanceNumber;
     const hasTimeControl = data.game !== 'chess' || data.time_control !== null;
+
+    // M41 P4 — the creator's verified rating for the chosen platform + time
+    // control drives the chess live preview; a missing pair → "Unrated".
+    const previewChessRating =
+        data.game === 'chess' && data.time_control !== null
+            ? (userChessRatings[data.platform]?.[data.time_control] ?? null)
+            : null;
     const canSubmit =
         !processing &&
         !atCap &&
@@ -490,39 +497,19 @@ export default function ListingsCreate({
                                 </FormSection>
 
                                 {/* Match preferences are chess-only — CS2 has no
-                                    time-control or skill input; opponents match
-                                    against the creator's verified FACEIT rating,
-                                    which the Listing preview already shows. */}
+                                    time-control input. Skill is no longer
+                                    self-typed (M41 P4): opponents match against
+                                    the creator's verified rating for the chosen
+                                    time control, which the Listing preview shows. */}
                                 {data.game === 'chess' && (
                                     <FormSection title={t('Match preferences')}>
-                                        <div className="space-y-5">
-                                            <ChessFormatFilter
-                                                value={
-                                                    data.time_control ?? 'blitz'
-                                                }
-                                                onChange={(next) =>
-                                                    setData(
-                                                        'time_control',
-                                                        next,
-                                                    )
-                                                }
-                                                error={errors.time_control}
-                                            />
-                                            <ChessSkillRangeFilter
-                                                min={data.skill_min}
-                                                max={data.skill_max}
-                                                onMinChange={(next) =>
-                                                    setData('skill_min', next)
-                                                }
-                                                onMaxChange={(next) =>
-                                                    setData('skill_max', next)
-                                                }
-                                                errors={{
-                                                    min: errors.skill_min,
-                                                    max: errors.skill_max,
-                                                }}
-                                            />
-                                        </div>
+                                        <ChessFormatFilter
+                                            value={data.time_control ?? 'blitz'}
+                                            onChange={(next) =>
+                                                setData('time_control', next)
+                                            }
+                                            error={errors.time_control}
+                                        />
                                     </FormSection>
                                 )}
 
@@ -717,6 +704,7 @@ export default function ListingsCreate({
                             isPublic={data.is_public}
                             verified={isGameVerified}
                             faceitRating={userFaceitRating}
+                            chessRating={previewChessRating}
                         />
                         <DealSummary
                             stake={stakeNumber}

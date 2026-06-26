@@ -104,12 +104,17 @@ class ListingResource extends JsonResource
                         ->values()
                         ->all()
                     : [],
-                // M41 P2 — verified FACEIT rating for CS2 listings (null for
-                // chess, which still carries skill_min/max until P4). Level is
+                // M41 P2 — verified FACEIT rating for CS2 listings. Level is
                 // derived from ELO; "Unrated" when the creator has no FACEIT
                 // link or no CS2 ELO yet.
                 'faceit_rating' => $this->game === Game::Cs2
                     ? $this->getFaceitRating()
+                    : null,
+                // M41 P4 — verified chess rating for the listing's platform +
+                // time control. Null for non-chess; "Unrated" when the creator
+                // has no rating for that time control (or it's provisional).
+                'chess_rating' => $this->game === Game::Chess
+                    ? $this->getChessRating()
                     : null,
             ],
         ];
@@ -135,6 +140,32 @@ class ListingResource extends JsonResource
             'elo' => $elo,
             'level' => FaceitLevel::fromElo($elo),
             'is_unrated' => $elo === null,
+        ];
+    }
+
+    /**
+     * The creator's verified chess rating for THIS listing's platform + time
+     * control (M41 P4). Reads the eager-loaded `linkedAccounts.ratings` only
+     * (no query). Provisional ratings + a missing row both surface as
+     * "Unrated" — the rating is null in that case so the FE can't show a number.
+     *
+     * @return array{rating: int|null, is_unrated: bool}
+     */
+    private function getChessRating(): array
+    {
+        $account = $this->user->relationLoaded('linkedAccounts')
+            ? $this->user->linkedAccounts->firstWhere('provider', $this->platform)
+            : null;
+
+        $row = ($account?->relationLoaded('ratings') && $this->time_control !== null)
+            ? $account->ratings->firstWhere('time_control', $this->time_control)
+            : null;
+
+        $rated = $row !== null && ! $row->is_provisional;
+
+        return [
+            'rating' => $rated ? $row->rating : null,
+            'is_unrated' => ! $rated,
         ];
     }
 }

@@ -2,6 +2,7 @@
 
 use App\Enums\Game as GameEnum;
 use App\Enums\GameStatus;
+use App\Enums\TimeControl;
 use App\Models\Game;
 use App\Models\Listing;
 use App\Models\User;
@@ -35,6 +36,29 @@ test('featured strip ships up to 4 open listings per active game, sorted by endi
 
     // The 5th (later-expiring) listing is intentionally omitted.
     expect($fifth)->not->toBeNull();
+});
+
+test('featured chess cards carry the creator verified rating (eager-loaded, not Unrated)', function () {
+    Game::factory()->active()->create(['slug' => 'chess']);
+
+    // Fresh synced_at so refresh-on-view doesn't fire a real provider call.
+    $creator = User::factory()->active()->withLichess('grandmaster', now())->create();
+    $creator->linkedAccounts()->firstOrFail()->ratings()->create([
+        'time_control' => TimeControl::Blitz->value,
+        'rating' => 2100,
+        'is_provisional' => false,
+        'synced_at' => now(),
+    ]);
+    Listing::factory()->open()->forLichess()->for($creator)
+        ->state(['time_control' => TimeControl::Blitz->value])
+        ->create(['expires_at' => now()->addHour()]);
+
+    // Regression guard: HomeController must eager-load linkedAccounts.ratings,
+    // else getChessRating short-circuits and every featured card reads Unrated.
+    $this->get('/')->assertInertia(fn ($page) => $page
+        ->where('featured.data.0.creator.chess_rating.rating', 2100)
+        ->where('featured.data.0.creator.chess_rating.is_unrated', false)
+    );
 });
 
 test('featured strip ships top N for each active game so no arena is starved', function () {

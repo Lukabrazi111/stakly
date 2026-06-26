@@ -29,6 +29,15 @@ export interface FaceitRating {
     is_unrated: boolean;
 }
 
+// M41 P4 — a creator's verified chess rating for a listing's platform + time
+// control. `rating` is null + `is_unrated` true when there's no rating for that
+// time control or it's provisional (both render "Unrated"). No level — chess
+// providers expose an ELO number only.
+export interface ChessRating {
+    rating: number | null;
+    is_unrated: boolean;
+}
+
 export interface ListingCreator {
     id: number;
     name: string;
@@ -67,6 +76,9 @@ export interface ListingCreator {
     linked_accounts: Array<{ provider: ListingPlatform; username: string }>;
     // M41 P2 — verified FACEIT rating; populated on CS2 listings, null for chess.
     faceit_rating: FaceitRating | null;
+    // M41 P4 — verified chess rating for the listing's platform + time control;
+    // populated on chess listings, null for CS2.
+    chess_rating: ChessRating | null;
 }
 
 // Chess-only linked-account providers. Distinct from `ListingPlatform` below
@@ -232,6 +244,10 @@ export interface ListingCreateProps {
     // preview + the in-form "your rating" note. Null when they have no FACEIT
     // link (in which case they can't post CS2 anyway).
     userFaceitRating: FaceitRating | null;
+    // M41 P4 — the current user's own chess ratings, keyed platform → time
+    // control, for the chess create-form live preview. A missing platform/TC
+    // (or a provisional rating) renders "Unrated".
+    userChessRatings: Record<string, Record<string, ChessRating>>;
 }
 
 // Tab values for the /listings/mine page (M6 Phase 6.5).

@@ -39,8 +39,9 @@ class UserController extends Controller
 
         // Eager-load linked accounts so the backwards-compat accessors on
         // `User` (chess_com_username / lichess_username / etc.) read from
-        // the loaded collection.
-        $user->load('linkedAccounts');
+        // the loaded collection. `.ratings` feeds the chess rating badge on the
+        // profile's listing rows (M41 P4).
+        $user->load('linkedAccounts.ratings');
 
         $isOwnProfile = $request->user()?->id === $user->id;
 

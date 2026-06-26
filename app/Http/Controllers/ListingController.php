@@ -17,6 +17,8 @@ use App\Http\Resources\ListingResource;
 use App\Http\Resources\LobbyResource;
 use App\Http\Resources\MessageResource;
 use App\Models\Game as GameModel;
+use App\Models\LinkedAccount;
+use App\Models\LinkedAccountRating;
 use App\Models\Listing;
 use App\Services\ParticipantStats;
 use App\Services\SellerTrust;
@@ -61,7 +63,9 @@ class ListingController extends Controller
                 ->onPublicMarketplace()
                 ->with([
                     'user:id,name,username,is_active_mode',
-                    'user.linkedAccounts',
+                    // `.ratings` feeds the chess rating badge (M41 P4); the
+                    // FACEIT scalar lives on the account row itself.
+                    'user.linkedAccounts.ratings',
                     'lobbyParticipants' => fn ($q) => $q->live()->orderBy('joined_at'),
                     'lobbyParticipants.user:id,name,username',
                     'lobbyParticipants.user.media',
@@ -146,7 +150,7 @@ class ListingController extends Controller
         // users migration) so payload cost is bounded.
         $listing->load([
             'user:id,name,username,is_active_mode,bio,created_at',
-            'user.linkedAccounts',
+            'user.linkedAccounts.ratings',
             'gameMatch:id,listing_id,taker_user_id',
             'lobbyParticipants' => fn ($q) => $q->live()->orderBy('joined_at'),
             'lobbyParticipants.user:id,name,username',
@@ -294,7 +298,7 @@ class ListingController extends Controller
         // have multiple, (c) swap the form for the link-CTA notice when
         // they have zero (handled by the existing `has_chess_link` flag in
         // shared auth.user props).
-        $user->loadMissing('linkedAccounts');
+        $user->loadMissing('linkedAccounts.ratings');
         $linkedPlatforms = $user->linkedAccounts
             ->pluck('provider')
             ->map(fn (LinkedAccountProvider $provider) => $provider->value)
@@ -310,6 +314,21 @@ class ListingController extends Controller
             'level' => FaceitLevel::fromElo($faceit->skill_rating),
             'is_unrated' => $faceit->skill_rating === null,
         ];
+
+        // M41 P4 — the creator's own chess ratings, keyed platform → time
+        // control, drive the chess live preview (it picks the row for the
+        // selected platform + TC). Provisional ratings surface as "Unrated".
+        $userChessRatings = $user->linkedAccounts
+            ->whereIn('provider', [LinkedAccountProvider::ChessCom, LinkedAccountProvider::Lichess])
+            ->mapWithKeys(fn (LinkedAccount $account) => [
+                $account->provider->value => $account->ratings->mapWithKeys(fn (LinkedAccountRating $row) => [
+                    $row->time_control->value => [
+                        'rating' => $row->is_provisional ? null : $row->rating,
+                        'is_unrated' => $row->is_provisional,
+                    ],
+                ])->all(),
+            ])
+            ->all();
 
         // Reuse the homepage's resolved-array cache — `Game::booted` already
         // invalidates it on save/delete, so admin tile edits land here too.
@@ -356,6 +375,7 @@ class ListingController extends Controller
             // boundary only; internal money math stays BCMath.
             'feeRate' => (float) config('stakly.platform_fee_rate'),
             'userFaceitRating' => $userFaceitRating,
+            'userChessRatings' => $userChessRatings,
         ]);
     }
 
@@ -382,7 +402,7 @@ class ListingController extends Controller
         $query = $user->listings()
             ->with([
                 'user:id,name,username,is_active_mode',
-                'user.linkedAccounts',
+                'user.linkedAccounts.ratings',
                 'lobbyParticipants' => fn ($q) => $q->live()->orderBy('joined_at'),
                 'lobbyParticipants.user:id,name,username',
                 'lobbyParticipants.user.media',

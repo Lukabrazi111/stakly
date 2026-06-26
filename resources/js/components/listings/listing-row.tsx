@@ -1,5 +1,6 @@
 import { Link } from '@inertiajs/react';
 import { Clock, Globe, Languages, Trophy } from 'lucide-react';
+import { ChessRatingBadge } from '@/components/listings/chess-rating-badge';
 import { FaceitRatingBadge } from '@/components/listings/faceit-rating-badge';
 import { GameChip } from '@/components/listings/game-chip';
 import { ReadyCheckBanner } from '@/components/listings/ready-check-banner';
@@ -140,6 +141,10 @@ export function ListingRow({ listing }: Props) {
                             <FaceitRatingBadge
                                 rating={listing.creator.faceit_rating}
                                 variant="compact"
+                            />
+                        ) : listing.game === 'chess' ? (
+                            <ChessRatingBadge
+                                rating={listing.creator.chess_rating}
                             />
                         ) : (
                             <span className="inline-flex items-center gap-1.5 rounded-full border border-border/60 bg-background/60 px-3 py-1 text-xs font-medium text-muted-foreground">
