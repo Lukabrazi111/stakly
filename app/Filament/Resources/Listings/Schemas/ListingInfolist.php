@@ -4,7 +4,6 @@ namespace App\Filament\Resources\Listings\Schemas;
 
 use App\Enums\LinkedAccountProvider;
 use App\Enums\ListingStatus;
-use App\Enums\TimeControl;
 use App\Models\Listing;
 use App\Models\WalletTransaction;
 use App\Support\WalletReferenceParser;
@@ -83,8 +82,8 @@ class ListingInfolist
                     ->state(fn (Listing $record): string => self::formatSkillRange($record)),
 
                 TextEntry::make('time_control')
-                    ->label('Time controls')
-                    ->state(fn (Listing $record): string => self::formatTimeControls($record)),
+                    ->label('Time control')
+                    ->state(fn (Listing $record): string => self::formatTimeControl($record)),
 
                 TextEntry::make('region')
                     ->label('Region')
@@ -221,11 +220,11 @@ class ListingInfolist
         return ($record->skill_min ?? '?').'–'.($record->skill_max ?? '?');
     }
 
-    private static function formatTimeControls(Listing $record): string
+    private static function formatTimeControl(Listing $record): string
     {
-        return $record->time_control
-            ->map(fn (TimeControl $tc) => ucfirst($tc->value))
-            ->join(', ');
+        return $record->time_control !== null
+            ? ucfirst($record->time_control->value)
+            : '—';
     }
 
     private static function formatLanguages(Listing $record): string

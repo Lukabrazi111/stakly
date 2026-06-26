@@ -67,6 +67,16 @@ return [
         'requests_per_minute' => (int) env('LICHESS_REQUESTS_PER_MINUTE', 60),
 
         /*
+         * M41 P3b — chess rating-refresh self-throttle + freshness TTL, on a
+         * SEPARATE budget from `requests_per_minute` so a rating-refresh burst
+         * can't starve the settlement-critical `lichess-api` limiter. Lichess
+         * doesn't publish a numeric read limit ("one request at a time, 60s
+         * back-off on 429"); 30/min is the CLAUDE.md conservative default.
+         */
+        'rating_requests_per_minute' => (int) env('LICHESS_RATING_REQUESTS_PER_MINUTE', 30),
+        'rating_ttl_hours' => (int) env('LICHESS_RATING_TTL_HOURS', 24),
+
+        /*
          * Per-provider `ProviderCircuitBreaker` thresholds (M15 P5 Item 3).
          * Each provider can tune its own trip + cooldown without affecting
          * the others. Missing values fall back to the class-level defaults
@@ -90,6 +100,18 @@ return [
      */
     'chess_com' => [
         'requests_per_minute' => (int) env('CHESS_COM_REQUESTS_PER_MINUTE', 30),
+
+        /*
+         * M41 P3b — chess rating-refresh self-throttle + freshness TTL on a
+         * SEPARATE budget from settlement's `chess-com-api`. chess.com asks for
+         * serial requests with no numeric quota; 30/min is the conservative
+         * default. `provisional_rd_threshold` is the Glicko rating-deviation
+         * cutoff above which a `/stats` rating is treated as provisional
+         * (chess.com exposes no `prov` flag — Lichess uses rd > 110 internally).
+         */
+        'rating_requests_per_minute' => (int) env('CHESS_COM_RATING_REQUESTS_PER_MINUTE', 30),
+        'rating_ttl_hours' => (int) env('CHESS_COM_RATING_TTL_HOURS', 24),
+        'provisional_rd_threshold' => (int) env('CHESS_COM_PROVISIONAL_RD_THRESHOLD', 110),
 
         // Per-provider `ProviderCircuitBreaker` thresholds (M15 P5 Item 3).
         'circuit_breaker' => [

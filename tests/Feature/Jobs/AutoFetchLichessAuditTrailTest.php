@@ -42,7 +42,7 @@ function lichessAuditMatch(?array $snapshots = null): GameMatch
 
     // M14 Slice 3d — TC catch-all so happy-path tests pass deterministically.
     $listing = Listing::factory()->taken()->forLichess()->for($creator)
-        ->state(['stake_amount' => '100', 'time_control' => ['blitz', 'rapid', 'classical']])
+        ->state(['stake_amount' => '100', 'time_control' => 'blitz'])
         ->create();
     Wallet::hold(user: $creator, amount: '100', listing: $listing, reference: "listing-create:{$listing->id}");
     Wallet::hold(user: $taker, amount: '100', listing: $listing, reference: "match-take:{$listing->id}");
@@ -107,7 +107,7 @@ test('no_match: writes a row with candidates_count = 0', function () {
 test('ambiguous: writes a row with candidates_count + outcome_reason=time_control_mismatch (M14 Slice 3c)', function () {
     $match = lichessAuditMatch();
     // Force TC mismatch so the picker rejects both candidates.
-    $match->listing->update(['time_control' => ['classical']]);
+    $match->listing->update(['time_control' => 'rapid']);
 
     $g1 = json_encode(lichessGameFixture(['id' => 'game0001']));
     $g2 = json_encode(lichessGameFixture(['id' => 'game0002', 'winner' => 'black']));
@@ -125,7 +125,7 @@ test('ambiguous: writes a row with candidates_count + outcome_reason=time_contro
 
 test('multiple candidates with TC match: picker picks closest → outcome=matched, candidates_count=N (M14 Slice 3c)', function () {
     $match = lichessAuditMatch();
-    $match->listing->update(['time_control' => ['blitz']]);
+    $match->listing->update(['time_control' => 'blitz']);
 
     $earlyTs = $match->created_at->copy()->addMinutes(2)->getTimestampMs();
     $lateTs = $match->created_at->copy()->addMinutes(30)->getTimestampMs();

@@ -543,21 +543,24 @@ class ListingController extends Controller
     }
 
     /**
-     * Time control overlap: `time_control` is now a jsonb array on each
-     * listing. The filter value can be a single string or an array (Spatie
-     * splits comma-separated values). A listing matches if its offered set
-     * intersects the user's selection.
+     * Time control filter: each listing now stores a SINGLE `time_control`
+     * string (M41 P3a). The filter stays multi-select — the value can be a
+     * single string or an array (Spatie splits comma-separated values) — and a
+     * listing matches if its one time control is in the user's selection.
      */
     private function timeControlOverlap(): \Closure
     {
         return function (Builder $q, $value) {
-            $values = is_array($value) ? $value : [$value];
+            $values = array_filter(is_array($value) ? $value : [$value]);
 
-            $q->where(function (Builder $inner) use ($values) {
-                foreach ($values as $v) {
-                    $inner->orWhereJsonContains('time_control', $v);
-                }
-            });
+            // A present-but-empty filter (e.g. `?filter[time_control]=`) leaves
+            // no values — skip the constraint so the board stays unfiltered
+            // rather than `whereIn([])` collapsing to zero rows.
+            if ($values === []) {
+                return;
+            }
+
+            $q->whereIn('time_control', $values);
         };
     }
 

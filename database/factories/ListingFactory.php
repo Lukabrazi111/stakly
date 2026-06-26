@@ -33,8 +33,6 @@ class ListingFactory extends Factory
         $skillMin = $hasSkillRange ? $this->faker->numberBetween(800, 2000) : null;
         $skillMax = $hasSkillRange ? $skillMin + $this->faker->numberBetween(200, 600) : null;
 
-        $timeControlValues = array_map(fn (TimeControl $tc) => $tc->value, TimeControl::cases());
-
         return [
             // Auto-created users are active by default — an "open listing"
             // implies a reachable owner, so the factory's default produces a
@@ -52,10 +50,7 @@ class ListingFactory extends Factory
             'stake_amount' => $stake,
             'skill_min' => $skillMin,
             'skill_max' => $skillMax,
-            'time_control' => $this->faker->randomElements(
-                $timeControlValues,
-                $this->faker->numberBetween(1, 3),
-            ),
+            'time_control' => $this->faker->randomElement(TimeControl::cases())->value,
             'region' => $this->faker->randomElement([
                 'Global', 'EU', 'NA', 'Asia', 'CIS', 'LATAM',
             ]),
@@ -184,9 +179,8 @@ class ListingFactory extends Factory
     /**
      * Adjusts platform + time_control to match the target game. CS2 routes
      * to FACEIT, Dota 2 routes to Steam (per the planned M15 catalog).
-     * Non-chess games clear `time_control` since the concept doesn't apply
-     * — `gameSupports()` hides the filter UI for them, and an empty
-     * jsonb array is valid storage.
+     * Non-chess games set `time_control` to null since the concept doesn't
+     * apply — `gameSupports()` hides the filter UI for them.
      */
     public function forGame(Game $game): static
     {
@@ -203,11 +197,8 @@ class ListingFactory extends Factory
             'game' => $game,
             'platform' => $platform,
             'time_control' => $game === Game::Chess
-                ? $this->faker->randomElements(
-                    array_map(fn (TimeControl $tc) => $tc->value, TimeControl::cases()),
-                    $this->faker->numberBetween(1, 3),
-                )
-                : [],
+                ? $this->faker->randomElement(TimeControl::cases())->value
+                : null,
         ]);
     }
 }

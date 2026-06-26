@@ -34,9 +34,9 @@ class StoreListingRequest extends FormRequest
 
     /**
      * Maximum number of active (Open) listings a single user can hold at
-     * once. Locked at 2 for the v1 launch per Phase 6.5; bump later if
-     * friction shows up (chess has 3 time controls — Blitz / Rapid /
-     * Classical — and a player wanting one of each hits the cap fast).
+     * once. Set to 2; bump later if friction shows up (each chess listing is
+     * a single time control now — Bullet / Blitz / Rapid — so a player
+     * wanting several formats up at once hits the cap fast).
      * Taken / Expired / Cancelled don't count toward the cap. Global Active
      * Mode (also Phase 6.5) is an orthogonal visibility toggle, not a count
      * modifier — Inactive listings still count.
@@ -97,20 +97,20 @@ class StoreListingRequest extends FormRequest
             ],
             'skill_min' => ['nullable', 'integer', 'min:0', 'max:3500'],
             'skill_max' => ['nullable', 'integer', 'min:0', 'max:3500', 'gte:skill_min'],
-            // `time_control` is chess-only (Blitz / Rapid / Classical). For
-            // non-chess games it stays null on the listing row — the
-            // marketplace already hides the column via `gameSupports()`.
-            // Base shape (array, max) always applies; `required + min:1`
-            // only fires when the listing's game is chess.
+            // `time_control` is chess-only and now a SINGLE value (M41 P3a:
+            // one chess listing = one time control → one verified rating).
+            // Required + enum-checked for chess; `prohibited` (not merely
+            // nullable) for non-chess so a crafted request can't smuggle a
+            // stray time control onto a CS2 / future-game listing — the
+            // "non-chess ⇒ time_control IS NULL" invariant is enforced at the
+            // trust boundary, not just by the frontend + action.
             'time_control' => [
-                'array',
-                'max:'.count(TimeControl::cases()),
                 Rule::when(
                     fn () => $this->input('game') === Game::Chess->value,
-                    ['required', 'min:1'],
+                    ['required', 'string', Rule::enum(TimeControl::class)],
+                    ['prohibited'],
                 ),
             ],
-            'time_control.*' => ['string', Rule::enum(TimeControl::class), 'distinct'],
             'region' => ['nullable', 'string', Rule::in(self::REGIONS)],
             'language' => ['nullable', 'array', 'max:'.count(self::LANGUAGES)],
             'language.*' => ['string', Rule::in(self::LANGUAGES), 'distinct'],

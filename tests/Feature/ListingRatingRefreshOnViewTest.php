@@ -1,6 +1,7 @@
 <?php
 
 use App\Enums\Game;
+use App\Jobs\RefreshChessRatingJob;
 use App\Jobs\RefreshFaceitRatingJob;
 use App\Models\Listing;
 use App\Models\User;
@@ -41,12 +42,36 @@ it('does not queue a refresh when the CS2 creator rating is fresh', function () 
     Queue::assertNotPushed(RefreshFaceitRatingJob::class);
 });
 
-it('does not queue a refresh when viewing the chess board', function () {
+it('queues a chess refresh for a stale chess creator when the board is viewed', function () {
+    // withLichess leaves skill_rating_synced_at null → stale.
+    $creator = User::factory()->active()->withLichess('carol')->create();
+    Listing::factory()->forLichess()->for($creator)->create();
+
+    $this->get('/listings?filter[game]=chess')->assertOk();
+
+    Queue::assertPushed(
+        RefreshChessRatingJob::class,
+        fn (RefreshChessRatingJob $job) => $job->linkedAccount->user_id === $creator->id,
+    );
+});
+
+it('does not queue a chess refresh when the chess creator rating is fresh', function () {
+    $creator = User::factory()->active()->withLichess('carol', now()->subHour())->create();
+    Listing::factory()->forLichess()->for($creator)->create();
+
+    $this->get('/listings?filter[game]=chess')->assertOk();
+
+    Queue::assertNotPushed(RefreshChessRatingJob::class);
+});
+
+it('does not refresh a chess creator FACEIT rating from the chess board', function () {
+    // The chess listing is on Lichess; the creator's unrelated stale FACEIT
+    // rating must NOT be touched — only the listing's-platform account is.
     $creator = User::factory()->active()
-        ->withLichess('carol')
-        ->withFaceit('carol-faceit', 'guid-chess', 1500, now()->subDays(2))
+        ->withLichess('carol', now()->subHour())
+        ->withFaceit('carol-faceit', 'guid-x', 1500, now()->subDays(2))
         ->create();
-    Listing::factory()->forGame(Game::Chess)->for($creator)->create();
+    Listing::factory()->forLichess()->for($creator)->create();
 
     $this->get('/listings?filter[game]=chess')->assertOk();
 

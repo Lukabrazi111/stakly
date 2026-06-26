@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Enums\LinkedAccountProvider;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /**
  * A user's verified external game-account link. Inserted only after the
@@ -37,5 +38,15 @@ class LinkedAccount extends Model
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
+    }
+
+    /**
+     * Per-time-control chess ratings (M41 P3b). Empty for FACEIT/Steam links
+     * (those use the scalar `skill_rating`). A missing row for a time control
+     * means "Unrated" for it.
+     */
+    public function ratings(): HasMany
+    {
+        return $this->hasMany(LinkedAccountRating::class);
     }
 }

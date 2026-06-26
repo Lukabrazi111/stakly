@@ -7,16 +7,17 @@ use App\Models\LinkedAccount;
 use App\Models\Listing;
 
 /**
- * Refresh-on-view fan-out (M41 P2). Given the listings actually rendered on a
- * page, queue a stale-gated FACEIT rating refresh for each distinct creator
- * whose rating is displayed (CS2 only). Reused by every surface that shows a
- * listing's rating — the marketplace, listing detail, lobby, my-listings, and
- * public profiles — so the dedup / stale / throttle policy lives in ONE place.
+ * Refresh-on-view fan-out (M41 P2/P3b). Given the listings actually rendered on
+ * a page, queue a stale-gated rating refresh for each distinct creator whose
+ * rating is displayed — CS2 (FACEIT ELO) and chess (per-time-control ratings).
+ * Reused by every surface that shows a listing's rating — the marketplace,
+ * listing detail, lobby, my-listings, and public profiles — so the dedup /
+ * stale / throttle policy lives in ONE place.
  *
  * Safe on a read path: the underlying RefreshLinkedAccountRatingAction gates on
- * provider + api key + circuit breaker + 24h staleness, and the queued job is
- * deduped (ShouldBeUnique) + throttled (20/min), so repeated views can't hammer
- * the provider.
+ * provider + prerequisites + circuit breaker + 24h staleness, and the queued
+ * job is deduped (ShouldBeUnique) + throttled (per-provider budget), so repeated
+ * views can't hammer the provider.
  */
 class RefreshDisplayedRatingsAction
 {
@@ -25,7 +26,7 @@ class RefreshDisplayedRatingsAction
     ) {}
 
     /**
-     * Refresh the creator ratings shown for a set of listings (CS2 only).
+     * Refresh the creator ratings shown for a set of listings (CS2 + chess).
      * Iterates eager-loaded relations only — never lazy-load inside the loop.
      *
      * @param  iterable<Listing>  $listings
@@ -33,8 +34,13 @@ class RefreshDisplayedRatingsAction
     public function forListings(iterable $listings): void
     {
         $accounts = collect($listings)
-            ->filter(fn (Listing $listing) => $listing->game === Game::Cs2)
-            ->flatMap(fn (Listing $listing) => $listing->user->linkedAccounts);
+            ->filter(fn (Listing $listing) => in_array($listing->game, [Game::Cs2, Game::Chess], true))
+            // Only the account on the listing's OWN platform is displayed, so
+            // refresh just that one — viewing a chess board shouldn't touch a
+            // creator's unrelated FACEIT rating (and vice-versa).
+            ->map(fn (Listing $listing) => $listing->user->linkedAccounts
+                ->firstWhere('provider', $listing->platform))
+            ->filter();
 
         $this->forAccounts($accounts);
     }

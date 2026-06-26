@@ -42,12 +42,12 @@ const SORT_LABELS: Record<ListingSort, string> = {
 };
 
 const TIME_CONTROL_LABELS: Record<TimeControl, string> = {
+    bullet: 'Bullet',
     blitz: 'Blitz',
     rapid: 'Rapid',
-    classical: 'Classical',
 };
 
-const TIME_CONTROL_OPTIONS: TimeControl[] = ['blitz', 'rapid', 'classical'];
+const TIME_CONTROL_OPTIONS: TimeControl[] = ['bullet', 'blitz', 'rapid'];
 
 const STAKE_INPUT_DEBOUNCE_MS = 400;
 

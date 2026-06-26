@@ -21,7 +21,7 @@ function teamPlayPayload(array $overrides = []): array
         'game' => Game::Cs2->value,
         'platform' => LinkedAccountProvider::Faceit->value,
         'stake_amount' => '100',
-        'time_control' => [],
+        'time_control' => null,
         'duration_hours' => 24,
         'team_size' => 5,
         'creator_side' => LobbyParticipant::SIDE_A,
@@ -35,7 +35,7 @@ function chessPayload(array $overrides = []): array
         'game' => Game::Chess->value,
         'platform' => LinkedAccountProvider::ChessCom->value,
         'stake_amount' => '50',
-        'time_control' => ['blitz'],
+        'time_control' => 'blitz',
         'duration_hours' => 24,
     ], $overrides);
 }

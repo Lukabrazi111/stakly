@@ -8,7 +8,6 @@ use App\Actions\Message\PostSystemMessageAction;
 use App\Enums\AutoFetchOutcome;
 use App\Enums\LinkedAccountProvider;
 use App\Enums\MessageType;
-use App\Enums\TimeControl;
 use App\Models\GameMatch;
 use App\Models\Message;
 use App\Services\Provider\Exceptions\PermanentProviderError;
@@ -218,8 +217,9 @@ class AutoFetchLichessGameJob implements ShouldBeUnique, ShouldQueueAfterCommit
         // filter). The picker only disambiguates when the search window
         // surfaces multiple games. Slice 3d's strict single-candidate
         // enforcement was reverted on 2026-06-06 — too aggressive in
-        // practice given Lichess's `correspondence` / `bullet` speeds
-        // sit outside Stakly's TimeControl enum.
+        // practice given Lichess's `correspondence` / `ultraBullet` speeds
+        // sit outside Stakly's TimeControl enum (bullet joined the enum in
+        // M41 P3a, so a single bullet game still settles via this path).
         $game = $count === 1
             ? $completed[0]
             : $this->pickSettleableCandidate($completed);
@@ -262,9 +262,9 @@ class AutoFetchLichessGameJob implements ShouldBeUnique, ShouldQueueAfterCommit
 
     /**
      * Pick the candidate this job should settle on. M14 Slice 3d — applies
-     * to any candidate count: filter to those whose speed matches the
-     * listing's `time_control` array; if multiple survive (Slice 3c),
-     * pick the one whose `lastMoveAt` is closest to the match's
+     * to any candidate count: filter to those whose speed equals the
+     * listing's single `time_control` value (M41 P3a); if multiple survive
+     * (Slice 3c), pick the one whose `lastMoveAt` is closest to the match's
      * `created_at` (= the first game played for this match), tie-breaking
      * on lexicographic game id for determinism.
      *
@@ -277,13 +277,11 @@ class AutoFetchLichessGameJob implements ShouldBeUnique, ShouldQueueAfterCommit
      */
     private function pickSettleableCandidate(array $candidates): ?LichessGameResult
     {
-        $listingControls = $this->match->listing->time_control
-            ->map(fn (TimeControl $tc) => $tc->value)
-            ->all();
+        $listingControl = $this->match->listing->time_control?->value;
 
         $tcMatches = array_values(array_filter(
             $candidates,
-            fn (LichessGameResult $g) => in_array($g->speed, $listingControls, true),
+            fn (LichessGameResult $g) => $g->speed === $listingControl,
         ));
 
         if ($tcMatches === []) {

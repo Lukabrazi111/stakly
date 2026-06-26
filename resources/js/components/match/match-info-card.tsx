@@ -3,7 +3,7 @@ import { ChevronRight, ShieldCheck } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { useInitials } from '@/hooks/use-initials';
 import { useT } from '@/lib/i18n';
-import { formatTimeControls } from '@/lib/listings-format';
+import { timeControlLabel } from '@/lib/listings-format';
 import { show as userShow } from '@/routes/users';
 import type { ListingPlatform, MatchPlayer, TimeControl } from '@/types';
 
@@ -11,7 +11,7 @@ interface MatchInfoCardProps {
     opponent: MatchPlayer;
     stakeEach: number;
     pot: number;
-    timeControl: TimeControl[];
+    timeControl: TimeControl | null;
     platform: ListingPlatform;
     /** Pre-computed `pot * (1 - fee_rate)`. Undefined when Settled — the
      *  SettlementSummary card owns the breakdown for resolved matches. */
@@ -79,10 +79,12 @@ export function MatchInfoCard({
                         accent
                     />
                 )}
-                <Row
-                    label={t('Time control')}
-                    value={formatTimeControls(timeControl, t)}
-                />
+                {timeControl && (
+                    <Row
+                        label={t('Time control')}
+                        value={timeControlLabel(timeControl, t)}
+                    />
+                )}
 
                 <div className="flex items-center justify-between gap-3 px-6 py-4">
                     <dt className="text-sm text-muted-foreground">

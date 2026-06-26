@@ -565,7 +565,7 @@ test('taking a team-play listing returns not_takeable — no match write, neutra
         'game' => Game::Cs2->value,
         'platform' => LinkedAccountProvider::Faceit->value,
         'stake_amount' => '100',
-        'time_control' => [],
+        'time_control' => null,
         'duration_hours' => 24,
         'team_size' => 5,
         'creator_side' => LobbyParticipant::SIDE_A,

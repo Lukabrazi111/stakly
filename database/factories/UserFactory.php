@@ -104,13 +104,17 @@ class UserFactory extends Factory
      * at the DB level, so callers needing multiple Lichess-verified users
      * in one test should pass distinct usernames.
      */
-    public function withLichess(?string $username = null): static
+    public function withLichess(?string $username = null, ?CarbonInterface $syncedAt = null): static
     {
-        return $this->afterCreating(function (User $user) use ($username) {
+        return $this->afterCreating(function (User $user) use ($username, $syncedAt) {
             LinkedAccount::create([
                 'user_id' => $user->id,
                 'provider' => LinkedAccountProvider::Lichess->value,
                 'username' => $username ?? Str::slug(fake()->unique()->userName()),
+                // M41 P3b — account-level chess-rating freshness marker. Null
+                // (default) reads as stale; pass a time to exercise the
+                // fresh/stale branches of the refresh gate.
+                'skill_rating_synced_at' => $syncedAt,
                 'verified_at' => now(),
             ]);
         });
@@ -120,13 +124,14 @@ class UserFactory extends Factory
      * Mark the user as having a verified chess.com account. Symmetric to
      * `withLichess()` for the same per-test uniqueness reason.
      */
-    public function withChessCom(?string $username = null): static
+    public function withChessCom(?string $username = null, ?CarbonInterface $syncedAt = null): static
     {
-        return $this->afterCreating(function (User $user) use ($username) {
+        return $this->afterCreating(function (User $user) use ($username, $syncedAt) {
             LinkedAccount::create([
                 'user_id' => $user->id,
                 'provider' => LinkedAccountProvider::ChessCom->value,
                 'username' => $username ?? Str::slug(fake()->unique()->userName()),
+                'skill_rating_synced_at' => $syncedAt,
                 'verified_at' => now(),
             ]);
         });

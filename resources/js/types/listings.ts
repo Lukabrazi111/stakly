@@ -10,7 +10,7 @@ import type { ChatMessage } from './match';
 
 export type ListingStatus = 'open' | 'taken' | 'expired' | 'cancelled';
 
-export type TimeControl = 'blitz' | 'rapid' | 'classical';
+export type TimeControl = 'bullet' | 'blitz' | 'rapid';
 
 export type ListingSort =
     | 'newest'
@@ -94,9 +94,9 @@ export interface Listing {
     fee_rate: number;
     skill_min: number | null;
     skill_max: number | null;
-    // Array of one or more time controls the creator is willing to play.
-    // Taker (M6) picks which one for the actual match.
-    time_control: TimeControl[];
+    // The single time control this chess listing is for (M41 P3a). Null for
+    // non-chess games (CS2 etc. have no time control).
+    time_control: TimeControl | null;
     region: string | null;
     // Array of languages the creator speaks, or null = no restriction.
     language: string[] | null;

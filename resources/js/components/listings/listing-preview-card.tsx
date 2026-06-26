@@ -14,7 +14,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import type { GameId } from '@/config/games';
 import { useInitials } from '@/hooks/use-initials';
 import { useT } from '@/lib/i18n';
-import { formatSkillRange, timeControlChipLabels } from '@/lib/listings-format';
+import { formatSkillRange, timeControlLabel } from '@/lib/listings-format';
 import type { User } from '@/types/auth';
 import type {
     FaceitRating,
@@ -29,7 +29,7 @@ interface Props {
     stakeAmount: string;
     skillMin: string;
     skillMax: string;
-    timeControl: TimeControl[];
+    timeControl: TimeControl | null;
     region: string;
     language: string[];
     durationHours: number;
@@ -144,16 +144,12 @@ export function ListingPreviewCard({
                     </span>
                 )}
 
-                {!isTeamPlay &&
-                    timeControlChipLabels(timeControl, t).map((label) => (
-                        <span
-                            key={label}
-                            className="inline-flex items-center gap-1 rounded-full border border-border/60 bg-background/60 px-2.5 py-0.5 text-xs font-medium text-muted-foreground"
-                        >
-                            <Clock className="size-3" aria-hidden="true" />
-                            {label}
-                        </span>
-                    ))}
+                {!isTeamPlay && timeControl && (
+                    <span className="inline-flex items-center gap-1 rounded-full border border-border/60 bg-background/60 px-2.5 py-0.5 text-xs font-medium text-muted-foreground">
+                        <Clock className="size-3" aria-hidden="true" />
+                        {timeControlLabel(timeControl, t)}
+                    </span>
+                )}
 
                 {language.length > 0 && (
                     <span className="inline-flex items-center gap-1 rounded-full border border-border/60 bg-background/60 px-2.5 py-0.5 text-xs font-medium text-muted-foreground">

@@ -31,7 +31,7 @@ function auditLobby(): Listing
         'stake_amount' => '100',
         'skill_min' => null,
         'skill_max' => null,
-        'time_control' => [],
+        'time_control' => null,
         'region' => null,
         'language' => null,
         'duration_hours' => 24,

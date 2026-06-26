@@ -3,7 +3,7 @@ import { Clock, Handshake, Trophy, X } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { useInitials } from '@/hooks/use-initials';
 import { useT } from '@/lib/i18n';
-import { formatTimeControls } from '@/lib/listings-format';
+import { timeControlLabel } from '@/lib/listings-format';
 import { formatMatchDate } from '@/lib/matches-format';
 import { show as userShow } from '@/routes/users';
 import type { Match } from '@/types';
@@ -70,10 +70,12 @@ export function ProfileMatchRow({ match, profileUserId }: Props) {
             </Link>
 
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground md:shrink-0 md:justify-end">
-                <span className="inline-flex items-center gap-1">
-                    <Clock className="size-3" aria-hidden="true" />
-                    {formatTimeControls(match.listing.time_control, t)}
-                </span>
+                {match.listing.time_control && (
+                    <span className="inline-flex items-center gap-1">
+                        <Clock className="size-3" aria-hidden="true" />
+                        {timeControlLabel(match.listing.time_control, t)}
+                    </span>
+                )}
                 <span className="font-semibold text-foreground">
                     ${match.listing.stake_amount}
                 </span>

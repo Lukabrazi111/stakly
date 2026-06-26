@@ -4,7 +4,6 @@ namespace App\Filament\Resources\Listings\Tables;
 
 use App\Enums\LinkedAccountProvider;
 use App\Enums\ListingStatus;
-use App\Enums\TimeControl;
 use App\Models\Listing;
 use Filament\Actions\ViewAction;
 use Filament\Forms\Components\TextInput;
@@ -63,8 +62,8 @@ class ListingsTable
                     ->toggleable(),
 
                 TextColumn::make('time_control')
-                    ->label('Time controls')
-                    ->state(fn (Listing $record): string => self::formatTimeControls($record))
+                    ->label('Time control')
+                    ->state(fn (Listing $record): string => self::formatTimeControl($record))
                     ->toggleable(isToggledHiddenByDefault: true),
 
                 TextColumn::make('region')
@@ -163,11 +162,11 @@ class ListingsTable
         return ($record->skill_min ?? '?').'–'.($record->skill_max ?? '?');
     }
 
-    private static function formatTimeControls(Listing $record): string
+    private static function formatTimeControl(Listing $record): string
     {
-        return $record->time_control
-            ->map(fn (TimeControl $tc) => ucfirst($tc->value))
-            ->join(', ');
+        return $record->time_control !== null
+            ? ucfirst($record->time_control->value)
+            : '—';
     }
 
     private static function formatLanguages(Listing $record): string

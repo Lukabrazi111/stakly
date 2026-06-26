@@ -70,28 +70,30 @@ test('stake_max filter narrows results', function () {
     $response->assertInertia(fn ($page) => $page->has('listings.data', 2));
 });
 
-test('time_control filter accepts multiple values (CSV)', function () {
-    Listing::factory()->open()->state(['time_control' => [TimeControl::Blitz->value]])->create();
-    Listing::factory()->open()->state(['time_control' => [TimeControl::Rapid->value]])->create();
-    Listing::factory()->open()->state(['time_control' => [TimeControl::Classical->value]])->create();
+test('time_control filter accepts multiple values (CSV) over single-TC listings', function () {
+    // M41 P3a — each listing has one time control; the filter stays multi-select
+    // (matches listings whose single control is in the requested set).
+    Listing::factory()->open()->state(['time_control' => TimeControl::Blitz->value])->create();
+    Listing::factory()->open()->state(['time_control' => TimeControl::Rapid->value])->create();
+    Listing::factory()->open()->state(['time_control' => TimeControl::Bullet->value])->create();
 
     $response = $this->get('/listings?filter[time_control]=blitz,rapid');
 
     $response->assertInertia(fn ($page) => $page->has('listings.data', 2));
 });
 
-test('time_control filter matches listings offering any of the requested controls', function () {
-    // Listing offering both Blitz and Rapid — should match either filter alone or both.
-    Listing::factory()->open()->state(['time_control' => [TimeControl::Blitz->value, TimeControl::Rapid->value]])->create();
-    Listing::factory()->open()->state(['time_control' => [TimeControl::Classical->value]])->create();
+test('time_control filter matches listings with the requested single control', function () {
+    Listing::factory()->open()->state(['time_control' => TimeControl::Bullet->value])->create();
+    Listing::factory()->open()->state(['time_control' => TimeControl::Blitz->value])->create();
+    Listing::factory()->open()->state(['time_control' => TimeControl::Rapid->value])->create();
+
+    $this->get('/listings?filter[time_control]=bullet')
+        ->assertInertia(fn ($page) => $page->has('listings.data', 1));
 
     $this->get('/listings?filter[time_control]=blitz')
         ->assertInertia(fn ($page) => $page->has('listings.data', 1));
 
     $this->get('/listings?filter[time_control]=rapid')
-        ->assertInertia(fn ($page) => $page->has('listings.data', 1));
-
-    $this->get('/listings?filter[time_control]=classical')
         ->assertInertia(fn ($page) => $page->has('listings.data', 1));
 });
 

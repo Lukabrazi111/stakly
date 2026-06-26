@@ -24,9 +24,9 @@ import SiteLayout from '@/layouts/site-layout';
 import { useT } from '@/lib/i18n';
 import {
     formatSkillRange,
-    formatTimeControls,
     formatTimeRemaining,
     getTimeUrgency,
+    timeControlLabel,
 } from '@/lib/listings-format';
 import { edit as linkedAccountsEdit } from '@/routes/linked-accounts';
 import {
@@ -217,7 +217,7 @@ function ChessBranch({ listing, match }: ChessBranchProps) {
         );
     };
 
-    const timeControlLabel = formatTimeControls(listing.time_control, t);
+    const timeControlText = timeControlLabel(listing.time_control, t);
     const platformLabel = PLATFORM_LABEL[listing.platform];
     const metaTitle = t(":creator's $:stake match — chess on :platform", {
         creator: listing.creator.name,
@@ -246,7 +246,7 @@ function ChessBranch({ listing, match }: ChessBranchProps) {
         {
             username: listing.creator.username,
             stake: listing.stake_amount,
-            timeControl: timeControlLabel.toLowerCase(),
+            timeControl: timeControlText.toLowerCase(),
             platform: platformLabel,
         },
     )}${skillFragment}${completionFragment} ${t('Both stakes escrowed.')}`;
@@ -393,10 +393,7 @@ function ChessBranch({ listing, match }: ChessBranchProps) {
                                 <Detail
                                     label={t('Time control')}
                                     icon={<Clock className="size-4" />}
-                                    value={formatTimeControls(
-                                        listing.time_control,
-                                        t,
-                                    )}
+                                    value={timeControlText}
                                 />
                                 <Detail
                                     label={t('Expires')}

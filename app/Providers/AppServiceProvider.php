@@ -123,10 +123,18 @@ class AppServiceProvider extends ServiceProvider
             (int) config('services.faceit.requests_per_minute', 30),
         ));
 
-        // M41 P1 — rating refresh runs on its own budget so a refresh burst
-        // can't starve the settlement-critical `faceit-api` limiter above.
+        // M41 P1/P3b — rating refresh runs on its OWN budget per provider so a
+        // refresh burst can't starve the settlement-critical `*-api` limiters.
         RateLimiter::for('faceit-rating-api', fn () => Limit::perMinute(
             (int) config('services.faceit.rating_requests_per_minute', 20),
+        ));
+
+        RateLimiter::for('chess-com-rating-api', fn () => Limit::perMinute(
+            (int) config('services.chess_com.rating_requests_per_minute', 30),
+        ));
+
+        RateLimiter::for('lichess-rating-api', fn () => Limit::perMinute(
+            (int) config('services.lichess.rating_requests_per_minute', 30),
         ));
     }
 

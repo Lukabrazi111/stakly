@@ -26,6 +26,7 @@ class VerifyLinkedAccountAction
     public function __construct(
         private readonly ChessComProfileClient $chessComClient,
         private readonly LichessProfileClient $lichessClient,
+        private readonly RefreshLinkedAccountRatingAction $refreshRating,
     ) {}
 
     public function handle(User $user): string
@@ -47,10 +48,16 @@ class VerifyLinkedAccountAction
         }
 
         try {
-            $this->markVerified($user, $pending, $result->username);
+            $account = $this->markVerified($user, $pending, $result->username);
         } catch (UniqueConstraintViolationException) {
             return 'username-claimed';
         }
+
+        // Capture per-time-control chess ratings (M41 P3b). Routed through the
+        // refresh job (not fetched inline) so the fetch+upsert lives in one
+        // place and a rating-provider hiccup never fails the link itself — the
+        // brand-new account is stale, so this dispatches immediately.
+        $this->refreshRating->handle($account);
 
         return 'verified';
     }
@@ -90,9 +97,9 @@ class VerifyLinkedAccountAction
      * Not strictly transactional — if the delete fails after insert, the stale pending
      * row gets cleaned up next time `RequestLinkVerificationAction` runs (upsert on user_id).
      */
-    private function markVerified(User $user, PendingVerification $pending, string $canonicalUsername): void
+    private function markVerified(User $user, PendingVerification $pending, string $canonicalUsername): LinkedAccount
     {
-        LinkedAccount::create([
+        $account = LinkedAccount::create([
             'user_id' => $user->id,
             'provider' => $pending->provider->value,
             'username' => strtolower($canonicalUsername),
@@ -100,5 +107,7 @@ class VerifyLinkedAccountAction
         ]);
 
         $pending->delete();
+
+        return $account;
     }
 }

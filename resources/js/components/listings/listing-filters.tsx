@@ -41,9 +41,9 @@ interface Props {
 }
 
 const TIME_CONTROL_OPTIONS: { value: TimeControl; label: string }[] = [
+    { value: 'bullet', label: 'Bullet' },
     { value: 'blitz', label: 'Blitz' },
     { value: 'rapid', label: 'Rapid' },
-    { value: 'classical', label: 'Classical' },
 ];
 
 const REGIONS = ['Global', 'EU', 'NA', 'Asia', 'CIS', 'LATAM'];

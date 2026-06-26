@@ -3,6 +3,7 @@
 namespace App\Services\Provider;
 
 use App\Enums\LinkedAccountProvider;
+use App\Enums\TimeControl;
 use App\Services\Provider\Exceptions\PermanentProviderError;
 use App\Services\Provider\Exceptions\ProfileNotFoundException;
 use App\Services\Provider\Exceptions\ProviderError;
@@ -46,8 +47,64 @@ class ChessComProfileClient implements ProfileClient
 
     public function fetchProfile(string $username): ProfileFetchResult
     {
-        $url = "https://api.chess.com/pub/player/{$username}";
+        $data = $this->getJson("https://api.chess.com/pub/player/{$username}", $username);
 
+        return new ProfileFetchResult(
+            username: $data['username'] ?? $username,
+            bioFieldValue: $data['location'] ?? null,
+        );
+    }
+
+    /**
+     * Per-time-control ratings from the SEPARATE `/stats` endpoint (M41 P3b) —
+     * chess.com puts ratings on `GET /pub/player/{username}/stats`, NOT the
+     * profile endpoint the bio verify uses, so this is a second call.
+     * `chess_{bullet,blitz,rapid}.last.{rating,rd}` map to our time controls
+     * (chess.com has no online classical — and we don't offer it). A category
+     * key is absent when the player has never played it → no rating returned.
+     * chess.com exposes no provisional flag, so we derive it from a high Glicko
+     * deviation (`rd` over `services.chess_com.provisional_rd_threshold`).
+     *
+     * @throws ProfileNotFoundException
+     */
+    public function fetchRatings(string $username): ChessRatings
+    {
+        $data = $this->getJson("https://api.chess.com/pub/player/{$username}/stats", $username);
+        $threshold = (int) config('services.chess_com.provisional_rd_threshold', 110);
+
+        $ratings = [];
+
+        foreach (TimeControl::cases() as $timeControl) {
+            $last = $data["chess_{$timeControl->value}"]['last'] ?? null;
+
+            if (! is_array($last) || ! isset($last['rating'])) {
+                continue;
+            }
+
+            $rd = isset($last['rd']) ? (int) $last['rd'] : null;
+
+            $ratings[] = new ChessTimeControlRating(
+                timeControl: $timeControl,
+                rating: (int) $last['rating'],
+                rd: $rd,
+                isProvisional: $rd !== null && $rd > $threshold,
+            );
+        }
+
+        return new ChessRatings($ratings);
+    }
+
+    /**
+     * Shared GET + breaker/error mapping for chess.com's public read endpoints
+     * (profile + stats live at different URLs but classify identically).
+     * Returns the decoded JSON body.
+     *
+     * @return array<string, mixed>
+     *
+     * @throws ProfileNotFoundException
+     */
+    private function getJson(string $url, string $username): array
+    {
         try {
             $response = Http::withHeaders([
                 'User-Agent' => config('stakly.chess_com_user_agent', 'Stakly/1.0'),
@@ -82,12 +139,7 @@ class ChessComProfileClient implements ProfileClient
 
         $this->breaker->recordSuccess(LinkedAccountProvider::ChessCom);
 
-        $data = $response->json();
-
-        return new ProfileFetchResult(
-            username: $data['username'] ?? $username,
-            bioFieldValue: $data['location'] ?? null,
-        );
+        return $response->json();
     }
 
     /**

@@ -54,10 +54,7 @@ class GameMatchResource extends JsonResource
                 // is auto-verified via Lichess, a chess.com listing via
                 // chess.com.
                 'platform' => $this->listing->platform->value,
-                'time_control' => $this->listing->time_control
-                    ->map(fn ($tc) => $tc->value)
-                    ->values()
-                    ->all(),
+                'time_control' => $this->listing->time_control?->value,
                 // Drives the frontend branch between 1v1 chess UI
                 // (creator/taker) and team-play UI (rosters).
                 'team_size' => $this->listing->team_size,

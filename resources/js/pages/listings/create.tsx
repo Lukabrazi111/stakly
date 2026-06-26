@@ -138,7 +138,7 @@ export default function ListingsCreate({
         stake_amount: string;
         skill_min: string;
         skill_max: string;
-        time_control: TimeControl[];
+        time_control: TimeControl | null;
         region: string;
         language: string[];
         duration_hours: number;
@@ -151,7 +151,7 @@ export default function ListingsCreate({
         stake_amount: '',
         skill_min: '',
         skill_max: '',
-        time_control: initialGame === 'chess' ? ['blitz'] : [],
+        time_control: initialGame === 'chess' ? 'blitz' : null,
         region: regions[0] ?? 'Global',
         language: [],
         duration_hours: durations.includes(24) ? 24 : (durations[0] ?? 24),
@@ -173,8 +173,7 @@ export default function ListingsCreate({
         data.stake_amount === '' ? 0 : Number(data.stake_amount);
     const balanceNumber = Number(balance);
     const exceedsBalance = stakeNumber > balanceNumber;
-    const hasTimeControl =
-        data.game !== 'chess' || data.time_control.length > 0;
+    const hasTimeControl = data.game !== 'chess' || data.time_control !== null;
     const canSubmit =
         !processing &&
         !atCap &&
@@ -204,10 +203,11 @@ export default function ListingsCreate({
             // get reinterpreted for the other.
             skill_min: '',
             skill_max: '',
-            // `time_control` is chess-only — clear when switching away so the
-            // backend stores null instead of a stale `['blitz']` placeholder
-            // on CS2 / future-game listings.
-            time_control: next === 'chess' ? prev.time_control : [],
+            // `time_control` is chess-only — null when switching away so the
+            // backend stores null on CS2 / future-game listings; default to
+            // 'blitz' when switching into chess from a game that had none.
+            time_control:
+                next === 'chess' ? (prev.time_control ?? 'blitz') : null,
             // M34 — reset team_size + creator_side to the new game's defaults.
             // is_public is the creator's choice and persists across switches.
             team_size: nextTeamSize,
@@ -497,7 +497,9 @@ export default function ListingsCreate({
                                     <FormSection title={t('Match preferences')}>
                                         <div className="space-y-5">
                                             <ChessFormatFilter
-                                                value={data.time_control}
+                                                value={
+                                                    data.time_control ?? 'blitz'
+                                                }
                                                 onChange={(next) =>
                                                     setData(
                                                         'time_control',

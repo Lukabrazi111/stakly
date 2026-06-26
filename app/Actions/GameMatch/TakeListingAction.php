@@ -3,9 +3,12 @@
 namespace App\Actions\GameMatch;
 
 use App\Actions\Message\PostSystemMessageAction;
+use App\Enums\LinkedAccountProvider;
 use App\Enums\ListingStatus;
 use App\Enums\MatchStatus;
+use App\Enums\TimeControl;
 use App\Models\GameMatch;
+use App\Models\LinkedAccount;
 use App\Models\Listing;
 use App\Models\MatchProviderSnapshot;
 use App\Models\User;
@@ -190,7 +193,7 @@ class TakeListingAction
             'status' => MatchStatus::Pending,
         ]);
 
-        $this->snapshotProviderAccounts($match, $listing->user, $taker);
+        $this->snapshotProviderAccounts($match, $listing, $listing->user, $taker);
 
         return $match;
     }
@@ -204,19 +207,24 @@ class TakeListingAction
      * provider's stable identifier + rating at match time survive any
      * subsequent updates to the user's link.
      *
+     * M41 P3b — for chess links the snapshot records the rating for the
+     * listing's single time control (from `linked_account_ratings`), not the
+     * scalar `skill_rating` (which chess never populates). Audit/history only;
+     * display reads the live rating.
+     *
      * Batch insert via the model query builder so all rows land in a single
      * SQL statement. Timestamps are set explicitly because `insert()`
      * bypasses Eloquent's auto-timestamping. The outer `DB::transaction` in
      * `handle()` covers atomicity — a failed insert here rolls back the
      * match + escrow hold + listing flip.
      */
-    private function snapshotProviderAccounts(GameMatch $match, User $creator, User $taker): void
+    private function snapshotProviderAccounts(GameMatch $match, Listing $listing, User $creator, User $taker): void
     {
         $rows = [];
         $now = now();
 
         foreach ([GameMatch::SIDE_CREATOR => $creator, GameMatch::SIDE_TAKER => $taker] as $side => $user) {
-            $user->loadMissing('linkedAccounts');
+            $user->loadMissing('linkedAccounts.ratings');
 
             foreach ($user->linkedAccounts as $link) {
                 $rows[] = [
@@ -225,7 +233,7 @@ class TakeListingAction
                     'provider' => $link->provider->value,
                     'username' => $link->username,
                     'provider_user_id' => $link->provider_user_id,
-                    'skill_rating_snapshot' => $link->skill_rating,
+                    'skill_rating_snapshot' => $this->snapshotRatingFor($link, $listing->time_control),
                     'created_at' => $now,
                     'updated_at' => $now,
                 ];
@@ -235,5 +243,27 @@ class TakeListingAction
         if (count($rows) > 0) {
             MatchProviderSnapshot::insert($rows);
         }
+    }
+
+    /**
+     * The rating to snapshot for a link. Chess links carry per-time-control
+     * ratings, so snapshot the one for the listing's time control; FACEIT (+
+     * future scalar providers) use the cached `skill_rating`. Null when the
+     * player has no rating for that time control (Unrated).
+     */
+    private function snapshotRatingFor(LinkedAccount $link, ?TimeControl $timeControl): ?int
+    {
+        $isChess = in_array($link->provider, [
+            LinkedAccountProvider::ChessCom,
+            LinkedAccountProvider::Lichess,
+        ], true);
+
+        if ($isChess && $timeControl !== null) {
+            return $link->ratings
+                ->firstWhere('time_control', $timeControl)
+                ?->rating;
+        }
+
+        return $link->skill_rating;
     }
 }

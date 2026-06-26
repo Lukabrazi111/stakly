@@ -28,7 +28,7 @@ function freshLobby(int $teamSize = 5, string $side = LobbyParticipant::SIDE_A):
         'stake_amount' => '100',
         'skill_min' => null,
         'skill_max' => null,
-        'time_control' => [],
+        'time_control' => null,
         'region' => null,
         'language' => null,
         'duration_hours' => 24,

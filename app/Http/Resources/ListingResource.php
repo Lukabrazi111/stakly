@@ -35,7 +35,7 @@ class ListingResource extends JsonResource
             'fee_rate' => (float) config('stakly.platform_fee_rate'),
             'skill_min' => $this->skill_min,
             'skill_max' => $this->skill_max,
-            'time_control' => $this->time_control->map(fn ($tc) => $tc->value)->values()->all(),
+            'time_control' => $this->time_control?->value,
             'region' => $this->region,
             'language' => $this->language,
             'expires_at' => $this->expires_at->toIso8601String(),

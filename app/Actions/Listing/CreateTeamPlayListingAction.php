@@ -102,7 +102,8 @@ class CreateTeamPlayListingAction
             'stake_amount' => $data['stake_amount'],
             'skill_min' => $data['skill_min'] ?? null,
             'skill_max' => $data['skill_max'] ?? null,
-            'time_control' => $data['time_control'] ?? [],
+            // Team play = CS2, which has no time control.
+            'time_control' => null,
             'region' => $data['region'] ?? null,
             'language' => $data['language'] ?? null,
             'expires_at' => now()->addHours((int) $data['duration_hours']),

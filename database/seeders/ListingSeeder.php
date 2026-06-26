@@ -175,7 +175,7 @@ class ListingSeeder extends Seeder
             'game' => Game::Cs2->value,
             'platform' => LinkedAccountProvider::Faceit->value,
             'stake_amount' => '20',
-            'time_control' => [],
+            'time_control' => null,
             'duration_hours' => 24,
             'team_size' => $teamSize,
             'creator_side' => LobbyParticipant::SIDE_A,

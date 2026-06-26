@@ -3,6 +3,7 @@
 namespace App\Services\Provider;
 
 use App\Enums\LinkedAccountProvider;
+use App\Enums\TimeControl;
 use App\Services\Provider\Exceptions\PermanentProviderError;
 use App\Services\Provider\Exceptions\ProfileNotFoundException;
 use App\Services\Provider\Exceptions\ProviderError;
@@ -45,6 +46,64 @@ class LichessProfileClient implements ProfileClient
 
     public function fetchProfile(string $username): ProfileFetchResult
     {
+        $data = $this->requestUser($username);
+
+        return new ProfileFetchResult(
+            username: $data['username'] ?? $username,
+            bioFieldValue: $data['profile']['bio'] ?? null,
+        );
+    }
+
+    /**
+     * Per-time-control ratings from the SAME `/api/user` payload the bio
+     * verify uses — `perfs.{bullet,blitz,rapid}` (M41 P3b). Only time controls
+     * the player has actually played (`games > 0`) are returned; Lichess marks
+     * low-confidence ratings with `prov: true` (present only when provisional).
+     * Perfs we don't stake on (classical, correspondence, variants, puzzle
+     * modes) are ignored — and puzzle modes (storm/racer/streak) don't carry a
+     * `rating` field at all, so the `games`/`rating` guards skip them safely.
+     *
+     * @throws ProfileNotFoundException
+     */
+    public function fetchRatings(string $username): ChessRatings
+    {
+        $data = $this->requestUser($username);
+        $perfs = $data['perfs'] ?? [];
+
+        $ratings = [];
+
+        foreach (TimeControl::cases() as $timeControl) {
+            $perf = $perfs[$timeControl->value] ?? null;
+
+            if (! is_array($perf)
+                || ! isset($perf['rating'])
+                || (int) ($perf['games'] ?? 0) === 0
+            ) {
+                continue;
+            }
+
+            $ratings[] = new ChessTimeControlRating(
+                timeControl: $timeControl,
+                rating: (int) $perf['rating'],
+                rd: isset($perf['rd']) ? (int) $perf['rd'] : null,
+                isProvisional: ($perf['prov'] ?? false) === true,
+            );
+        }
+
+        return new ChessRatings($ratings);
+    }
+
+    /**
+     * Shared `GET /api/user/{username}` call + breaker/error mapping used by
+     * both `fetchProfile` (bio) and `fetchRatings` (perfs). Returns the decoded
+     * JSON body.
+     *
+     * @return array<string, mixed>
+     *
+     * @throws ProfileNotFoundException
+     */
+    private function requestUser(string $username): array
+    {
         $url = "https://lichess.org/api/user/{$username}";
 
         try {
@@ -77,12 +136,7 @@ class LichessProfileClient implements ProfileClient
 
         $this->breaker->recordSuccess(LinkedAccountProvider::Lichess);
 
-        $data = $response->json();
-
-        return new ProfileFetchResult(
-            username: $data['username'] ?? $username,
-            bioFieldValue: $data['profile']['bio'] ?? null,
-        );
+        return $response->json();
     }
 
     /**

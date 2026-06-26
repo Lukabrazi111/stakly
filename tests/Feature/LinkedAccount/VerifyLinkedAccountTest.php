@@ -6,7 +6,14 @@ use App\Models\PendingVerification;
 use App\Models\User;
 use App\Services\Provider\Exceptions\TransientProviderError;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Queue;
 use Illuminate\Validation\ValidationException;
+
+// M41 P3b — a successful verify now dispatches the chess rating-capture job.
+// These tests assert the verify outcome, not the capture, so fake the queue
+// (capture is covered in ChessRatingCaptureTest). Without this the sync queue
+// would run the job inline and make a real provider call.
+beforeEach(fn () => Queue::fake());
 
 /*
 |--------------------------------------------------------------------------

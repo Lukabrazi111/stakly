@@ -8,7 +8,6 @@ use App\Actions\Message\PostSystemMessageAction;
 use App\Enums\AutoFetchOutcome;
 use App\Enums\LinkedAccountProvider;
 use App\Enums\MessageType;
-use App\Enums\TimeControl;
 use App\Models\GameMatch;
 use App\Models\Message;
 use App\Services\Provider\ChessComGameClient;
@@ -264,10 +263,10 @@ class AutoFetchChessComGameJob implements ShouldBeUnique, ShouldQueueAfterCommit
 
     /**
      * Pick the candidate this job should settle on. M14 Slice 3d — applies
-     * to any candidate count: filter to those whose speed matches the
-     * listing's `time_control` array; if multiple survive (Slice 3c),
-     * pick the one whose `endedAt` is closest to the match's `created_at`,
-     * tie-breaking on lexicographic game id.
+     * to any candidate count: filter to those whose speed equals the
+     * listing's single `time_control` value (M41 P3a); if multiple survive
+     * (Slice 3c), pick the one whose `endedAt` is closest to the match's
+     * `created_at`, tie-breaking on lexicographic game id.
      *
      * Returns null when no candidate matches the listing's time-control —
      * caller records ambiguous, match stays Pending.
@@ -276,13 +275,11 @@ class AutoFetchChessComGameJob implements ShouldBeUnique, ShouldQueueAfterCommit
      */
     private function pickSettleableCandidate(array $candidates): ?ChessComGameResult
     {
-        $listingControls = $this->match->listing->time_control
-            ->map(fn (TimeControl $tc) => $tc->value)
-            ->all();
+        $listingControl = $this->match->listing->time_control?->value;
 
         $tcMatches = array_values(array_filter(
             $candidates,
-            fn (ChessComGameResult $g) => in_array($g->speed, $listingControls, true),
+            fn (ChessComGameResult $g) => $g->speed === $listingControl,
         ));
 
         if ($tcMatches === []) {
