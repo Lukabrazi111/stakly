@@ -190,9 +190,10 @@ class GameMatchResource extends JsonResource
     }
 
     /**
-     * Snapshot of the user's skill rating on the listing's platform. Null
-     * when the linked account isn't loaded or rating isn't populated
-     * (chess providers don't snapshot ratings yet).
+     * The user's scalar skill rating on the listing's platform (FACEIT ELO).
+     * Null for chess — chess ratings are per-time-control and live in
+     * `linked_account_ratings` (snapshotted at match-take in M41 P3b); this
+     * live read is surfaced for chess in M41 P4.
      */
     private function skillRatingFor(User $user): ?int
     {

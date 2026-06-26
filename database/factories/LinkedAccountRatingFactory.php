@@ -12,6 +12,11 @@ use Illuminate\Support\Str;
 
 /**
  * @extends Factory<LinkedAccountRating>
+ *
+ * Note: `time_control` defaults to a random value. To create SEVERAL ratings
+ * for ONE account, chain `forTimeControl()` per row (or a `Sequence`) — the
+ * unique (linked_account_id, time_control) constraint rejects duplicates.
+ * Standalone `->create()` is safe (each spins up its own LinkedAccount).
  */
 class LinkedAccountRatingFactory extends Factory
 {

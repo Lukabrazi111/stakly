@@ -69,7 +69,11 @@ class ChessComProfileClient implements ProfileClient
      */
     public function fetchRatings(string $username): ChessRatings
     {
-        $data = $this->getJson("https://api.chess.com/pub/player/{$username}/stats", $username);
+        $data = $this->getJson(
+            "https://api.chess.com/pub/player/{$username}/stats",
+            $username,
+            recordHealth: false,
+        );
         $threshold = (int) config('services.chess_com.provisional_rd_threshold', 110);
 
         $ratings = [];
@@ -97,13 +101,20 @@ class ChessComProfileClient implements ProfileClient
     /**
      * Shared GET + breaker/error mapping for chess.com's public read endpoints
      * (profile + stats live at different URLs but classify identically).
-     * Returns the decoded JSON body.
+     * Returns the decoded JSON body (always an array — a non-object 200 body
+     * degrades to `[]` so callers reading `$data['key'] ?? null` keep working).
+     *
+     * `$recordHealth` gates whether this call feeds the per-provider circuit
+     * breaker. The bio-verify path records (true); the high-volume rating path
+     * passes false so a rating-API blip can't trip — or dilute — the breaker
+     * that gates real chess SETTLEMENT (`DispatchAutoFetchAction`). The rating
+     * job still READS `isOpen()` to skip when the provider is already unhealthy.
      *
      * @return array<string, mixed>
      *
      * @throws ProfileNotFoundException
      */
-    private function getJson(string $url, string $username): array
+    private function getJson(string $url, string $username, bool $recordHealth = true): array
     {
         try {
             $response = Http::withHeaders([
@@ -113,7 +124,9 @@ class ChessComProfileClient implements ProfileClient
                 ->timeout(10)
                 ->get($url);
         } catch (ConnectionException $e) {
-            $this->breaker->recordFailure(LinkedAccountProvider::ChessCom);
+            if ($recordHealth) {
+                $this->breaker->recordFailure(LinkedAccountProvider::ChessCom);
+            }
 
             throw new TransientProviderError(
                 "chess.com unreachable for username '{$username}': {$e->getMessage()}",
@@ -126,20 +139,28 @@ class ChessComProfileClient implements ProfileClient
             // provider-health failure. Don't trip the breaker — record
             // success and let the caller distinguish via the dedicated
             // exception type.
-            $this->breaker->recordSuccess(LinkedAccountProvider::ChessCom);
+            if ($recordHealth) {
+                $this->breaker->recordSuccess(LinkedAccountProvider::ChessCom);
+            }
 
             throw new ProfileNotFoundException("chess.com username '{$username}' not found.");
         }
 
         if (! $response->successful()) {
-            $this->breaker->recordFailure(LinkedAccountProvider::ChessCom);
+            if ($recordHealth) {
+                $this->breaker->recordFailure(LinkedAccountProvider::ChessCom);
+            }
 
             throw self::classifyResponseError($response, "for username '{$username}'");
         }
 
-        $this->breaker->recordSuccess(LinkedAccountProvider::ChessCom);
+        if ($recordHealth) {
+            $this->breaker->recordSuccess(LinkedAccountProvider::ChessCom);
+        }
 
-        return $response->json();
+        $body = $response->json();
+
+        return is_array($body) ? $body : [];
     }
 
     /**

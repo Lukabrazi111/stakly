@@ -67,7 +67,7 @@ class LichessProfileClient implements ProfileClient
      */
     public function fetchRatings(string $username): ChessRatings
     {
-        $data = $this->requestUser($username);
+        $data = $this->requestUser($username, recordHealth: false);
         $perfs = $data['perfs'] ?? [];
 
         $ratings = [];
@@ -96,13 +96,18 @@ class LichessProfileClient implements ProfileClient
     /**
      * Shared `GET /api/user/{username}` call + breaker/error mapping used by
      * both `fetchProfile` (bio) and `fetchRatings` (perfs). Returns the decoded
-     * JSON body.
+     * JSON body (always an array — a non-object 200 body degrades to `[]`).
+     *
+     * `$recordHealth` gates the per-provider circuit breaker: the bio-verify
+     * path records (true); the high-volume rating path passes false so a
+     * rating-API blip can't trip — or dilute — the breaker that gates real
+     * chess SETTLEMENT. The rating job still READS `isOpen()`.
      *
      * @return array<string, mixed>
      *
      * @throws ProfileNotFoundException
      */
-    private function requestUser(string $username): array
+    private function requestUser(string $username, bool $recordHealth = true): array
     {
         $url = "https://lichess.org/api/user/{$username}";
 
@@ -111,7 +116,9 @@ class LichessProfileClient implements ProfileClient
                 ->timeout(10)
                 ->get($url);
         } catch (ConnectionException $e) {
-            $this->breaker->recordFailure(LinkedAccountProvider::Lichess);
+            if ($recordHealth) {
+                $this->breaker->recordFailure(LinkedAccountProvider::Lichess);
+            }
 
             throw new TransientProviderError(
                 "Lichess unreachable for username '{$username}': {$e->getMessage()}",
@@ -123,20 +130,28 @@ class LichessProfileClient implements ProfileClient
             // 404 is a "user doesn't exist" answer, not a provider-health
             // failure. Count as breaker success — bad-username burst
             // shouldn't trip the breaker.
-            $this->breaker->recordSuccess(LinkedAccountProvider::Lichess);
+            if ($recordHealth) {
+                $this->breaker->recordSuccess(LinkedAccountProvider::Lichess);
+            }
 
             throw new ProfileNotFoundException("Lichess username '{$username}' not found.");
         }
 
         if (! $response->successful()) {
-            $this->breaker->recordFailure(LinkedAccountProvider::Lichess);
+            if ($recordHealth) {
+                $this->breaker->recordFailure(LinkedAccountProvider::Lichess);
+            }
 
             throw self::classifyResponseError($response, "for username '{$username}'");
         }
 
-        $this->breaker->recordSuccess(LinkedAccountProvider::Lichess);
+        if ($recordHealth) {
+            $this->breaker->recordSuccess(LinkedAccountProvider::Lichess);
+        }
 
-        return $response->json();
+        $body = $response->json();
+
+        return is_array($body) ? $body : [];
     }
 
     /**

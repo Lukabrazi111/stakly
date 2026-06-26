@@ -4,8 +4,10 @@ namespace App\Jobs;
 
 use App\Enums\LinkedAccountProvider;
 use App\Models\LinkedAccount;
+use App\Models\LinkedAccountRating;
 use App\Services\Provider\ChessComProfileClient;
 use App\Services\Provider\ChessRatings;
+use App\Services\Provider\ChessTimeControlRating;
 use App\Services\Provider\Exceptions\PermanentProviderError;
 use App\Services\Provider\Exceptions\ProfileNotFoundException;
 use App\Services\Provider\Exceptions\RateLimitedError;
@@ -19,6 +21,7 @@ use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\Middleware\RateLimited;
 use Illuminate\Queue\SerializesModels;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Re-pulls one chess account's per-time-control ratings (bullet/blitz/rapid)
@@ -135,28 +138,43 @@ class RefreshChessRatingJob implements ShouldBeUnique, ShouldQueue
 
     /**
      * Upsert one row per returned time control + stamp the account-level
-     * freshness marker. Rows for time controls absent from the payload are
-     * left untouched (never deleted) — the never-null invariant.
+     * freshness marker, atomically. Rows for time controls absent from the
+     * payload are left untouched (never deleted) — the never-null invariant.
+     *
+     * A single `upsert` (ON CONFLICT DO UPDATE on the unique
+     * (linked_account_id, time_control)) is atomic and concurrency-safe — two
+     * overlapping refreshes for the same account can't race into a duplicate
+     * insert. The whole write runs in one transaction so a partial upsert + a
+     * skipped freshness bump can't happen.
      */
     private function storeRatings(ChessRatings $ratings): void
     {
         $now = now();
 
-        foreach ($ratings->ratings as $rating) {
-            $this->linkedAccount->ratings()->updateOrCreate(
-                ['time_control' => $rating->timeControl->value],
-                [
-                    'rating' => $rating->rating,
-                    'rd' => $rating->rd,
-                    'is_provisional' => $rating->isProvisional,
-                    'synced_at' => $now,
-                ],
-            );
-        }
+        $rows = array_map(fn (ChessTimeControlRating $rating): array => [
+            'linked_account_id' => $this->linkedAccount->id,
+            'time_control' => $rating->timeControl->value,
+            'rating' => $rating->rating,
+            'rd' => $rating->rd,
+            'is_provisional' => $rating->isProvisional,
+            'synced_at' => $now,
+            'created_at' => $now,
+            'updated_at' => $now,
+        ], $ratings->ratings);
 
-        // Account-level freshness gate (uniform across providers — the chess
-        // ratings live in the child table, but staleness is tracked here so
-        // `RefreshLinkedAccountRatingAction` reads one column for every kind).
-        $this->linkedAccount->update(['skill_rating_synced_at' => $now]);
+        DB::transaction(function () use ($rows, $now) {
+            if ($rows !== []) {
+                LinkedAccountRating::upsert(
+                    $rows,
+                    ['linked_account_id', 'time_control'],
+                    ['rating', 'rd', 'is_provisional', 'synced_at', 'updated_at'],
+                );
+            }
+
+            // Account-level freshness gate (uniform across providers — the chess
+            // ratings live in the child table, but staleness is tracked here so
+            // `RefreshLinkedAccountRatingAction` reads one column for every kind).
+            $this->linkedAccount->update(['skill_rating_synced_at' => $now]);
+        });
     }
 }

@@ -148,6 +148,29 @@ it('skips chess.com categories the player has never played', function () {
     expect($account->ratings()->pluck('time_control')->map->value->all())->toBe(['blitz']);
 });
 
+it('bumps synced_at on a 200 with no stakeable ratings, leaving existing rows intact', function () {
+    $account = lichessAccount('alice');
+    $account->ratings()->create([
+        'time_control' => TimeControl::Blitz->value,
+        'rating' => 1800,
+        'is_provisional' => false,
+        'synced_at' => now()->subDays(2),
+    ]);
+    // Player exists but has only puzzle/variant perfs → nothing to capture.
+    Http::fake([
+        'lichess.org/api/user/alice' => Http::response([
+            'perfs' => ['puzzle' => ['games' => 10, 'rating' => 1500]],
+        ], 200),
+    ]);
+
+    runChessRatingRefresh($account);
+
+    // Existing blitz row untouched; account marked fresh so we don't re-hammer.
+    expect((int) $account->ratings()->where('time_control', 'blitz')->value('rating'))->toBe(1800)
+        ->and($account->ratings()->count())->toBe(1)
+        ->and($account->fresh()->skill_rating_synced_at->gt(now()->subHour()))->toBeTrue();
+});
+
 // ─── never-null invariant ─────────────────────────────────────────────────
 
 it('preserves existing rows + does not mark synced on a 404', function () {

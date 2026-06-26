@@ -15,8 +15,6 @@ use Illuminate\Support\Facades\Queue;
  * one place and means a rating-provider hiccup never fails the link itself.
  */
 
-beforeEach(fn () => Queue::fake());
-
 function pendingChess(LinkedAccountProvider $provider, string $code, string $username = 'alice'): User
 {
     $user = User::factory()->create();
@@ -32,6 +30,7 @@ function pendingChess(LinkedAccountProvider $provider, string $code, string $use
 }
 
 it('dispatches the chess rating refresh after a successful chess.com verify', function () {
+    Queue::fake();
     $user = pendingChess(LinkedAccountProvider::ChessCom, 'stakly-ABCDEFGHJK');
     Http::fake([
         'api.chess.com/pub/player/alice' => Http::response([
@@ -50,6 +49,7 @@ it('dispatches the chess rating refresh after a successful chess.com verify', fu
 });
 
 it('dispatches the chess rating refresh after a successful Lichess verify', function () {
+    Queue::fake();
     $user = pendingChess(LinkedAccountProvider::Lichess, 'stakly-LMNOPQRSTUV');
     Http::fake([
         'lichess.org/api/user/alice' => Http::response([
@@ -67,6 +67,7 @@ it('dispatches the chess rating refresh after a successful Lichess verify', func
 });
 
 it('does not dispatch a rating refresh when verification fails', function () {
+    Queue::fake();
     $user = pendingChess(LinkedAccountProvider::ChessCom, 'stakly-NOTINBIO');
     Http::fake([
         'api.chess.com/pub/player/alice' => Http::response([
@@ -78,4 +79,27 @@ it('does not dispatch a rating refresh when verification fails', function () {
     expect(app(VerifyLinkedAccountAction::class)->handle($user))->toBe('code-not-found');
 
     Queue::assertNotPushed(RefreshChessRatingJob::class);
+});
+
+it('still verifies when the inline rating capture hits a transient provider error', function () {
+    // No Queue::fake → under the sync queue the capture job runs inline. A 5xx
+    // on the /stats rating call must NOT bubble into the verify response (the
+    // link row is already committed). `rescue` in VerifyLinkedAccountAction
+    // swallows it — guarantee holds regardless of queue driver.
+    $user = pendingChess(LinkedAccountProvider::ChessCom, 'stakly-ABCDEFGHJK');
+    Http::fake([
+        'api.chess.com/pub/player/alice/stats' => Http::response([], 503),
+        'api.chess.com/pub/player/alice' => Http::response([
+            'username' => 'alice',
+            'location' => 'stakly-ABCDEFGHJK',
+        ], 200),
+    ]);
+
+    expect(app(VerifyLinkedAccountAction::class)->handle($user))->toBe('verified');
+
+    // Link succeeded; ratings just aren't captured this round (refresh-on-view
+    // backfills later).
+    $account = $user->linkedAccounts()->firstOrFail();
+    expect($account->provider)->toBe(LinkedAccountProvider::ChessCom)
+        ->and($account->ratings()->count())->toBe(0);
 });

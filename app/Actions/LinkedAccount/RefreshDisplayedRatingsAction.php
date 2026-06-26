@@ -47,8 +47,9 @@ class RefreshDisplayedRatingsAction
 
     /**
      * Refresh a set of linked accounts directly — used for lobby rosters where
-     * each live participant's rating is displayed. Non-FACEIT accounts no-op
-     * inside the action; dedup avoids double-dispatching one account per request.
+     * each live participant's rating is displayed. Unsupported providers (Steam,
+     * etc.) no-op inside the action (FACEIT + both chess providers are
+     * supported); dedup avoids double-dispatching one account per request.
      *
      * @param  iterable<LinkedAccount>  $accounts
      */

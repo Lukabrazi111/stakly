@@ -93,8 +93,8 @@ class ListingController extends Controller
         // `seller_trust` attribute that `ListingResource` reads.
         SellerTrust::attachTo($listings);
 
-        // M41 P2 — keep displayed FACEIT ratings fresh (CS2 only). Stale-gated
-        // + deduped + throttled, so this is safe on the read path.
+        // M41 P2/P3b — keep displayed ratings fresh (CS2 FACEIT + chess per-TC).
+        // Stale-gated + deduped + throttled, so this is safe on the read path.
         app(RefreshDisplayedRatingsAction::class)->forListings($listings->getCollection());
 
         // Reuse the homepage's resolved-array cache — `Game::booted` already
@@ -157,7 +157,7 @@ class ListingController extends Controller
         // M22 Phase 1 — seller trust on the listing detail (single-row batch).
         SellerTrust::attachTo([$listing]);
 
-        // M41 P2 — refresh-on-view (no-op for chess: the action gates on CS2).
+        // M41 P2/P3b — refresh-on-view (CS2 FACEIT + chess per-TC), stale-gated.
         app(RefreshDisplayedRatingsAction::class)->forListings([$listing]);
 
         $user = $request->user();
@@ -406,7 +406,7 @@ class ListingController extends Controller
         // collapses to one aggregate.
         SellerTrust::attachTo($listings);
 
-        // M41 P2 — refresh-on-view (CS2 only; gated/deduped/throttled).
+        // M41 P2/P3b — refresh-on-view (CS2 + chess; gated/deduped/throttled).
         app(RefreshDisplayedRatingsAction::class)->forListings($listings->getCollection());
 
         // Counts both Open and Paused — the cap is about "listings holding

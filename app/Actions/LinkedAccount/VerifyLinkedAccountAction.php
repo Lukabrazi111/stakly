@@ -55,9 +55,12 @@ class VerifyLinkedAccountAction
 
         // Capture per-time-control chess ratings (M41 P3b). Routed through the
         // refresh job (not fetched inline) so the fetch+upsert lives in one
-        // place and a rating-provider hiccup never fails the link itself — the
-        // brand-new account is stale, so this dispatches immediately.
-        $this->refreshRating->handle($account);
+        // place — the brand-new account is stale, so this dispatches
+        // immediately. `rescue` keeps the guarantee "a rating hiccup never
+        // fails the link" driver-independent: under the sync queue the job runs
+        // inline and a transient provider error would otherwise bubble into the
+        // verify response after the link row is already committed.
+        rescue(fn () => $this->refreshRating->handle($account));
 
         return 'verified';
     }

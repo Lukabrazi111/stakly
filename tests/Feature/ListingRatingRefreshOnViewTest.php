@@ -8,8 +8,9 @@ use App\Models\User;
 use Illuminate\Support\Facades\Queue;
 
 /*
- * M41 P2 — refresh-on-view: loading the marketplace queues a stale-gated FACEIT
- * rating refresh for the CS2 creators actually shown. Chess boards never do.
+ * M41 P2/P3b — refresh-on-view: loading a board queues a stale-gated rating
+ * refresh for the creators actually shown — CS2 (FACEIT) and chess (per-TC),
+ * each scoped to the listing's own platform.
  */
 
 beforeEach(function () {

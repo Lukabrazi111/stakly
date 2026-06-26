@@ -68,9 +68,9 @@ class UserController extends Controller
         // creator chip without re-querying (saves one IN-query).
         $openListings->each(fn (Listing $listing) => $listing->setRelation('user', $user));
 
-        // M41 P2 — refresh-on-view: keep the profile's CS2 listing ratings
-        // fresh (stale-gated + deduped + throttled), same policy as the
-        // marketplace surfaces, shared via the action.
+        // M41 P2/P3b — refresh-on-view: keep the profile's listing ratings
+        // fresh (CS2 FACEIT + chess per-TC; stale-gated + deduped + throttled),
+        // same policy as the marketplace surfaces, shared via the action.
         app(RefreshDisplayedRatingsAction::class)->forListings($openListings);
 
         // Settled-only — exposing pending matches would leak "user X is
