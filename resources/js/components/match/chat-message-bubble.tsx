@@ -2,6 +2,7 @@ import {
     AlertTriangle,
     BadgeCheck,
     Crown,
+    Download,
     ExternalLink,
     FileText,
     Link as LinkIcon,
@@ -14,7 +15,12 @@ import {
 import { useState } from 'react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
-import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
+import {
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogTitle,
+} from '@/components/ui/dialog';
 import { useInitials } from '@/hooks/use-initials';
 import { useT } from '@/lib/i18n';
 import type { TranslationFn } from '@/lib/i18n';
@@ -224,7 +230,7 @@ function ImageAttachment({ image, isOwn }: ImageAttachmentProps) {
                 type="button"
                 onClick={() => setOpen(true)}
                 className={cn(
-                    'group overflow-hidden rounded-2xl border border-border/60 bg-card transition-shadow hover:shadow-glow-sm focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none',
+                    'group transform-gpu cursor-pointer overflow-hidden rounded-2xl border border-border/60 bg-card transition-colors duration-200 hover:border-primary/40 focus-visible:border-primary/60 focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none',
                     isOwn ? 'rounded-br-md' : 'rounded-bl-md',
                 )}
                 aria-label={t('Open image: :name', { name: image.name })}
@@ -235,13 +241,16 @@ function ImageAttachment({ image, isOwn }: ImageAttachmentProps) {
                     width={image.width ?? undefined}
                     height={image.height ?? undefined}
                     loading="lazy"
-                    className="max-h-64 max-w-[300px] object-contain"
+                    className="max-h-64 max-w-[300px] object-contain motion-safe:transition-transform motion-safe:duration-300 motion-safe:group-hover:scale-105"
                 />
             </button>
 
             <Dialog open={open} onOpenChange={setOpen}>
                 <DialogContent className="max-w-4xl border-none bg-transparent p-0 shadow-none">
                     <DialogTitle className="sr-only">{image.name}</DialogTitle>
+                    <DialogDescription className="sr-only">
+                        {t('Full-size image preview. Press Escape to close.')}
+                    </DialogDescription>
                     <img
                         src={image.url}
                         alt={image.name}
@@ -267,7 +276,7 @@ function FileAttachment({ file, isOwn }: FileAttachmentProps) {
             target="_blank"
             rel="noopener noreferrer"
             className={cn(
-                'group inline-flex max-w-[300px] items-center gap-3 rounded-2xl border border-border/60 bg-card px-3 py-2.5 transition-shadow hover:shadow-glow-sm focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none',
+                'group inline-flex max-w-[300px] items-center gap-3 rounded-2xl border border-border/60 bg-card px-3 py-2.5 transition-colors duration-200 hover:border-primary/40 hover:bg-primary/5 focus-visible:border-primary/60 focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none',
                 isOwn ? 'rounded-br-md' : 'rounded-bl-md',
             )}
         >
@@ -282,6 +291,10 @@ function FileAttachment({ file, isOwn }: FileAttachmentProps) {
                     {formatFileSize(file.size)}
                 </span>
             </span>
+            <Download
+                aria-hidden
+                className="size-4 shrink-0 text-muted-foreground/60 transition-colors group-hover:text-primary"
+            />
         </a>
     );
 }

@@ -304,7 +304,7 @@ export function TeamMatchView({ match, messages }: TeamMatchViewProps) {
                     {/* Right-rail chat — same dock as 1v1. Only renders for
                         participants (chat channel auth would 403 spectators). */}
                     {viewerIsParticipant && (
-                        <aside className="hidden lg:sticky lg:top-16 lg:block lg:h-[750px]">
+                        <aside className="hidden lg:sticky lg:top-20 lg:block lg:h-[750px]">
                             <ChatPanel
                                 messages={chat.messages}
                                 viewerId={viewerId ?? 0}
