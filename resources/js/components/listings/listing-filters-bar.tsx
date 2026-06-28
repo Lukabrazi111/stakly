@@ -70,6 +70,10 @@ function activeFilterCount(filters: ListingFiltersType): number {
         count++;
     }
 
+    if (filters.unrated) {
+        count++;
+    }
+
     if (filters.time_control.length > 0) {
         count++;
     }
@@ -108,6 +112,8 @@ export function ListingFiltersBar({ filters, sorts }: Props) {
 
         if (key === 'time_control') {
             next.time_control = [];
+        } else if (key === 'unrated') {
+            next.unrated = false;
         } else if (key === 'sort' || key === 'game') {
             return;
         } else {
@@ -131,6 +137,7 @@ export function ListingFiltersBar({ filters, sorts }: Props) {
             stake_max: null,
             skill_min: null,
             skill_max: null,
+            unrated: false,
             time_control: [],
             region: null,
             language: null,
@@ -221,16 +228,34 @@ export function ListingFiltersBar({ filters, sorts }: Props) {
                     )}
                     {filters.skill_min !== null && (
                         <ActiveChip
-                            label={t('Skill :min+', { min: filters.skill_min })}
+                            label={
+                                filters.game === 'cs2'
+                                    ? t('Level :min+', {
+                                          min: filters.skill_min,
+                                      })
+                                    : t('Elo :min+', { min: filters.skill_min })
+                            }
                             onRemove={() => removeFilter('skill_min')}
                         />
                     )}
                     {filters.skill_max !== null && (
                         <ActiveChip
-                            label={t('Skill up to :max', {
-                                max: filters.skill_max,
-                            })}
+                            label={
+                                filters.game === 'cs2'
+                                    ? t('Level up to :max', {
+                                          max: filters.skill_max,
+                                      })
+                                    : t('Elo up to :max', {
+                                          max: filters.skill_max,
+                                      })
+                            }
                             onRemove={() => removeFilter('skill_max')}
+                        />
+                    )}
+                    {filters.unrated && (
+                        <ActiveChip
+                            label={t('Unrated only')}
+                            onRemove={() => removeFilter('unrated')}
                         />
                     )}
                     {filters.time_control.map((tc) => (

@@ -142,8 +142,12 @@ export interface ListingFilters {
     game: GameId;
     stake_min: number | null;
     stake_max: number | null;
+    // M41 P5: the creator's VERIFIED rating bounds, game-scoped — raw Elo for
+    // chess, FACEIT level (1–10) for CS2. `unrated` (only listings with no
+    // rating for the game/platform/TC) is mutually exclusive with the bounds.
     skill_min: number | null;
     skill_max: number | null;
+    unrated: boolean;
     time_control: TimeControl[];
     region: string | null;
     language: string | null;

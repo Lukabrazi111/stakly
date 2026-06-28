@@ -21,7 +21,7 @@ Frontend-first build. UI against real DB infrastructure + seeded fake data; back
 - **M21** — Blacklist + safety. Block users from listings + chat, with anti-evasion considerations. Has open design questions (block semantics + multi-account evasion) — needs alignment before coding.
 - **M33** — Listing time-control contract. Make Stakly's accepted time controls (blitz / rapid / classical) explicit in the listing-creation form, surface `time_control_mismatch` as a player-facing banner on stuck matches, and optionally re-enable Slice 3d strictness behind a per-listing opt-in. Reverted from M14 on 2026-06-06 — friction (legitimate correspondence / bullet games rejected silently) outweighed the small sandbag attack surface at this stage. Revisit when launch scale or a real abuse incident makes it relevant.
 
-- **M41 — Verified skill ratings (display)** — replace the free-typed create-listing skill range with each player's **real, API-pulled rating** (FACEIT ELO + derived level; chess.com / Lichess per-time-control ratings), shown on listings + profiles. **Display-only — never gates a match** (taker's choice); the self-typed skill inputs come off the create form. FACEIT first, chess second. **Decided 2026-06-26:** chess listings become **single time-control** (one platform + TC → one unambiguous rating); the asymmetric "punch-up-only" gate is **deferred** (ship display first; revisit only as a non-blocking mismatch *warning*, never a block). **P1–P4 done (2026-06-26): FACEIT + chess capture + display shipped end-to-end; P5 (filter rework) + P6 (data cleanup) remain.** Full spec + phases in the section below.
+- **M41 — Verified skill ratings (display)** — replace the free-typed create-listing skill range with each player's **real, API-pulled rating** (FACEIT ELO + derived level; chess.com / Lichess per-time-control ratings), shown on listings + profiles. **Display-only — never gates a match** (taker's choice); the self-typed skill inputs come off the create form. FACEIT first, chess second. **Decided 2026-06-26:** chess listings become **single time-control** (one platform + TC → one unambiguous rating); the asymmetric "punch-up-only" gate is **deferred** (ship display first; revisit only as a non-blocking mismatch *warning*, never a block). **P1–P4 done (2026-06-26). P5 (filter rework) decisions locked 2026-06-28 + building; P6 (data cleanup) remains; P7 (FACEIT level dial + CS2 recent-form strip) spun out 2026-06-28.** Full spec + phases in the section below.
 
 > Active milestone keeps a detailed task list. Future milestones expand when started. Any of this can shift — flag the change, update the doc.
 
@@ -202,6 +202,13 @@ Spun out of a 2026-06-26 discussion; **decisions locked 2026-06-26, P1 in progre
 - **Unrated / provisional → "Unrated" badge.** Still postable + takeable; the taker decides. No blocking.
 - **Marketplace skill filter → real ratings**, game- and TC-scoped (CS2 → FACEIT ELO; chess → the selected platform+TC rating). Drops the old self-set overlap semantics.
 
+### Decisions (2026-06-28) — P5 filter shape + P7 display
+
+- **Keep a real rating filter** (not drop it). Single-game-scoped (the board defaults to one `game`), branched: chess = Elo range on the listing's platform+TC; CS2 = **FACEIT level (1–10)** (players think in levels, not raw ELO; translate the level range to ELO bounds via `App\Support\FaceitLevel`).
+- **Unrated under an active range = hidden** (the correlated `EXISTS` naturally drops creators with no matching rating row), **plus an explicit "Unrated" toggle** to view *only* unrated listings. No filter set → everything shows.
+- **FACEIT level → circular dial in authentic FACEIT colors** (grey 1–2, light blue 3, blue 4–6, green 7–8, orange/gold 9–10 per the official ladder). **Reverses P2's "never FACEIT amber/red near a stake."** Contained by keeping the dial unmistakably a *level* (centered number + ring form + its own placement) so green-7 / orange-10 never reads as win/dispute status next to the stake.
+- **CS2 recent-form strip (W/L/D) from Stakly settled matches**, NOT FACEIT history — zero new outbound API calls. Batch-loaded (no N+1). CS2 surfaces only.
+
 ### Phases
 
 **P1 — FACEIT rating capture + refresh (backend)** — *done 2026-06-26*
@@ -213,7 +220,7 @@ Spun out of a 2026-06-26 discussion; **decisions locked 2026-06-26, P1 in progre
 
 **P2 — FACEIT display + remove the CS2 skill input + refresh-on-view** — *done 2026-06-26*
 
-- [x] `ListingResource.creator.faceit_rating` (elo + derived level + `is_unrated`) — CS2 only, null for chess. Rendered via a new `FaceitRatingBadge` (compact + detail variants, brand-banded grey→pink→purple — never FACEIT's amber/red, which collide with Stakly's dispute/loss palette next to a stake) on grid cards, listing rows, profile rows, and the create live-preview. "Unrated" pill when null.
+- [x] `ListingResource.creator.faceit_rating` (elo + derived level + `is_unrated`) — CS2 only, null for chess. Rendered via a new `FaceitRatingBadge` (compact + detail variants, brand-banded grey→pink→purple — never FACEIT's amber/red, which collide with Stakly's dispute/loss palette next to a stake) (**superseded by P7, 2026-06-28** — authentic FACEIT colors + circular level dial adopted) on grid cards, listing rows, profile rows, and the create live-preview. "Unrated" pill when null.
 - [x] **Refresh-on-view** (decided this session): viewing the board / a listing / the lobby / my-listings / a public profile queues a stale-gated FACEIT refresh for the displayed CS2 creators (deduped + 24h gate + 20/min throttle — safe on a read path). Shared `App\Actions\LinkedAccount\RefreshDisplayedRatingsAction` (`forListings` / `forAccounts`), called from `ListingController` (index/show/showTeamPlay/mine) + `UserController::show`; never inside the resource.
 - [x] Removed the self-typed CS2 skill input from the create form (deleted the orphaned `Cs2SkillRangeFilter`); CS2 shows **no** "Match preferences" section at all — the verified rating surfaces in the Listing preview instead. Chess keeps its time-control + skill-range inputs until P4. `skill_min/max` columns retire in P6.
 - [x] Note: CS2 is team-only, so a CS2 listing never reaches the 1v1 detail page — the badge's marketplace home is the cards + create preview; lobby rosters already show per-player ratings (left as-is). The badge's `detail` variant is built + ready for chess listing detail in P4.
@@ -248,16 +255,36 @@ Time-control set: **Bullet / Blitz / Rapid** (`App\Enums\TimeControl`).
 - [x] **Adversarial review (2-lens) applied:** fixed the homepage missing `.ratings` eager-load (every featured chess card read "Unrated"), the Dota-2 1v1 detail page showing the chess badge, the elite-tier contrast dip, the SEO Elo leak, and a docblock. Added an HTTP-level homepage rating test (the gap that hid bug #1). Full backend **1650** + tsc/eslint/prettier/build green. **Deferred:** the listings **skill-range filter** is now dead for chess → reworked in **P5**; `skill_min/max` create-form fields + factory writes are dead-but-harmless → retired in **P6**.
 - [x] **Provisional rule revised 2026-06-26** (real-account bug: a 537-game Rapid rating, `rd 126`, was hidden as "Unrated"). Provisional is now **game-count based** (`provisional_min_games`, default 20) not `rd`, and provisional ratings **show the number + a "?" marker** instead of being hidden — "Unrated" means only "no rating for that TC". `chess_rating` shape → `{rating, is_provisional, is_unrated}`; both clients compute provisional from games (chess.com `record` w+l+d, Lichess `perfs.*.games`); `ChessRatingBadge` renders the "?"; tests updated (incl. the exact 712/rd126/537-games case). Full suite **1650** green.
 
-**P5 — Marketplace skill filter rework**
+**P5 — Marketplace skill filter rework** — *done 2026-06-28*
 
-- [ ] Re-point the `/listings` skill filter at real ratings — a range filter on the creator's rating, game/TC-scoped (CS2 → FACEIT ELO; chess → selected platform+TC). Drop the overlap semantics (or drop the filter if it's not pulling its weight).
-- [ ] *Concrete starting point (from P4):* the sidebar "Skill range (Elo)" filter (`listing-filters.tsx` + `skill_range` in `config/games.ts` + `skillMin/Max` overlap callbacks in `ListingController`) is now **dead** — it filters `skill_min/max`, which chess no longer surfaces (and CS2 never did). Replace or remove.
+- [x] Built a **real rating filter** (kept, not dropped). Single-game-scoped (board always defaults to one `game`), branched by game — applied on the base query via `ListingController::applyRatingFilter` (correlated `EXISTS`, since Spatie callbacks can't see coordinated params + the listing row; `skill_min/skill_max/unrated` registered as no-op Spatie filters so the allowlist accepts the URL keys):
+    - **Chess** → Elo range on the creator's rating for *this listing's* `platform` + `time_control` (`EXISTS` over `linked_accounts` + `linked_account_ratings`). Reuses the `RangePair`. Provisional ratings (have a number) → included; unrated (no row) → excluded while range active.
+    - **CS2** → **FACEIT level (1–10)** selectors → ELO bounds via new `FaceitLevel::eloFloor`/`eloCeil`, filtering `linked_accounts.skill_rating`.
+- [x] **Unrated handling:** an active range **hides** listings whose creator has no matching rating row; an explicit **"Unrated only" toggle** (`filter[unrated]=1`, mutually exclusive with the range) shows *only* unrated (`NOT EXISTS`). No filter set → everything shows.
+- [x] Dropped the dead `skillMin/Max` overlap callbacks; added the `unrated` key to `IndexListingsRequest`. FE: game-branched control in `listing-filters.tsx` (chess Elo `RangePair` / CS2 `LevelRangePair` + "Show only unrated" checkbox), `unrated` threaded through types, `listings-query.ts`, and the filter bar (count / game-aware chips / clear). Dropped `skill_range` from Dota 2 in `config/games.ts` (no rating adapter yet → no rating filter).
+- [x] Tests: chess Elo-range (platform+TC scoping, provisional included, unrated excluded), CS2 level→ELO translation, unrated-only toggle (chess + CS2), empty-filter passthrough — 8 new in `ListingIndexTest`. Gates: full backend **1657** green, host `tsc` / `eslint` / `prettier` / `vite build` green. (`skill_min/skill_max` listing **columns** still exist + still feed the dead create-form fields → retired in **P6**.)
+
+**P7 — FACEIT level dial + CS2 recent-form strip (display)** — *spun out 2026-06-28 from the P5 discussion*
+
+Emerged when the CS2 filter unit became FACEIT level. Two display upgrades on **CS2 surfaces only**:
+
+- [ ] **FACEIT level dial** replaces the flat `FaceitRatingBadge` pill — a circular ring filled proportionally to level (level-9 ≈ 90%), number centered in `text-foreground` (WCAG AA), ELO beside it. **Authentic FACEIT colors** (decided 2026-06-28, **reverses P2's brand-banded-no-amber call**): grey (1–2), light blue (3), blue (4–6), green (7–8), orange/gold (9–10). Shared `faceitLevelColor(level)`/tier helper (one source). Compact (cards/rows/lobby slots/preview) + detail (listing detail) variants.
+- [ ] **Recent-form strip (W / L / D chips)** — last 5 **settled Stakly matches** for the player (`game_matches.winner_user_id`: win=green W, loss=red L, draw=neutral grey D). **Stakly DB only — no FACEIT history API.** Batch-loaded per page in one query (mirror `SellerTrust::attachTo`, no N+1). **CS2 surfaces only**; CS2 never draws so D won't appear in practice, but the chip supports it for reuse.
+- [ ] Tests: dial color ladder + provisional/unrated states; recent-form batch loader (W/L/D mapping, last-5 ordering by `settled_at`, no N+1).
 
 **P6 — Data cleanup**
 
 - [ ] Retire `listings.skill_min` / `skill_max`; update seeders + factories; finalize the "Unrated" empty states.
 - [ ] *Concrete (from P4):* `skill_min/skill_max` are now **dead** in the create form (`create.tsx` useForm state + reset + the `ListingPreviewCard` `skillMin/Max` props, which only feed the never-reached Dota-2 preview branch) — remove them; stop `ListingFactory` seeding chess `skill_min/max`.
 - [ ] Consider unifying FACEIT onto `linked_account_ratings` and deprecating the scalar `skill_rating` (update the `TakeListingAction` snapshot read accordingly).
+
+**P8 — Player / listing card spacing & density polish (display)** — *added 2026-06-28 (reference screenshot)*
+
+Tighten internal padding / margins / gaps on the cards where text + numbers live, matching the breathing room in the FACEIT-roster reference: a header row (avatar + flag + name left, ELO + level dial right-aligned), a divider, then the stat/meta block with even column gaps, and the recent-form chips as a flush right-edge column. Pure visual density — **no new data columns** (the reference's Avg HS / Avg K/D need the FACEIT history API, ruled out; Win Rate / Match count are derivable from Stakly matches but out of scope unless requested). Activate `ui-ux-pro-max`; stay inside the Stakly token system (spacing scale, `rounded-*`, `bg-card`, dividers).
+
+- [ ] Audit current padding / margin / gap on the in-scope cards; define one consistent internal spacing rhythm (card padding, header-row gap, divider inset, stat/meta-block gap, chip-column gap).
+- [ ] Apply across the lobby slot card (`SlotCard` / `TeamSlotColumn`), listing grid card + row, and profile player-stat cards — responsive at 375 / 768 / 1024, no content reflow regressions.
+- [ ] Verify compact + detail densities both read cleanly; existing pieces (trust meta, take button, ratings) keep their place.
 
 ### Deferred — asymmetric "punch-up-only" matching
 

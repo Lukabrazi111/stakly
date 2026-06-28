@@ -58,26 +58,40 @@ class ListingController extends Controller
             fn (Builder $q) => $q->orderByDesc('created_at')->orderByDesc('id'),
         );
 
-        $listings = QueryBuilder::for(
-            Listing::query()
-                ->onPublicMarketplace()
-                ->with([
-                    'user:id,name,username,is_active_mode',
-                    // `.ratings` feeds the chess rating badge (M41 P4); the
-                    // FACEIT scalar lives on the account row itself.
-                    'user.linkedAccounts.ratings',
-                    'lobbyParticipants' => fn ($q) => $q->live()->orderBy('joined_at'),
-                    'lobbyParticipants.user:id,name,username',
-                    'lobbyParticipants.user.media',
-                ])
-                ->withCount(['lobbyParticipants as live_participant_count' => fn ($q) => $q->live()]),
-        )
+        $filters = $request->filters();
+
+        // The verified-rating filter (M41 P5) needs coordinated min/max + the
+        // "unrated" toggle + each listing's own platform/time-control, so it's a
+        // correlated EXISTS on the base query rather than independent Spatie
+        // filter callbacks (which can't see sibling params or the listing row).
+        $base = Listing::query()
+            ->onPublicMarketplace()
+            ->with([
+                'user:id,name,username,is_active_mode',
+                // `.ratings` feeds the chess rating badge (M41 P4); the
+                // FACEIT scalar lives on the account row itself.
+                'user.linkedAccounts.ratings',
+                'lobbyParticipants' => fn ($q) => $q->live()->orderBy('joined_at'),
+                'lobbyParticipants.user:id,name,username',
+                'lobbyParticipants.user.media',
+            ])
+            ->withCount(['lobbyParticipants as live_participant_count' => fn ($q) => $q->live()]);
+
+        $this->applyRatingFilter($base, $filters['game'], $filters['skill_min'], $filters['skill_max'], $filters['unrated']);
+
+        $listings = QueryBuilder::for($base)
             ->allowedFilters(
                 AllowedFilter::exact('game')->default(Game::Chess->value),
                 AllowedFilter::callback('stake_min', fn (Builder $q, $value) => $q->where('stake_amount', '>=', $value)),
                 AllowedFilter::callback('stake_max', fn (Builder $q, $value) => $q->where('stake_amount', '<=', $value)),
-                AllowedFilter::callback('skill_min', $this->skillMinOverlap()),
-                AllowedFilter::callback('skill_max', $this->skillMaxOverlap()),
+                // The verified-rating filter (skill_min/skill_max/unrated) is
+                // applied on the base query via applyRatingFilter() — a correlated
+                // EXISTS that needs coordinated params Spatie callbacks can't see.
+                // These are registered as no-ops so Spatie accepts the URL keys
+                // instead of throwing InvalidFilterQuery; the real work is upstream.
+                AllowedFilter::callback('skill_min', fn () => null),
+                AllowedFilter::callback('skill_max', fn () => null),
+                AllowedFilter::callback('unrated', fn () => null),
                 AllowedFilter::callback('time_control', $this->timeControlOverlap()),
                 AllowedFilter::exact('region'),
                 AllowedFilter::callback('language', $this->languageMatch()),
@@ -111,7 +125,7 @@ class ListingController extends Controller
 
         return Inertia::render('listings/index', [
             'listings' => ListingResource::collection($listings),
-            'filters' => $request->filters(),
+            'filters' => $filters,
             'sorts' => IndexListingsRequest::SORTS,
             'games' => ['data' => $games],
         ]);
@@ -541,26 +555,102 @@ class ListingController extends Controller
     }
 
     /**
-     * Skill-range overlap (lower bound): a listing matches if its
-     * [skill_min, skill_max] band intersects the user's filter lower bound,
-     * OR if the listing has no upper bound ("any skill").
+     * Verified-rating filter (M41 P5). Replaces the dead self-typed skill_min/
+     * skill_max overlap. Branches by game:
+     *   - Chess → Elo range on the creator's rating for THIS listing's platform
+     *     + time control (correlated against `linked_account_ratings`).
+     *   - CS2 → FACEIT level range, translated to ELO bounds on the cached
+     *     `skill_rating` scalar via {@see FaceitLevel}.
+     *
+     * An active range excludes "unrated" creators (no matching rating row). The
+     * `$unratedOnly` toggle inverts that — show ONLY listings whose creator has
+     * no rating for this game/platform/TC. No bounds + no toggle → no-op.
+     *
+     * For chess, `$skillMin`/`$skillMax` are raw Elo; for CS2 they're FACEIT
+     * levels (1–10). Games without ratings (e.g. Dota 2) get no constraint.
      */
-    private function skillMinOverlap(): \Closure
+    private function applyRatingFilter(Builder $query, string $game, ?int $skillMin, ?int $skillMax, bool $unratedOnly): void
     {
-        return fn (Builder $q, $value) => $q->where(
-            fn (Builder $inner) => $inner->whereNull('skill_max')->orWhere('skill_max', '>=', $value),
-        );
+        $gameEnum = Game::tryFrom($game);
+
+        if ($gameEnum === Game::Chess) {
+            if ($unratedOnly) {
+                $query->whereNotExists($this->chessRatingExists(null, null));
+
+                return;
+            }
+
+            if ($skillMin !== null || $skillMax !== null) {
+                $query->whereExists($this->chessRatingExists($skillMin, $skillMax));
+            }
+
+            return;
+        }
+
+        if ($gameEnum === Game::Cs2) {
+            if ($unratedOnly) {
+                $query->whereNotExists($this->faceitRatingExists(null, null));
+
+                return;
+            }
+
+            $eloMin = $skillMin !== null ? FaceitLevel::eloFloor($this->clampLevel($skillMin)) : null;
+            $eloMax = $skillMax !== null ? FaceitLevel::eloCeil($this->clampLevel($skillMax)) : null;
+
+            if ($eloMin !== null || $eloMax !== null) {
+                $query->whereExists($this->faceitRatingExists($eloMin, $eloMax));
+            }
+        }
     }
 
     /**
-     * Skill-range overlap (upper bound): mirror of the above for the user's
-     * filter upper bound. Listings with no lower bound also match.
+     * Correlated subquery: does the listing creator hold a chess rating for this
+     * listing's platform + time control, optionally within [min, max] Elo? With
+     * both bounds null it tests mere existence (used by the "unrated" inversion).
+     *
+     * @return \Closure(\Illuminate\Database\Query\Builder): void
      */
-    private function skillMaxOverlap(): \Closure
+    private function chessRatingExists(?int $min, ?int $max): \Closure
     {
-        return fn (Builder $q, $value) => $q->where(
-            fn (Builder $inner) => $inner->whereNull('skill_min')->orWhere('skill_min', '<=', $value),
-        );
+        return function ($sub) use ($min, $max) {
+            $sub->selectRaw('1')
+                ->from('linked_accounts as la')
+                ->join('linked_account_ratings as lar', 'lar.linked_account_id', '=', 'la.id')
+                ->whereColumn('la.user_id', 'listings.user_id')
+                ->whereColumn('la.provider', 'listings.platform')
+                ->whereColumn('lar.time_control', 'listings.time_control')
+                ->when($min !== null, fn ($q) => $q->where('lar.rating', '>=', $min))
+                ->when($max !== null, fn ($q) => $q->where('lar.rating', '<=', $max));
+        };
+    }
+
+    /**
+     * Correlated subquery: does the listing creator hold a FACEIT account with a
+     * cached CS2 ELO, optionally within [min, max]? Null bounds test existence
+     * (the "unrated" inversion). Unrated = no FACEIT link or a null skill_rating.
+     *
+     * @return \Closure(\Illuminate\Database\Query\Builder): void
+     */
+    private function faceitRatingExists(?int $eloMin, ?int $eloMax): \Closure
+    {
+        return function ($sub) use ($eloMin, $eloMax) {
+            $sub->selectRaw('1')
+                ->from('linked_accounts as la')
+                ->whereColumn('la.user_id', 'listings.user_id')
+                ->where('la.provider', LinkedAccountProvider::Faceit->value)
+                ->whereNotNull('la.skill_rating')
+                ->when($eloMin !== null, fn ($q) => $q->where('la.skill_rating', '>=', $eloMin))
+                ->when($eloMax !== null, fn ($q) => $q->where('la.skill_rating', '<=', $eloMax));
+        };
+    }
+
+    /**
+     * Clamp a FACEIT level filter value into the valid 1–10 range so a crafted
+     * query param can't reach an undefined ELO bound.
+     */
+    private function clampLevel(int $level): int
+    {
+        return max(1, min(10, $level));
     }
 
     /**

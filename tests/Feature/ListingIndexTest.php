@@ -1,10 +1,68 @@
 <?php
 
+use App\Enums\Game;
+use App\Enums\LinkedAccountProvider;
 use App\Enums\TimeControl;
 use App\Models\GameMatch;
+use App\Models\LinkedAccount;
+use App\Models\LinkedAccountRating;
 use App\Models\Listing;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
+
+/**
+ * Verified-rating filter helpers (M41 P5). `skill_rating_synced_at` is stamped
+ * fresh so the index's refresh-on-view gate skips — tests never hit a provider.
+ */
+function makeVerifiedAccount(User $user, LinkedAccountProvider $provider, ?int $skillRating = null): LinkedAccount
+{
+    return LinkedAccount::create([
+        'user_id' => $user->id,
+        'provider' => $provider->value,
+        'username' => Str::slug(fake()->unique()->userName()),
+        'provider_user_id' => $provider === LinkedAccountProvider::Faceit ? (string) Str::uuid() : null,
+        'skill_rating' => $skillRating,
+        'skill_rating_synced_at' => now(),
+        'verified_at' => now(),
+    ]);
+}
+
+function makeChessListingRated(int $rating, TimeControl $tc = TimeControl::Blitz, LinkedAccountProvider $platform = LinkedAccountProvider::Lichess, bool $provisional = false): Listing
+{
+    $user = User::factory()->active()->create();
+    $account = makeVerifiedAccount($user, $platform);
+    LinkedAccountRating::factory()->for($account)->forTimeControl($tc)->create([
+        'rating' => $rating,
+        'is_provisional' => $provisional,
+    ]);
+
+    return Listing::factory()->open()->for($user)->create([
+        'game' => Game::Chess,
+        'platform' => $platform,
+        'time_control' => $tc->value,
+    ]);
+}
+
+function makeChessListingUnrated(TimeControl $tc = TimeControl::Blitz, LinkedAccountProvider $platform = LinkedAccountProvider::Lichess): Listing
+{
+    $user = User::factory()->active()->create();
+    makeVerifiedAccount($user, $platform); // linked, but no rating row for this TC
+
+    return Listing::factory()->open()->for($user)->create([
+        'game' => Game::Chess,
+        'platform' => $platform,
+        'time_control' => $tc->value,
+    ]);
+}
+
+function makeCs2ListingRated(?int $elo): Listing
+{
+    $user = User::factory()->active()->create();
+    makeVerifiedAccount($user, LinkedAccountProvider::Faceit, $elo);
+
+    return Listing::factory()->open()->teamPlay(2, Game::Cs2)->for($user)->create();
+}
 
 test('listings index is publicly accessible', function () {
     $response = $this->get('/listings');
@@ -112,16 +170,80 @@ test('language filter matches listings offering that language OR no restriction'
         ->assertInertia(fn ($page) => $page->has('listings.data', 2));
 });
 
-test('skill range overlap matches listings that intersect the filter', function () {
-    Listing::factory()->open()->state(['skill_min' => 1400, 'skill_max' => 1600])->create();
-    Listing::factory()->open()->state(['skill_min' => 1700, 'skill_max' => 2000])->create();
-    Listing::factory()->open()->state(['skill_min' => 1900, 'skill_max' => 2200])->create();
-    Listing::factory()->open()->state(['skill_min' => null, 'skill_max' => null])->create();
+test('chess Elo-range filter matches creators whose platform+TC rating is in range', function () {
+    makeChessListingRated(1500); // in range
+    makeChessListingRated(1700); // in range
+    makeChessListingRated(2100); // above
+    makeChessListingRated(1200); // below
 
-    $response = $this->get('/listings?filter[skill_min]=1500&filter[skill_max]=1800');
+    $this->get('/listings?filter[skill_min]=1400&filter[skill_max]=1800')
+        ->assertInertia(fn ($page) => $page->has('listings.data', 2));
+});
 
-    // matches: [1400-1600] (overlaps), [1700-2000] (overlaps), null/null (any skill) = 3
-    $response->assertInertia(fn ($page) => $page->has('listings.data', 3));
+test('chess rating filter is scoped to the listing platform + time control', function () {
+    // Creator rated 1500 on Lichess BLITZ, but the listing is RAPID → no rapid
+    // rating row → excluded even though their blitz number is in range.
+    $user = User::factory()->active()->create();
+    $account = makeVerifiedAccount($user, LinkedAccountProvider::Lichess);
+    LinkedAccountRating::factory()->for($account)->forTimeControl(TimeControl::Blitz)->create(['rating' => 1500]);
+    Listing::factory()->open()->for($user)->create([
+        'game' => Game::Chess,
+        'platform' => LinkedAccountProvider::Lichess,
+        'time_control' => TimeControl::Rapid->value,
+    ]);
+
+    $this->get('/listings?filter[skill_min]=1400&filter[skill_max]=1600')
+        ->assertInertia(fn ($page) => $page->has('listings.data', 0));
+});
+
+test('chess provisional ratings (still a number) are included in an active range', function () {
+    makeChessListingRated(1500, provisional: true);
+
+    $this->get('/listings?filter[skill_min]=1400&filter[skill_max]=1600')
+        ->assertInertia(fn ($page) => $page->has('listings.data', 1));
+});
+
+test('an active chess range excludes unrated creators', function () {
+    makeChessListingRated(1500);   // rated, in range
+    makeChessListingUnrated();     // no rating row for the TC
+
+    $this->get('/listings?filter[skill_min]=1400&filter[skill_max]=1600')
+        ->assertInertia(fn ($page) => $page->has('listings.data', 1));
+});
+
+test('the unrated toggle shows only creators with no rating for that platform+TC', function () {
+    makeChessListingRated(1500);
+    makeChessListingUnrated();
+    makeChessListingUnrated();
+
+    $this->get('/listings?filter[unrated]=1')
+        ->assertInertia(fn ($page) => $page->has('listings.data', 2));
+});
+
+test('CS2 FACEIT-level filter translates levels to ELO bounds', function () {
+    makeCs2ListingRated(1900); // level 9
+    makeCs2ListingRated(1400); // level 7
+    makeCs2ListingRated(800);  // level 3
+
+    // level 8–10 → ELO >= 1531 → only the level-9 (1900) listing matches.
+    $this->get('/listings?filter[game]=cs2&filter[skill_min]=8&filter[skill_max]=10')
+        ->assertInertia(fn ($page) => $page->has('listings.data', 1));
+});
+
+test('CS2 unrated toggle shows FACEIT accounts with no cached ELO', function () {
+    makeCs2ListingRated(1900); // rated
+    makeCs2ListingRated(null); // FACEIT-linked but no ELO → unrated
+
+    $this->get('/listings?filter[game]=cs2&filter[unrated]=1')
+        ->assertInertia(fn ($page) => $page->has('listings.data', 1));
+});
+
+test('no rating filter set returns everything, rated or not', function () {
+    makeChessListingRated(1500);
+    makeChessListingUnrated();
+
+    $this->get('/listings')
+        ->assertInertia(fn ($page) => $page->has('listings.data', 2));
 });
 
 test('region filter matches exact value', function () {

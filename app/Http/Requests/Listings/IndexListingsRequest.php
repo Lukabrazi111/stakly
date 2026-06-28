@@ -26,6 +26,7 @@ class IndexListingsRequest extends FormRequest
         'stake_max',
         'skill_min',
         'skill_max',
+        'unrated',
         'time_control',
         'region',
         'language',
@@ -66,8 +67,12 @@ class IndexListingsRequest extends FormRequest
             'filter.game' => ['nullable', 'string', Rule::enum(Game::class)],
             'filter.stake_min' => ['nullable', 'numeric', 'min:0', 'max:100000'],
             'filter.stake_max' => ['nullable', 'numeric', 'min:0', 'max:100000'],
+            // M41 P5: skill_min/max now filter the CREATOR's verified rating —
+            // raw Elo for chess, FACEIT level (1–10) for CS2. The 0–3500 ceiling
+            // covers chess Elo; the controller clamps CS2 levels to 1–10.
             'filter.skill_min' => ['nullable', 'integer', 'min:0', 'max:3500'],
             'filter.skill_max' => ['nullable', 'integer', 'min:0', 'max:3500'],
+            'filter.unrated' => ['nullable', 'boolean'],
             'filter.time_control' => ['nullable', 'array', 'max:'.count(TimeControl::cases())],
             'filter.time_control.*' => ['string', Rule::enum(TimeControl::class)],
             'filter.region' => ['nullable', 'string', 'max:50'],
@@ -78,7 +83,7 @@ class IndexListingsRequest extends FormRequest
     }
 
     /**
-     * @return array{game: string, stake_min: ?float, stake_max: ?float, skill_min: ?int, skill_max: ?int, time_control: array<int, string>, region: ?string, language: ?string, sort: string}
+     * @return array{game: string, stake_min: ?float, stake_max: ?float, skill_min: ?int, skill_max: ?int, unrated: bool, time_control: array<int, string>, region: ?string, language: ?string, sort: string}
      */
     public function filters(): array
     {
@@ -90,6 +95,7 @@ class IndexListingsRequest extends FormRequest
             'stake_max' => isset($filter['stake_max']) && $filter['stake_max'] !== '' ? (float) $filter['stake_max'] : null,
             'skill_min' => isset($filter['skill_min']) && $filter['skill_min'] !== '' ? (int) $filter['skill_min'] : null,
             'skill_max' => isset($filter['skill_max']) && $filter['skill_max'] !== '' ? (int) $filter['skill_max'] : null,
+            'unrated' => filter_var($filter['unrated'] ?? false, FILTER_VALIDATE_BOOLEAN),
             'time_control' => array_values((array) ($filter['time_control'] ?? [])),
             'region' => ! empty($filter['region']) ? (string) $filter['region'] : null,
             'language' => ! empty($filter['language']) ? (string) $filter['language'] : null,

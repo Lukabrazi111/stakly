@@ -3,6 +3,7 @@ import { SlidersHorizontal } from 'lucide-react';
 import { useState } from 'react';
 import type { ReactNode } from 'react';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
@@ -52,11 +53,15 @@ const LANGUAGES = ['English', 'Russian', 'Spanish', 'German', 'Portuguese'];
 // Sentinel because Radix Select forbids empty-string `value` props.
 const ANY_VALUE = '__any__';
 
+// Levels 1–10 for the CS2 FACEIT-level range selectors.
+const FACEIT_LEVELS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] as const;
+
 interface DraftFilters {
     stake_min: string;
     stake_max: string;
     skill_min: string;
     skill_max: string;
+    unrated: boolean;
     time_control: TimeControl[];
     region: string | null;
     language: string | null;
@@ -68,6 +73,7 @@ function filtersToDraft(filters: ListingFiltersType): DraftFilters {
         stake_max: filters.stake_max !== null ? String(filters.stake_max) : '',
         skill_min: filters.skill_min !== null ? String(filters.skill_min) : '',
         skill_max: filters.skill_max !== null ? String(filters.skill_max) : '',
+        unrated: filters.unrated,
         time_control: filters.time_control,
         region: filters.region,
         language: filters.language,
@@ -148,14 +154,24 @@ function FilterForm({ filters, onClose }: FormProps) {
         filtersToDraft(filters),
     );
     const showTimeControl = gameSupports(filters.game, 'time_control');
+    const showRating = gameSupports(filters.game, 'skill_range');
+    const isCs2 = filters.game === 'cs2';
 
     const apply = () => {
         const next: ListingFiltersType = {
             game: filters.game,
             stake_min: draft.stake_min === '' ? null : Number(draft.stake_min),
             stake_max: draft.stake_max === '' ? null : Number(draft.stake_max),
-            skill_min: draft.skill_min === '' ? null : Number(draft.skill_min),
-            skill_max: draft.skill_max === '' ? null : Number(draft.skill_max),
+            // "Unrated only" is exclusive with a range — drop the bounds.
+            skill_min:
+                draft.unrated || draft.skill_min === ''
+                    ? null
+                    : Number(draft.skill_min),
+            skill_max:
+                draft.unrated || draft.skill_max === ''
+                    ? null
+                    : Number(draft.skill_max),
+            unrated: draft.unrated,
             time_control: draft.time_control,
             region: draft.region,
             language: draft.language,
@@ -176,6 +192,7 @@ function FilterForm({ filters, onClose }: FormProps) {
             stake_max: '',
             skill_min: '',
             skill_max: '',
+            unrated: false,
             time_control: [],
             region: null,
             language: null,
@@ -206,20 +223,56 @@ function FilterForm({ filters, onClose }: FormProps) {
                     />
                 </Field>
 
-                <Field label={t('Skill range (Elo)')}>
-                    <RangePair
-                        minValue={draft.skill_min}
-                        maxValue={draft.skill_max}
-                        onMinChange={(v) =>
-                            setDraft({ ...draft, skill_min: v })
-                        }
-                        onMaxChange={(v) =>
-                            setDraft({ ...draft, skill_max: v })
-                        }
-                        max={3500}
-                        inputMode="numeric"
-                    />
-                </Field>
+                {/* Verified-rating filter (M41 P5). Chess → creator's Elo for
+                    the listing's platform+TC; CS2 → FACEIT level (1–10). The
+                    "unrated" toggle is exclusive with the range. Dota 2 carries
+                    no `skill_range` (no rating adapter yet) so this hides. */}
+                {showRating && (
+                    <Field
+                        label={isCs2 ? t('FACEIT level') : t('Rating (Elo)')}
+                    >
+                        <div className="space-y-3">
+                            {!draft.unrated &&
+                                (isCs2 ? (
+                                    <LevelRangePair
+                                        minValue={draft.skill_min}
+                                        maxValue={draft.skill_max}
+                                        onMinChange={(v) =>
+                                            setDraft({ ...draft, skill_min: v })
+                                        }
+                                        onMaxChange={(v) =>
+                                            setDraft({ ...draft, skill_max: v })
+                                        }
+                                    />
+                                ) : (
+                                    <RangePair
+                                        minValue={draft.skill_min}
+                                        maxValue={draft.skill_max}
+                                        onMinChange={(v) =>
+                                            setDraft({ ...draft, skill_min: v })
+                                        }
+                                        onMaxChange={(v) =>
+                                            setDraft({ ...draft, skill_max: v })
+                                        }
+                                        max={3500}
+                                        inputMode="numeric"
+                                    />
+                                ))}
+                            <label className="flex cursor-pointer items-center gap-2 text-sm text-muted-foreground">
+                                <Checkbox
+                                    checked={draft.unrated}
+                                    onCheckedChange={(checked) =>
+                                        setDraft({
+                                            ...draft,
+                                            unrated: checked === true,
+                                        })
+                                    }
+                                />
+                                {t('Show only unrated')}
+                            </label>
+                        </div>
+                    </Field>
+                )}
 
                 {/* Chess-specific. When a second game adapter ships (M15),
                     branch here per `filters.game` with a sibling component
@@ -380,6 +433,55 @@ function RangePair({
                 onChange={(e) => onMaxChange(e.target.value)}
                 className="flex-1"
             />
+        </div>
+    );
+}
+
+interface LevelRangePairProps {
+    minValue: string;
+    maxValue: string;
+    onMinChange: (value: string) => void;
+    onMaxChange: (value: string) => void;
+}
+
+/** CS2 FACEIT-level range (1–10) via two Selects, stored in skill_min/max as
+ *  levels. The controller translates levels → ELO bounds (App\Support\FaceitLevel). */
+function LevelRangePair({
+    minValue,
+    maxValue,
+    onMinChange,
+    onMaxChange,
+}: LevelRangePairProps) {
+    const t = useT();
+
+    const levelSelect = (
+        value: string,
+        onChange: (value: string) => void,
+        placeholder: string,
+    ) => (
+        <Select
+            value={value === '' ? ANY_VALUE : value}
+            onValueChange={(v) => onChange(v === ANY_VALUE ? '' : v)}
+        >
+            <SelectTrigger className="flex-1">
+                <SelectValue placeholder={placeholder} />
+            </SelectTrigger>
+            <SelectContent>
+                <SelectItem value={ANY_VALUE}>{t('Any')}</SelectItem>
+                {FACEIT_LEVELS.map((level) => (
+                    <SelectItem key={level} value={String(level)}>
+                        {t('Level :n', { n: level })}
+                    </SelectItem>
+                ))}
+            </SelectContent>
+        </Select>
+    );
+
+    return (
+        <div className="flex items-center gap-2">
+            {levelSelect(minValue, onMinChange, t('Min'))}
+            <span className="text-xs text-muted-foreground">{t('to')}</span>
+            {levelSelect(maxValue, onMaxChange, t('Max'))}
         </div>
     );
 }
