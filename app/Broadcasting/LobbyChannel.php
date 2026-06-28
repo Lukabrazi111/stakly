@@ -4,24 +4,22 @@ namespace App\Broadcasting;
 
 use App\Models\Listing;
 use App\Models\User;
+use Illuminate\Support\Facades\Gate;
 
 /**
  * Channel authorization for `lobby.{listing}` — the real-time roster/state
  * channel for the team-play lobby UI on `pages/listings/show.tsx`.
  *
- * Mirrors `ListingPolicy::viewLobby`: any authenticated user holding the URL
- * can subscribe to a team-play listing's lobby channel. Non-team-play (1v1
- * chess) listings have no lobby surface and reject the subscription.
- *
- * Private listings (`is_public = false`) are gated by URL knowledge, not
- * channel auth — same trade-off the HTTP page uses (documented in
- * `ListingPolicy::viewLobby`). If a future abuse pattern shows id-enumeration
- * against private lobbies, tighten here AND there together.
+ * Delegates to `ListingPolicy::viewLobby` (M34 P5) so the live channel and the
+ * HTTP page can never drift: public lobbies are open, private lobbies require
+ * the creator / a live participant / an invite-token session pass, and kicked
+ * players are barred. The broadcasting-auth request runs through `web`
+ * middleware, so the session invite pass is readable here.
  */
 class LobbyChannel
 {
     public function join(User $user, Listing $listing): bool
     {
-        return $listing->isTeamPlay();
+        return Gate::forUser($user)->allows('viewLobby', $listing);
     }
 }

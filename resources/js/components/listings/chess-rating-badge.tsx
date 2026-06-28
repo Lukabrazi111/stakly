@@ -39,9 +39,16 @@ const PILL_TONE: Record<ChessTier, string> = {
 
 interface Props {
     rating: ChessRating | null;
+    /**
+     * `chip` (default) = the tier-tinted pill used inline in chip strips (rows,
+     * preview, detail). `bare` = just the high-contrast number (+ "?"), no pill,
+     * mirroring `FaceitRatingBadge`'s compact ELO so the chess + CS2 grid cards
+     * share one owner-row rating look — minus the FACEIT dial (chess has no level).
+     */
+    variant?: 'chip' | 'bare';
 }
 
-export function ChessRatingBadge({ rating }: Props) {
+export function ChessRatingBadge({ rating, variant = 'chip' }: Props) {
     const t = useT();
 
     const unrated =
@@ -65,35 +72,48 @@ export function ChessRatingBadge({ rating }: Props) {
 
     const value = rating!.rating!;
     const provisional = rating!.is_provisional;
+
+    const title = provisional
+        ? t('Verified rating: :rating (provisional — few games)', {
+              rating: value,
+          })
+        : t('Verified rating: :rating', { rating: value });
+    const ariaLabel = provisional
+        ? t('Verified rating :rating, provisional', { rating: value })
+        : t('Verified rating :rating', { rating: value });
+
+    const provisionalMark = provisional && (
+        <span
+            className="ml-0.5 font-normal text-muted-foreground"
+            aria-hidden="true"
+        >
+            ?
+        </span>
+    );
+
+    if (variant === 'bare') {
+        return (
+            <span
+                className="inline-flex shrink-0 items-center text-sm font-semibold text-foreground tabular-nums"
+                title={title}
+                aria-label={ariaLabel}
+            >
+                {value}
+                {provisionalMark}
+            </span>
+        );
+    }
+
     const tier = tierFor(value);
 
     return (
         <span
             className={`inline-flex shrink-0 items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold tabular-nums ${PILL_TONE[tier]}`}
-            title={
-                provisional
-                    ? t('Verified rating: :rating (provisional — few games)', {
-                          rating: value,
-                      })
-                    : t('Verified rating: :rating', { rating: value })
-            }
-            aria-label={
-                provisional
-                    ? t('Verified rating :rating, provisional', {
-                          rating: value,
-                      })
-                    : t('Verified rating :rating', { rating: value })
-            }
+            title={title}
+            aria-label={ariaLabel}
         >
             {value}
-            {provisional && (
-                <span
-                    className="ml-0.5 font-normal text-muted-foreground"
-                    aria-hidden="true"
-                >
-                    ?
-                </span>
-            )}
+            {provisionalMark}
         </span>
     );
 }

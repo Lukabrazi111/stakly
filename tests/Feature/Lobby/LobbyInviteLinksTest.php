@@ -183,18 +183,20 @@ describe('marketplace hides private listings', function () {
             );
     });
 
-    it('private listings remain reachable via direct /listings/{id} URL', function () {
+    it('private listings are NOT reachable via a guessed direct /listings/{id} URL (M34 P5)', function () {
         $private = Listing::factory()->teamPlay()->private()->create([
             'status' => ListingStatus::Open,
         ]);
 
+        // A non-invited visitor (no creator / participant / invite pass) 404s,
+        // so enumerating sequential ids reveals nothing.
         $this->get(route('listings.show', ['locale' => 'en', 'listing' => $private]))
-            ->assertOk();
+            ->assertNotFound();
     });
 });
 
 describe('LobbyController::showByToken — /lobbies/{token}', function () {
-    it('301-redirects a valid token to the canonical /listings/{id} URL', function () {
+    it('302-redirects a valid token to the canonical /listings/{id} URL', function () {
         $user = User::factory()->active()->withFaceit()->create();
         $listing = Listing::factory()
             ->teamPlay()
@@ -211,7 +213,7 @@ describe('LobbyController::showByToken — /lobbies/{token}', function () {
 
         $this->actingAs($visitor)
             ->get(route('lobbies.invite', ['locale' => 'en', 'token' => $listing->invite_token]))
-            ->assertStatus(301)
+            ->assertStatus(302)
             ->assertRedirect(route('listings.show', ['locale' => 'en', 'listing' => $listing]));
     });
 

@@ -82,7 +82,10 @@ export function ProfileListingRow({ listing }: Props) {
                         variant="compact"
                     />
                 ) : listing.game === 'chess' ? (
-                    <ChessRatingBadge rating={listing.creator.chess_rating} />
+                    <ChessRatingBadge
+                        rating={listing.creator.chess_rating}
+                        variant="bare"
+                    />
                 ) : null}
 
                 {listing.time_control && (

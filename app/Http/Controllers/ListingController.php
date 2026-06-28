@@ -209,6 +209,11 @@ class ListingController extends Controller
      */
     private function showTeamPlay(Request $request, Listing $listing): Response|RedirectResponse
     {
+        // Visibility gate (M34 P5): public lobbies are open; private ones need
+        // the creator / a live participant / an invite-token session pass. The
+        // invite link (`/lobbies/{token}`) is itself auth-gated, so a guest is
+        // funnelled to login there — a guest reaching THIS page can't hold a
+        // pass, so denials just 404 (hiding the private lobby's existence).
         abort_if(Gate::denies('viewLobby', $listing), 404);
 
         $listing->load([

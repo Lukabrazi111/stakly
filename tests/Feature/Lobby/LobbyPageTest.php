@@ -67,14 +67,14 @@ describe('GET /listings/{id} (team-play lobby UI)', function () {
             ->assertOk();
     });
 
-    it('renders for an unauthenticated visitor with the private URL (URL = access model)', function () {
+    it('404s an unauthenticated visitor on a private listing (M34 P5)', function () {
         $listing = pageLobby(isPublic: false);
 
-        // M34 P3.1 Slice B.1 — viewLobby relaxed so the invite-token flow
-        // can land non-participants on the page so they can join. Known
-        // trade-off: sequential ID enumeration exposes private lobbies.
+        // M34 P5 — private lobbies are invite-gated. A guest who hasn't come
+        // through the auth-gated invite link can't view; the 404 also hides the
+        // lobby's existence from sequential-ID enumeration.
         $this->get(route('listings.show', ['locale' => 'en', 'listing' => $listing]))
-            ->assertOk();
+            ->assertNotFound();
     });
 
     it('renders chess detail (not lobby UI) for team_size = 1 listings', function () {

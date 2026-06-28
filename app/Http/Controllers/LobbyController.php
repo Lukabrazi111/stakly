@@ -11,6 +11,7 @@ use App\Enums\ListingStatus;
 use App\Models\Listing;
 use App\Models\LobbyParticipant;
 use App\Models\User;
+use App\Support\LobbyInvitePass;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
@@ -70,7 +71,13 @@ class LobbyController extends Controller
             abort(404);
         }
 
-        return to_route('listings.show', ['listing' => $listing], 301);
+        // The token IS the access credential (M34 P5): record a per-session
+        // invite pass so the canonical /listings/{id} page (the redirect
+        // target) authorizes this viewer. 302, not 301 — a cached permanent
+        // redirect would skip this pass-granting hop on later clicks.
+        LobbyInvitePass::grant($listing);
+
+        return to_route('listings.show', ['listing' => $listing]);
     }
 
     public function join(Request $request, Listing $listing, JoinLobbyAction $action): RedirectResponse

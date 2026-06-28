@@ -144,6 +144,7 @@ export function ListingRow({ listing }: Props) {
                         ) : listing.game === 'chess' ? (
                             <ChessRatingBadge
                                 rating={listing.creator.chess_rating}
+                                variant="bare"
                             />
                         ) : null}
 

@@ -98,8 +98,9 @@ export function ListingGridCard({ listing }: Props) {
             {/* Owner block — avatar + nickname → profile. The link HUGS its
                 content (no flex-1) so the empty space right of the name falls
                 through to the card overlay → listing detail (this was the chess
-                "click right of the name → profile" bug). The CS2 rating is
-                pinned right with ml-auto and stays click-through to the card.
+                "click right of the name → profile" bug). The verified rating is
+                pinned right with ml-auto (CS2 → ELO + level dial, chess → bare
+                ELO number) and stays click-through to the card.
                 Region + completion-rate trust sit on their own full-width row
                 below (off the cramped name row, so "N matches" never breaks),
                 above the roster count. */}
@@ -125,14 +126,21 @@ export function ListingGridCard({ listing }: Props) {
                             {listing.creator.username}
                         </span>
                     </Link>
-                    {listing.game === 'cs2' && (
+                    {listing.game === 'cs2' ? (
                         <span className="ml-auto shrink-0">
                             <FaceitRatingBadge
                                 rating={listing.creator.faceit_rating}
                                 variant="compact"
                             />
                         </span>
-                    )}
+                    ) : listing.game === 'chess' ? (
+                        <span className="ml-auto shrink-0">
+                            <ChessRatingBadge
+                                rating={listing.creator.chess_rating}
+                                variant="bare"
+                            />
+                        </span>
+                    ) : null}
                 </div>
 
                 {(listing.region || listing.creator.settled_lifetime > 0) && (
@@ -160,18 +168,12 @@ export function ListingGridCard({ listing }: Props) {
                 )}
             </div>
 
-            {/* Match meta — game badge + (time-control | languages). CS2's rating
-                + trust meta live on the owner row, so this row only carries
-                languages for CS2 and hides entirely when there are none. */}
+            {/* Match meta — time-control + languages. Both games' verified
+                rating now lives on the owner row above, so this row no longer
+                carries it; CS2 carries only languages (hides when none). */}
             {(listing.game !== 'cs2' ||
                 (listing.language?.length ?? 0) > 0) && (
                 <div className="pointer-events-none relative flex flex-wrap items-center gap-1.5">
-                    {listing.game === 'chess' && (
-                        <ChessRatingBadge
-                            rating={listing.creator.chess_rating}
-                        />
-                    )}
-
                     {!isTeamPlay && listing.time_control && (
                         <span className="inline-flex items-center gap-1 rounded-full border border-border/60 bg-background/60 px-2.5 py-0.5 text-xs font-medium text-muted-foreground">
                             <Clock className="size-3" aria-hidden="true" />
