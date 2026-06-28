@@ -96,62 +96,62 @@ export function ListingGridCard({ listing }: Props) {
                 </span>
             </header>
 
-            {/* Owner zone — only the avatar + nickname link to the profile. The
-                CS2 rating sits beside it (roster-reference style) but stays
-                click-through, so clicking it opens the card's lobby like the rest
-                of the card, NOT the profile. */}
-            <div className="pointer-events-none relative flex items-center gap-3">
-                <Link
-                    href={userShow({ user: listing.creator.username }).url}
-                    className="pointer-events-auto flex min-w-0 flex-1 items-center gap-3 rounded-lg focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none"
-                >
-                    <Avatar className="size-12 shrink-0 overflow-hidden rounded-full">
-                        <AvatarImage
-                            src={listing.creator.avatar_thumb_url ?? undefined}
-                            alt={listing.creator.username}
-                        />
-                        <AvatarFallback className="bg-gradient-primary text-sm font-semibold text-primary-foreground">
-                            {getInitials(listing.creator.name)}
-                        </AvatarFallback>
-                    </Avatar>
-                    <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+            {/* Owner block — avatar + nickname (→ profile) with the CS2 rating
+                beside it; the region + completion-rate trust sit on their own
+                full-width row below the name (off the cramped name row, so
+                "N matches" never breaks), above the roster count. */}
+            <div className="flex flex-col gap-2">
+                <div className="pointer-events-none relative flex items-center gap-3">
+                    <Link
+                        href={userShow({ user: listing.creator.username }).url}
+                        className="pointer-events-auto flex min-w-0 flex-1 items-center gap-3 rounded-lg focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none"
+                    >
+                        <Avatar className="size-12 shrink-0 overflow-hidden rounded-full">
+                            <AvatarImage
+                                src={
+                                    listing.creator.avatar_thumb_url ??
+                                    undefined
+                                }
+                                alt={listing.creator.username}
+                            />
+                            <AvatarFallback className="bg-gradient-primary text-sm font-semibold text-primary-foreground">
+                                {getInitials(listing.creator.name)}
+                            </AvatarFallback>
+                        </Avatar>
                         <span className="truncate text-sm font-semibold text-foreground transition-colors hover:text-primary">
                             {listing.creator.username}
                         </span>
-                        <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-muted-foreground">
-                            {listing.region && (
-                                <span className="inline-flex items-center gap-1">
-                                    <Globe
-                                        className="size-3"
-                                        aria-hidden="true"
-                                    />
-                                    {listing.region}
+                    </Link>
+                    {listing.game === 'cs2' && (
+                        <FaceitRatingBadge
+                            rating={listing.creator.faceit_rating}
+                            variant="compact"
+                        />
+                    )}
+                </div>
+
+                {(listing.region || listing.creator.settled_lifetime > 0) && (
+                    <div className="pointer-events-none relative flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-muted-foreground">
+                        {listing.region && (
+                            <span className="inline-flex items-center gap-1">
+                                <Globe className="size-3" aria-hidden="true" />
+                                {listing.region}
+                            </span>
+                        )}
+                        {listing.region &&
+                            listing.creator.settled_lifetime > 0 && (
+                                <span aria-hidden="true" className="opacity-60">
+                                    ·
                                 </span>
                             )}
-                            {listing.region &&
-                                listing.creator.settled_lifetime > 0 && (
-                                    <span
-                                        aria-hidden="true"
-                                        className="opacity-60"
-                                    >
-                                        ·
-                                    </span>
-                                )}
-                            <SellerTrustMeta
-                                rate={listing.creator.completion_rate_30d}
-                                settled={listing.creator.settled_lifetime}
-                                verifiedProviders={
-                                    listing.creator.verified_providers
-                                }
-                            />
-                        </div>
+                        <SellerTrustMeta
+                            rate={listing.creator.completion_rate_30d}
+                            settled={listing.creator.settled_lifetime}
+                            verifiedProviders={
+                                listing.creator.verified_providers
+                            }
+                        />
                     </div>
-                </Link>
-                {listing.game === 'cs2' && (
-                    <FaceitRatingBadge
-                        rating={listing.creator.faceit_rating}
-                        variant="compact"
-                    />
                 )}
             </div>
 

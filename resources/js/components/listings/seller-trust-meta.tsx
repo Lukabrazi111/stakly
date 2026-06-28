@@ -48,7 +48,7 @@ export function SellerTrustMeta({ rate, settled, verifiedProviders }: Props) {
 
     return (
         <span
-            className="inline-flex items-center gap-1 text-xs text-muted-foreground"
+            className="inline-flex flex-wrap items-center gap-x-1 text-xs text-muted-foreground"
             title={tooltip}
             aria-label={tooltip}
         >
@@ -59,10 +59,14 @@ export function SellerTrustMeta({ rate, settled, verifiedProviders }: Props) {
                 />
             )}
             <span className="text-foreground">{rateLabel}</span>
-            <span aria-hidden="true" className="opacity-60">
-                ·
+            {/* "· N matches" stays one unit so it never breaks mid-phrase; on a
+                narrow card it wraps to its own line as a whole instead. */}
+            <span className="inline-flex items-center gap-1 whitespace-nowrap">
+                <span aria-hidden="true" className="opacity-60">
+                    ·
+                </span>
+                {matchCount}
             </span>
-            <span>{matchCount}</span>
         </span>
     );
 }
