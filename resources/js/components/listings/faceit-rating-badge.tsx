@@ -49,7 +49,7 @@ export function FaceitRatingBadge({ rating, variant = 'compact' }: Props) {
  * (`aria-hidden`); the calling badge carries the accessible label.
  */
 function LevelDial({ level, size }: { level: number; size: number }) {
-    const stroke = Math.max(2, Math.round(size * 0.13));
+    const stroke = Math.max(2, Math.round(size * 0.12));
     const radius = (size - stroke) / 2;
     const circumference = 2 * Math.PI * radius;
     const filled = (Math.min(level, 10) / 10) * circumference;
@@ -98,22 +98,18 @@ function LevelDial({ level, size }: { level: number; size: number }) {
 function CompactRated({ elo, level }: { elo: number; level: number }) {
     const t = useT();
 
+    // Reference look (M41 P8): bare `ELO  (dial)` — number first, dial on the
+    // right, no surrounding pill, no "ELO" suffix label.
     return (
         <span
-            className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-border/60 bg-card/60 py-0.5 pr-2.5 pl-1"
+            className="inline-flex shrink-0 items-center gap-1.5"
             title={t('FACEIT level :level · :elo ELO', { level, elo })}
             aria-label={t('FACEIT level :level, :elo ELO', { level, elo })}
         >
-            <LevelDial level={level} size={22} />
-            <span className="text-xs font-medium text-foreground tabular-nums">
+            <span className="text-sm font-semibold text-foreground tabular-nums">
                 {elo}
             </span>
-            <span
-                className="text-[10px] font-medium tracking-wide text-muted-foreground uppercase"
-                aria-hidden="true"
-            >
-                elo
-            </span>
+            <LevelDial level={level} size={32} />
         </span>
     );
 }

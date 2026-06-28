@@ -281,7 +281,7 @@ Emerged when the CS2 filter unit became FACEIT level. Two display upgrades on **
 - [ ] *Concrete (from P4):* `skill_min/skill_max` are now **dead** in the create form (`create.tsx` useForm state + reset + the `ListingPreviewCard` `skillMin/Max` props, which only feed the never-reached Dota-2 preview branch) — remove them; stop `ListingFactory` seeding chess `skill_min/max`.
 - [ ] Consider unifying FACEIT onto `linked_account_ratings` and deprecating the scalar `skill_rating` (update the `TakeListingAction` snapshot read accordingly).
 
-**P8 — Player / listing card spacing & density polish (display)** — *added 2026-06-28 (reference screenshot)*
+**P8 — Player / listing card spacing & density polish (display)** — *in progress 2026-06-28; starting with the lobby `SlotCard` (the reference card), then propagating the rhythm*
 
 Tighten internal padding / margins / gaps on the cards where text + numbers live, matching the breathing room in the FACEIT-roster reference: a header row (avatar + flag + name left, ELO + level dial right-aligned), a divider, then the stat/meta block with even column gaps, and the recent-form chips as a flush right-edge column. Pure visual density — **no new data columns** (the reference's Avg HS / Avg K/D need the FACEIT history API, ruled out; Win Rate / Match count are derivable from Stakly matches but out of scope unless requested). Activate `ui-ux-pro-max`; stay inside the Stakly token system (spacing scale, `rounded-*`, `bg-card`, dividers).
 
