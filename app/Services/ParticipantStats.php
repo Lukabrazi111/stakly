@@ -2,19 +2,21 @@
 
 namespace App\Services;
 
-use App\Enums\MatchStatus;
-use App\Models\GameMatch;
 use Illuminate\Support\Collection;
 
 /**
- * Per-user total matches + win rate for the M34 P3.1 lobby slot cards.
- * Batches one aggregation across N user IDs so a 5v5 lobby (10 slots) does
- * ONE query, not 10. Uses settled `game_matches` only — pending / disputed
- * / cancelled aren't counted.
+ * Per-user career total matches + win rate for the lobby slot cards (M34 P3.1)
+ * + the match-page opponent stats. Batches across N user IDs so a 5v5 lobby (10
+ * slots) does a fixed number of queries, not 10. Settled matches only.
  *
- * Sister to `App\Services\SellerTrust` (completion rate + lifetime settled).
- * Kept separate because trust is about *completion* (settled vs cancelled
- * cooperative), and these stats are about *winning* (W/L outcome).
+ * Participation + win detection come from {@see MatchParticipation} — creator
+ * OR taker OR live lobby member, wins via the payout ledger — so a CS2 TEAM
+ * player's matches + wins are counted correctly. (The original creator/taker +
+ * `winner_user_id` approach showed 0 matches for non-creator/non-taker roster
+ * members and missed non-slot-0 winners; M41 P7c fix.)
+ *
+ * Sister to {@see SellerTrust} (completion vs cancellation) — this is about
+ * *winning* (W/L outcome). Counts across ALL games (career overall).
  */
 class ParticipantStats
 {
@@ -34,36 +36,22 @@ class ParticipantStats
             return [];
         }
 
-        $rows = GameMatch::query()
-            ->join('listings', 'listings.id', '=', 'game_matches.listing_id')
-            ->where('game_matches.status', MatchStatus::Settled)
-            ->where(function ($q) use ($userIds) {
-                $q->whereIn('listings.user_id', $userIds)
-                    ->orWhereIn('game_matches.taker_user_id', $userIds);
-            })
-            ->get([
-                'listings.user_id as creator_id',
-                'game_matches.taker_user_id',
-                'game_matches.winner_user_id',
-            ]);
+        $matches = MatchParticipation::settledByUser($userIds);
+        $wins = MatchParticipation::wonListingIds($userIds);
 
         $result = [];
 
         foreach ($userIds as $userId) {
-            $userMatches = $rows->filter(
-                fn ($row) => (int) $row->creator_id === (int) $userId
-                    || (int) $row->taker_user_id === (int) $userId,
-            );
-
+            $userMatches = $matches[$userId] ?? collect();
             $total = $userMatches->count();
-            $wins = $userMatches
-                ->filter(fn ($row) => (int) $row->winner_user_id === (int) $userId)
+            $winCount = $userMatches
+                ->filter(fn (object $row): bool => isset($wins["{$userId}:{$row->listing_id}"]))
                 ->count();
 
             $result[$userId] = [
                 'total_matches' => $total,
-                'wins' => $wins,
-                'win_rate' => $total > 0 ? (int) round(($wins / $total) * 100) : null,
+                'wins' => $winCount,
+                'win_rate' => $total > 0 ? (int) round(($winCount / $total) * 100) : null,
             ];
         }
 
