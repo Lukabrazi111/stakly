@@ -96,15 +96,19 @@ export function ListingGridCard({ listing }: Props) {
                 </span>
             </header>
 
-            {/* Owner block — avatar + nickname (→ profile) with the CS2 rating
-                beside it; the region + completion-rate trust sit on their own
-                full-width row below the name (off the cramped name row, so
-                "N matches" never breaks), above the roster count. */}
+            {/* Owner block — avatar + nickname → profile. The link HUGS its
+                content (no flex-1) so the empty space right of the name falls
+                through to the card overlay → listing detail (this was the chess
+                "click right of the name → profile" bug). The CS2 rating is
+                pinned right with ml-auto and stays click-through to the card.
+                Region + completion-rate trust sit on their own full-width row
+                below (off the cramped name row, so "N matches" never breaks),
+                above the roster count. */}
             <div className="flex flex-col gap-2">
                 <div className="pointer-events-none relative flex items-center gap-3">
                     <Link
                         href={userShow({ user: listing.creator.username }).url}
-                        className="pointer-events-auto flex min-w-0 flex-1 items-center gap-3 rounded-lg focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none"
+                        className="pointer-events-auto flex min-w-0 items-center gap-3 rounded-lg focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none"
                     >
                         <Avatar className="size-12 shrink-0 overflow-hidden rounded-full">
                             <AvatarImage
@@ -123,10 +127,12 @@ export function ListingGridCard({ listing }: Props) {
                         </span>
                     </Link>
                     {listing.game === 'cs2' && (
-                        <FaceitRatingBadge
-                            rating={listing.creator.faceit_rating}
-                            variant="compact"
-                        />
+                        <span className="ml-auto shrink-0">
+                            <FaceitRatingBadge
+                                rating={listing.creator.faceit_rating}
+                                variant="compact"
+                            />
+                        </span>
                     )}
                 </div>
 
