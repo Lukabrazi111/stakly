@@ -4,6 +4,7 @@ import { ChessRatingBadge } from '@/components/listings/chess-rating-badge';
 import { FaceitRatingBadge } from '@/components/listings/faceit-rating-badge';
 import { GameChip } from '@/components/listings/game-chip';
 import { ReadyCheckBanner } from '@/components/listings/ready-check-banner';
+import { RecentFormStrip } from '@/components/listings/recent-form-strip';
 import { SellerTrustMeta } from '@/components/listings/seller-trust-meta';
 import { TakeButton } from '@/components/listings/take-button';
 import { LobbyFillCounter } from '@/components/listings/team-play-meta';
@@ -138,10 +139,15 @@ export function ListingRow({ listing }: Props) {
                         <VerifiedPlatformChip platform={listing.platform} />
 
                         {listing.game === 'cs2' ? (
-                            <FaceitRatingBadge
-                                rating={listing.creator.faceit_rating}
-                                variant="compact"
-                            />
+                            <>
+                                <FaceitRatingBadge
+                                    rating={listing.creator.faceit_rating}
+                                    variant="compact"
+                                />
+                                <RecentFormStrip
+                                    form={listing.creator.recent_form}
+                                />
+                            </>
                         ) : listing.game === 'chess' ? (
                             <ChessRatingBadge
                                 rating={listing.creator.chess_rating}

@@ -177,6 +177,18 @@
     --warning: #f59e0b;
     --warning-foreground: #0a0710;
 
+    /* FACEIT level ladder (M41 P7) — AUTHENTIC FACEIT colors for the CS2 level
+       dial: 1–2 grey, 3 light blue, 4–6 blue, 7–8 green, 9–10 orange/gold. A
+       deliberate divergence from the Stakly palette (provider-accurate colors
+       for instant recognizability). Scoped to the level dial only; the centered
+       level number carries the meaning, so the green/gold rings stay readable as
+       a LEVEL, not win/dispute status next to a stake. Tune here. */
+    --faceit-grey: #9a9aa5;
+    --faceit-light-blue: #5aa9e6;
+    --faceit-blue: #3b82f6;
+    --faceit-green: #22c55e;
+    --faceit-gold: #f5a623;
+
     /* brand gradient endpoints + glow color */
     --gradient-from: #ec4899;
     --gradient-to: #a855f7;

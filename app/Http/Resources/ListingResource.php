@@ -116,6 +116,12 @@ class ListingResource extends JsonResource
                 'chess_rating' => $this->game === Game::Chess
                     ? $this->getChessRating()
                     : null,
+                // M41 P7 — the creator's recent W/L/D form (last 5 settled CS2
+                // matches, newest first), batch-loaded by RecentForm::attachTo.
+                // CS2 only; null elsewhere. Empty array = no settled matches yet.
+                'recent_form' => $this->game === Game::Cs2
+                    ? array_values((array) ($this->recent_form ?? []))
+                    : null,
             ],
         ];
     }

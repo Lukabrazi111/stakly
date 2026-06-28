@@ -1,4 +1,6 @@
 import { CheckCircle2, Crown, X } from 'lucide-react';
+import { FaceitRatingBadge } from '@/components/listings/faceit-rating-badge';
+import { RecentFormStrip } from '@/components/listings/recent-form-strip';
 import { Button } from '@/components/ui/button';
 import { useT } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
@@ -37,7 +39,6 @@ export function FilledSlot({
             .join('')
             .toUpperCase() ?? '??';
 
-    const rating = participant.platform_account?.skill_rating ?? null;
     const showKickX = !isViewer && canKick && !participant.is_creator;
 
     return (
@@ -86,11 +87,10 @@ export function FilledSlot({
                 </div>
 
                 <div className="flex shrink-0 flex-col items-end gap-1">
-                    {rating !== null && (
-                        <span className="rounded-md bg-muted/70 px-2 py-0.5 font-display text-sm font-bold text-foreground tabular-nums">
-                            {rating}
-                        </span>
-                    )}
+                    <FaceitRatingBadge
+                        rating={participant.faceit_rating}
+                        variant="compact"
+                    />
                     <ReadyPill ready={participant.is_ready} />
                 </div>
 
@@ -109,6 +109,12 @@ export function FilledSlot({
                     </Button>
                 )}
             </div>
+
+            {participant.recent_form.length > 0 && (
+                <div className="mt-2 flex justify-end">
+                    <RecentFormStrip form={participant.recent_form} />
+                </div>
+            )}
 
             <StatsLine stats={participant.platform_stats} />
         </div>

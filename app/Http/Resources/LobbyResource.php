@@ -6,6 +6,7 @@ use App\Enums\MatchStatus;
 use App\Models\Listing;
 use App\Models\LobbyParticipant;
 use App\Models\User;
+use App\Support\FaceitLevel;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -295,6 +296,15 @@ class LobbyResource extends JsonResource
                 'username' => $platformLink->username,
                 'skill_rating' => $platformLink->skill_rating,
             ],
+            // M41 P7 — FACEIT level dial (level derived from the platform ELO)
+            // + the participant's recent W/L/D form (last 5 settled matches for
+            // this game), batch-loaded by RecentForm in showTeamPlay.
+            'faceit_rating' => [
+                'elo' => $platformLink?->skill_rating,
+                'level' => FaceitLevel::fromElo($platformLink?->skill_rating),
+                'is_unrated' => $platformLink?->skill_rating === null,
+            ],
+            'recent_form' => array_values((array) ($participant->user->getAttribute('recent_form') ?? [])),
             // Matches / Win rate / Completion-30d stats row on the slot card.
             // Null when the controller hasn't attached `platform_stats` (e.g.
             // in a unit test that builds the resource directly without going

@@ -21,6 +21,7 @@ use App\Models\LinkedAccount;
 use App\Models\LinkedAccountRating;
 use App\Models\Listing;
 use App\Services\ParticipantStats;
+use App\Services\RecentForm;
 use App\Services\SellerTrust;
 use App\Services\Wallet;
 use App\Support\BanGuard;
@@ -111,6 +112,10 @@ class ListingController extends Controller
         // `seller_trust` attribute that `ListingResource` reads.
         SellerTrust::attachTo($listings);
 
+        // M41 P7 — batch-load each CS2 creator's recent W/L/D form (last 5
+        // settled matches) in a fixed number of queries; no-op for chess.
+        RecentForm::attachTo($listings->getCollection());
+
         // M41 P2/P3b — keep displayed ratings fresh (CS2 FACEIT + chess per-TC).
         // Stale-gated + deduped + throttled, so this is safe on the read path.
         app(RefreshDisplayedRatingsAction::class)->forListings($listings->getCollection());
@@ -174,6 +179,7 @@ class ListingController extends Controller
 
         // M22 Phase 1 — seller trust on the listing detail (single-row batch).
         SellerTrust::attachTo([$listing]);
+        RecentForm::attachTo([$listing]);
 
         // M41 P2/P3b — refresh-on-view (CS2 FACEIT + chess per-TC), stale-gated.
         app(RefreshDisplayedRatingsAction::class)->forListings([$listing]);
@@ -233,6 +239,9 @@ class ListingController extends Controller
             ->all();
         $trust = SellerTrust::forBatch($userIds);
         $stats = ParticipantStats::forBatch($userIds);
+        // M41 P7 — recent W/L/D form per participant, scoped to the lobby's game
+        // (CS2). Ledger-based so team wins resolve correctly (see RecentForm).
+        $forms = RecentForm::forBatch($userIds, $listing->game);
         foreach ($listing->lobbyParticipants as $participant) {
             if ($participant->kicked_at !== null) {
                 continue;
@@ -244,6 +253,10 @@ class ListingController extends Controller
             $participant->user->setAttribute(
                 'platform_stats',
                 $stats[$participant->user_id] ?? null,
+            );
+            $participant->user->setAttribute(
+                'recent_form',
+                $forms[$participant->user_id] ?? [],
             );
         }
 
@@ -440,6 +453,7 @@ class ListingController extends Controller
         // all rows on this page (single creator), so the batch trivially
         // collapses to one aggregate.
         SellerTrust::attachTo($listings);
+        RecentForm::attachTo($listings->getCollection());
 
         // M41 P2/P3b — refresh-on-view (CS2 + chess; gated/deduped/throttled).
         app(RefreshDisplayedRatingsAction::class)->forListings($listings->getCollection());

@@ -40,6 +40,11 @@ export interface ChessRating {
     is_unrated: boolean;
 }
 
+// M41 P7 — a single recent-match outcome (win / loss / draw) from Stakly's own
+// settled matches (NOT FACEIT). CS2 never draws, so 'D' won't appear in
+// practice, but the strip supports it for future 1v1 reuse.
+export type RecentFormResult = 'W' | 'L' | 'D';
+
 export interface ListingCreator {
     id: number;
     name: string;
@@ -81,6 +86,10 @@ export interface ListingCreator {
     // M41 P4 — verified chess rating for the listing's platform + time control;
     // populated on chess listings, null for CS2.
     chess_rating: ChessRating | null;
+    // M41 P7 — recent W/L/D form (last 5 settled CS2 matches, newest first)
+    // from Stakly's DB. CS2 listings only (null for chess); [] = no settled
+    // matches yet. Pairs with the FACEIT level dial on CS2 cards.
+    recent_form: RecentFormResult[] | null;
 }
 
 // Chess-only linked-account providers. Distinct from `ListingPlatform` below

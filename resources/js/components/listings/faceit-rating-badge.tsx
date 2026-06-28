@@ -1,45 +1,20 @@
 import { CircleDashed } from 'lucide-react';
+import { faceitLevelColor } from '@/lib/faceit-level';
 import { useT } from '@/lib/i18n';
 import type { FaceitRating } from '@/types/listings';
 
 /**
- * Verified FACEIT rating pill (M41 P2). Shown on CS2 listings in place of the
- * old self-typed skill chip. Brand-banded by tier — entry (L1-3) muted, mid
- * (L4-7) pink, elite (L8-10) purple — never FACEIT's amber/red ramp, which
- * collides with Stakly's dispute/loss palette next to a money stake. The level
- * number carries the tier, so it stays colorblind-safe. Non-interactive
- * metadata: no hover, cursor, or glow (matches the sibling GameChip / skill chip).
+ * Verified FACEIT rating badge (M41 P2 → P7). The level renders as a circular
+ * DIAL filled proportionally to the level (level 9 ≈ 90%), in AUTHENTIC FACEIT
+ * colors (grey / light-blue / blue / green / gold per the official ladder — see
+ * `faceit-level.ts`), the level number centered in `text-foreground` (WCAG AA)
+ * with the ELO beside it. The number carries the meaning, so the dial stays
+ * readable as a LEVEL — the green/gold rings don't read as win/dispute status
+ * next to a stake. Non-interactive metadata: no hover, cursor, or glow.
  *
- * Two variants: `compact` (the marketplace cards + create preview, shipped in
- * P2) and `detail` (the fuller stat block — wired into the chess listing detail
- * page in M41 P4, when chess detail switches from its self-typed range).
+ * Two variants: `compact` (marketplace cards, rows, lobby slots, create preview)
+ * and `detail` (the fuller stat block on the listing detail page).
  */
-
-type FaceitTier = 'entry' | 'mid' | 'elite';
-
-function tierFor(level: number): FaceitTier {
-    if (level >= 8) {
-        return 'elite';
-    }
-
-    if (level >= 4) {
-        return 'mid';
-    }
-
-    return 'entry';
-}
-
-const PILL_TONE: Record<FaceitTier, string> = {
-    entry: 'border-border/60 bg-card/60 text-muted-foreground',
-    mid: 'border-primary/30 bg-primary/10 text-foreground',
-    elite: 'border-accent/40 bg-accent/10 text-foreground',
-};
-
-const COIN_TONE: Record<FaceitTier, string> = {
-    entry: 'bg-muted text-foreground/70',
-    mid: 'bg-primary/20 text-primary',
-    elite: 'bg-accent/25 text-accent',
-};
 
 interface Props {
     rating: FaceitRating | null;
@@ -68,23 +43,71 @@ export function FaceitRatingBadge({ rating, variant = 'compact' }: Props) {
     );
 }
 
-function CompactRated({ elo, level }: { elo: number; level: number }) {
-    const t = useT();
-    const tier = tierFor(level);
+/**
+ * Circular FACEIT level dial — a faint full track + a progress arc filled to
+ * level/10 in the level's authentic color, the number centered. Decorative
+ * (`aria-hidden`); the calling badge carries the accessible label.
+ */
+function LevelDial({ level, size }: { level: number; size: number }) {
+    const stroke = Math.max(2, Math.round(size * 0.13));
+    const radius = (size - stroke) / 2;
+    const circumference = 2 * Math.PI * radius;
+    const filled = (Math.min(level, 10) / 10) * circumference;
 
     return (
         <span
-            className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs font-medium ${PILL_TONE[tier]}`}
-            title={t('FACEIT level :level · :elo ELO', { level, elo })}
-            aria-label={t('FACEIT level :level, :elo ELO', { level, elo })}
+            className="relative inline-flex shrink-0 items-center justify-center"
+            style={{ width: size, height: size }}
+            aria-hidden="true"
         >
+            <svg
+                width={size}
+                height={size}
+                viewBox={`0 0 ${size} ${size}`}
+                className="-rotate-90"
+            >
+                <circle
+                    cx={size / 2}
+                    cy={size / 2}
+                    r={radius}
+                    fill="none"
+                    stroke="var(--border)"
+                    strokeWidth={stroke}
+                />
+                <circle
+                    cx={size / 2}
+                    cy={size / 2}
+                    r={radius}
+                    fill="none"
+                    stroke={faceitLevelColor(level)}
+                    strokeWidth={stroke}
+                    strokeLinecap="round"
+                    strokeDasharray={`${filled} ${circumference}`}
+                />
+            </svg>
             <span
-                className={`inline-flex size-4 items-center justify-center rounded-full text-[10px] font-bold tabular-nums ${COIN_TONE[tier]}`}
-                aria-hidden="true"
+                className="absolute inset-0 flex items-center justify-center font-bold text-foreground tabular-nums"
+                style={{ fontSize: Math.round(size * 0.4) }}
             >
                 {level}
             </span>
-            <span className="text-foreground tabular-nums">{elo}</span>
+        </span>
+    );
+}
+
+function CompactRated({ elo, level }: { elo: number; level: number }) {
+    const t = useT();
+
+    return (
+        <span
+            className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-border/60 bg-card/60 py-0.5 pr-2.5 pl-1"
+            title={t('FACEIT level :level · :elo ELO', { level, elo })}
+            aria-label={t('FACEIT level :level, :elo ELO', { level, elo })}
+        >
+            <LevelDial level={level} size={22} />
+            <span className="text-xs font-medium text-foreground tabular-nums">
+                {elo}
+            </span>
             <span
                 className="text-[10px] font-medium tracking-wide text-muted-foreground uppercase"
                 aria-hidden="true"
@@ -112,20 +135,10 @@ function CompactUnrated() {
 
 function DetailRated({ elo, level }: { elo: number; level: number }) {
     const t = useT();
-    const tier = tierFor(level);
 
     return (
         <div className="inline-flex items-center gap-3 rounded-xl border border-border/60 bg-card/60 px-3 py-2">
-            <span
-                className={`inline-flex size-9 items-center justify-center rounded-full text-base font-bold tabular-nums ${
-                    tier === 'elite'
-                        ? 'bg-gradient-primary text-primary-foreground'
-                        : COIN_TONE[tier]
-                }`}
-                aria-hidden="true"
-            >
-                {level}
-            </span>
+            <LevelDial level={level} size={38} />
             <div className="flex flex-col leading-tight">
                 <span className="text-sm font-semibold text-foreground">
                     <span className="tabular-nums">{elo}</span>

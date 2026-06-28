@@ -8,6 +8,7 @@ use App\Http\Resources\GameResource;
 use App\Http\Resources\ListingResource;
 use App\Models\Game;
 use App\Models\Listing;
+use App\Services\RecentForm;
 use App\Services\SellerTrust;
 use Illuminate\Support\Facades\Cache;
 use Inertia\Inertia;
@@ -49,6 +50,7 @@ class HomeController extends Controller
             ->values();
 
         SellerTrust::attachTo($featured);
+        RecentForm::attachTo($featured);
 
         // M41 P2/P3b/P4 — keep the featured cards' displayed ratings fresh,
         // same stale-gated + throttled policy as the marketplace surfaces.
