@@ -4,7 +4,6 @@ import { ChessRatingBadge } from '@/components/listings/chess-rating-badge';
 import { FaceitRatingBadge } from '@/components/listings/faceit-rating-badge';
 import { GameChip } from '@/components/listings/game-chip';
 import { ReadyCheckBanner } from '@/components/listings/ready-check-banner';
-import { RecentFormStrip } from '@/components/listings/recent-form-strip';
 import { SellerTrustMeta } from '@/components/listings/seller-trust-meta';
 import { TakeButton } from '@/components/listings/take-button';
 import { RosterPreview } from '@/components/listings/team-play-meta';
@@ -97,88 +96,103 @@ export function ListingGridCard({ listing }: Props) {
                 </span>
             </header>
 
-            {/* Owner zone — relative link sits above the overlay */}
-            <Link
-                href={userShow({ user: listing.creator.username }).url}
-                className="relative flex items-center gap-3 rounded-lg focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none"
-            >
-                <Avatar className="size-12 shrink-0 overflow-hidden rounded-full">
-                    <AvatarImage
-                        src={listing.creator.avatar_thumb_url ?? undefined}
-                        alt={listing.creator.username}
-                    />
-                    <AvatarFallback className="bg-gradient-primary text-sm font-semibold text-primary-foreground">
-                        {getInitials(listing.creator.name)}
-                    </AvatarFallback>
-                </Avatar>
-                <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-                    <span className="truncate text-sm font-semibold text-foreground transition-colors hover:text-primary">
-                        {listing.creator.username}
-                    </span>
-                    <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-muted-foreground">
-                        {listing.region && (
-                            <span className="inline-flex items-center gap-1">
-                                <Globe className="size-3" aria-hidden="true" />
-                                {listing.region}
-                            </span>
-                        )}
-                        {listing.region &&
-                            listing.creator.settled_lifetime > 0 && (
-                                <span aria-hidden="true" className="opacity-60">
-                                    ·
+            {/* Owner zone — only the avatar + nickname link to the profile. The
+                CS2 rating sits beside it (roster-reference style) but stays
+                click-through, so clicking it opens the card's lobby like the rest
+                of the card, NOT the profile. */}
+            <div className="pointer-events-none relative flex items-center gap-3">
+                <Link
+                    href={userShow({ user: listing.creator.username }).url}
+                    className="pointer-events-auto flex min-w-0 flex-1 items-center gap-3 rounded-lg focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none"
+                >
+                    <Avatar className="size-12 shrink-0 overflow-hidden rounded-full">
+                        <AvatarImage
+                            src={listing.creator.avatar_thumb_url ?? undefined}
+                            alt={listing.creator.username}
+                        />
+                        <AvatarFallback className="bg-gradient-primary text-sm font-semibold text-primary-foreground">
+                            {getInitials(listing.creator.name)}
+                        </AvatarFallback>
+                    </Avatar>
+                    <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+                        <span className="truncate text-sm font-semibold text-foreground transition-colors hover:text-primary">
+                            {listing.creator.username}
+                        </span>
+                        <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-muted-foreground">
+                            {listing.region && (
+                                <span className="inline-flex items-center gap-1">
+                                    <Globe
+                                        className="size-3"
+                                        aria-hidden="true"
+                                    />
+                                    {listing.region}
                                 </span>
                             )}
-                        <SellerTrustMeta
-                            rate={listing.creator.completion_rate_30d}
-                            settled={listing.creator.settled_lifetime}
-                            verifiedProviders={
-                                listing.creator.verified_providers
-                            }
-                        />
+                            {listing.region &&
+                                listing.creator.settled_lifetime > 0 && (
+                                    <span
+                                        aria-hidden="true"
+                                        className="opacity-60"
+                                    >
+                                        ·
+                                    </span>
+                                )}
+                            <SellerTrustMeta
+                                rate={listing.creator.completion_rate_30d}
+                                settled={listing.creator.settled_lifetime}
+                                verifiedProviders={
+                                    listing.creator.verified_providers
+                                }
+                            />
+                        </div>
                     </div>
-                </div>
-            </Link>
-
-            {/* Match meta — skill + (time-controls | languages). Fill counter
-                moved out of this row to sit beside the roster avatars. */}
-            <div className="pointer-events-none relative flex flex-wrap items-center gap-1.5">
-                {listing.game === 'cs2' ? (
-                    <>
-                        <FaceitRatingBadge
-                            rating={listing.creator.faceit_rating}
-                            variant="compact"
-                        />
-                        <RecentFormStrip form={listing.creator.recent_form} />
-                    </>
-                ) : listing.game === 'chess' ? (
-                    <ChessRatingBadge rating={listing.creator.chess_rating} />
-                ) : (
-                    <span className="inline-flex items-center gap-1 rounded-full border border-border/60 bg-background/60 px-2.5 py-0.5 text-xs font-medium text-muted-foreground">
-                        <Trophy className="size-3" aria-hidden="true" />
-                        {formatSkillRange(
-                            listing.skill_min,
-                            listing.skill_max,
-                            t,
-                        )}
-                    </span>
-                )}
-
-                {!isTeamPlay && listing.time_control && (
-                    <span className="inline-flex items-center gap-1 rounded-full border border-border/60 bg-background/60 px-2.5 py-0.5 text-xs font-medium text-muted-foreground">
-                        <Clock className="size-3" aria-hidden="true" />
-                        {timeControlLabel(listing.time_control, t)}
-                    </span>
-                )}
-
-                {listing.language && listing.language.length > 0 && (
-                    <span className="inline-flex items-center gap-1 rounded-full border border-border/60 bg-background/60 px-2.5 py-0.5 text-xs font-medium text-muted-foreground">
-                        <Languages className="size-3" aria-hidden="true" />
-                        {listing.language.slice(0, 2).join(', ')}
-                        {listing.language.length > 2 &&
-                            ` +${listing.language.length - 2}`}
-                    </span>
+                </Link>
+                {listing.game === 'cs2' && (
+                    <FaceitRatingBadge
+                        rating={listing.creator.faceit_rating}
+                        variant="compact"
+                    />
                 )}
             </div>
+
+            {/* Match meta — game badge + (time-control | languages). CS2's rating
+                + trust meta live on the owner row, so this row only carries
+                languages for CS2 and hides entirely when there are none. */}
+            {(listing.game !== 'cs2' ||
+                (listing.language?.length ?? 0) > 0) && (
+                <div className="pointer-events-none relative flex flex-wrap items-center gap-1.5">
+                    {listing.game === 'chess' ? (
+                        <ChessRatingBadge
+                            rating={listing.creator.chess_rating}
+                        />
+                    ) : listing.game === 'cs2' ? null : (
+                        <span className="inline-flex items-center gap-1 rounded-full border border-border/60 bg-background/60 px-2.5 py-0.5 text-xs font-medium text-muted-foreground">
+                            <Trophy className="size-3" aria-hidden="true" />
+                            {formatSkillRange(
+                                listing.skill_min,
+                                listing.skill_max,
+                                t,
+                            )}
+                        </span>
+                    )}
+
+                    {!isTeamPlay && listing.time_control && (
+                        <span className="inline-flex items-center gap-1 rounded-full border border-border/60 bg-background/60 px-2.5 py-0.5 text-xs font-medium text-muted-foreground">
+                            <Clock className="size-3" aria-hidden="true" />
+                            {timeControlLabel(listing.time_control, t)}
+                        </span>
+                    )}
+
+                    {listing.language && listing.language.length > 0 && (
+                        <span className="inline-flex items-center gap-1 rounded-full border border-border/60 bg-background/60 px-2.5 py-0.5 text-xs font-medium text-muted-foreground">
+                            <Languages className="size-3" aria-hidden="true" />
+                            {listing.language.slice(0, 2).join(', ')}
+                            {listing.language.length > 2 &&
+                                ` +${listing.language.length - 2}`}
+                        </span>
+                    )}
+                </div>
+            )}
 
             {/* Roster preview — avatars + fill counter + names. Team-play only;
                 inner guard renders null when no participants have joined. */}

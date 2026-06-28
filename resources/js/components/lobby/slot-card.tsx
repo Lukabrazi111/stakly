@@ -90,6 +90,7 @@ export function FilledSlot({
                         <FaceitRatingBadge
                             rating={participant.faceit_rating}
                             variant="compact"
+                            dialSize={30}
                         />
                         <ReadyPill ready={participant.is_ready} />
                     </div>
@@ -113,13 +114,13 @@ export function FilledSlot({
                 )}
             </div>
 
-            {/* Recent W/L form — flush right-edge column (FACEIT-roster style) */}
-            {participant.recent_form.length > 0 && (
-                <RecentFormStrip
-                    form={participant.recent_form}
-                    orientation="vertical"
-                />
-            )}
+            {/* Recent W/L form — flush, full-height right-edge column, always 5
+                slots (FACEIT-roster style); empty slots show a faded "N". */}
+            <RecentFormStrip
+                form={participant.recent_form}
+                orientation="vertical"
+                slots={5}
+            />
         </div>
     );
 }

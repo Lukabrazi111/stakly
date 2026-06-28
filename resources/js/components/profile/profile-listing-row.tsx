@@ -2,7 +2,6 @@ import { Link } from '@inertiajs/react';
 import { Clock, Gamepad2, Trophy } from 'lucide-react';
 import { ChessRatingBadge } from '@/components/listings/chess-rating-badge';
 import { FaceitRatingBadge } from '@/components/listings/faceit-rating-badge';
-import { RecentFormStrip } from '@/components/listings/recent-form-strip';
 import { VerifiedPlatformChip } from '@/components/listings/verified-platform-chip';
 import { findGame } from '@/config/games';
 import { useT } from '@/lib/i18n';
@@ -79,13 +78,10 @@ export function ProfileListingRow({ listing }: Props) {
                 <VerifiedPlatformChip platform={listing.platform} />
 
                 {listing.game === 'cs2' ? (
-                    <>
-                        <FaceitRatingBadge
-                            rating={listing.creator.faceit_rating}
-                            variant="compact"
-                        />
-                        <RecentFormStrip form={listing.creator.recent_form} />
-                    </>
+                    <FaceitRatingBadge
+                        rating={listing.creator.faceit_rating}
+                        variant="compact"
+                    />
                 ) : listing.game === 'chess' ? (
                     <ChessRatingBadge rating={listing.creator.chess_rating} />
                 ) : (

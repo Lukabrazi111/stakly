@@ -4,10 +4,13 @@ namespace Database\Seeders;
 
 use App\Actions\GameMatch\SettleDrawMatchAction;
 use App\Actions\GameMatch\SettleMatchAction;
+use App\Actions\GameMatch\SettleTeamMatchAction;
+use App\Enums\Game;
 use App\Enums\LinkedAccountProvider;
 use App\Enums\MatchStatus;
 use App\Models\GameMatch;
 use App\Models\Listing;
+use App\Models\LobbyParticipant;
 use App\Models\MatchProviderSnapshot;
 use App\Models\User;
 use App\Services\Wallet;
@@ -39,6 +42,7 @@ class MatchHistorySeeder extends Seeder
     public function __construct(
         private readonly SettleMatchAction $settleMatch,
         private readonly SettleDrawMatchAction $settleDraw,
+        private readonly SettleTeamMatchAction $settleTeam,
     ) {}
 
     public function run(): void
@@ -101,6 +105,121 @@ class MatchHistorySeeder extends Seeder
                 stakes: $stakes,
             );
         }
+
+        // M41 P7c — CS2 team-match history so the lobby slot cards' recent-form
+        // (W/L) strip has data to show in the demo environment.
+        $this->seedCs2TeamHistory();
+    }
+
+    /**
+     * M41 P7c — settled CS2 2v2 history for every FACEIT-linked user so the
+     * lobby slot cards' recent-form (W/L) strip has data in the demo
+     * environment. Users are grouped into fours; each group plays four 2v2s
+     * with rotating pairings so every player finishes a clean 2W-2L. Each match
+     * runs through the real `SettleTeamMatchAction` (stake holds → per-winner
+     * payouts via the ledger), keeping the wallet invariant intact.
+     */
+    private function seedCs2TeamHistory(): void
+    {
+        $faceitUsers = User::query()
+            ->where('is_platform', false)
+            ->where('is_active_mode', true)
+            ->whereHas('linkedAccounts', fn ($q) => $q
+                ->where('provider', LinkedAccountProvider::Faceit->value)
+                ->whereNotNull('skill_rating'))
+            ->orderBy('id')
+            ->get();
+
+        if ($faceitUsers->count() < 4) {
+            $this->command->warn('Fewer than 4 FACEIT users — CS2 team history skipped.');
+
+            return;
+        }
+
+        // Headroom for the stake holds across each user's four matches.
+        foreach ($faceitUsers as $user) {
+            Wallet::deposit($user, '5000', reference: "seed:cs2-history-topup:{$user->id}");
+        }
+
+        $stake = '50';
+        $index = 0;
+
+        foreach ($faceitUsers->chunk(4) as $group) {
+            $g = $group->values();
+            if ($g->count() < 4) {
+                break; // skip a trailing partial group
+            }
+
+            [$a, $b, $c, $d] = [$g[0], $g[1], $g[2], $g[3]];
+
+            // Side 'a' always wins; rotating who's on it gives every player a
+            // varied 5-match record, so the lobby column shows 5 coloured chips.
+            $rounds = [
+                [[$a, $b], [$c, $d]],
+                [[$c, $d], [$a, $b]],
+                [[$a, $c], [$b, $d]],
+                [[$b, $d], [$a, $c]],
+                [[$a, $d], [$b, $c]],
+            ];
+
+            foreach ($rounds as [$winners, $losers]) {
+                $this->settleCs2TeamMatch($winners, $losers, $stake, $index++);
+            }
+        }
+
+        $this->command->info("Seeded CS2 team history for {$faceitUsers->count()} FACEIT users.");
+    }
+
+    /**
+     * One settled CS2 2v2: `$winners` (side 'a') beat `$losers` (side 'b').
+     * Mirrors the lobby flow — locked listing + live roster + per-player stake
+     * holds — then runs the real team settlement so payouts land in the ledger.
+     *
+     * @param  list<User>  $winners
+     * @param  list<User>  $losers
+     */
+    private function settleCs2TeamMatch(array $winners, array $losers, string $stake, int $index): void
+    {
+        $listing = Listing::factory()
+            ->teamPlay(2, Game::Cs2)
+            ->lobbyLocked()
+            ->for($winners[0])
+            ->state([
+                'stake_amount' => $stake,
+                'creator_side' => LobbyParticipant::SIDE_A,
+            ])
+            ->create();
+
+        foreach ([[LobbyParticipant::SIDE_A, $winners], [LobbyParticipant::SIDE_B, $losers]] as [$side, $team]) {
+            foreach ($team as $slot => $user) {
+                LobbyParticipant::factory()->create([
+                    'listing_id' => $listing->id,
+                    'user_id' => $user->id,
+                    'side' => $side,
+                    'slot_index' => $slot,
+                ]);
+                Wallet::hold(
+                    user: $user,
+                    amount: $stake,
+                    listing: $listing,
+                    reference: "lobby-ready:{$listing->id}:{$user->id}",
+                    description: 'Seed: CS2 team stake escrowed.',
+                );
+            }
+        }
+
+        $match = GameMatch::factory()
+            ->for($listing)
+            ->state([
+                'status' => MatchStatus::Pending,
+                'taker_user_id' => $losers[0]->id,
+            ])
+            ->create();
+
+        $this->settleTeam->handle($match, $winners);
+
+        // Back-date so the strip reads newest-first with a believable cadence.
+        $match->update(['settled_at' => now()->subDays(($index + 1) * 2)]);
     }
 
     /**

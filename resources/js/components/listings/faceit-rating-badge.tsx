@@ -19,9 +19,16 @@ import type { FaceitRating } from '@/types/listings';
 interface Props {
     rating: FaceitRating | null;
     variant?: 'compact' | 'detail';
+    // Compact dial diameter in px. Marketplace cards use the smaller default;
+    // the lobby slot card passes a larger value for its prominent roster look.
+    dialSize?: number;
 }
 
-export function FaceitRatingBadge({ rating, variant = 'compact' }: Props) {
+export function FaceitRatingBadge({
+    rating,
+    variant = 'compact',
+    dialSize = 25,
+}: Props) {
     const unrated =
         rating === null ||
         rating.is_unrated ||
@@ -39,9 +46,21 @@ export function FaceitRatingBadge({ rating, variant = 'compact' }: Props) {
     return unrated ? (
         <CompactUnrated />
     ) : (
-        <CompactRated elo={rating!.elo!} level={rating!.level!} />
+        <CompactRated
+            elo={rating!.elo!}
+            level={rating!.level!}
+            dialSize={dialSize}
+        />
     );
 }
+
+// ── Dial size knobs ─────────────────────────────────────────────────────────
+// Overall DIAMETER is the `dialSize` prop on FaceitRatingBadge: the default 22
+// (marketplace cards) lives in the Props above; the lobby slot card passes 32.
+// The two ratios below (fractions of the diameter) reshape every dial at once:
+const RING_THICKNESS = 0.11; // ring stroke — raise (e.g. 0.16) for a chunkier ring
+const LEVEL_NUMBER_SIZE = 0.4; // centered level digit — raise for a bigger number
+// ─────────────────────────────────────────────────────────────────────────────
 
 /**
  * Circular FACEIT level dial — a faint full track + a progress arc filled to
@@ -49,7 +68,7 @@ export function FaceitRatingBadge({ rating, variant = 'compact' }: Props) {
  * (`aria-hidden`); the calling badge carries the accessible label.
  */
 function LevelDial({ level, size }: { level: number; size: number }) {
-    const stroke = Math.max(2, Math.round(size * 0.12));
+    const stroke = Math.max(2, Math.round(size * RING_THICKNESS));
     const radius = (size - stroke) / 2;
     const circumference = 2 * Math.PI * radius;
     const filled = (Math.min(level, 10) / 10) * circumference;
@@ -87,7 +106,7 @@ function LevelDial({ level, size }: { level: number; size: number }) {
             </svg>
             <span
                 className="absolute inset-0 flex items-center justify-center font-bold text-foreground tabular-nums"
-                style={{ fontSize: Math.round(size * 0.4) }}
+                style={{ fontSize: Math.round(size * LEVEL_NUMBER_SIZE) }}
             >
                 {level}
             </span>
@@ -95,21 +114,29 @@ function LevelDial({ level, size }: { level: number; size: number }) {
     );
 }
 
-function CompactRated({ elo, level }: { elo: number; level: number }) {
+function CompactRated({
+    elo,
+    level,
+    dialSize,
+}: {
+    elo: number;
+    level: number;
+    dialSize: number;
+}) {
     const t = useT();
 
     // Reference look (M41 P8): bare `ELO  (dial)` — number first, dial on the
     // right, no surrounding pill, no "ELO" suffix label.
     return (
         <span
-            className="inline-flex shrink-0 items-center gap-1.5"
+            className="inline-flex shrink-0 items-center gap-2"
             title={t('FACEIT level :level · :elo ELO', { level, elo })}
             aria-label={t('FACEIT level :level, :elo ELO', { level, elo })}
         >
             <span className="text-sm font-semibold text-foreground tabular-nums">
                 {elo}
             </span>
-            <LevelDial level={level} size={32} />
+            <LevelDial level={level} size={dialSize} />
         </span>
     );
 }
