@@ -30,9 +30,9 @@ export function LobbyInviteBanner({ inviteToken }: Props) {
     const isCopied = copiedText === url;
 
     return (
-        <div className="rounded-xl border-glow bg-card/60 p-4">
+        <div className="rounded-xl border border-border/60 bg-card/60 p-4">
             <div className="flex items-start gap-3">
-                <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary/15 text-primary">
+                <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
                     <Link2 className="size-5" aria-hidden="true" />
                 </span>
                 <div className="flex-1 space-y-3">
