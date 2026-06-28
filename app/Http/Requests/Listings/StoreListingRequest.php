@@ -95,8 +95,6 @@ class StoreListingRequest extends FormRequest
                 'required', 'numeric', 'decimal:0,2', 'min:1', 'max:100000',
                 $this->stakeWithinBalance(),
             ],
-            'skill_min' => ['nullable', 'integer', 'min:0', 'max:3500'],
-            'skill_max' => ['nullable', 'integer', 'min:0', 'max:3500', 'gte:skill_min'],
             // `time_control` is chess-only and now a SINGLE value (M41 P3a:
             // one chess listing = one time control → one verified rating).
             // Required + enum-checked for chess; `prohibited` (not merely

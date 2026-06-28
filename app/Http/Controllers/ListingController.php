@@ -573,15 +573,15 @@ class ListingController extends Controller
      * skill_max overlap. Branches by game:
      *   - Chess → Elo range on the creator's rating for THIS listing's platform
      *     + time control (correlated against `linked_account_ratings`).
-     *   - CS2 → FACEIT level range, translated to ELO bounds on the cached
-     *     `skill_rating` scalar via {@see FaceitLevel}.
+     *   - CS2 → raw FACEIT Elo range on the cached `skill_rating` scalar.
      *
      * An active range excludes "unrated" creators (no matching rating row). The
      * `$unratedOnly` toggle inverts that — show ONLY listings whose creator has
      * no rating for this game/platform/TC. No bounds + no toggle → no-op.
      *
-     * For chess, `$skillMin`/`$skillMax` are raw Elo; for CS2 they're FACEIT
-     * levels (1–10). Games without ratings (e.g. Dota 2) get no constraint.
+     * `$skillMin`/`$skillMax` are raw Elo for both games (CS2 = FACEIT Elo,
+     * revised 2026-06-28 from the 1–10 level selector). Games without ratings
+     * (e.g. Dota 2) get no constraint.
      */
     private function applyRatingFilter(Builder $query, string $game, ?int $skillMin, ?int $skillMax, bool $unratedOnly): void
     {
@@ -608,11 +608,8 @@ class ListingController extends Controller
                 return;
             }
 
-            $eloMin = $skillMin !== null ? FaceitLevel::eloFloor($this->clampLevel($skillMin)) : null;
-            $eloMax = $skillMax !== null ? FaceitLevel::eloCeil($this->clampLevel($skillMax)) : null;
-
-            if ($eloMin !== null || $eloMax !== null) {
-                $query->whereExists($this->faceitRatingExists($eloMin, $eloMax));
+            if ($skillMin !== null || $skillMax !== null) {
+                $query->whereExists($this->faceitRatingExists($skillMin, $skillMax));
             }
         }
     }
@@ -656,15 +653,6 @@ class ListingController extends Controller
                 ->when($eloMin !== null, fn ($q) => $q->where('la.skill_rating', '>=', $eloMin))
                 ->when($eloMax !== null, fn ($q) => $q->where('la.skill_rating', '<=', $eloMax));
         };
-    }
-
-    /**
-     * Clamp a FACEIT level filter value into the valid 1–10 range so a crafted
-     * query param can't reach an undefined ELO bound.
-     */
-    private function clampLevel(int $level): int
-    {
-        return max(1, min(10, $level));
     }
 
     /**

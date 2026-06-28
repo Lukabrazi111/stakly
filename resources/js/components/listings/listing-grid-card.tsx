@@ -1,5 +1,5 @@
 import { Link } from '@inertiajs/react';
-import { Clock, Globe, Languages, Trophy } from 'lucide-react';
+import { Clock, Globe, Languages } from 'lucide-react';
 import { ChessRatingBadge } from '@/components/listings/chess-rating-badge';
 import { FaceitRatingBadge } from '@/components/listings/faceit-rating-badge';
 import { GameChip } from '@/components/listings/game-chip';
@@ -12,7 +12,6 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { useInitials } from '@/hooks/use-initials';
 import { useT } from '@/lib/i18n';
 import {
-    formatSkillRange,
     formatTimeRemaining,
     getTimeUrgency,
     timeControlLabel,
@@ -167,19 +166,10 @@ export function ListingGridCard({ listing }: Props) {
             {(listing.game !== 'cs2' ||
                 (listing.language?.length ?? 0) > 0) && (
                 <div className="pointer-events-none relative flex flex-wrap items-center gap-1.5">
-                    {listing.game === 'chess' ? (
+                    {listing.game === 'chess' && (
                         <ChessRatingBadge
                             rating={listing.creator.chess_rating}
                         />
-                    ) : listing.game === 'cs2' ? null : (
-                        <span className="inline-flex items-center gap-1 rounded-full border border-border/60 bg-background/60 px-2.5 py-0.5 text-xs font-medium text-muted-foreground">
-                            <Trophy className="size-3" aria-hidden="true" />
-                            {formatSkillRange(
-                                listing.skill_min,
-                                listing.skill_max,
-                                t,
-                            )}
-                        </span>
                     )}
 
                     {!isTeamPlay && listing.time_control && (

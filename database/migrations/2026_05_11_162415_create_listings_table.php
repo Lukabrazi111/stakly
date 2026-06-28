@@ -43,10 +43,6 @@ return new class extends Migration
             // ledger table (M7) — this column is the display amount.
             $table->decimal('stake_amount', 12, 2);
 
-            // Chess Elo. Both nullable so a listing can mean "any skill".
-            $table->unsignedSmallInteger('skill_min')->nullable();
-            $table->unsignedSmallInteger('skill_max')->nullable();
-
             // Single TimeControl enum value (bullet | blitz | rapid), or null
             // for non-chess games (CS2 etc. don't use time controls).
             // M41 P3a: one chess listing = exactly one time control, so this is

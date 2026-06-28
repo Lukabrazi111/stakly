@@ -1,5 +1,5 @@
 import { Link } from '@inertiajs/react';
-import { Clock, Globe, Languages, Trophy } from 'lucide-react';
+import { Clock, Globe, Languages } from 'lucide-react';
 import { ChessRatingBadge } from '@/components/listings/chess-rating-badge';
 import { FaceitRatingBadge } from '@/components/listings/faceit-rating-badge';
 import { GameChip } from '@/components/listings/game-chip';
@@ -12,7 +12,6 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { useInitials } from '@/hooks/use-initials';
 import { useT } from '@/lib/i18n';
 import {
-    formatSkillRange,
     formatTimeRemaining,
     getTimeUrgency,
     timeControlLabel,
@@ -146,16 +145,7 @@ export function ListingRow({ listing }: Props) {
                             <ChessRatingBadge
                                 rating={listing.creator.chess_rating}
                             />
-                        ) : (
-                            <span className="inline-flex items-center gap-1.5 rounded-full border border-border/60 bg-background/60 px-3 py-1 text-xs font-medium text-muted-foreground">
-                                <Trophy className="size-3" aria-hidden="true" />
-                                {formatSkillRange(
-                                    listing.skill_min,
-                                    listing.skill_max,
-                                    t,
-                                )}
-                            </span>
-                        )}
+                        ) : null}
 
                         {listing.time_control && (
                             <span className="inline-flex items-center gap-1.5 rounded-full border border-border/60 bg-background/60 px-3 py-1 text-xs font-medium text-muted-foreground">

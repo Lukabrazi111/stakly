@@ -163,7 +163,6 @@ class LobbyController extends Controller
         return match ($result) {
             'not_team_play' => ['type' => 'warning', 'message' => __('This isn\'t a team-play listing.')],
             'not_linked' => ['type' => 'info', 'message' => __('Link a :platform account to join.', ['platform' => $platformName])],
-            'skill_out_of_range' => ['type' => 'warning', 'message' => __('Your skill rating is outside this lobby\'s range.')],
             'already_in_lobby' => ['type' => 'warning', 'message' => __('You\'re already in another active lobby.')],
             'kick_cooldown' => ['type' => 'warning', 'message' => __('You can\'t rejoin this lobby right now.')],
             'listing_unavailable' => ['type' => 'info', 'message' => __('This lobby isn\'t accepting joins.')],

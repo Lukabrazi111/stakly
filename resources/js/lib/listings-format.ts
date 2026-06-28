@@ -83,25 +83,3 @@ export function getTimeUrgency(isoString: string): TimeUrgency {
 
     return 'normal';
 }
-
-export function formatSkillRange(
-    min: number | null,
-    max: number | null,
-    t?: TranslationFn,
-): string {
-    if (min === null && max === null) {
-        return t ? t('Any skill') : 'Any skill';
-    }
-
-    if (min !== null && max !== null) {
-        return t ? t(':min-:max Elo', { min, max }) : `${min}-${max} Elo`;
-    }
-
-    if (min !== null) {
-        return t ? t(':min+ Elo', { min }) : `${min}+ Elo`;
-    }
-
-    const maxValue = max as number;
-
-    return t ? t('up to :max Elo', { max: maxValue }) : `up to ${maxValue} Elo`;
-}

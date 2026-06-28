@@ -53,9 +53,6 @@ const LANGUAGES = ['English', 'Russian', 'Spanish', 'German', 'Portuguese'];
 // Sentinel because Radix Select forbids empty-string `value` props.
 const ANY_VALUE = '__any__';
 
-// Levels 1–10 for the CS2 FACEIT-level range selectors.
-const FACEIT_LEVELS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] as const;
-
 interface DraftFilters {
     stake_min: string;
     stake_max: string;
@@ -224,40 +221,27 @@ function FilterForm({ filters, onClose }: FormProps) {
                 </Field>
 
                 {/* Verified-rating filter (M41 P5). Chess → creator's Elo for
-                    the listing's platform+TC; CS2 → FACEIT level (1–10). The
-                    "unrated" toggle is exclusive with the range. Dota 2 carries
-                    no `skill_range` (no rating adapter yet) so this hides. */}
+                    the listing's platform+TC; CS2 → the creator's raw FACEIT Elo
+                    (revised 2026-06-28 from a 1–10 level selector). The "unrated"
+                    toggle is exclusive with the range. Dota 2 carries no
+                    `skill_range` (no rating adapter yet) so this hides. */}
                 {showRating && (
-                    <Field
-                        label={isCs2 ? t('FACEIT level') : t('Rating (Elo)')}
-                    >
+                    <Field label={isCs2 ? t('FACEIT Elo') : t('Rating (Elo)')}>
                         <div className="space-y-3">
-                            {!draft.unrated &&
-                                (isCs2 ? (
-                                    <LevelRangePair
-                                        minValue={draft.skill_min}
-                                        maxValue={draft.skill_max}
-                                        onMinChange={(v) =>
-                                            setDraft({ ...draft, skill_min: v })
-                                        }
-                                        onMaxChange={(v) =>
-                                            setDraft({ ...draft, skill_max: v })
-                                        }
-                                    />
-                                ) : (
-                                    <RangePair
-                                        minValue={draft.skill_min}
-                                        maxValue={draft.skill_max}
-                                        onMinChange={(v) =>
-                                            setDraft({ ...draft, skill_min: v })
-                                        }
-                                        onMaxChange={(v) =>
-                                            setDraft({ ...draft, skill_max: v })
-                                        }
-                                        max={3500}
-                                        inputMode="numeric"
-                                    />
-                                ))}
+                            {!draft.unrated && (
+                                <RangePair
+                                    minValue={draft.skill_min}
+                                    maxValue={draft.skill_max}
+                                    onMinChange={(v) =>
+                                        setDraft({ ...draft, skill_min: v })
+                                    }
+                                    onMaxChange={(v) =>
+                                        setDraft({ ...draft, skill_max: v })
+                                    }
+                                    max={3500}
+                                    inputMode="numeric"
+                                />
+                            )}
                             <label className="flex cursor-pointer items-center gap-2 text-sm text-muted-foreground">
                                 <Checkbox
                                     checked={draft.unrated}
@@ -433,55 +417,6 @@ function RangePair({
                 onChange={(e) => onMaxChange(e.target.value)}
                 className="flex-1"
             />
-        </div>
-    );
-}
-
-interface LevelRangePairProps {
-    minValue: string;
-    maxValue: string;
-    onMinChange: (value: string) => void;
-    onMaxChange: (value: string) => void;
-}
-
-/** CS2 FACEIT-level range (1–10) via two Selects, stored in skill_min/max as
- *  levels. The controller translates levels → ELO bounds (App\Support\FaceitLevel). */
-function LevelRangePair({
-    minValue,
-    maxValue,
-    onMinChange,
-    onMaxChange,
-}: LevelRangePairProps) {
-    const t = useT();
-
-    const levelSelect = (
-        value: string,
-        onChange: (value: string) => void,
-        placeholder: string,
-    ) => (
-        <Select
-            value={value === '' ? ANY_VALUE : value}
-            onValueChange={(v) => onChange(v === ANY_VALUE ? '' : v)}
-        >
-            <SelectTrigger className="flex-1">
-                <SelectValue placeholder={placeholder} />
-            </SelectTrigger>
-            <SelectContent>
-                <SelectItem value={ANY_VALUE}>{t('Any')}</SelectItem>
-                {FACEIT_LEVELS.map((level) => (
-                    <SelectItem key={level} value={String(level)}>
-                        {t('Level :n', { n: level })}
-                    </SelectItem>
-                ))}
-            </SelectContent>
-        </Select>
-    );
-
-    return (
-        <div className="flex items-center gap-2">
-            {levelSelect(minValue, onMinChange, t('Min'))}
-            <span className="text-xs text-muted-foreground">{t('to')}</span>
-            {levelSelect(maxValue, onMaxChange, t('Max'))}
         </div>
     );
 }

@@ -136,8 +136,6 @@ export default function ListingsCreate({
         game: GameId;
         platform: ListingPlatform;
         stake_amount: string;
-        skill_min: string;
-        skill_max: string;
         time_control: TimeControl | null;
         region: string;
         language: string[];
@@ -149,8 +147,6 @@ export default function ListingsCreate({
         game: initialGame,
         platform: initialPlatform,
         stake_amount: '',
-        skill_min: '',
-        skill_max: '',
         time_control: initialGame === 'chess' ? 'blitz' : null,
         region: regions[0] ?? 'Global',
         language: [],
@@ -205,11 +201,6 @@ export default function ListingsCreate({
             ...prev,
             game: next,
             platform,
-            // Cross-game skill metric semantics differ (chess Elo vs FACEIT
-            // ELO). Reset on switch so a value entered for one game doesn't
-            // get reinterpreted for the other.
-            skill_min: '',
-            skill_max: '',
             // `time_control` is chess-only — null when switching away so the
             // backend stores null on CS2 / future-game listings; default to
             // 'blitz' when switching into chess from a game that had none.
@@ -695,8 +686,6 @@ export default function ListingsCreate({
                             platform={data.platform}
                             teamSize={data.team_size}
                             stakeAmount={data.stake_amount}
-                            skillMin={data.skill_min}
-                            skillMax={data.skill_max}
                             timeControl={data.time_control}
                             region={data.region}
                             language={data.language}

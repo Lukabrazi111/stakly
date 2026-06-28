@@ -25,7 +25,6 @@ import { useInitials } from '@/hooks/use-initials';
 import SiteLayout from '@/layouts/site-layout';
 import { useT } from '@/lib/i18n';
 import {
-    formatSkillRange,
     formatTimeRemaining,
     getTimeUrgency,
     timeControlLabel,
@@ -376,9 +375,9 @@ function ChessBranch({ listing, match }: ChessBranchProps) {
                             </h2>
                             <dl className="grid gap-5 sm:grid-cols-2">
                                 {/* Rating row branches on game like the cards
-                                    do — this detail view also serves non-chess
-                                    1v1 listings (e.g. Dota 2), which must NOT
-                                    render the chess badge. */}
+                                    do. Non-chess/CS2 1v1 listings (e.g. Dota 2)
+                                    have no verified-rating adapter yet, so they
+                                    render no rating row. */}
                                 {listing.game === 'chess' ? (
                                     <Detail
                                         label={t('Verified rating')}
@@ -405,17 +404,7 @@ function ChessBranch({ listing, match }: ChessBranchProps) {
                                             />
                                         }
                                     />
-                                ) : (
-                                    <Detail
-                                        label={t('Skill range')}
-                                        icon={<Trophy className="size-4" />}
-                                        value={formatSkillRange(
-                                            listing.skill_min,
-                                            listing.skill_max,
-                                            t,
-                                        )}
-                                    />
-                                )}
+                                ) : null}
                                 <Detail
                                     label={t('Time control')}
                                     icon={<Clock className="size-4" />}

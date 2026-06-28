@@ -22,8 +22,6 @@ use Illuminate\Support\Facades\DB;
  *                               `recruiting`
  *   - `'not_linked'`         → user has no verified account on the listing's
  *                              platform
- *   - `'skill_out_of_range'` → user's snapshotted skill rating falls outside
- *                              the listing's `[skill_min, skill_max]` band
  *   - `'already_in_lobby'`   → user is already in another active team-play
  *                              lobby (global single-lobby rule)
  *   - `'kick_cooldown'`      → user was kicked from THIS listing within the
@@ -49,10 +47,6 @@ class JoinLobbyAction
 
         if (! $user->isVerifiedOn($listing->platform)) {
             return 'not_linked';
-        }
-
-        if (! $this->skillInRange($user, $listing)) {
-            return 'skill_out_of_range';
         }
 
         if ($user->activeLobbyParticipation() !== null) {
@@ -96,37 +90,6 @@ class JoinLobbyAction
         }
 
         return $result;
-    }
-
-    /**
-     * Skill range applies per-player (locked decision — no team averaging).
-     * Listings with both bounds null accept any skill. A null user rating
-     * (chess providers don't snapshot ratings yet) is permissive — accept
-     * the join. M15+ tightens this when ratings populate across providers.
-     */
-    private function skillInRange(User $user, Listing $listing): bool
-    {
-        if ($listing->skill_min === null && $listing->skill_max === null) {
-            return true;
-        }
-
-        $rating = $user->linkedAccounts()
-            ->where('provider', $listing->platform)
-            ->value('skill_rating');
-
-        if ($rating === null) {
-            return true;
-        }
-
-        if ($listing->skill_min !== null && $rating < $listing->skill_min) {
-            return false;
-        }
-
-        if ($listing->skill_max !== null && $rating > $listing->skill_max) {
-            return false;
-        }
-
-        return true;
     }
 
     /**

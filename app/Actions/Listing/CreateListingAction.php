@@ -54,8 +54,6 @@ class CreateListingAction
                 'game' => $data['game'],
                 'platform' => $platform,
                 'stake_amount' => $data['stake_amount'],
-                'skill_min' => $data['skill_min'] ?? null,
-                'skill_max' => $data['skill_max'] ?? null,
                 // `time_control` is chess-only and a single value now (M41 P3a);
                 // force null for non-chess so the column can't carry a stray
                 // value even if validation is ever bypassed (defense in depth).

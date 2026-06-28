@@ -124,8 +124,6 @@ export interface Lobby {
     lobby_state: LobbyState | null;
     lobby_ready_check_deadline: string | null;
     status: 'open' | 'taken' | 'expired' | 'cancelled';
-    skill_min: number | null;
-    skill_max: number | null;
     region: string | null;
     language: string[] | null;
     expires_at: string;

@@ -1,12 +1,11 @@
 import { Link } from '@inertiajs/react';
-import { Clock, Gamepad2, Trophy } from 'lucide-react';
+import { Clock, Gamepad2 } from 'lucide-react';
 import { ChessRatingBadge } from '@/components/listings/chess-rating-badge';
 import { FaceitRatingBadge } from '@/components/listings/faceit-rating-badge';
 import { VerifiedPlatformChip } from '@/components/listings/verified-platform-chip';
 import { findGame } from '@/config/games';
 import { useT } from '@/lib/i18n';
 import {
-    formatSkillRange,
     formatTimeRemaining,
     getTimeUrgency,
     timeControlLabel,
@@ -84,16 +83,7 @@ export function ProfileListingRow({ listing }: Props) {
                     />
                 ) : listing.game === 'chess' ? (
                     <ChessRatingBadge rating={listing.creator.chess_rating} />
-                ) : (
-                    <span className="inline-flex items-center gap-1 rounded-full border border-border/60 bg-background/60 px-2.5 py-0.5 text-xs font-medium text-muted-foreground">
-                        <Trophy className="size-3" aria-hidden="true" />
-                        {formatSkillRange(
-                            listing.skill_min,
-                            listing.skill_max,
-                            t,
-                        )}
-                    </span>
-                )}
+                ) : null}
 
                 {listing.time_control && (
                     <span className="inline-flex items-center gap-1 rounded-full border border-border/60 bg-background/60 px-2.5 py-0.5 text-xs font-medium text-muted-foreground">

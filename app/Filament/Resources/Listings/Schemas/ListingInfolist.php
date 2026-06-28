@@ -77,10 +77,6 @@ class ListingInfolist
                     ->formatStateUsing(fn ($state): string => '$'.number_format((float) $state, 2).' USDT')
                     ->weight('semibold'),
 
-                TextEntry::make('skill_range')
-                    ->label('Skill range')
-                    ->state(fn (Listing $record): string => self::formatSkillRange($record)),
-
                 TextEntry::make('time_control')
                     ->label('Time control')
                     ->state(fn (Listing $record): string => self::formatTimeControl($record)),
@@ -209,15 +205,6 @@ class ListingInfolist
                 </table>
             </div>
         HTML;
-    }
-
-    private static function formatSkillRange(Listing $record): string
-    {
-        if ($record->skill_min === null && $record->skill_max === null) {
-            return 'Any';
-        }
-
-        return ($record->skill_min ?? '?').'–'.($record->skill_max ?? '?');
     }
 
     private static function formatTimeControl(Listing $record): string

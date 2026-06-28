@@ -220,13 +220,13 @@ test('the unrated toggle shows only creators with no rating for that platform+TC
         ->assertInertia(fn ($page) => $page->has('listings.data', 2));
 });
 
-test('CS2 FACEIT-level filter translates levels to ELO bounds', function () {
-    makeCs2ListingRated(1900); // level 9
-    makeCs2ListingRated(1400); // level 7
-    makeCs2ListingRated(800);  // level 3
+test('CS2 FACEIT Elo filter matches creators within the raw ELO range', function () {
+    makeCs2ListingRated(1900);
+    makeCs2ListingRated(1400);
+    makeCs2ListingRated(800);
 
-    // level 8–10 → ELO >= 1531 → only the level-9 (1900) listing matches.
-    $this->get('/listings?filter[game]=cs2&filter[skill_min]=8&filter[skill_max]=10')
+    // Raw FACEIT Elo 1500–2000 → only the 1900 listing matches.
+    $this->get('/listings?filter[game]=cs2&filter[skill_min]=1500&filter[skill_max]=2000')
         ->assertInertia(fn ($page) => $page->has('listings.data', 1));
 });
 

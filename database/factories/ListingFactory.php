@@ -28,11 +28,6 @@ class ListingFactory extends Factory
             100, 100, 150, 200, 250, 500,
         ]);
 
-        // 70% of listings specify a skill range; 30% are "any skill".
-        $hasSkillRange = $this->faker->boolean(70);
-        $skillMin = $hasSkillRange ? $this->faker->numberBetween(800, 2000) : null;
-        $skillMax = $hasSkillRange ? $skillMin + $this->faker->numberBetween(200, 600) : null;
-
         return [
             // Auto-created users are active by default — an "open listing"
             // implies a reachable owner, so the factory's default produces a
@@ -48,8 +43,6 @@ class ListingFactory extends Factory
                 LinkedAccountProvider::Lichess,
             ]),
             'stake_amount' => $stake,
-            'skill_min' => $skillMin,
-            'skill_max' => $skillMax,
             'time_control' => $this->faker->randomElement(TimeControl::cases())->value,
             'region' => $this->faker->randomElement([
                 'Global', 'EU', 'NA', 'Asia', 'CIS', 'LATAM',

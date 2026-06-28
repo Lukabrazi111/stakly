@@ -263,6 +263,7 @@ Time-control set: **Bullet / Blitz / Rapid** (`App\Enums\TimeControl`).
 - [x] **Unrated handling:** an active range **hides** listings whose creator has no matching rating row; an explicit **"Unrated only" toggle** (`filter[unrated]=1`, mutually exclusive with the range) shows *only* unrated (`NOT EXISTS`). No filter set → everything shows.
 - [x] Dropped the dead `skillMin/Max` overlap callbacks; added the `unrated` key to `IndexListingsRequest`. FE: game-branched control in `listing-filters.tsx` (chess Elo `RangePair` / CS2 `LevelRangePair` + "Show only unrated" checkbox), `unrated` threaded through types, `listings-query.ts`, and the filter bar (count / game-aware chips / clear). Dropped `skill_range` from Dota 2 in `config/games.ts` (no rating adapter yet → no rating filter).
 - [x] Tests: chess Elo-range (platform+TC scoping, provisional included, unrated excluded), CS2 level→ELO translation, unrated-only toggle (chess + CS2), empty-filter passthrough — 8 new in `ListingIndexTest`. Gates: full backend **1657** green, host `tsc` / `eslint` / `prettier` / `vite build` green. (`skill_min/skill_max` listing **columns** still exist + still feed the dead create-form fields → retired in **P6**.)
+- [x] **Revised 2026-06-28 — CS2 filter is now a raw FACEIT Elo range, not a 1–10 level selector.** User preferred Elo Min/Max inputs (like chess) over the level dropdowns — and the card badge already shows the ELO number prominently, so filtering by Elo matches what players see. Dropped the FE `LevelRangePair` + `FaceitLevel::eloFloor`/`eloCeil` (level→ELO translation) + the `clampLevel` helper; the CS2 branch now filters `linked_accounts.skill_rating` on raw `[skill_min, skill_max]` Elo directly (the display level **dial** is kept — it shows the ELO number too). Reverses P5's "players think in levels" call.
 
 **P7 — FACEIT level dial + CS2 recent-form strip (display)** — *done 2026-06-28 (marketplace + lobby)*
 
@@ -275,11 +276,19 @@ Emerged when the CS2 filter unit became FACEIT level. Two display upgrades on **
 
 > **Bug found + fixed in P7c (2026-06-28):** `App\Services\ParticipantStats` (the slot card's "Matches" + "Win rate") was **1v1-shaped** — it counted only creator/taker matches and keyed wins on `winner_user_id`, so CS2 **team** roster members who weren't the creator/taker showed `0` matches and non-slot-0 winners were missed. Fixed by extracting the shared `App\Services\MatchParticipation` primitive (participation = creator/taker/live-lobby-member; wins = payout ledger) that now backs BOTH `RecentForm` (game-scoped, ordered W/L/D) and `ParticipantStats` (all-games career counts). 1v1 values are provably unchanged (a 1v1 win has both a payout and `winner_user_id`), so only team stats are corrected. Tests: `ParticipantStatsTest` (team non-captain counted, 1v1 unchanged); `RecentForm` refactor stayed green.
 
-**P6 — Data cleanup**
+**P6 — Data cleanup** — *done 2026-06-28 (FACEIT scalar-unification sub-item deferred)*
 
-- [ ] Retire `listings.skill_min` / `skill_max`; update seeders + factories; finalize the "Unrated" empty states.
-- [ ] *Concrete (from P4):* `skill_min/skill_max` are now **dead** in the create form (`create.tsx` useForm state + reset + the `ListingPreviewCard` `skillMin/Max` props, which only feed the never-reached Dota-2 preview branch) — remove them; stop `ListingFactory` seeding chess `skill_min/max`.
-- [ ] Consider unifying FACEIT onto `linked_account_ratings` and deprecating the scalar `skill_rating` (update the `TakeListingAction` snapshot read accordingly).
+Retire the dead self-typed `listings.skill_min` / `skill_max` band now that ratings are verified. Full grep map first — the band wears the same name as three different things, which is the real confusion: the dead **column**, a dead **lobby gate**, and the LIVE P5 **rating-filter URL keys** (`filter[skill_min/max]`).
+
+- **URL keys stay, not renamed (decided 2026-06-28).** "skill" is the right unit-agnostic umbrella for a filter carrying Elo (chess) or FACEIT level 1–10 (CS2) — "rating" reads wrong for a 1–10 level. Removing the colliding column + gate resolves the ambiguity at the source, so renaming the shareable `?filter[skill_min]=…` contract (request + controller + 4 FE files + 8 tests) would be churn for zero gain.
+- `match_provider_snapshots.skill_rating_snapshot` is a **separate live concept** (verified rating snapshot at match-take) — untouched.
+
+- [x] **DB + model:** dropped the two columns from the create-listings migration (`migrate:fresh --seed`, no real users); dropped from `Listing` `$fillable` + casts.
+- [x] **Stop writing:** `CreateListingAction`, `CreateTeamPlayListingAction`, `ListingFactory`, `SeedDogfoodLobbiesCommand`; dropped the `StoreListingRequest` rules.
+- [x] **Stop exposing:** `ListingResource` + `LobbyResource` payloads; FE `Listing` / lobby-listing types; the dead Dota-2 skill chip on grid card / row / profile row / listing-detail (`show.tsx` → renders no rating row for non-chess/CS2); `create.tsx` useForm fields + `ListingPreviewCard` `skillMin/Max` props; deleted the now-unused `formatSkillRange` (TS) + the two Filament `formatSkillRange` helpers + their column/entry.
+- [x] **Removed the dead lobby gate:** `JoinLobbyAction::skillInRange` (always-true since the band is null; M41 is display-never-gate, and the deferred punch-up *warning* would read the verified rating at take-time, not this creator-typed band — so this isn't its foundation) + the `'skill_out_of_range'` sentinel + `LobbyController` toast + the `LobbyMembershipTest` case + the inert `skill_min/max` keys in ~11 team-play test fixtures.
+- [x] Gates: full backend **1664** (−1 = the removed gate test, was 1665) + `migrate:fresh --seed` clean + host `tsc` / `eslint` / `prettier` / `vite build` green.
+- [ ] **Deferred (needs a decision):** unify FACEIT onto `linked_account_ratings`, deprecate the scalar `skill_rating` (would change the `TakeListingAction` snapshot read). The ONLY remaining P6 item — flag before doing.
 
 **P8 — Player / listing card redesign + density polish (display)** — *largely done 2026-06-28; ongoing card polish (user iterating via reference screenshots)*
 

@@ -48,8 +48,6 @@ class LobbyResource extends JsonResource
             'lobby_state' => $this->lobby_state,
             'lobby_ready_check_deadline' => $this->lobby_ready_check_deadline?->toIso8601String(),
             'status' => $this->status->value,
-            'skill_min' => $this->skill_min,
-            'skill_max' => $this->skill_max,
             'region' => $this->region,
             'language' => $this->language,
             'expires_at' => $this->expires_at->toIso8601String(),

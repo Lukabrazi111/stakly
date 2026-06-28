@@ -1,12 +1,5 @@
 import { usePage } from '@inertiajs/react';
-import {
-    BadgeCheck,
-    Clock,
-    Globe,
-    Languages,
-    Lock,
-    Trophy,
-} from 'lucide-react';
+import { BadgeCheck, Clock, Globe, Languages, Lock } from 'lucide-react';
 import { ChessRatingBadge } from '@/components/listings/chess-rating-badge';
 import { FaceitRatingBadge } from '@/components/listings/faceit-rating-badge';
 import { GameChip } from '@/components/listings/game-chip';
@@ -15,7 +8,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import type { GameId } from '@/config/games';
 import { useInitials } from '@/hooks/use-initials';
 import { useT } from '@/lib/i18n';
-import { formatSkillRange, timeControlLabel } from '@/lib/listings-format';
+import { timeControlLabel } from '@/lib/listings-format';
 import type { User } from '@/types/auth';
 import type {
     ChessRating,
@@ -29,8 +22,6 @@ interface Props {
     platform: ListingPlatform;
     teamSize: number;
     stakeAmount: string;
-    skillMin: string;
-    skillMax: string;
     timeControl: TimeControl | null;
     region: string;
     language: string[];
@@ -59,8 +50,6 @@ export function ListingPreviewCard({
     platform,
     teamSize,
     stakeAmount,
-    skillMin,
-    skillMax,
     timeControl,
     region,
     language,
@@ -75,11 +64,6 @@ export function ListingPreviewCard({
     const user = usePage<{ auth: { user: User | null } }>().props.auth.user;
 
     const isTeamPlay = teamSize > 1;
-    const skill = formatSkillRange(
-        skillMin === '' ? null : Number(skillMin),
-        skillMax === '' ? null : Number(skillMax),
-        t,
-    );
     const stakeDisplay = stakeAmount === '' ? '0' : stakeAmount;
 
     return (
@@ -145,12 +129,7 @@ export function ListingPreviewCard({
                     />
                 ) : game === 'chess' ? (
                     <ChessRatingBadge rating={chessRating} />
-                ) : (
-                    <span className="inline-flex items-center gap-1 rounded-full border border-border/60 bg-background/60 px-2.5 py-0.5 text-xs font-medium text-muted-foreground">
-                        <Trophy className="size-3" aria-hidden="true" />
-                        {skill}
-                    </span>
-                )}
+                ) : null}
 
                 {!isTeamPlay && timeControl && (
                     <span className="inline-flex items-center gap-1 rounded-full border border-border/60 bg-background/60 px-2.5 py-0.5 text-xs font-medium text-muted-foreground">

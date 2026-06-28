@@ -19,7 +19,7 @@ export type ListingSort =
     | 'ending_soon';
 
 // M41 P2 — a creator's verified FACEIT rating. Present on CS2 listings only
-// (chess listings carry skill_min/max until P4). `elo`/`level` are null +
+// (chess listings carry `chess_rating` instead). `elo`/`level` are null +
 // `is_unrated` true when the CS2 creator has no FACEIT link or no CS2 ELO yet,
 // so the badge renders "Unrated". `level` is derived from ELO server-side
 // (App\Support\FaceitLevel).
@@ -115,8 +115,6 @@ export interface Listing {
     // breakdown on the detail page (pot = stake × 2, fee = pot × fee_rate,
     // winner payout = pot − fee).
     fee_rate: number;
-    skill_min: number | null;
-    skill_max: number | null;
     // The single time control this chess listing is for (M41 P3a). Null for
     // non-chess games (CS2 etc. have no time control).
     time_control: TimeControl | null;

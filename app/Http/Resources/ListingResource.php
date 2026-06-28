@@ -33,8 +33,6 @@ class ListingResource extends JsonResource
             // Float at the JSON boundary; FE computes pot / fee / payout
             // from this — config is the single source of truth.
             'fee_rate' => (float) config('stakly.platform_fee_rate'),
-            'skill_min' => $this->skill_min,
-            'skill_max' => $this->skill_max,
             'time_control' => $this->time_control?->value,
             'region' => $this->region,
             'language' => $this->language,

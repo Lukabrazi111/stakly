@@ -20,7 +20,7 @@ export interface GameConfig {
 }
 
 // `skill_range` gates the verified-rating filter (M41 P5): chess filters on the
-// creator's Elo for the listing's platform+TC, CS2 on FACEIT level (1–10).
+// creator's Elo for the listing's platform+TC, CS2 on the creator's FACEIT Elo.
 // Dota 2 has no rating integration yet (no Steam/OpenDota fetch), so it carries
 // NO rating filter — re-add `skill_range` when that adapter ships. CS2's
 // Create-listing flow is still seeded-only (no FACEIT Create form yet), but its

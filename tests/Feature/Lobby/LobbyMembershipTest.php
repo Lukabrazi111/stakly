@@ -26,8 +26,6 @@ function freshLobby(int $teamSize = 5, string $side = LobbyParticipant::SIDE_A):
         'game' => Game::Cs2->value,
         'platform' => LinkedAccountProvider::Faceit->value,
         'stake_amount' => '100',
-        'skill_min' => null,
-        'skill_max' => null,
         'time_control' => null,
         'region' => null,
         'language' => null,
@@ -207,21 +205,6 @@ describe('JoinLobbyAction', function () {
             ->handle($joiner, $listing, LobbyParticipant::SIDE_B);
 
         expect($result)->toBeInstanceOf(LobbyParticipant::class);
-    });
-
-    it('rejects with "skill_out_of_range" when rating sits below skill_min', function () {
-        $creator = User::factory()->active()->withFaceit()->create();
-        $listing = Listing::factory()->teamPlay()->for($creator)->state([
-            'skill_min' => 2000,
-            'skill_max' => 3000,
-        ])->create();
-
-        $joiner = User::factory()->active()->withFaceit(null, null, 1500)->create();
-
-        $result = app(JoinLobbyAction::class)
-            ->handle($joiner, $listing, LobbyParticipant::SIDE_B);
-
-        expect($result)->toBe('skill_out_of_range');
     });
 
     it('promotes lobby_state to ready_checking when max soft-joined is reached', function () {

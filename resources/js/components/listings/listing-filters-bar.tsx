@@ -228,27 +228,15 @@ export function ListingFiltersBar({ filters, sorts }: Props) {
                     )}
                     {filters.skill_min !== null && (
                         <ActiveChip
-                            label={
-                                filters.game === 'cs2'
-                                    ? t('Level :min+', {
-                                          min: filters.skill_min,
-                                      })
-                                    : t('Elo :min+', { min: filters.skill_min })
-                            }
+                            label={t('Elo :min+', { min: filters.skill_min })}
                             onRemove={() => removeFilter('skill_min')}
                         />
                     )}
                     {filters.skill_max !== null && (
                         <ActiveChip
-                            label={
-                                filters.game === 'cs2'
-                                    ? t('Level up to :max', {
-                                          max: filters.skill_max,
-                                      })
-                                    : t('Elo up to :max', {
-                                          max: filters.skill_max,
-                                      })
-                            }
+                            label={t('Elo up to :max', {
+                                max: filters.skill_max,
+                            })}
                             onRemove={() => removeFilter('skill_max')}
                         />
                     )}

@@ -66,8 +66,6 @@ function p6LockedTeamMatch(): array
         'game' => Game::Cs2->value,
         'platform' => LinkedAccountProvider::Faceit->value,
         'stake_amount' => '100',
-        'skill_min' => null,
-        'skill_max' => null,
         'time_control' => null,
         'region' => null,
         'language' => null,
