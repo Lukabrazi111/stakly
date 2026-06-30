@@ -357,6 +357,17 @@ When real backend logic lands, only the controller changes — data shape, front
 - Don't build Storybook — ship full pages.
 - Design references come from the user (screenshots, links). Wait for them; do not invent UX.
 
+## Browser verification (Playwright MCP)
+
+The **Playwright MCP** is the agent-driven, interactive browser for verifying the *running* app — ad-hoc and throwaway (not committed, not CI; `.playwright-mcp/` is gitignored). The app runs under Sail at `http://localhost/en` (locale-prefixed); dev login `test@example.com` / `password`. Reach for it whenever the question is "how does it look / behave in the browser?":
+
+- **Responsive / visual** passes (render at 375 / 768 / 1024), design QA, reproducing a visual bug.
+- **Console errors / JS exceptions** (`browser_console_messages`) — runtime React / Inertia / hydration errors a green backend test never surfaces.
+- **Network** (`browser_network_requests`) — confirm Inertia visits, prop payloads, a 419 / 500 on a form post, a wrong Wayfinder URL.
+- **Full-flow walkthroughs** (login → take listing → match) + **real-time** checks via two tabs (`browser_tabs`) — the only practical way to confirm Reverb / Echo re-renders the *other* client.
+
+**Not a replacement for Pest** — logic, money, settlement, ledger invariants stay in Pest (deterministic). Committed browser E2E would be Pest 4 browser testing, not this MCP. Gotcha: Inertia prefetches on hover, so navigate explicitly + `browser_wait_for` to stay deterministic.
+
 ## Library / Documentation Lookups
 
 - **Use Context7 PROACTIVELY.** Before writing/editing code that uses any library/framework/API, call `mcp__context7__resolve-library-id` then `mcp__context7__query-docs`. Don't rely on training data even when confident — versions move fast. Applies to subclassing, extending, or wiring packages together.

@@ -7,15 +7,18 @@ interface Props {
     balance: number;
 }
 
-/** Wallet-balance pill in `SiteHeader`. Desktop-only — `MobileMenu` shows
- *  the same info inline. */
+/** Wallet-balance pill in `SiteHeader`. Shown at `lg`+ only — below that the
+ *  authed header (nav + Create + bell + lang + avatar) is already at capacity
+ *  and this pill tipped it into horizontal overflow at the `md`–`lg` range. The
+ *  balance stays reachable on tablet via the profile-menu Wallet link, and the
+ *  `MobileMenu` shows it inline below `md`. */
 export function BalanceChip({ balance }: Props) {
     return (
         <Link
             href={walletIndex().url}
             prefetch
             aria-label={`Wallet balance: $${formatUsdt(balance)} USDT`}
-            className="hidden items-center gap-2 rounded-full border border-border/60 bg-card/60 px-3 py-1.5 text-sm transition-colors duration-150 ease-out hover:border-primary/40 hover:bg-primary/10 focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none md:inline-flex"
+            className="hidden items-center gap-2 rounded-full border border-border/60 bg-card/60 px-3 py-1.5 text-sm transition-colors duration-150 ease-out hover:border-primary/40 hover:bg-primary/10 focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none lg:inline-flex"
         >
             <Wallet className="size-4 text-muted-foreground" />
             <span className="font-mono font-medium text-foreground tabular-nums">

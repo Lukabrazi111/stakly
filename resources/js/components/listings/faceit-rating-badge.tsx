@@ -55,8 +55,8 @@ export function FaceitRatingBadge({
 }
 
 // ── Dial size knobs ─────────────────────────────────────────────────────────
-// Overall DIAMETER is the `dialSize` prop on FaceitRatingBadge: the default 22
-// (marketplace cards) lives in the Props above; the lobby slot card passes 32.
+// Overall DIAMETER is the `dialSize` prop on FaceitRatingBadge: the default 25
+// (marketplace cards) lives in the Props above; the lobby slot card passes 30.
 // The two ratios below (fractions of the diameter) reshape every dial at once:
 const RING_THICKNESS = 0.11; // ring stroke — raise (e.g. 0.16) for a chunkier ring
 const LEVEL_NUMBER_SIZE = 0.4; // centered level digit — raise for a bigger number

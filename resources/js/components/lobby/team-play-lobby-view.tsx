@@ -118,11 +118,14 @@ export function TeamPlayLobbyView({ lobby, messages }: Props) {
                 <LobbyHeader lobby={lobby} />
 
                 {/* The headline 3-col layout — Team A | Center | Team B at
-                    lg+. Below lg the columns stack so mobile reads
-                    top-to-bottom: Team A → Center blocks → Team B. The
-                    Money block hosts Ready / Leave actions for the viewer;
-                    slot cards stay display-only. */}
-                <div className="grid gap-4 lg:grid-cols-[1fr_minmax(360px,400px)_1fr] lg:items-start lg:gap-6">
+                    xl+. Below xl the columns stack so the page reads
+                    top-to-bottom: Team A → Center blocks → Team B. Gated at
+                    xl (not lg) because the P8 FACEIT-roster slot card's
+                    min-content (~300px) plus the 400px center column overflows
+                    a 1024px viewport's two 1fr tracks — at lg the right column
+                    spilled off-screen. The Money block hosts Ready / Leave
+                    actions for the viewer; slot cards stay display-only. */}
+                <div className="grid gap-4 xl:grid-cols-[1fr_minmax(360px,400px)_1fr] xl:items-start xl:gap-6">
                     <TeamSlotColumn
                         lobby={lobby}
                         side="a"
