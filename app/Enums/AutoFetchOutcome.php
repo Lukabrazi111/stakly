@@ -23,4 +23,41 @@ enum AutoFetchOutcome: string
     case AcIncomplete = 'ac_incomplete';
     case Error = 'error';
     case Skipped = 'skipped';
+
+    /**
+     * Human label for admin surfaces (Filament infolist timeline +
+     * PipelineHealth rollup). Single source of truth so a new case can't
+     * render as a raw snake_case value.
+     */
+    public function label(): string
+    {
+        return match ($this) {
+            self::Matched => 'Matched',
+            self::NoMatch => 'No match',
+            self::Ambiguous => 'Ambiguous',
+            self::AcIncomplete => 'AC incomplete',
+            self::Error => 'Error',
+            self::Skipped => 'Skipped',
+        };
+    }
+
+    /**
+     * `[foreground, background]` hex pair for the inline-styled badge rendered
+     * in `GameMatchInfolist` (raw HTML, can't compose Filament's Badge). Kept
+     * on the enum so adding a 7th case is a compile-time obligation here rather
+     * than a runtime `UnhandledMatchError` (a 500) on the dispute page.
+     *
+     * @return array{0: string, 1: string}
+     */
+    public function badgeColors(): array
+    {
+        return match ($this) {
+            self::Matched => ['#16a34a', '#dcfce7'],
+            self::NoMatch => ['#6b7280', '#f3f4f6'],
+            self::Ambiguous => ['#d97706', '#fef3c7'],
+            self::AcIncomplete => ['#ea580c', '#ffedd5'],
+            self::Error => ['#dc2626', '#fee2e2'],
+            self::Skipped => ['#6b7280', '#f3f4f6'],
+        };
+    }
 }

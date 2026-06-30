@@ -14,6 +14,7 @@ use Filament\Actions\Action;
 use Filament\Forms\Components\Textarea;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\ViewRecord;
+use Illuminate\Database\Eloquent\Model;
 use Throwable;
 
 /**
@@ -24,6 +25,27 @@ use Throwable;
 class ViewGameMatch extends ViewRecord
 {
     protected static string $resource = GameMatchResource::class;
+
+    /**
+     * Eager-load everything the infolist renders (roster, snapshots, money,
+     * resolution + auto-fetch summaries) on the View page only — the dispute
+     * list query stays lean. Without this the infolist fires ~8 lazy/N+1
+     * queries per open (per-player accounts, exists()+get() pairs, roster).
+     */
+    protected function resolveRecord(int|string $key): Model
+    {
+        return parent::resolveRecord($key)->load([
+            'listing.user',
+            'listing.lobbyParticipants.user',
+            'taker',
+            'winner',
+            'disputeOpener',
+            'providerSnapshots',
+            'adminResolutions.admin',
+            'adminResolutions.winner',
+            'autoFetchAttempts',
+        ]);
+    }
 
     protected function getHeaderActions(): array
     {

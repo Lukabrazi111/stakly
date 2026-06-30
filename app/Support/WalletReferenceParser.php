@@ -35,8 +35,10 @@ class WalletReferenceParser
         'match-fee' => 'match',
         'match-draw-creator' => 'match',
         'match-draw-taker' => 'match',
+        'match-draw' => 'match',
         'cancel-refund-creator' => 'match',
         'cancel-refund-taker' => 'match',
+        'cancel-refund' => 'match',
     ];
 
     /**
@@ -68,6 +70,10 @@ class WalletReferenceParser
      * infolist can collect every row pointing at the same listing / match
      * regardless of which prefix produced it.
      *
+     * Team settlements stamp suffixed refs (`match-payout:42:player-7`,
+     * `match-draw:42:9`, `cancel-refund:42:9`), so the id is the FIRST numeric
+     * segment after the prefix — anything past it is a per-player discriminator.
+     *
      * @return array{kind: string, id: int}|null
      */
     public static function parseEntity(?string $reference): ?array
@@ -79,11 +85,17 @@ class WalletReferenceParser
         [$prefix, $rest] = explode(':', $reference, 2);
         $kind = self::PREFIXES[$prefix] ?? null;
 
-        if ($kind === null || ! ctype_digit($rest)) {
+        if ($kind === null) {
             return null;
         }
 
-        return ['kind' => $kind, 'id' => (int) $rest];
+        $id = strtok($rest, ':');
+
+        if ($id === false || ! ctype_digit($id)) {
+            return null;
+        }
+
+        return ['kind' => $kind, 'id' => (int) $id];
     }
 
     /**

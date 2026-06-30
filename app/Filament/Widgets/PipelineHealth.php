@@ -28,9 +28,11 @@ class PipelineHealth extends StatsOverviewWidget
 
     protected function getStats(): array
     {
+        $sparklines = $this->lastSevenDaysSparklines();
+
         return [
-            $this->settlementsStat(),
-            $this->errorsStat(),
+            $this->settlementsStat($sparklines[AutoFetchOutcome::Matched->value]),
+            $this->errorsStat($sparklines[AutoFetchOutcome::Error->value]),
             $this->avgLatencyStat(),
             $this->volumeStat(),
         ];
@@ -38,10 +40,12 @@ class PipelineHealth extends StatsOverviewWidget
 
     // ─── Settlements via auto-fetch (24h) ──────────────────────────────────
 
-    private function settlementsStat(): Stat
+    /**
+     * @param  array<int, int>  $last7
+     */
+    private function settlementsStat(array $last7): Stat
     {
         $today = $this->countMatchedOn(CarbonImmutable::today());
-        $last7 = $this->lastSevenDaysCounts(AutoFetchOutcome::Matched);
 
         return Stat::make('Auto-settlements (24h)', (string) $today)
             ->description($this->settlementsDescription($today))
@@ -65,10 +69,12 @@ class PipelineHealth extends StatsOverviewWidget
 
     // ─── Errors (24h) ──────────────────────────────────────────────────────
 
-    private function errorsStat(): Stat
+    /**
+     * @param  array<int, int>  $last7
+     */
+    private function errorsStat(array $last7): Stat
     {
         $today = $this->countOutcomeOn(AutoFetchOutcome::Error, CarbonImmutable::today());
-        $last7 = $this->lastSevenDaysCounts(AutoFetchOutcome::Error);
 
         [$description, $color] = $this->errorsDescription($today);
 
@@ -232,14 +238,22 @@ class PipelineHealth extends StatsOverviewWidget
             return 'No attempts today';
         }
 
-        // matched first (success signal), errors next (attention).
-        $order = [
+        // Priority head reads success-first (matched) then attention (error);
+        // every remaining case is appended straight from the enum so a newly
+        // added outcome can never be silently dropped from the headline total.
+        $priority = [
             AutoFetchOutcome::Matched->value,
             AutoFetchOutcome::Error->value,
             AutoFetchOutcome::Ambiguous->value,
             AutoFetchOutcome::NoMatch->value,
-            AutoFetchOutcome::Skipped->value,
         ];
+
+        $allOutcomes = array_map(
+            static fn (AutoFetchOutcome $outcome): string => $outcome->value,
+            AutoFetchOutcome::cases(),
+        );
+
+        $order = [...$priority, ...array_diff($allOutcomes, $priority)];
 
         $parts = [];
         foreach ($order as $key) {
@@ -268,33 +282,73 @@ class PipelineHealth extends StatsOverviewWidget
     }
 
     /**
-     * @return array<int, int>
+     * Both sparkline series (matched + error) over the last 7 days in ONE
+     * range GROUP BY, pivoted in PHP into two day-ordered, zero-filled arrays.
+     * Replaces the old per-day loop that fired 14 `COUNT` round-trips every
+     * 30s poll and defeated the `(outcome, created_at)` index with `whereDate`.
+     * Computed once in `getStats()` and handed to both stats.
+     *
+     * @return array<string, array<int, int>>
      */
-    private function lastSevenDaysCounts(AutoFetchOutcome $outcome): array
+    private function lastSevenDaysSparklines(): array
     {
-        $counts = [];
-        for ($i = 6; $i >= 0; $i--) {
-            $counts[] = $this->countOutcomeOn($outcome, CarbonImmutable::today()->subDays($i));
+        $start = CarbonImmutable::today()->subDays(6);
+        $end = CarbonImmutable::today()->endOfDay();
+
+        $rows = MatchAutoFetchAttempt::query()
+            ->whereBetween('created_at', [$start, $end])
+            ->whereIn('outcome', [AutoFetchOutcome::Matched->value, AutoFetchOutcome::Error->value])
+            ->selectRaw('outcome, created_at::date as day, COUNT(*) as total')
+            ->groupBy('outcome', 'day')
+            ->get();
+
+        $series = [
+            AutoFetchOutcome::Matched->value => $this->zeroFilledByDay($start),
+            AutoFetchOutcome::Error->value => $this->zeroFilledByDay($start),
+        ];
+
+        foreach ($rows as $row) {
+            $outcome = $row->outcome->value;
+            $day = CarbonImmutable::parse($row->day)->toDateString();
+
+            if (isset($series[$outcome][$day])) {
+                $series[$outcome][$day] = (int) $row->total;
+            }
         }
 
-        return $counts;
+        return [
+            AutoFetchOutcome::Matched->value => array_values($series[AutoFetchOutcome::Matched->value]),
+            AutoFetchOutcome::Error->value => array_values($series[AutoFetchOutcome::Error->value]),
+        ];
     }
 
     /**
-     * `skipped` rows excluded — they never called the provider, so their
-     * NULL latency would just be noise in the avg.
+     * Seven consecutive days from `$start` (oldest first), each keyed by its
+     * `Y-m-d` date string and zero-filled, ready for the GROUP BY pivot.
+     *
+     * @return array<string, int>
+     */
+    private function zeroFilledByDay(CarbonImmutable $start): array
+    {
+        $days = [];
+        for ($i = 0; $i < 7; $i++) {
+            $days[$start->addDays($i)->toDateString()] = 0;
+        }
+
+        return $days;
+    }
+
+    /**
+     * Averages latency across every provider-touching attempt in the window.
+     * Excluding only `skipped` (which never reached the provider) — rather than
+     * allow-listing specific outcomes — means any new provider-touching case,
+     * e.g. `ac_incomplete`, is counted automatically. `whereNotNull` still
+     * guards any stray NULL latency so it can't skew the average.
      */
     private function avgLatencyBetween(CarbonImmutable $start, CarbonImmutable $end): ?int
     {
-        $providerCallOutcomes = [
-            AutoFetchOutcome::Matched->value,
-            AutoFetchOutcome::NoMatch->value,
-            AutoFetchOutcome::Ambiguous->value,
-            AutoFetchOutcome::Error->value,
-        ];
-
         $avg = MatchAutoFetchAttempt::query()
-            ->whereIn('outcome', $providerCallOutcomes)
+            ->where('outcome', '!=', AutoFetchOutcome::Skipped->value)
             ->whereNotNull('latency_ms')
             ->whereBetween('created_at', [$start, $end])
             ->avg('latency_ms');

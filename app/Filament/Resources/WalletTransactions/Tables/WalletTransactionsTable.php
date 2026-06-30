@@ -104,9 +104,11 @@ class WalletTransactionsTable
                         TextInput::make('min')->numeric()->label('Min'),
                         TextInput::make('max')->numeric()->label('Max'),
                     ])
+                    // Range is on magnitude: debits are stored negative, so a raw
+                    // signed `>=` on a positive Min would silently drop every debit.
                     ->query(fn (Builder $query, array $data): Builder => $query
-                        ->when($data['min'] ?? null, fn ($q, $v) => $q->where('amount', '>=', $v))
-                        ->when($data['max'] ?? null, fn ($q, $v) => $q->where('amount', '<=', $v)),
+                        ->when($data['min'] ?? null, fn ($q, $v) => $q->whereRaw('abs(amount) >= ?', [$v]))
+                        ->when($data['max'] ?? null, fn ($q, $v) => $q->whereRaw('abs(amount) <= ?', [$v])),
                     ),
 
                 Filter::make('reference_id')

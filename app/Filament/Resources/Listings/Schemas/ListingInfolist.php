@@ -2,8 +2,8 @@
 
 namespace App\Filament\Resources\Listings\Schemas;
 
+use App\Enums\Game;
 use App\Enums\LinkedAccountProvider;
-use App\Enums\ListingStatus;
 use App\Models\Listing;
 use App\Models\WalletTransaction;
 use App\Support\WalletReferenceParser;
@@ -63,19 +63,49 @@ class ListingInfolist
                     )
                     ->placeholder('—'),
 
-                TextEntry::make('game')->label('Game'),
+                TextEntry::make('game')
+                    ->label('Game')
+                    ->formatStateUsing(fn (Game $state): string => $state->displayName()),
 
                 TextEntry::make('platform')
                     ->label('Platform')
-                    ->formatStateUsing(fn (LinkedAccountProvider $state): string => match ($state) {
-                        LinkedAccountProvider::ChessCom => 'chess.com',
-                        LinkedAccountProvider::Lichess => 'Lichess',
-                    }),
+                    ->formatStateUsing(fn (LinkedAccountProvider $state): string => $state->displayName()),
+
+                TextEntry::make('team_size')
+                    ->label('Format')
+                    ->state(fn (Listing $record): string => $record->isTeamPlay()
+                        ? $record->team_size.'v'.$record->team_size
+                        : '1v1',
+                    ),
 
                 TextEntry::make('stake_amount')
-                    ->label('Stake')
+                    ->label('Stake / player')
                     ->formatStateUsing(fn ($state): string => '$'.number_format((float) $state, 2).' USDT')
                     ->weight('semibold'),
+
+                TextEntry::make('pot')
+                    ->label('Pot (escrow)')
+                    ->state(fn (Listing $record): string => '$'.number_format(
+                        (float) bcmul((string) $record->stake_amount, (string) ($record->team_size * 2), 6),
+                        2,
+                    ).' USDT'),
+
+                TextEntry::make('is_public')
+                    ->label('Visibility')
+                    ->badge()
+                    ->state(fn (Listing $record): string => $record->is_public ? 'Public' : 'Private (invite-only)')
+                    ->color(fn (Listing $record): string => $record->is_public ? 'success' : 'warning'),
+
+                TextEntry::make('lobby_state')
+                    ->label('Lobby state')
+                    ->badge()
+                    ->placeholder('—')
+                    ->visible(fn (Listing $record): bool => $record->isTeamPlay()),
+
+                TextEntry::make('invite_token')
+                    ->label('Invite token')
+                    ->copyable()
+                    ->visible(fn (Listing $record): bool => $record->invite_token !== null),
 
                 TextEntry::make('time_control')
                     ->label('Time control')
@@ -97,10 +127,13 @@ class ListingInfolist
 
     private static function matchSection(): Section
     {
+        // Team-play matches exist from listing creation (LobbyFilling), so gate
+        // on the relation, not status === Taken (which only flips once the lobby
+        // locks) — otherwise the whole recruiting/ready-check window, where chat
+        // moderation is most likely needed, is unreachable from the listing.
         return Section::make('Related match')
             ->icon(Heroicon::OutlinedTrophy)
-            ->visible(fn (Listing $record): bool => $record->status === ListingStatus::Taken,
-            )
+            ->visible(fn (Listing $record): bool => $record->gameMatch !== null)
             ->columns(3)
             ->schema([
                 TextEntry::make('gameMatch.id')
@@ -116,14 +149,62 @@ class ListingInfolist
                     ->badge()
                     ->placeholder('—'),
 
+                // 1v1 only — for team-play `taker_user_id` is a creator
+                // placeholder; the real roster renders per-side below.
                 TextEntry::make('gameMatch.taker.username')
                     ->label('Taker')
+                    ->visible(fn (Listing $record): bool => ! $record->isTeamPlay())
                     ->url(fn (Listing $record): ?string => $record->gameMatch?->taker
                         ? route('filament.admin.resources.users.view', $record->gameMatch->taker)
                         : null,
                     )
                     ->placeholder('—'),
+
+                TextEntry::make('roster')
+                    ->hiddenLabel()
+                    ->columnSpanFull()
+                    ->visible(fn (Listing $record): bool => $record->isTeamPlay())
+                    ->state(fn (Listing $record): string => self::rosterSummary($record))
+                    ->html(),
             ]);
+    }
+
+    /**
+     * Team A / Team B roster for a team-play listing, from the live lobby
+     * (non-kicked rows, slot order). The dispute view carries the full
+     * snapshot detail; here it's a compact who's-on-which-side summary.
+     */
+    private static function rosterSummary(Listing $record): string
+    {
+        $record->loadMissing('lobbyParticipants.user');
+
+        $live = $record->lobbyParticipants
+            ->whereNull('kicked_at')
+            ->sortBy('slot_index');
+
+        $html = '<div class="space-y-1 text-sm">';
+
+        foreach (['a' => 'Team A', 'b' => 'Team B'] as $side => $label) {
+            $names = $live->where('side', $side)
+                ->map(function ($participant): string {
+                    $user = $participant->user;
+
+                    if ($user === null) {
+                        return 'Unknown';
+                    }
+
+                    $url = e(route('filament.admin.resources.users.view', $user));
+
+                    return '<a href="'.$url.'" class="underline">@'.e($user->username).'</a>';
+                })
+                ->join(', ');
+
+            $html .= '<div><strong>'.$label.':</strong> '
+                .($names !== '' ? $names : '<span class="text-gray-500">—</span>')
+                .'</div>';
+        }
+
+        return $html.'</div>';
     }
 
     private static function walletSection(): Section

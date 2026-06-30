@@ -2,6 +2,8 @@
 
 namespace App\Enums;
 
+use Filament\Support\Contracts\HasLabel;
+
 /**
  * Display state for a `Game` row in the homepage tile catalog.
  *
@@ -12,9 +14,18 @@ namespace App\Enums;
  * - Disabled: hidden from the homepage entirely. Used for parking tiles
  *   without deleting them (e.g. test data, deprecated games).
  */
-enum GameStatus: string
+enum GameStatus: string implements HasLabel
 {
     case Active = 'active';
     case ComingSoon = 'coming_soon';
     case Disabled = 'disabled';
+
+    public function getLabel(): string
+    {
+        return match ($this) {
+            self::Active => 'Active',
+            self::ComingSoon => 'Coming soon',
+            self::Disabled => 'Disabled',
+        };
+    }
 }

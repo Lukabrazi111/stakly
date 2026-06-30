@@ -40,7 +40,8 @@ class PagesTable
 
                 TextColumn::make('locale')
                     ->label('Locale')
-                    ->badge(),
+                    ->badge()
+                    ->formatStateUsing(fn (string $state): string => config("stakly.locales_meta.$state.native_label", $state)),
 
                 TextColumn::make('status')
                     ->label('Status')
@@ -51,6 +52,12 @@ class PagesTable
                         'Scheduled' => 'warning',
                         default => 'gray',
                     }),
+
+                TextColumn::make('published_at')
+                    ->label('Publish at')
+                    ->dateTime()
+                    ->sortable()
+                    ->toggleable(),
 
                 TextColumn::make('updated_at')
                     ->label('Updated')

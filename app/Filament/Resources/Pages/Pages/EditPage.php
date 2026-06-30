@@ -17,14 +17,14 @@ class EditPage extends EditRecord
     protected function getHeaderActions(): array
     {
         return [
-            // Filament doesn't re-render the record on action completion, so
-            // `fresh()` is required in `visible()` — without it the button
-            // stays after a click until manual reload.
             Action::make('publish')
                 ->label('Publish now')
                 ->icon(Heroicon::OutlinedCheckCircle)
                 ->color('success')
-                ->visible(fn (): bool => ! $this->record->fresh()->isPublished())
+                ->requiresConfirmation()
+                ->modalHeading('Publish this page now?')
+                ->modalDescription('The page becomes live on its public URL immediately.')
+                ->visible(fn (): bool => ! $this->record->isPublished())
                 ->action(function () {
                     $this->record->update(['published_at' => now()]);
                     $this->refreshFormData(['published_at']);
@@ -38,7 +38,7 @@ class EditPage extends EditRecord
                 ->requiresConfirmation()
                 ->modalHeading('Unpublish this page?')
                 ->modalDescription('The page returns to Draft and 404s on public URLs until republished.')
-                ->visible(fn (): bool => $this->record->fresh()->published_at !== null)
+                ->visible(fn (): bool => $this->record->published_at !== null)
                 ->action(function () {
                     $this->record->update(['published_at' => null]);
                     $this->refreshFormData(['published_at']);

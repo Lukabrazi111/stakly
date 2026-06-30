@@ -1354,6 +1354,22 @@ A multi-pass redesign of `listings/create`, anchored on Bybit's P2P ad-creation 
 
 ---
 
+## M41 — Verified skill ratings (display) ✅ shipped 2026-06-30
+
+Replaced the free-typed create-listing skill range (an unverifiable sandbag vector) with each player's **real, API-pulled rating**, shown everywhere their listing appears — **display-only, never gates a match** (the taker decides). **P1–P2 (FACEIT):** ELO pulled + stored on link (`linked_accounts.skill_rating`) with a throttled, breaker-aware lazy refresh (`RefreshFaceitRatingJob` on a dedicated `faceit-rating-api` limiter, never nulls a known value); level derived from ELO via `App\Support\FaceitLevel`; the CS2 skill input removed from create; stale-gated refresh-on-view for displayed creators (`RefreshDisplayedRatingsAction`). **P3 (chess):** listings became **single time-control** (Bullet/Blitz/Rapid — `App\Enums\TimeControl`; Classical dropped since chess.com online has none → it was the only unsettleable dead-end), and per-TC ratings landed in a normalized `linked_account_ratings` table (`LichessProfileClient`/`ChessComProfileClient::fetchRatings()`, captured at bio-verify via `RefreshChessRatingJob`). **P4:** chess display + chess skill input removed; provisional = total games < `provisional_min_games` (20), shown with a "?" marker (revised after a real-account bug hid a rusty 537-game rating). **P5:** marketplace filter re-pointed at the verified rating (correlated `EXISTS`, single-game-scoped, branched — chess Elo range on the listing's platform+TC, CS2 raw FACEIT Elo — plus an "Unrated only" toggle). **P6:** retired the dead self-typed `listings.skill_min/max` band + the dead `JoinLobbyAction::skillInRange` gate end-to-end. **P7:** FACEIT **level dial** in authentic FACEIT colors (grey L1 / green L2–3 / yellow L4–7 / orange L8–9 / red L10) + a CS2 **recent-form W/L/D strip** read from the **payout ledger** (not `winner_user_id`, which only stamps the slot-0 winner) via `App\Services\RecentForm`; `ParticipantStats` made team-aware through a shared `App\Services\MatchParticipation` primitive. **P8:** FACEIT-roster card redesign (lobby `SlotCard` + grid/row/profile/detail/create-preview), verified responsive at 375/768/1024 via a Playwright sweep — which caught + fixed a 3-col lobby-grid overflow at the `lg` boundary (gated to `xl`).
+
+### Decisions
+
+- **Two rating shapes are correct, not a wart to unify** (P6 close-out): scalar `skill_rating` for single-rating providers (FACEIT, future Steam/Riot MMR); per-TC `linked_account_ratings` for chess. Unifying FACEIT onto the per-TC table was evaluated and **rejected** — it needs a nullable/sentinel `time_control`, churns the `TakeListingAction` snapshot read + the CS2 filter `EXISTS`, for zero user-facing gain.
+- **Rating fetches never record into the settlement circuit breaker** (`recordHealth: false`) so a rating-API blip can't freeze chess settlement; the refresh jobs only READ `isOpen`. Failed / 404 / 429 / keyless fetches preserve the last-known value, never null.
+- **Provisional = game count, not `rd`.** `rd` over-flagged established-but-rusty ratings; provisional ratings show their number + a "?", and "Unrated" means only "no rating row for that time control".
+- **Listings read the cached rating live** (join), no per-listing snapshot column; the match-time `skill_rating_snapshot` stays for audit/history.
+- **FACEIT dial uses authentic provider colors** (reversed an earlier brand-banded no-amber call) — kept unmistakably a *level* (centered number + ring form) so green/orange/red never read as win/dispute status next to a stake.
+- **Filter URL keys `filter[skill_min/max]` kept, not renamed** — "skill" is the right unit-agnostic umbrella (Elo for both games); removing the colliding dead column resolved the ambiguity at the source.
+- **The asymmetric "punch-up-only" gate was deferred, not built.** A hard gate mostly constrains honest strong players, costs liquidity (everyone wants to punch down), and has an unrated loophole; if post-launch data shows sharking, revisit as a non-blocking *warning* at take time — never a block.
+
+---
+
 ## Parked milestones
 
 Work that has a clear shape but isn't being picked up right now. Lives in the archive so the active milestones list stays focused on what we can act on; revisit if priorities shift.

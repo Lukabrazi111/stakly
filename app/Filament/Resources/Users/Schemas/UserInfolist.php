@@ -2,9 +2,14 @@
 
 namespace App\Filament\Resources\Users\Schemas;
 
+use App\Enums\LinkedAccountProvider;
 use App\Enums\MatchStatus;
 use App\Enums\WalletTransactionType;
 use App\Models\GameMatch;
+use App\Models\LinkedAccount;
+use App\Models\LinkedAccountRating;
+use App\Models\Listing;
+use App\Models\LobbyParticipant;
 use App\Models\User;
 use App\Models\WalletTransaction;
 use Filament\Infolists\Components\IconEntry;
@@ -94,7 +99,7 @@ class UserInfolist
 
     private static function linkedAccountsSummary(User $record): string
     {
-        $record->loadMissing('linkedAccounts');
+        $record->loadMissing('linkedAccounts.ratings');
 
         if ($record->linkedAccounts->isEmpty()) {
             return '<em>No verified game accounts linked.</em>';
@@ -102,14 +107,45 @@ class UserInfolist
 
         $html = '<div class="space-y-1">';
         foreach ($record->linkedAccounts as $link) {
-            $provider = e($link->provider->value);
+            $provider = e($link->provider->displayName());
             $username = e($link->username);
+            $ratings = e(self::linkedAccountRatingLabel($link));
             $verifiedAt = $link->verified_at?->format('M j, Y') ?? 'unverified';
-            $html .= "<div><strong>{$provider}</strong> · {$username} · <span class=\"opacity-75\">verified {$verifiedAt}</span></div>";
+            $html .= "<div><strong>{$provider}</strong> · {$username} · {$ratings} · <span class=\"opacity-75\">verified {$verifiedAt}</span></div>";
         }
         $html .= '</div>';
 
         return $html;
+    }
+
+    /**
+     * Chess providers (chess.com / Lichess) carry per-time-control ratings;
+     * everything else uses the scalar `skill_rating`. A chess link with no
+     * rating rows reads "Unrated"; a missing scalar reads "—".
+     */
+    private static function linkedAccountRatingLabel(LinkedAccount $link): string
+    {
+        $isChess = in_array(
+            $link->provider,
+            [LinkedAccountProvider::ChessCom, LinkedAccountProvider::Lichess],
+            true,
+        );
+
+        if (! $isChess) {
+            return $link->skill_rating !== null ? (string) $link->skill_rating : '—';
+        }
+
+        if ($link->ratings->isEmpty()) {
+            return 'Unrated';
+        }
+
+        return $link->ratings
+            ->map(function (LinkedAccountRating $rating): string {
+                $value = $rating->rating.($rating->is_provisional ? '?' : '');
+
+                return ucfirst($rating->time_control->value).' '.$value;
+            })
+            ->implode(' · ');
     }
 
     // ─── Wallet snapshot + invariant verify ────────────────────────────────
@@ -251,7 +287,13 @@ class UserInfolist
     private static function recentMatchesSummary(User $record): string
     {
         $matches = self::matchesQuery($record)
-            ->with(['listing', 'taker', 'winner'])
+            ->with([
+                'listing',
+                'listing.user:id,username',
+                'listing.lobbyParticipants.user:id,username',
+                'taker',
+                'winner',
+            ])
             ->orderByDesc('created_at')
             ->limit(self::RECENT_MATCHES_LIMIT)
             ->get();
@@ -260,22 +302,61 @@ class UserInfolist
         foreach ($matches as $match) {
             $status = e($match->status->value);
             $when = $match->created_at->format('M j, Y');
-            $opponentUsername = $match->listing?->user_id === $record->id
-                ? ($match->taker?->username ?? '—')
-                : ($match->listing?->user?->username ?? '—');
+            $opponent = e(self::matchOpponentLabel($match, $record));
             $winner = $match->winner?->username
                 ? ' · winner: '.e($match->winner->username)
                 : '';
-            $html .= "<div>#{$match->id} · vs ".e($opponentUsername)." · {$status}{$winner} · {$when}</div>";
+            $html .= "<div>#{$match->id} · vs {$opponent} · {$status}{$winner} · {$when}</div>";
         }
         $html .= '</div>';
 
         return $html;
     }
 
+    /**
+     * Opponent label for the recent-matches row. 1v1 resolves the other party
+     * (creator or taker); team matches resolve the opposing side's live roster
+     * usernames, falling back to a "team NvN" label when the viewer's side
+     * can't be determined.
+     */
+    private static function matchOpponentLabel(GameMatch $match, User $record): string
+    {
+        $listing = $match->listing;
+
+        if ($listing?->isTeamPlay()) {
+            return self::teamMatchOpponentLabel($listing, $record);
+        }
+
+        $opponent = $listing?->user_id === $record->id
+            ? $match->taker?->username
+            : $listing?->user?->username;
+
+        return $opponent ?? '—';
+    }
+
+    private static function teamMatchOpponentLabel(Listing $listing, User $record): string
+    {
+        $live = $listing->lobbyParticipants->whereNull('kicked_at');
+        $viewerSide = $live->firstWhere('user_id', $record->id)?->side;
+
+        if ($viewerSide !== null) {
+            $names = $live
+                ->where('side', '!=', $viewerSide)
+                ->map(fn (LobbyParticipant $participant): ?string => $participant->user?->username)
+                ->filter()
+                ->values();
+
+            if ($names->isNotEmpty()) {
+                return $names->implode(', ');
+            }
+        }
+
+        return 'team '.$listing->team_size.'v'.$listing->team_size;
+    }
+
     private static function matchesQuery(User $record)
     {
-        return GameMatch::query()->forParticipant($record->id);
+        return GameMatch::query()->forRosterParticipant($record->id);
     }
 
     // ─── Open disputes ─────────────────────────────────────────────────────
@@ -315,7 +396,7 @@ class UserInfolist
     private static function openDisputesQuery(User $record)
     {
         return GameMatch::query()
-            ->forParticipant($record->id)
+            ->forRosterParticipant($record->id)
             ->whereIn('status', [MatchStatus::Disputed, MatchStatus::ManualReview]);
     }
 }
