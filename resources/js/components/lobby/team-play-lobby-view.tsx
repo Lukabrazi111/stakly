@@ -3,7 +3,6 @@ import { useState } from 'react';
 import { LobbyCenterColumn } from '@/components/lobby/center/center-column';
 import { LobbyChatPanel } from '@/components/lobby/lobby-chat-panel';
 import { LobbyHeader } from '@/components/lobby/lobby-header';
-import { LobbyInviteBanner } from '@/components/lobby/lobby-invite-banner';
 import { LobbyRealtimeSync } from '@/components/lobby/lobby-realtime-sync';
 import { TeamSlotColumn } from '@/components/lobby/team-slot-column';
 import { join, kick, leave, ready } from '@/routes/lobbies';
@@ -97,24 +96,11 @@ export function TeamPlayLobbyView({ lobby, messages }: Props) {
         });
     };
 
-    // Owner-only private-listing affordance — `lobby.invite_token` is
-    // exposed only to the listing owner by `LobbyResource`, and the gate
-    // on lobby_state hides the banner once the lobby locks (the invite
-    // endpoint 404s past that point anyway).
-    const showInviteBanner =
-        lobby.invite_token !== null &&
-        (lobby.lobby_state === 'recruiting' ||
-            lobby.lobby_state === 'ready_checking');
-
     return (
         <>
             {isRealtimeActive && <LobbyRealtimeSync listingId={lobby.id} />}
 
             <div className="space-y-6">
-                {showInviteBanner && lobby.invite_token !== null && (
-                    <LobbyInviteBanner inviteToken={lobby.invite_token} />
-                )}
-
                 <LobbyHeader lobby={lobby} />
 
                 {/* The headline 3-col layout — Team A | Center | Team B at
