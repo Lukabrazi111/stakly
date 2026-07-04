@@ -292,7 +292,7 @@ function ChessBranch({ listing, match }: ChessBranchProps) {
                                             }
                                             alt={listing.creator.name}
                                         />
-                                        <AvatarFallback className="bg-gradient-primary text-xl font-semibold text-primary-foreground">
+                                        <AvatarFallback className="bg-primary/15 text-xl font-semibold text-primary">
                                             {getInitials(listing.creator.name)}
                                         </AvatarFallback>
                                     </Avatar>

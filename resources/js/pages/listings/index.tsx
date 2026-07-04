@@ -93,8 +93,14 @@ export default function ListingsIndex({
     return (
         <SiteLayout showMarquee>
             <PageMeta
-                title="Browse chess listings"
-                description="Live peer-to-peer chess staking marketplace. Filter open listings by stake, skill range, time control, and region. Take a listing to start a match — both stakes go in escrow until the game ends."
+                title={
+                    selectedGame
+                        ? t('Browse :game listings', {
+                              game: selectedGame.display_name,
+                          })
+                        : t('Browse listings')
+                }
+                description="Live peer-to-peer staking marketplace. Filter open listings by stake, skill range, and region. Take a listing to start a match — both stakes go in escrow until the game ends."
             />
 
             <div className="relative isolate">

@@ -38,10 +38,10 @@ export function TakeButton({ listing, className = '' }: Props) {
         return (
             <Button
                 type="button"
-                variant="gradient"
+                variant="outlinePrimary"
                 size="pill"
                 onClick={openLogin}
-                className={className}
+                className={`rounded-full ${className}`.trim()}
             >
                 {isTeamPlay ? t('Sign in to join') : t('Sign in to take')}
             </Button>
@@ -55,7 +55,7 @@ export function TakeButton({ listing, className = '' }: Props) {
         if (isTeamPlay) {
             return (
                 <Button
-                    variant="gradient"
+                    variant="outlinePrimary"
                     size="pill"
                     asChild
                     className={className}
@@ -124,10 +124,10 @@ export function TakeButton({ listing, className = '' }: Props) {
     if (isTeamPlay) {
         return (
             <Button
-                variant="gradient"
+                variant="outlinePrimary"
                 size="pill"
                 asChild
-                className={className}
+                className={`rounded-full ${className}`.trim()}
             >
                 <Link href={showListing({ listing: listing.id }).url}>
                     {t('View lobby')}
@@ -137,7 +137,12 @@ export function TakeButton({ listing, className = '' }: Props) {
     }
 
     return (
-        <Button variant="gradient" size="pill" asChild className={className}>
+        <Button
+            variant="outlinePrimary"
+            size="pill"
+            asChild
+            className={`rounded-full ${className}`.trim()}
+        >
             <Link href={showListing({ listing: listing.id }).url}>
                 {t('Take')}
             </Link>

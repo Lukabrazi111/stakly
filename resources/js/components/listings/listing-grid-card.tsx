@@ -118,13 +118,13 @@ export function ListingGridCard({ listing }: Props) {
                                 }
                                 alt={listing.creator.username}
                             />
-                            <AvatarFallback className="bg-gradient-primary text-sm font-semibold text-primary-foreground">
+                            <AvatarFallback className="bg-primary/15 text-sm font-semibold text-primary">
                                 {getInitials(listing.creator.name)}
                             </AvatarFallback>
                         </Avatar>
-                        <span className="truncate text-sm font-semibold text-foreground transition-colors hover:text-primary">
+                        <h2 className="truncate text-sm font-semibold text-foreground transition-colors hover:text-primary">
                             {listing.creator.username}
-                        </span>
+                        </h2>
                     </Link>
                     {listing.game === 'cs2' ? (
                         <span className="ml-auto shrink-0">

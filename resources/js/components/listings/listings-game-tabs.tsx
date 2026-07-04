@@ -67,7 +67,7 @@ export function ListingsGameTabs({ games, selectedSlug, onSelect }: Props) {
                         data-active={isSelected ? 'true' : 'false'}
                         onClick={() => onSelect(game.slug)}
                         className={cn(
-                            'group inline-flex shrink-0 cursor-pointer snap-start items-center gap-2 rounded-full border px-3 py-1.5 text-sm font-medium transition-colors duration-150 ease-out',
+                            'group inline-flex min-h-11 shrink-0 cursor-pointer snap-start items-center gap-2 rounded-full border px-3 py-1.5 text-sm font-medium transition-colors duration-150 ease-out',
                             'focus-visible:ring-2 focus-visible:ring-primary/25 focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none',
                             isSelected
                                 ? 'border-primary bg-primary/15 text-foreground'

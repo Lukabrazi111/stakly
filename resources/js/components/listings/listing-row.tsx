@@ -86,15 +86,15 @@ export function ListingRow({ listing }: Props) {
                             src={listing.creator.avatar_thumb_url ?? undefined}
                             alt={listing.creator.username}
                         />
-                        <AvatarFallback className="bg-gradient-primary text-sm font-semibold text-primary-foreground">
+                        <AvatarFallback className="bg-primary/15 text-sm font-semibold text-primary">
                             {getInitials(listing.creator.name)}
                         </AvatarFallback>
                     </Avatar>
 
                     <div className="flex min-w-0 flex-col gap-0.5">
-                        <span className="truncate text-sm font-semibold text-foreground transition-colors hover:text-primary">
+                        <h2 className="truncate text-sm font-semibold text-foreground transition-colors hover:text-primary">
                             {listing.creator.username}
-                        </span>
+                        </h2>
                         <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-muted-foreground">
                             {listing.region && (
                                 <span className="inline-flex items-center gap-1">

@@ -93,7 +93,7 @@ export function ListingPreviewCard({
                             src={user?.avatar_thumb_url ?? undefined}
                             alt={user?.username ?? ''}
                         />
-                        <AvatarFallback className="bg-gradient-primary text-sm font-semibold text-primary-foreground">
+                        <AvatarFallback className="bg-primary/15 text-sm font-semibold text-primary">
                             {getInitials(user?.name ?? '')}
                         </AvatarFallback>
                     </Avatar>
