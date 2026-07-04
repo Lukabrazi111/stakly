@@ -7,7 +7,6 @@ import { ReadyCheckBanner } from '@/components/listings/ready-check-banner';
 import { SellerTrustMeta } from '@/components/listings/seller-trust-meta';
 import { TakeButton } from '@/components/listings/take-button';
 import { LobbyFillCounter } from '@/components/listings/team-play-meta';
-import { VerifiedPlatformChip } from '@/components/listings/verified-platform-chip';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { useInitials } from '@/hooks/use-initials';
 import { useT } from '@/lib/i18n';
@@ -132,9 +131,8 @@ export function ListingRow({ listing }: Props) {
                             teamSize={
                                 isTeamPlay ? listing.team_size : undefined
                             }
+                            platform={listing.platform}
                         />
-
-                        <VerifiedPlatformChip platform={listing.platform} />
 
                         {listing.game === 'cs2' ? (
                             <FaceitRatingBadge

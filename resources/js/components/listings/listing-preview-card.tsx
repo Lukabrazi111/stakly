@@ -3,7 +3,6 @@ import { BadgeCheck, Clock, Globe, Languages, Lock } from 'lucide-react';
 import { ChessRatingBadge } from '@/components/listings/chess-rating-badge';
 import { FaceitRatingBadge } from '@/components/listings/faceit-rating-badge';
 import { GameChip } from '@/components/listings/game-chip';
-import { VerifiedPlatformChip } from '@/components/listings/verified-platform-chip';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import type { GameId } from '@/config/games';
 import { useInitials } from '@/hooks/use-initials';
@@ -73,8 +72,8 @@ export function ListingPreviewCard({
                     <GameChip
                         game={game}
                         teamSize={isTeamPlay ? teamSize : undefined}
+                        platform={platform}
                     />
-                    <VerifiedPlatformChip platform={platform} />
                 </div>
                 <span className="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-muted-foreground">
                     <Clock className="size-3" aria-hidden="true" />
