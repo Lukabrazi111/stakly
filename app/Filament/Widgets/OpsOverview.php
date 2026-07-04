@@ -7,6 +7,7 @@ use App\Enums\WalletTransactionType;
 use App\Filament\Resources\GameMatches\GameMatchResource;
 use App\Models\GameMatch;
 use App\Models\Listing;
+use App\Models\LobbyParticipant;
 use App\Models\Message;
 use App\Models\WalletTransaction;
 use Carbon\CarbonImmutable;
@@ -141,31 +142,42 @@ class OpsOverview extends StatsOverviewWidget
 
     private function matchesTodayStat(): Stat
     {
-        $today = $this->countMatchesOn(CarbonImmutable::today());
-        $yesterday = $this->countMatchesOn(CarbonImmutable::today()->subDay());
+        $series = $this->lastSevenDaysCounts();
+
+        $today = $series[6];
+        $yesterday = $series[5];
 
         return Stat::make('Matches today', (string) $today)
             ->description($this->matchesTrendDescription($today, $yesterday))
             ->descriptionIcon($this->trendIcon($today, $yesterday))
-            ->chart($this->lastSevenDaysCounts())
+            ->chart($series)
             ->color($this->trendColor($today, $yesterday));
     }
 
-    private function countMatchesOn(CarbonImmutable $day): int
-    {
-        return GameMatch::query()
-            ->whereDate('created_at', $day)
-            ->count();
-    }
-
     /**
+     * Daily match counts for the last 7 days (index 0 = 6 days ago … index 6
+     * = today). One range GROUP BY zero-filled into buckets instead of a query
+     * per day. Excludes team matches that exist pre-fill (LobbyFilling) or were
+     * never filled (Cancelled) so they don't inflate the count or chart.
+     *
      * @return array<int, int>
      */
     private function lastSevenDaysCounts(): array
     {
+        $start = CarbonImmutable::today()->subDays(6);
+        $end = CarbonImmutable::today()->endOfDay();
+
+        $countsByDay = GameMatch::query()
+            ->whereNotIn('status', [MatchStatus::LobbyFilling, MatchStatus::Cancelled])
+            ->whereBetween('created_at', [$start, $end])
+            ->selectRaw('created_at::date as day, COUNT(*) as total')
+            ->groupBy('day')
+            ->pluck('total', 'day');
+
         $counts = [];
         for ($i = 6; $i >= 0; $i--) {
-            $counts[] = $this->countMatchesOn(CarbonImmutable::today()->subDays($i));
+            $day = CarbonImmutable::today()->subDays($i)->toDateString();
+            $counts[] = (int) ($countsByDay[$day] ?? 0);
         }
 
         return $counts;
@@ -260,9 +272,17 @@ class OpsOverview extends StatsOverviewWidget
             ->whereNotNull('user_id')
             ->whereBetween('created_at', [$start, $end]);
 
+        // Team-match lobby joiners: for team matches `taker_user_id` is the
+        // creator, so the real roster lives in lobby_participants. scopeLive
+        // excludes kicked rows (kicked_at IS NULL).
+        $lobbyParticipants = LobbyParticipant::query()
+            ->select('user_id')
+            ->live()
+            ->whereBetween('joined_at', [$start, $end]);
+
         return DB::query()
             ->fromSub(
-                $listings->union($matches)->union($messages),
+                $listings->union($matches)->union($messages)->union($lobbyParticipants),
                 'activity',
             )
             ->join('users', 'users.id', '=', 'activity.user_id')

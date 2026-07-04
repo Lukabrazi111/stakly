@@ -2,6 +2,7 @@
 
 namespace App\Actions\Listing;
 
+use App\Actions\LinkedAccount\RefreshLinkedAccountRatingAction;
 use App\Enums\LinkedAccountProvider;
 use App\Enums\ListingStatus;
 use App\Enums\MatchStatus;
@@ -34,6 +35,10 @@ use Illuminate\Support\Str;
  */
 class CreateTeamPlayListingAction
 {
+    public function __construct(
+        private readonly RefreshLinkedAccountRatingAction $refreshRating,
+    ) {}
+
     /**
      * @param  array<string, mixed>  $data  Validated input — same shape as
      *                                      CreateListingAction's data plus
@@ -52,7 +57,7 @@ class CreateTeamPlayListingAction
             return 'already_in_lobby';
         }
 
-        return DB::transaction(function () use ($user, $data, $platform) {
+        $listing = DB::transaction(function () use ($user, $data, $platform) {
             $listing = $this->createListing($user, $data, $platform);
             $match = $this->createPairedMatch($listing);
             $this->autoSoftJoinCreator($listing, $user);
@@ -63,6 +68,27 @@ class CreateTeamPlayListingAction
 
             return $listing;
         });
+
+        $this->refreshCreatorRating($user, $platform);
+
+        return $listing;
+    }
+
+    /**
+     * M41 P1 — keep the creator's displayed rating current at post time.
+     * No-ops for chess platforms and when the cached rating is still fresh
+     * (the gate lives in RefreshLinkedAccountRatingAction). Fired after the
+     * listing commits, so the displayed rating reflects the latest pull.
+     */
+    private function refreshCreatorRating(User $user, LinkedAccountProvider $platform): void
+    {
+        $account = $user->linkedAccounts()
+            ->where('provider', $platform->value)
+            ->first();
+
+        if ($account !== null) {
+            $this->refreshRating->handle($account);
+        }
     }
 
     /**
@@ -74,9 +100,8 @@ class CreateTeamPlayListingAction
             'game' => $data['game'],
             'platform' => $platform,
             'stake_amount' => $data['stake_amount'],
-            'skill_min' => $data['skill_min'] ?? null,
-            'skill_max' => $data['skill_max'] ?? null,
-            'time_control' => $data['time_control'] ?? [],
+            // Team play = CS2, which has no time control.
+            'time_control' => null,
             'region' => $data['region'] ?? null,
             'language' => $data['language'] ?? null,
             'expires_at' => now()->addHours((int) $data['duration_hours']),

@@ -1,5 +1,7 @@
 import { Link } from '@inertiajs/react';
-import { Clock, Globe, Languages, Trophy } from 'lucide-react';
+import { Clock, Globe, Languages } from 'lucide-react';
+import { ChessRatingBadge } from '@/components/listings/chess-rating-badge';
+import { FaceitRatingBadge } from '@/components/listings/faceit-rating-badge';
 import { GameChip } from '@/components/listings/game-chip';
 import { ReadyCheckBanner } from '@/components/listings/ready-check-banner';
 import { SellerTrustMeta } from '@/components/listings/seller-trust-meta';
@@ -10,10 +12,9 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { useInitials } from '@/hooks/use-initials';
 import { useT } from '@/lib/i18n';
 import {
-    formatSkillRange,
     formatTimeRemaining,
     getTimeUrgency,
-    timeControlChipLabels,
+    timeControlLabel,
 } from '@/lib/listings-format';
 import { show as showListing } from '@/routes/listings';
 import { show as userShow } from '@/routes/users';
@@ -94,25 +95,56 @@ export function ListingGridCard({ listing }: Props) {
                 </span>
             </header>
 
-            {/* Owner zone — relative link sits above the overlay */}
-            <Link
-                href={userShow({ user: listing.creator.username }).url}
-                className="relative flex items-center gap-3 rounded-lg focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none"
-            >
-                <Avatar className="size-12 shrink-0 overflow-hidden rounded-full">
-                    <AvatarImage
-                        src={listing.creator.avatar_thumb_url ?? undefined}
-                        alt={listing.creator.username}
-                    />
-                    <AvatarFallback className="bg-gradient-primary text-sm font-semibold text-primary-foreground">
-                        {getInitials(listing.creator.name)}
-                    </AvatarFallback>
-                </Avatar>
-                <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-                    <span className="truncate text-sm font-semibold text-foreground transition-colors hover:text-primary">
-                        {listing.creator.username}
-                    </span>
-                    <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-muted-foreground">
+            {/* Owner block — avatar + nickname → profile. The link HUGS its
+                content (no flex-1) so the empty space right of the name falls
+                through to the card overlay → listing detail (this was the chess
+                "click right of the name → profile" bug). The verified rating is
+                pinned right with ml-auto (CS2 → ELO + level dial, chess → bare
+                ELO number) and stays click-through to the card.
+                Region + completion-rate trust sit on their own full-width row
+                below (off the cramped name row, so "N matches" never breaks),
+                above the roster count. */}
+            <div className="flex flex-col gap-2">
+                <div className="pointer-events-none relative flex items-center gap-3">
+                    <Link
+                        href={userShow({ user: listing.creator.username }).url}
+                        className="pointer-events-auto flex min-w-0 items-center gap-3 rounded-lg focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none"
+                    >
+                        <Avatar className="size-12 shrink-0 overflow-hidden rounded-full">
+                            <AvatarImage
+                                src={
+                                    listing.creator.avatar_thumb_url ??
+                                    undefined
+                                }
+                                alt={listing.creator.username}
+                            />
+                            <AvatarFallback className="bg-primary/15 text-sm font-semibold text-primary">
+                                {getInitials(listing.creator.name)}
+                            </AvatarFallback>
+                        </Avatar>
+                        <h2 className="truncate text-sm font-semibold text-foreground transition-colors hover:text-primary">
+                            {listing.creator.username}
+                        </h2>
+                    </Link>
+                    {listing.game === 'cs2' ? (
+                        <span className="ml-auto shrink-0">
+                            <FaceitRatingBadge
+                                rating={listing.creator.faceit_rating}
+                                variant="compact"
+                            />
+                        </span>
+                    ) : listing.game === 'chess' ? (
+                        <span className="ml-auto shrink-0">
+                            <ChessRatingBadge
+                                rating={listing.creator.chess_rating}
+                                variant="bare"
+                            />
+                        </span>
+                    ) : null}
+                </div>
+
+                {(listing.region || listing.creator.settled_lifetime > 0) && (
+                    <div className="pointer-events-none relative flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-muted-foreground">
                         {listing.region && (
                             <span className="inline-flex items-center gap-1">
                                 <Globe className="size-3" aria-hidden="true" />
@@ -133,39 +165,32 @@ export function ListingGridCard({ listing }: Props) {
                             }
                         />
                     </div>
-                </div>
-            </Link>
-
-            {/* Match meta — skill + (time-controls | languages). Fill counter
-                moved out of this row to sit beside the roster avatars. */}
-            <div className="pointer-events-none relative flex flex-wrap items-center gap-1.5">
-                <span className="inline-flex items-center gap-1 rounded-full border border-border/60 bg-background/60 px-2.5 py-0.5 text-xs font-medium text-muted-foreground">
-                    <Trophy className="size-3" aria-hidden="true" />
-                    {formatSkillRange(listing.skill_min, listing.skill_max, t)}
-                </span>
-
-                {!isTeamPlay &&
-                    timeControlChipLabels(listing.time_control, t).map(
-                        (label) => (
-                            <span
-                                key={label}
-                                className="inline-flex items-center gap-1 rounded-full border border-border/60 bg-background/60 px-2.5 py-0.5 text-xs font-medium text-muted-foreground"
-                            >
-                                <Clock className="size-3" aria-hidden="true" />
-                                {label}
-                            </span>
-                        ),
-                    )}
-
-                {listing.language && listing.language.length > 0 && (
-                    <span className="inline-flex items-center gap-1 rounded-full border border-border/60 bg-background/60 px-2.5 py-0.5 text-xs font-medium text-muted-foreground">
-                        <Languages className="size-3" aria-hidden="true" />
-                        {listing.language.slice(0, 2).join(', ')}
-                        {listing.language.length > 2 &&
-                            ` +${listing.language.length - 2}`}
-                    </span>
                 )}
             </div>
+
+            {/* Match meta — time-control + languages. Both games' verified
+                rating now lives on the owner row above, so this row no longer
+                carries it; CS2 carries only languages (hides when none). */}
+            {(listing.game !== 'cs2' ||
+                (listing.language?.length ?? 0) > 0) && (
+                <div className="pointer-events-none relative flex flex-wrap items-center gap-1.5">
+                    {!isTeamPlay && listing.time_control && (
+                        <span className="inline-flex items-center gap-1 rounded-full border border-border/60 bg-background/60 px-2.5 py-0.5 text-xs font-medium text-muted-foreground">
+                            <Clock className="size-3" aria-hidden="true" />
+                            {timeControlLabel(listing.time_control, t)}
+                        </span>
+                    )}
+
+                    {listing.language && listing.language.length > 0 && (
+                        <span className="inline-flex items-center gap-1 rounded-full border border-border/60 bg-background/60 px-2.5 py-0.5 text-xs font-medium text-muted-foreground">
+                            <Languages className="size-3" aria-hidden="true" />
+                            {listing.language.slice(0, 2).join(', ')}
+                            {listing.language.length > 2 &&
+                                ` +${listing.language.length - 2}`}
+                        </span>
+                    )}
+                </div>
+            )}
 
             {/* Roster preview — avatars + fill counter + names. Team-play only;
                 inner guard renders null when no participants have joined. */}

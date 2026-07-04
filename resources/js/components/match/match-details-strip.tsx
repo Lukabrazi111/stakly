@@ -4,6 +4,12 @@ import {
     HoverCardContent,
     HoverCardTrigger,
 } from '@/components/ui/hover-card';
+import {
+    Popover,
+    PopoverContent,
+    PopoverTrigger,
+} from '@/components/ui/popover';
+import { useHasHover } from '@/hooks/use-has-hover';
 import { useT } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import type { ListingPlatform } from '@/types/listings';
@@ -28,9 +34,15 @@ const PLATFORM_LABEL: Record<ListingPlatform, string> = {
 };
 
 /**
- * Compact "Money breakdown" pill that lives in the `TeamRosters` header
- * (right corner). Hover or keyboard focus opens a rich `HoverCard` with
- * Pot · Stake · If-you-win · If-you-lose split into two visual groups
+ * Compact "Money breakdown" pill in the `TeamRosters` header (right corner).
+ * Opens a panel with Pot · Stake · If-you-win · If-you-lose plus a
+ * `Verified via :platform` footer.
+ *
+ * Device-aware so it feels native everywhere: hover-capable devices (desktop
+ * mouse) get a `HoverCard` that opens on hover/focus; touch devices get a
+ * `Popover` that opens on tap. A bare HoverCard is hover-only — it never
+ * opened on a mobile tap and preventDefault'd `touchstart` in React's passive
+ * listener; a bare Popover loses desktop hover. Branching gives both.
  * (commitments above the divider, outcomes below) plus a compact
  * `Verified via :platform` chip in the card footer — settlement source
  * lives with the rest of the money detail, not in the main page chrome.
@@ -44,39 +56,59 @@ export function MatchDetailsTrigger({
     platform,
 }: MatchDetailsTriggerProps) {
     const t = useT();
+    const hasHover = useHasHover();
     const feePercent = Math.round(feeRate * 100);
 
-    return (
-        <HoverCard>
-            <HoverCardTrigger asChild>
-                <button
-                    type="button"
-                    aria-label={t('Show money breakdown')}
-                    className="group inline-flex cursor-pointer items-center gap-2 rounded-full border border-border/60 bg-card/60 px-3 py-1.5 text-xs font-medium text-foreground transition-colors outline-none hover:border-primary/40 hover:bg-primary/10 hover:text-primary focus-visible:border-primary/40 focus-visible:ring-2 focus-visible:ring-primary/25"
-                >
-                    <Coins
-                        className="size-3.5 text-primary"
-                        aria-hidden="true"
-                    />
-                    <span>{t('Money breakdown')}</span>
-                    <Info
-                        className="size-3 text-muted-foreground transition-colors group-hover:text-primary"
-                        aria-hidden="true"
-                    />
-                </button>
-            </HoverCardTrigger>
+    const trigger = (
+        <button
+            type="button"
+            aria-label={t('Show money breakdown')}
+            className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-border/60 bg-card/60 px-3 py-1.5 text-xs font-medium text-foreground transition-colors outline-none hover:bg-primary/10 focus-visible:border-primary/40 focus-visible:ring-2 focus-visible:ring-primary/25"
+        >
+            <Coins className="size-3.5 text-primary" aria-hidden="true" />
+            <span>{t('Money breakdown')}</span>
+            <Info className="size-3 text-muted-foreground" aria-hidden="true" />
+        </button>
+    );
 
-            <HoverCardContent align="end" side="bottom">
-                <BreakdownPanel
-                    pot={pot}
-                    stakeEach={stakeEach}
-                    winnerPayout={winnerPayout}
-                    loserLoss={loserLoss}
-                    feePercent={feePercent}
-                    platform={platform}
-                />
-            </HoverCardContent>
-        </HoverCard>
+    const panel = (
+        <BreakdownPanel
+            pot={pot}
+            stakeEach={stakeEach}
+            winnerPayout={winnerPayout}
+            loserLoss={loserLoss}
+            feePercent={feePercent}
+            platform={platform}
+        />
+    );
+
+    // Desktop (hover-capable) → HoverCard opens on hover/focus. Touch → Popover
+    // opens on tap (HoverCard is hover-only + trips the passive-listener
+    // warning on touch). HoverCardContent already carries the w-80/rounded-xl/
+    // p-5 skin the panel's edge-bleed footer needs; PopoverContent gets it via
+    // className.
+    if (hasHover) {
+        return (
+            <HoverCard openDelay={150} closeDelay={100}>
+                <HoverCardTrigger asChild>{trigger}</HoverCardTrigger>
+                <HoverCardContent align="end" side="bottom">
+                    {panel}
+                </HoverCardContent>
+            </HoverCard>
+        );
+    }
+
+    return (
+        <Popover>
+            <PopoverTrigger asChild>{trigger}</PopoverTrigger>
+            <PopoverContent
+                align="end"
+                side="bottom"
+                className="w-80 rounded-xl border-border/60 bg-card p-5 text-foreground shadow-xl"
+            >
+                {panel}
+            </PopoverContent>
+        </Popover>
     );
 }
 

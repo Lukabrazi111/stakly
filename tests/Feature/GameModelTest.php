@@ -27,20 +27,26 @@ test('ordered scope sorts by position ascending, id tiebreaker', function () {
         ->toBe([$first->id, $second->id, $third->id]);
 });
 
-test('hasBackendIntegration true only for Active games whose slug matches an enum case', function () {
-    // `App\Enums\Game` carries `chess`, `cs2`, `dota2` today — cs2 + dota2
-    // are M15 placeholders. `valorant` is in the catalog but NOT in the
-    // enum, which is what makes it the right "non-enum slug" example here.
+test('hasBackendIntegration true only for Active games whose enum case has an arbitration driver', function () {
+    // `App\Enums\Game` carries chess, cs2, dota2. chess + cs2 have a settlement
+    // adapter (chess via ChessGameApi, cs2 via FaceitGameApi); dota2 does NOT
+    // (M42 tightened the gate from "enum member" to "has arbitration driver").
+    // `valorant` is in the catalog but NOT in the enum at all.
     $chess = Game::factory()->active()->create(['slug' => 'chess']);
+    $cs2 = Game::factory()->active()->create(['slug' => 'cs2']);
+    $dota2Active = Game::factory()->active()->create(['slug' => 'dota2']);
     $valorantActive = Game::factory()->active()->create(['slug' => 'valorant']);
     $valorantComingSoon = Game::factory()->comingSoon()->create(['slug' => 'lol']);
 
     expect($chess->hasBackendIntegration())->toBeTrue();
+    expect($cs2->hasBackendIntegration())->toBeTrue();
 
-    // Even when admin (hypothetically) flips a non-enum slug to Active,
-    // hasBackendIntegration stays false. The Filament resource validation
-    // should prevent this state from happening in practice — this assertion
-    // verifies the model-level safety net.
+    // dota2 is a real enum case but has no settlement adapter → not integrated,
+    // even if an admin flips it Active. The Filament form gate blocks reaching
+    // this state; this is the model-level safety net.
+    expect($dota2Active->hasBackendIntegration())->toBeFalse();
+
+    // Non-enum slug flipped Active → still false.
     expect($valorantActive->hasBackendIntegration())->toBeFalse();
 
     // ComingSoon never counts as backend-integrated regardless of slug.

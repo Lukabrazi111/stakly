@@ -9,7 +9,6 @@ use App\Enums\MatchStatus;
 use App\Enums\TimeControl;
 use Database\Factories\ListingFactory;
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Database\Eloquent\Casts\AsEnumCollection;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -26,8 +25,6 @@ class Listing extends Model
         'game',
         'platform',
         'stake_amount',
-        'skill_min',
-        'skill_max',
         'time_control',
         'region',
         'language',
@@ -47,9 +44,7 @@ class Listing extends Model
             'game' => Game::class,
             'platform' => LinkedAccountProvider::class,
             'stake_amount' => 'decimal:2',
-            'skill_min' => 'integer',
-            'skill_max' => 'integer',
-            'time_control' => AsEnumCollection::of(TimeControl::class),
+            'time_control' => TimeControl::class,
             'language' => 'array',
             'expires_at' => 'datetime',
             'status' => ListingStatus::class,

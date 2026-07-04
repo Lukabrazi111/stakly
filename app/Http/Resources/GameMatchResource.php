@@ -54,10 +54,7 @@ class GameMatchResource extends JsonResource
                 // is auto-verified via Lichess, a chess.com listing via
                 // chess.com.
                 'platform' => $this->listing->platform->value,
-                'time_control' => $this->listing->time_control
-                    ->map(fn ($tc) => $tc->value)
-                    ->values()
-                    ->all(),
+                'time_control' => $this->listing->time_control?->value,
                 // Drives the frontend branch between 1v1 chess UI
                 // (creator/taker) and team-play UI (rosters).
                 'team_size' => $this->listing->team_size,
@@ -193,9 +190,11 @@ class GameMatchResource extends JsonResource
     }
 
     /**
-     * Snapshot of the user's skill rating on the listing's platform. Null
-     * when the linked account isn't loaded or rating isn't populated
-     * (chess providers don't snapshot ratings yet).
+     * The user's scalar skill rating on the listing's platform (FACEIT ELO).
+     * Null for chess — chess ratings are per-time-control and live in
+     * `linked_account_ratings` (snapshotted at match-take in M41 P3b). The match
+     * roster does NOT yet surface chess ratings; M41 P4 wired chess rating
+     * display into listings only, not the match page.
      */
     private function skillRatingFor(User $user): ?int
     {

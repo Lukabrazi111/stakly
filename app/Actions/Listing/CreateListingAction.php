@@ -2,6 +2,7 @@
 
 namespace App\Actions\Listing;
 
+use App\Enums\Game;
 use App\Enums\LinkedAccountProvider;
 use App\Models\Listing;
 use App\Models\User;
@@ -53,12 +54,12 @@ class CreateListingAction
                 'game' => $data['game'],
                 'platform' => $platform,
                 'stake_amount' => $data['stake_amount'],
-                'skill_min' => $data['skill_min'] ?? null,
-                'skill_max' => $data['skill_max'] ?? null,
-                // `time_control` is chess-only; non-chess listings drop the
-                // field entirely and the column stores an empty array (M15
-                // Phase 3 Slice 3).
-                'time_control' => $data['time_control'] ?? [],
+                // `time_control` is chess-only and a single value now (M41 P3a);
+                // force null for non-chess so the column can't carry a stray
+                // value even if validation is ever bypassed (defense in depth).
+                'time_control' => $data['game'] === Game::Chess->value
+                    ? ($data['time_control'] ?? null)
+                    : null,
                 'region' => $data['region'] ?? null,
                 'language' => $data['language'] ?? null,
                 'expires_at' => now()->addHours((int) $data['duration_hours']),

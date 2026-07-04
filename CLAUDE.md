@@ -62,10 +62,6 @@ This project has domain-specific skills available in `**/skills/**`. You MUST ac
 
 - You must only create documentation files if explicitly requested by the user.
 
-## Replies
-
-- Be concise in your explanations - focus on what's important rather than explaining obvious details.
-
 === boost rules ===
 
 # Laravel Boost
@@ -87,10 +83,7 @@ This project has domain-specific skills available in `**/skills/**`. You MUST ac
 
 ### Search Syntax
 
-1. Use words for auto-stemmed AND logic: `rate limit` matches both "rate" AND "limit".
-2. Use `"quoted phrases"` for exact position matching: `"infinite scroll"` requires adjacent words in order.
-3. Combine words and phrases for mixed queries: `middleware "rate limit"`.
-4. Use multiple queries for OR logic: `queries=["authentication", "middleware"]`.
+- Words = auto-stemmed AND (`rate limit` → "rate" AND "limit"); `"quoted phrases"` = exact adjacent order; combine both (`middleware "rate limit"`); multiple queries = OR (`queries=["authentication", "middleware"]`).
 
 ## Artisan
 
@@ -114,12 +107,6 @@ This project has domain-specific skills available in `**/skills/**`. You MUST ac
 - Follow existing application Enum naming conventions.
 - Prefer PHPDoc blocks over inline comments. Only add inline comments for exceptionally complex logic.
 - Use array shape type definitions in PHPDoc blocks.
-
-=== deployments rules ===
-
-# Deployment
-
-- Laravel can be deployed using [Laravel Cloud](https://cloud.laravel.com/), which is the fastest way to deploy and scale production Laravel applications.
 
 === sail rules ===
 
@@ -235,7 +222,7 @@ This is **not a dApp / web3 protocol**. It is a custodial web2 application that 
 
 ## Current scope
 
-What we're working on right now. Not a commitment — decisions are revisitable any time. Just the present state so you know what's in-flight.
+Present state, not a commitment — revisitable any time.
 
 - **Game**: chess only (via chess.com / Lichess APIs).
 - **Format**: 1v1.
@@ -319,9 +306,9 @@ Layout reference is **mmrangels.com** (screenshots in `images-examples/`). Stakl
 
 **GameSelector catalog:** tile list is DB-backed via `App\Models\Game` (admin at `/admin/games`), not a hardcoded array. `App\Enums\Game` is the backend identity for games with real integration; admin can add `ComingSoon` display tiles without an enum case, but flipping one `Active` requires the enum addition. Tiles look identical regardless of status — small "Soon" badge for non-Active, don't dim or lock visually. **Chess is the only Active game today.** Selected tile uses solid `border-primary` + `shadow-[var(--shadow-arena-card-glow)]`, NOT `border-glow`.
 
-### Design assistance — `ui-ux-pro-max` skill
+### Design assistance — `ui-ux-pro-max` + `frontend-design` skills
 
-For any UI design work (building, reviewing, layout, typography, animation timing, accessibility, component composition), **activate the `ui-ux-pro-max` skill**. It complements Stakly's visual system above — use it to inform decisions within the design system, not override it. Flag meaningful divergences.
+For any UI design work (building, reviewing, layout, typography, animation timing, accessibility, component composition), **activate the `ui-ux-pro-max` skill** and the **`frontend-design`** plugin skill (distinctive, intentional aesthetic direction — typography + choices that avoid templated / AI-default looks). Both complement Stakly's visual system above — use them to inform decisions within the design system, not override it. Flag meaningful divergences.
 
 ## Component Folder Convention
 
@@ -357,6 +344,17 @@ When real backend logic lands, only the controller changes — data shape, front
 - Don't build Storybook — ship full pages.
 - Design references come from the user (screenshots, links). Wait for them; do not invent UX.
 
+## Browser verification (Playwright MCP)
+
+The **Playwright MCP** is the agent-driven, interactive browser for verifying the *running* app — ad-hoc and throwaway (not committed, not CI; `.playwright-mcp/` is gitignored). The app runs under Sail at `http://localhost/en` (locale-prefixed); dev login `test@example.com` / `password`. Reach for it whenever the question is "how does it look / behave in the browser?":
+
+- **Responsive / visual** passes (render at 375 / 768 / 1024), design QA, reproducing a visual bug.
+- **Console errors / JS exceptions** (`browser_console_messages`) — runtime React / Inertia / hydration errors a green backend test never surfaces.
+- **Network** (`browser_network_requests`) — confirm Inertia visits, prop payloads, a 419 / 500 on a form post, a wrong Wayfinder URL.
+- **Full-flow walkthroughs** (login → take listing → match) + **real-time** checks via two tabs (`browser_tabs`) — the only practical way to confirm Reverb / Echo re-renders the *other* client.
+
+**Not a replacement for Pest** — logic, money, settlement, ledger invariants stay in Pest (deterministic). Committed browser E2E would be Pest 4 browser testing, not this MCP. Gotcha: Inertia prefetches on hover, so navigate explicitly + `browser_wait_for` to stay deterministic.
+
 ## Library / Documentation Lookups
 
 - **Use Context7 PROACTIVELY.** Before writing/editing code that uses any library/framework/API, call `mcp__context7__resolve-library-id` then `mcp__context7__query-docs`. Don't rely on training data even when confident — versions move fast. Applies to subclassing, extending, or wiring packages together.
@@ -370,6 +368,7 @@ When real backend logic lands, only the controller changes — data shape, front
 - **Default to production-grade.** Don't trim scope on "solo dev" / "pre-launch" grounds. Lead with the more-correct option; surface trade-offs honestly. If a milestone defers something on solo-dev grounds, rephrase the rationale as the actual technical reason (different milestone, downstream dependency) or include it.
 - **Choose tech on merit, not speed-to-ship.** If the better-fit infrastructure already exists, default to it. Concrete cases: **Reverb broadcasting over polling** for any live state (lobby, chat, notifications, match) — already wired; **DB-backed seeded data** over hardcoded route-closure props; **Action classes** over inline controller logic; **Wallet service** over any direct balance write; **Form Requests** over inline `$request->validate(...)` for non-trivial input; **framework primitives** (cache tags, queue middleware, policy gates) over hand-rolled. Watch out for "ship it simple" / "6 lines vs 60" / "revisit later" — usually wrong framing. If the shortcut is truly right (one-shot, throwaway), surface it explicitly.
 - **Proactively surface suggestions, improvements, security/abuse concerns *before* building.** Don't silently pick the safest default — flag non-obvious design choices in 2 sentences ("I'd do X because Y, alt is Z — okay?"). Especially for: input validation, pagination caps, sort/filter whitelists, API resources, auth/access boundaries, rate limiting, money, PII. If you spot a security issue mid-implementation, stop and flag.
+- **Frame decisions as structured questions with a recommendation, not prose paragraphs.** When something needs discussing or deciding (a design fork, a trade-off, ambiguous scope, "which approach?"), pose it as concrete question(s) with 2–4 answer options each and **mark the one you recommend** (one-line why) — the `AskUserQuestion` format — so we walk the choices together *before* building. Don't bury the options in prose.
 - **Flag bigger asks, don't refuse them.** Team matches, Dota 2, multi-chain, non-USDT — surface the added surface area (schema, abuse, time) so we can weigh together. No scope-grounds rejection.
 - **Don't add Solidity, smart-contract escrow, or wallet-connect flows without explicit go-ahead.** Current model is custodial-by-database; switching is a real architectural change.
 - **Chain integration (M9) — NowPayments selected as the payment gateway; not wired yet.** Until then: `users.tron_address` is populated by `App\Support\MockTronAddress` (placeholder, not on-chain), the deposit page shows the mock address, and `WalletController::withdrawStore` short-circuits with a notice toast (no ledger write). No NowPayments client / webhook receiver / API-key wiring without explicit go-ahead. (Provider is custodial — they hold keys; our side will be API client + webhook receiver only. No Solidity / on-chain signing / key-storage code.) The internal ledger (`wallet_transactions` + `App\Services\Wallet`) is provider-agnostic and stays as source of truth.
@@ -385,3 +384,10 @@ When real backend logic lands, only the controller changes — data shape, front
 - **High-stakes-milestone mode.** When the user flags work as critical / money-touching — OR when the work touches Wallet, settlement / escrow / payout, dispute resolution, the outcome pipeline (auto-fetch jobs / `GameApi` adapters / system card schema), webhook receivers, OAuth, key/secret storage, admin impersonation, or any new third-party integration — switch to stricter mode. Don't ship a slice the same session a meaningful question was open at the start. Run Context7 + `search-docs` + relevant skill on every API touchpoint, even known ones. Surface every non-trivial default (pagination caps, retry budgets, idempotency keys, time windows, exposed fields, error classification, anti-abuse) for explicit sign-off. Walk through the attacker view at every endpoint, job, or external call — webhook auth, replay, rate limits, scope leaks, identity confusion, races, snapshot drift — and call them out even if the mitigation is "nothing yet because X". Prefer interruption to wrong assumption.
 - **Comments are scarce and small.** Default to no comments. Add one only when the WHY is non-obvious (hidden constraints, subtle invariants, library gotchas, surprising behavior). Skip task tags, docblocks on self-explanatory props, callsite references, historical context — those belong in commit messages, not files. One short line beats a paragraph.
 - **Wrap up tasks human-first.** When a task / slice finishes, lead with 2–3 plain-language sentences about what changed in product terms (what users can do now, what's safer, what's fixed) — not a files-changed dump. Keep the commit title + a brief manual test plan; skip the verbose files-list + design-choices sections (that detail belongs in the milestone entry, not the end-of-task message).
+
+## gstack skills
+
+gstack (Garry Tan's Claude Code skill suite) is installed **globally** at `~/.claude/skills/gstack`. Invoke any skill as a slash command (e.g. `/review`, `/qa`, `/investigate`).
+
+- **Web browsing → use gstack's `/browse`** skill (and its browser skills like `/qa`, `/design-review`) for general web browsing. **Never use `mcp__claude-in-chrome__*` tools.** The existing Playwright MCP workflow (see **Browser verification** above) stays valid for ad-hoc verification of the running Stakly app — the two coexist.
+- **Available skills:** `/office-hours`, `/plan-ceo-review`, `/plan-eng-review`, `/plan-design-review`, `/design-consultation`, `/design-shotgun`, `/design-html`, `/review`, `/ship`, `/land-and-deploy`, `/canary`, `/benchmark`, `/browse`, `/connect-chrome`, `/qa`, `/qa-only`, `/design-review`, `/setup-browser-cookies`, `/setup-deploy`, `/setup-gbrain`, `/retro`, `/investigate`, `/document-release`, `/document-generate`, `/codex`, `/cso`, `/autoplan`, `/plan-devex-review`, `/devex-review`, `/careful`, `/freeze`, `/guard`, `/unfreeze`, `/gstack-upgrade`, `/learn`.

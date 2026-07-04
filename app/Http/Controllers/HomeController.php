@@ -2,11 +2,13 @@
 
 namespace App\Http\Controllers;
 
+use App\Actions\LinkedAccount\RefreshDisplayedRatingsAction;
 use App\Enums\GameStatus;
 use App\Http\Resources\GameResource;
 use App\Http\Resources\ListingResource;
 use App\Models\Game;
 use App\Models\Listing;
+use App\Services\RecentForm;
 use App\Services\SellerTrust;
 use Illuminate\Support\Facades\Cache;
 use Inertia\Inertia;
@@ -32,7 +34,9 @@ class HomeController extends Controller
                 ->onPublicMarketplace()
                 ->with([
                     'user:id,name,username,is_active_mode',
-                    'user.linkedAccounts',
+                    // `.ratings` feeds the chess rating badge (M41 P4) — without
+                    // it every featured chess card renders "Unrated".
+                    'user.linkedAccounts.ratings',
                     'lobbyParticipants' => fn ($q) => $q->live()->orderBy('joined_at'),
                     'lobbyParticipants.user:id,name,username',
                     'lobbyParticipants.user.media',
@@ -46,6 +50,11 @@ class HomeController extends Controller
             ->values();
 
         SellerTrust::attachTo($featured);
+        RecentForm::attachTo($featured);
+
+        // M41 P2/P3b/P4 — keep the featured cards' displayed ratings fresh,
+        // same stale-gated + throttled policy as the marketplace surfaces.
+        app(RefreshDisplayedRatingsAction::class)->forListings($featured);
 
         // Cache the RESOLVED resource array (not the Eloquent collection) —
         // caching `Eloquent\Collection` round-trips through the cache

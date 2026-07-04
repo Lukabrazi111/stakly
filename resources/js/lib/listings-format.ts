@@ -2,45 +2,26 @@ import type { TranslationFn } from '@/lib/i18n';
 import type { TimeControl } from '@/types';
 
 export const timeControlLabels: Record<TimeControl, string> = {
+    bullet: 'Bullet',
     blitz: 'Blitz',
     rapid: 'Rapid',
-    classical: 'Classical',
 };
 
-const TIME_CONTROL_COUNT = Object.keys(timeControlLabels).length;
-
 /**
- * True when every time control is selected — display collapses to a single
- * "Any time control" tag instead of one per control, keeping listing / preview
- * cards from filling with redundant chips.
+ * Display label for a listing's single time control (M41 P3a — one chess
+ * listing = one time control). Returns an empty string for non-chess listings
+ * (`time_control` is null), so callers can guard with `value && …` to render
+ * nothing rather than an empty chip.
  */
-export function isAllTimeControls(values: TimeControl[]): boolean {
-    return values.length >= TIME_CONTROL_COUNT;
-}
-
-/**
- * Chip labels for a listing's time controls: a single "Any time control" when
- * all are selected, otherwise one label per control. Cards own the chip markup;
- * this owns the all-vs-some collapse so every surface stays consistent.
- */
-export function timeControlChipLabels(
-    values: TimeControl[],
-    t?: TranslationFn,
-): string[] {
-    if (isAllTimeControls(values)) {
-        return [t ? t('Any time control') : 'Any time control'];
-    }
-
-    return values.map((v) =>
-        t ? t(timeControlLabels[v]) : timeControlLabels[v],
-    );
-}
-
-export function formatTimeControls(
-    values: TimeControl[],
+export function timeControlLabel(
+    value: TimeControl | null | undefined,
     t?: TranslationFn,
 ): string {
-    return timeControlChipLabels(values, t).join(', ');
+    if (!value) {
+        return '';
+    }
+
+    return t ? t(timeControlLabels[value]) : timeControlLabels[value];
 }
 
 export function formatTimeRemaining(
@@ -101,26 +82,4 @@ export function getTimeUrgency(isoString: string): TimeUrgency {
     }
 
     return 'normal';
-}
-
-export function formatSkillRange(
-    min: number | null,
-    max: number | null,
-    t?: TranslationFn,
-): string {
-    if (min === null && max === null) {
-        return t ? t('Any skill') : 'Any skill';
-    }
-
-    if (min !== null && max !== null) {
-        return t ? t(':min-:max Elo', { min, max }) : `${min}-${max} Elo`;
-    }
-
-    if (min !== null) {
-        return t ? t(':min+ Elo', { min }) : `${min}+ Elo`;
-    }
-
-    const maxValue = max as number;
-
-    return t ? t('up to :max Elo', { max: maxValue }) : `up to ${maxValue} Elo`;
 }

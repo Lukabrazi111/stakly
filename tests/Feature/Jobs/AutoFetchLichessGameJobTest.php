@@ -47,10 +47,10 @@ function autoFetchMatch(?array $snapshots = null): GameMatch
     Wallet::deposit($creator, '500', reference: "test:deposit:c:{$creator->id}");
     Wallet::deposit($taker, '500', reference: "test:deposit:t:{$taker->id}");
 
-    // M14 Slice 3d — TC catch-all so happy-path tests pass deterministically;
-    // tests that exercise TC mismatch override this back to a single value.
+    // Listing TC matches the fixture default (blitz) so happy-path tests pass
+    // deterministically; TC-mismatch tests override this to another control.
     $listing = Listing::factory()->taken()->forLichess()->for($creator)
-        ->state(['stake_amount' => '100', 'time_control' => ['blitz', 'rapid', 'classical']])
+        ->state(['stake_amount' => '100', 'time_control' => 'blitz'])
         ->create();
     Wallet::hold(user: $creator, amount: '100', listing: $listing, reference: "listing-create:{$listing->id}");
     Wallet::hold(user: $taker, amount: '100', listing: $listing, reference: "match-take:{$listing->id}");
@@ -209,7 +209,7 @@ test('multiple decisive games with time-control mismatch → ambiguous, no post 
     $match = autoFetchMatch();
     // Force listing time-control away from the fixture default (blitz)
     // so the picker's TC filter eliminates both candidates.
-    $match->listing->update(['time_control' => ['classical']]);
+    $match->listing->update(['time_control' => 'rapid']);
 
     $g1 = json_encode(lichessGameFixture(['id' => 'game0001']));
     $g2 = json_encode(lichessGameFixture(['id' => 'game0002', 'winner' => 'black']));
@@ -227,7 +227,7 @@ test('multiple decisive games with time-control mismatch → ambiguous, no post 
 
 test('multiple completions (decisive + drawn) with time-control mismatch → ambiguous, no post', function () {
     $match = autoFetchMatch();
-    $match->listing->update(['time_control' => ['classical']]);
+    $match->listing->update(['time_control' => 'rapid']);
 
     $decisive = lichessGameFixture(['id' => 'winnergg']);
     $drawn = lichessGameFixture(['id' => 'drawnone', 'status' => 'draw']);
@@ -249,7 +249,7 @@ test('multiple completions (decisive + drawn) with time-control mismatch → amb
 
 test('multiple decisive games with time-control match → picker picks game closest to match.created_at (M14 Slice 3c)', function () {
     $match = autoFetchMatch();
-    $match->listing->update(['time_control' => ['blitz']]);
+    $match->listing->update(['time_control' => 'blitz']);
 
     // match.created_at is approximately "now". Build two games:
     //   - first played soon after match creation
@@ -290,7 +290,7 @@ test('multiple decisive games with time-control match → picker picks game clos
 
 test('picker tie-breaks on game id when delta is equal (M14 Slice 3c)', function () {
     $match = autoFetchMatch();
-    $match->listing->update(['time_control' => ['blitz']]);
+    $match->listing->update(['time_control' => 'blitz']);
 
     // Both games at the same lastMoveAt — picker falls back to id sort.
     // 'aaaagame' < 'zzzzgame' lexically → 'aaaagame' wins.

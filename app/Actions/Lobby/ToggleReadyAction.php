@@ -88,6 +88,10 @@ class ToggleReadyAction
 
     private function markReady(Listing $listing, LobbyParticipant $participant): void
     {
+        // No reference_id on purpose — Ready is a repeatable toggle, so a
+        // static per-(listing,user) reference would trip Wallet's idempotency
+        // on a re-Ready (returns the prior row, holds nothing) and short the
+        // pot. These rows group in the admin trail via related_listing_id.
         Wallet::hold(
             user: $participant->user,
             amount: (string) $listing->stake_amount,

@@ -10,13 +10,40 @@ import type { ChatMessage } from './match';
 
 export type ListingStatus = 'open' | 'taken' | 'expired' | 'cancelled';
 
-export type TimeControl = 'blitz' | 'rapid' | 'classical';
+export type TimeControl = 'bullet' | 'blitz' | 'rapid';
 
 export type ListingSort =
     | 'newest'
     | 'highest_stake'
     | 'lowest_stake'
     | 'ending_soon';
+
+// M41 P2 — a creator's verified FACEIT rating. Present on CS2 listings only
+// (chess listings carry `chess_rating` instead). `elo`/`level` are null +
+// `is_unrated` true when the CS2 creator has no FACEIT link or no CS2 ELO yet,
+// so the badge renders "Unrated". `level` is derived from ELO server-side
+// (App\Support\FaceitLevel).
+export interface FaceitRating {
+    elo: number | null;
+    level: number | null;
+    is_unrated: boolean;
+}
+
+// M41 P4 — a creator's verified chess rating for a listing's platform + time
+// control. The number ALWAYS shows when present; `is_provisional` (few games)
+// renders a "?" marker rather than hiding it. `is_unrated` (rating null) means
+// only "no rating for that time control". No level — chess providers expose an
+// ELO number only.
+export interface ChessRating {
+    rating: number | null;
+    is_provisional: boolean;
+    is_unrated: boolean;
+}
+
+// M41 P7 — a single recent-match outcome (win / loss / draw) from Stakly's own
+// settled matches (NOT FACEIT). CS2 never draws, so 'D' won't appear in
+// practice, but the strip supports it for future 1v1 reuse.
+export type RecentFormResult = 'W' | 'L' | 'D';
 
 export interface ListingCreator {
     id: number;
@@ -54,6 +81,15 @@ export interface ListingCreator {
     bio: string | null;
     member_since: string | null;
     linked_accounts: Array<{ provider: ListingPlatform; username: string }>;
+    // M41 P2 — verified FACEIT rating; populated on CS2 listings, null for chess.
+    faceit_rating: FaceitRating | null;
+    // M41 P4 — verified chess rating for the listing's platform + time control;
+    // populated on chess listings, null for CS2.
+    chess_rating: ChessRating | null;
+    // M41 P7 — recent W/L/D form (last 5 settled CS2 matches, newest first)
+    // from Stakly's DB. CS2 listings only (null for chess); [] = no settled
+    // matches yet. Pairs with the FACEIT level dial on CS2 cards.
+    recent_form: RecentFormResult[] | null;
 }
 
 // Chess-only linked-account providers. Distinct from `ListingPlatform` below
@@ -79,11 +115,9 @@ export interface Listing {
     // breakdown on the detail page (pot = stake × 2, fee = pot × fee_rate,
     // winner payout = pot − fee).
     fee_rate: number;
-    skill_min: number | null;
-    skill_max: number | null;
-    // Array of one or more time controls the creator is willing to play.
-    // Taker (M6) picks which one for the actual match.
-    time_control: TimeControl[];
+    // The single time control this chess listing is for (M41 P3a). Null for
+    // non-chess games (CS2 etc. have no time control).
+    time_control: TimeControl | null;
     region: string | null;
     // Array of languages the creator speaks, or null = no restriction.
     language: string[] | null;
@@ -115,8 +149,12 @@ export interface ListingFilters {
     game: GameId;
     stake_min: number | null;
     stake_max: number | null;
+    // M41 P5: the creator's VERIFIED rating bounds, game-scoped — raw Elo for
+    // chess, FACEIT level (1–10) for CS2. `unrated` (only listings with no
+    // rating for the game/platform/TC) is mutually exclusive with the bounds.
     skill_min: number | null;
     skill_max: number | null;
+    unrated: boolean;
     time_control: TimeControl[];
     region: string | null;
     language: string | null;
@@ -215,6 +253,14 @@ export interface ListingCreateProps {
     // powering the live Deal summary. Single source: the same value settlement
     // uses, so the in-form payout preview can't drift from the real payout.
     feeRate: number;
+    // M41 P2 — the current user's own FACEIT rating, for the create-form CS2
+    // preview + the in-form "your rating" note. Null when they have no FACEIT
+    // link (in which case they can't post CS2 anyway).
+    userFaceitRating: FaceitRating | null;
+    // M41 P4 — the current user's own chess ratings, keyed platform → time
+    // control, for the chess create-form live preview. A missing platform/TC
+    // (or a provisional rating) renders "Unrated".
+    userChessRatings: Record<string, Record<string, ChessRating>>;
 }
 
 // Tab values for the /listings/mine page (M6 Phase 6.5).

@@ -8,6 +8,7 @@ use Filament\Infolists\Components\TextEntry;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
+use Illuminate\Database\Eloquent\Builder;
 
 /**
  * Read-only audit view for a single ledger row. Three sections:
@@ -24,7 +25,9 @@ use Filament\Support\Icons\Heroicon;
  */
 class WalletTransactionInfolist
 {
-    private const SIBLINGS_LIMIT = 20;
+    // Comfortably exceeds a 5v5's hold/payout/fee/refund row count so the
+    // sibling list never truncates a single team match in normal operation.
+    private const SIBLINGS_LIMIT = 32;
 
     public static function configure(Schema $schema): Schema
     {
@@ -117,10 +120,11 @@ class WalletTransactionInfolist
     private static function siblingsSection(): Section
     {
         return Section::make('Sibling transactions')
-            ->description('Other ledger rows referencing the same listing or match (escrow-pair, payout+fee, refund-pair, etc.). reference_id is unique per row; siblings share the underlying entity, not the prefix.')
+            ->description('Other ledger rows referencing the same listing or match (escrow holds, payout+fee, refund set, etc.). Grouped by the related_listing_id FK so team settlements — whose per-player reference_ids are suffixed and never match each other — still co-appear; reference_id is unique per row.')
             ->icon(Heroicon::OutlinedRectangleStack)
             ->collapsible()
-            ->visible(fn (WalletTransaction $record): bool => WalletReferenceParser::parseEntity($record->reference_id) !== null,
+            ->visible(fn (WalletTransaction $record): bool => $record->related_listing_id !== null
+                || WalletReferenceParser::parseEntity($record->reference_id) !== null,
             )
             ->schema([
                 TextEntry::make('siblings_html')
@@ -133,25 +137,26 @@ class WalletTransactionInfolist
 
     private static function siblingsSummary(WalletTransaction $record): string
     {
-        $entity = WalletReferenceParser::parseEntity($record->reference_id);
+        $query = self::siblingQuery($record);
 
-        if ($entity === null) {
+        if ($query === null) {
             return '<p class="text-sm text-gray-500">No related transactions found.</p>';
         }
 
-        $candidateRefs = WalletReferenceParser::allReferencesFor($entity['kind'], $entity['id']);
-
-        $siblings = WalletTransaction::query()
+        // Fetch one beyond the cap so we can tell whether the list was truncated.
+        $siblings = $query
             ->with('user:id,username')
-            ->whereIn('reference_id', $candidateRefs)
             ->where('id', '!=', $record->id)
             ->orderBy('created_at')
-            ->limit(self::SIBLINGS_LIMIT)
+            ->limit(self::SIBLINGS_LIMIT + 1)
             ->get();
 
         if ($siblings->isEmpty()) {
             return '<p class="text-sm text-gray-500">No sibling rows for this entity.</p>';
         }
+
+        $capped = $siblings->count() > self::SIBLINGS_LIMIT;
+        $siblings = $siblings->take(self::SIBLINGS_LIMIT);
 
         $rows = $siblings->map(function (WalletTransaction $tx): string {
             $amount = e(WalletTransaction::formatAmount((string) $tx->amount));
@@ -176,6 +181,10 @@ class WalletTransactionInfolist
             HTML;
         })->join('');
 
+        $cappedNote = $capped
+            ? '<p class="mt-2 text-xs text-gray-500">Showing first '.self::SIBLINGS_LIMIT.' rows.</p>'
+            : '';
+
         return <<<HTML
             <div class="overflow-x-auto">
                 <table class="text-sm w-full">
@@ -188,7 +197,38 @@ class WalletTransactionInfolist
                     </tr></thead>
                     <tbody>{$rows}</tbody>
                 </table>
+                {$cappedNote}
             </div>
         HTML;
+    }
+
+    /**
+     * Builds the sibling-row query. Settlement + escrow rows all carry the
+     * `related_listing_id` FK (indexed; one listing maps to one match's full
+     * hold/payout/fee/refund set), so that's the authoritative grouping — it
+     * spans the cross-bucket gap where escrow rows are listing-keyed but
+     * settlement rows are match-keyed, and survives team settlements whose
+     * per-player reference_ids are suffixed and never match each other.
+     *
+     * Falls back to the prefix parser only for rows with no FK
+     * (deposits/withdrawals carrying e.g. a `listing-*` reference_id).
+     */
+    private static function siblingQuery(WalletTransaction $record): ?Builder
+    {
+        if ($record->related_listing_id !== null) {
+            return WalletTransaction::query()
+                ->where('related_listing_id', $record->related_listing_id);
+        }
+
+        $entity = WalletReferenceParser::parseEntity($record->reference_id);
+
+        if ($entity === null) {
+            return null;
+        }
+
+        return WalletTransaction::query()->whereIn(
+            'reference_id',
+            WalletReferenceParser::allReferencesFor($entity['kind'], $entity['id']),
+        );
     }
 }

@@ -97,7 +97,7 @@ test('auto-fetch history section appears when attempts exist', function () {
     Livewire::test(ViewGameMatch::class, ['record' => $match->getKey()])
         ->assertSuccessful()
         ->assertSee('Auto-fetch history')
-        ->assertSee('matched', escape: false)
+        ->assertSee('Matched', escape: false)
         ->assertSee('alice-lichess')
         ->assertSee('142ms');
 });

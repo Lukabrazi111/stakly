@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Storage;
 
 /**
  * Homepage game-tile catalog. Admin-editable display rows shown in the
@@ -51,6 +52,14 @@ class Game extends Model
 
         static::saved($forget);
         static::deleted($forget);
+
+        // Fires per-row on both single and bulk delete, so the poster on the
+        // public disk doesn't outlive its row.
+        static::deleting(function (Game $game): void {
+            if ($game->poster_path !== null) {
+                Storage::disk('public')->delete($game->poster_path);
+            }
+        });
     }
 
     public function scopeOrdered(Builder $query): Builder
@@ -72,6 +81,6 @@ class Game extends Model
     public function hasBackendIntegration(): bool
     {
         return $this->status === GameStatus::Active
-            && GameEnum::tryFrom($this->slug) !== null;
+            && GameEnum::tryFrom($this->slug)?->hasArbitrationDriver() === true;
     }
 }

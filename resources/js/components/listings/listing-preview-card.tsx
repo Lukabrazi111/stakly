@@ -1,35 +1,39 @@
 import { usePage } from '@inertiajs/react';
-import {
-    BadgeCheck,
-    Clock,
-    Globe,
-    Languages,
-    Lock,
-    Trophy,
-} from 'lucide-react';
+import { BadgeCheck, Clock, Globe, Languages, Lock } from 'lucide-react';
+import { ChessRatingBadge } from '@/components/listings/chess-rating-badge';
+import { FaceitRatingBadge } from '@/components/listings/faceit-rating-badge';
 import { GameChip } from '@/components/listings/game-chip';
 import { VerifiedPlatformChip } from '@/components/listings/verified-platform-chip';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import type { GameId } from '@/config/games';
 import { useInitials } from '@/hooks/use-initials';
 import { useT } from '@/lib/i18n';
-import { formatSkillRange, timeControlChipLabels } from '@/lib/listings-format';
+import { timeControlLabel } from '@/lib/listings-format';
 import type { User } from '@/types/auth';
-import type { ListingPlatform, TimeControl } from '@/types/listings';
+import type {
+    ChessRating,
+    FaceitRating,
+    ListingPlatform,
+    TimeControl,
+} from '@/types/listings';
 
 interface Props {
     game: GameId;
     platform: ListingPlatform;
     teamSize: number;
     stakeAmount: string;
-    skillMin: string;
-    skillMax: string;
-    timeControl: TimeControl[];
+    timeControl: TimeControl | null;
     region: string;
     language: string[];
     durationHours: number;
     isPublic: boolean;
     verified: boolean;
+    // M41 P2 — the creator's own FACEIT rating, shown on the CS2 preview in
+    // place of the skill chip. Null when they have no FACEIT link.
+    faceitRating: FaceitRating | null;
+    // M41 P4 — the creator's own chess rating for the selected platform + time
+    // control, shown on the chess preview. Null / unrated → "Unrated".
+    chessRating: ChessRating | null;
 }
 
 /**
@@ -46,25 +50,20 @@ export function ListingPreviewCard({
     platform,
     teamSize,
     stakeAmount,
-    skillMin,
-    skillMax,
     timeControl,
     region,
     language,
     durationHours,
     isPublic,
     verified,
+    faceitRating,
+    chessRating,
 }: Props) {
     const t = useT();
     const getInitials = useInitials();
     const user = usePage<{ auth: { user: User | null } }>().props.auth.user;
 
     const isTeamPlay = teamSize > 1;
-    const skill = formatSkillRange(
-        skillMin === '' ? null : Number(skillMin),
-        skillMax === '' ? null : Number(skillMax),
-        t,
-    );
     const stakeDisplay = stakeAmount === '' ? '0' : stakeAmount;
 
     return (
@@ -83,20 +82,42 @@ export function ListingPreviewCard({
                 </span>
             </header>
 
-            <div className="flex items-center gap-3">
-                <Avatar className="size-12 shrink-0 overflow-hidden rounded-full">
-                    <AvatarImage
-                        src={user?.avatar_thumb_url ?? undefined}
-                        alt={user?.username ?? ''}
-                    />
-                    <AvatarFallback className="bg-gradient-primary text-sm font-semibold text-primary-foreground">
-                        {getInitials(user?.name ?? '')}
-                    </AvatarFallback>
-                </Avatar>
-                <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-                    <span className="truncate text-sm font-semibold text-foreground">
+            {/* Owner block — mirrors ListingGridCard so the preview matches the
+                posted card: avatar + name with the verified rating pinned right
+                (CS2 → ELO + dial, chess → bare ELO number), and the region +
+                verified trust on its own row below. */}
+            <div className="flex flex-col gap-2">
+                <div className="flex items-center gap-3">
+                    <Avatar className="size-12 shrink-0 overflow-hidden rounded-full">
+                        <AvatarImage
+                            src={user?.avatar_thumb_url ?? undefined}
+                            alt={user?.username ?? ''}
+                        />
+                        <AvatarFallback className="bg-primary/15 text-sm font-semibold text-primary">
+                            {getInitials(user?.name ?? '')}
+                        </AvatarFallback>
+                    </Avatar>
+                    <span className="min-w-0 flex-1 truncate text-sm font-semibold text-foreground">
                         {user?.username ?? t('You')}
                     </span>
+                    {game === 'cs2' ? (
+                        <span className="shrink-0">
+                            <FaceitRatingBadge
+                                rating={faceitRating}
+                                variant="compact"
+                            />
+                        </span>
+                    ) : game === 'chess' ? (
+                        <span className="shrink-0">
+                            <ChessRatingBadge
+                                rating={chessRating}
+                                variant="bare"
+                            />
+                        </span>
+                    ) : null}
+                </div>
+
+                {(region || verified) && (
                     <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-muted-foreground">
                         {region && (
                             <span className="inline-flex items-center gap-1">
@@ -119,25 +140,16 @@ export function ListingPreviewCard({
                             </span>
                         )}
                     </div>
-                </div>
+                )}
             </div>
 
             <div className="flex flex-wrap items-center gap-1.5">
-                <span className="inline-flex items-center gap-1 rounded-full border border-border/60 bg-background/60 px-2.5 py-0.5 text-xs font-medium text-muted-foreground">
-                    <Trophy className="size-3" aria-hidden="true" />
-                    {skill}
-                </span>
-
-                {!isTeamPlay &&
-                    timeControlChipLabels(timeControl, t).map((label) => (
-                        <span
-                            key={label}
-                            className="inline-flex items-center gap-1 rounded-full border border-border/60 bg-background/60 px-2.5 py-0.5 text-xs font-medium text-muted-foreground"
-                        >
-                            <Clock className="size-3" aria-hidden="true" />
-                            {label}
-                        </span>
-                    ))}
+                {!isTeamPlay && timeControl && (
+                    <span className="inline-flex items-center gap-1 rounded-full border border-border/60 bg-background/60 px-2.5 py-0.5 text-xs font-medium text-muted-foreground">
+                        <Clock className="size-3" aria-hidden="true" />
+                        {timeControlLabel(timeControl, t)}
+                    </span>
+                )}
 
                 {language.length > 0 && (
                     <span className="inline-flex items-center gap-1 rounded-full border border-border/60 bg-background/60 px-2.5 py-0.5 text-xs font-medium text-muted-foreground">

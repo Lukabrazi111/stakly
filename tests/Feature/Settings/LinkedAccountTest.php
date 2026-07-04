@@ -4,6 +4,7 @@ use App\Enums\LinkedAccountProvider;
 use App\Models\PendingVerification;
 use App\Models\User;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\RateLimiter;
 
 /*
@@ -140,6 +141,11 @@ test('store rejects when username is already linked by another user', function (
 // ─── verify (POST) ──────────────────────────────────────────────────────
 
 test('verify happy path: marks user verified + clears pending', function () {
+    // M41 P3b — verify dispatches the chess rating-capture job; fake the queue
+    // so the sync runner doesn't make a real /stats call (capture is covered in
+    // ChessRatingCaptureTest).
+    Queue::fake();
+
     $user = User::factory()->create();
     PendingVerification::create([
         'user_id' => $user->id,

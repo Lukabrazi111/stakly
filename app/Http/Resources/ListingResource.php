@@ -2,7 +2,10 @@
 
 namespace App\Http\Resources;
 
+use App\Enums\Game;
+use App\Enums\LinkedAccountProvider;
 use App\Models\Listing;
+use App\Support\FaceitLevel;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -30,9 +33,7 @@ class ListingResource extends JsonResource
             // Float at the JSON boundary; FE computes pot / fee / payout
             // from this — config is the single source of truth.
             'fee_rate' => (float) config('stakly.platform_fee_rate'),
-            'skill_min' => $this->skill_min,
-            'skill_max' => $this->skill_max,
-            'time_control' => $this->time_control->map(fn ($tc) => $tc->value)->values()->all(),
+            'time_control' => $this->time_control?->value,
             'region' => $this->region,
             'language' => $this->language,
             'expires_at' => $this->expires_at->toIso8601String(),
@@ -101,7 +102,74 @@ class ListingResource extends JsonResource
                         ->values()
                         ->all()
                     : [],
+                // M41 P2 — verified FACEIT rating for CS2 listings. Level is
+                // derived from ELO; "Unrated" when the creator has no FACEIT
+                // link or no CS2 ELO yet.
+                'faceit_rating' => $this->game === Game::Cs2
+                    ? $this->getFaceitRating()
+                    : null,
+                // M41 P4 — verified chess rating for the listing's platform +
+                // time control. Null for non-chess; "Unrated" when the creator
+                // has no rating for that time control (or it's provisional).
+                'chess_rating' => $this->game === Game::Chess
+                    ? $this->getChessRating()
+                    : null,
+                // M41 P7 — the creator's recent W/L/D form (last 5 settled CS2
+                // matches, newest first), batch-loaded by RecentForm::attachTo.
+                // CS2 only; null elsewhere. Empty array = no settled matches yet.
+                'recent_form' => $this->game === Game::Cs2
+                    ? array_values((array) ($this->recent_form ?? []))
+                    : null,
             ],
+        ];
+    }
+
+    /**
+     * The creator's verified FACEIT rating for a CS2 listing — ELO + a level
+     * derived from it + an unrated flag. Reads the eager-loaded `linkedAccounts`
+     * relation only (no query); returns the unrated shape when the FACEIT link
+     * or its ELO is missing.
+     *
+     * @return array{elo: int|null, level: int|null, is_unrated: bool}
+     */
+    private function getFaceitRating(): array
+    {
+        $faceit = $this->user->relationLoaded('linkedAccounts')
+            ? $this->user->linkedAccounts->firstWhere('provider', LinkedAccountProvider::Faceit)
+            : null;
+
+        $elo = $faceit?->skill_rating;
+
+        return [
+            'elo' => $elo,
+            'level' => FaceitLevel::fromElo($elo),
+            'is_unrated' => $elo === null,
+        ];
+    }
+
+    /**
+     * The creator's verified chess rating for THIS listing's platform + time
+     * control (M41 P4). Reads the eager-loaded `linkedAccounts.ratings` only
+     * (no query). A real rating ALWAYS surfaces its number — provisional ones
+     * (`is_provisional`) get a "?" marker in the UI rather than being hidden.
+     * `is_unrated` means only "no rating row for this time control".
+     *
+     * @return array{rating: int|null, is_provisional: bool, is_unrated: bool}
+     */
+    private function getChessRating(): array
+    {
+        $account = $this->user->relationLoaded('linkedAccounts')
+            ? $this->user->linkedAccounts->firstWhere('provider', $this->platform)
+            : null;
+
+        $row = ($account?->relationLoaded('ratings') && $this->time_control !== null)
+            ? $account->ratings->firstWhere('time_control', $this->time_control)
+            : null;
+
+        return [
+            'rating' => $row?->rating,
+            'is_provisional' => (bool) $row?->is_provisional,
+            'is_unrated' => $row === null,
         ];
     }
 }

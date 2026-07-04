@@ -83,7 +83,14 @@ export function SiteHeader() {
                                     aria-hidden
                                     className="h-6 w-px bg-border/60"
                                 />
-                                {isUnverified && <UnverifiedChip />}
+                                {/* Both secondary chips hide below lg so the
+                                    authed header doesn't overflow in the md–lg
+                                    range; the verify nudge still surfaces via
+                                    the banner + disabled Create-listing tooltip,
+                                    and the balance via the profile-menu Wallet. */}
+                                {isUnverified && (
+                                    <UnverifiedChip className="max-lg:hidden" />
+                                )}
                                 <BalanceChip balance={user.usdt_balance} />
                                 <BellButton />
                                 <LocaleSwitcher compact />

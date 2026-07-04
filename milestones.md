@@ -2,26 +2,36 @@
 
 Frontend-first build. UI against real DB infrastructure + seeded fake data; backend logic (escrow, payouts, on-chain integration) lands per page once the UI is validated. Milestones are work-chunk labels, not version commitments — decisions inside any of them are revisitable.
 
-> **Shipped milestones live in `milestones_archived.md`** (M1, M2, M2.5, M3, M3.5, M4, M5, M6, M7, M8 all phases, M10, M11, M12 all phases, M14 all phases, M15 all phases, M16 all phases, M17, M18, M19, M22, M23, M24, M25, M26 all phases, M27 all phases, M29 all phases, M30 all phases, M31 all phases, M32 all phases, M34 all phases, M35 all phases, M36 all phases, M37 all phases, M38 P1–P3 (paused at P4), M39 all phases, M40 all phases). **Parked milestones** (work that isn't being picked up right now) also live in the archive — currently M13. This file is for active + upcoming work + the cross-cutting architectural decisions that earlier milestones established.
+> **Shipped milestones live in `milestones_archived.md`** (M1, M2, M2.5, M3, M3.5, M4, M5, M6, M7, M8 all phases, M10, M11, M12 all phases, M14 all phases, M15 all phases, M16 all phases, M17, M18, M19, M22, M23, M24, M25, M26 all phases, M27 all phases, M29 all phases, M30 all phases, M31 all phases, M32 all phases, M34 all phases, M35 all phases, M36 all phases, M37 all phases, M38 P1–P3 (paused at P4), M39 all phases, M40 all phases, M41 all phases, M42 all phases). **Parked milestones** (work that isn't being picked up right now) also live in the archive — currently M13. This file is for active + upcoming work + the cross-cutting architectural decisions that earlier milestones established.
 
 ## Phases (map)
 
-**Recently shipped** — full per-milestone summaries live in `milestones_archived.md`. Latest: **M38 P1–P3** (Redis for queue/cache/sessions + `redis→array` failover + admin-gated Horizon), **M15** (multi-game / CS2 via FACEIT), **M39** (match-page pipeline fixes — ManualReview chat + single-source deadline), and **M40** (create-listing form UI polish — Bybit-inspired) — through 2026-06-26.
+**Recently shipped** — full per-milestone summaries live in `milestones_archived.md`. Latest: **M42** (Filament admin audit — multi-game/team-play crash + blindspot fixes, dispute-view Team A/B roster + team money, Games-Active gate, widget perf; + a device-aware match-page money-breakdown fix), **M41** (verified skill ratings — FACEIT level dial + chess per-TC ratings + marketplace filter), and **M34 P5–P6** (private-lobby access hardening + invite-share popover) — through 2026-06-30.
 
 **Active / upcoming:**
 
+- **M43 P1 — CS2 listings design polish** (from `/design-review`, 2026-07-04) — **done.** Gradient overload cut: per-card **CTA → pink-outline** (new `outlinePrimary` button variant, fills solid pink on hover) so the **gradient stake anchors each card**; **avatar fallbacks → `bg-primary/15` tint** across grid card, row, create-preview, and the listing-detail page. **Game-aware + translated tab title** (was hardcoded "Browse chess listings"); **game-tab pills → 44px** touch target, **view toggle 32→40px**; **card names promoted to `<h2>`** (screen-reader nav, 1→9 headings). **Kept intentionally:** the single glow CTA on the listing-detail booking widget (one hero action = correct gradient use). **Skipped on purpose:** dimming the "Soon" game pills (violates the "don't dim ComingSoon" convention; already ordered actionable-first + scrollable). **Deferred (separate scope):** site-wide header/footer nav + filter-panel input touch targets (not listings-specific). Verified in-browser (tsc/eslint/console clean, before/after screenshots). Audit scored **B / AI-slop A−**.
 - **M38 — Redis for queue, cache & sessions (launch-readiness)** — **P1–P3 shipped + parked (archived 2026-06-24).** Only **P4 (production wiring)** remains, deferred to deploy day on DigitalOcean: provision managed Redis (two instances for the eviction split), set `REDIS_SCHEME=tls`, turn on the Horizon + Reverb daemons (Laravel Forge), smoke-test settlement. The one repo-side prerequisite — TLS-capable Redis config — is already done. Full milestone (incl. the P4 deploy-day checklist) is in the archive.
 - **M34 P3.1 follow-ups** — deferred lobby-page polish scoped out of M34 (each needs its own data plumbing; the lobby shipped cleanly without them). Slot into a follow-up phase on user demand or when the data lands for another reason.
     - **Country flags per player** — a small flag next to each roster name. Source: FACEIT profile `country` (ISO-3166 two-letter), pulled during `FaceitProfileClient::fetch()` and persisted on a new `linked_accounts.country` column; render via a flag-emoji helper or SVG pack. Cheap, but needs a migration + a backfill of existing linked accounts.
     - **Per-player recent W/L form** (`W L W W L` chips on each slot card) — last 5 FACEIT matches via `/players/{guid}/history?game=cs2&limit=5`. Expensive at scale (10 players × per-page-load = 10 FACEIT Data API calls); needs a per-player cache (~1h TTL) + an off-band refresher job so the lobby page never blocks on FACEIT. Momentum / tilt signal.
+
+- **M34 P5 — Private lobby access hardening** — *done 2026-06-28* (full backend suite green, 1675 tests). Closes the documented "URL = access" gap: `ListingPolicy::viewLobby` / `joinLobby` + `LobbyChannel::join` only checked `isTeamPlay()`, and the invite token was a no-op redirect — so enumerating sequential `/listings/{id}` exposed **and** let anyone join a *private* lobby (roster + stakes). **Decisions (2026-06-28, with the user):**
+    1. **Token = key.** `/lobbies/{token}` records a per-session **invite pass**, then the canonical `/listings/{id}` authorizes only the **creator / live participants / pass-holders**; anyone else → **404** (hides existence; never 403). The redirect drops 301 → 302 so the pass-granting route always runs.
+    2. **Login required to view** a private lobby. The invite link (`/lobbies/{token}`) is already auth-gated, so a guest clicking it is funnelled to login → back to the link → granted → in; a guest who instead *guesses* the numeric `/listings/{id}` just 404s (can't hold a pass — only the authed token route grants one — so no existence leak).
+    3. **Invite-link rotation deferred** to a follow-up (not built now).
+    4. **Kick bars re-entry.** A kicked player (has a `kicked_at` row — voluntary leave *deletes* the row, so leavers keep access) can't view or rejoin a private lobby unless re-invited.
+    - Public lobbies unchanged (open, marketplace-listed). New `App\Support\LobbyInvitePass` (grant/holds, single session-key source); gate logic centralised in `ListingPolicy`; `LobbyChannel` delegates via `Gate::allows('viewLobby')` so page + channel auth can't drift. Money-adjacent → Pest coverage (guessed id → 404, token → access, join blocked w/o pass, kicked → barred, leaver → fine, public → open, guest → login) + full backend suite green.
+
+- **Lobby slot-card UI polish (2026-06-29) — mostly reverted, kick-button still open.** Kept: removed the magenta `border-glow` on the private-invite banner (`lobby-invite-banner.tsx` → clean border). Reverted: the slot-card **kick button** was iterated several ways (moved beside the Ready pill → relabelled "Kick" → hover-reveal overlay with Profile + Kick → touch tap-to-reveal) and the user **reverted all of it** — current state is the original absolute top-right ✕ (`showKickX` + ghost `<Button>` in `slot-card.tsx`). Kick-button placement/styling is an **open design question** — revisit with fresh direction (the overlap-with-the-dial complaint that started it still stands).
+
+- **M34 P6 — invite-link share popover (2026-06-30).** Replaced the large always-visible **"Private invite link" banner** (`lobby-invite-banner.tsx`, deleted) with an on-demand **Share popover** off the lobby-header Share button — mirrors `ShareProfileButton` (heading + QR + copyable link + Copy + toast). **Also fixed a real bug:** the old header Share button copied `window.location.href` (the `/listings/{id}` page), which after M34 P5's invite-only hardening **404s for any invitee of a private lobby**. The popover now shares the link that actually grants access — the **invite-token URL** (`/lobbies/{token}`) for a private-lobby owner, the **public listing URL** for public lobbies, and it **hides** for a private-lobby non-owner (no shareable link; they don't hold the token). Owner-gated by the payload (`invite_token` is owner-only in `LobbyResource`) and lifecycle-gated to `recruiting`/`ready_checking` (the invite endpoint 404s once locked). Trigger labelled **"Invite"** (private owner) / **"Share"** (public) for discoverability now the banner's gone. Decided via AskUserQuestion (popover over dialog; QR included). Verified in-browser via Playwright.
 
 - **M15 — Multi-game expansion** — **all 6 phases shipped (archived 2026-06-24); CS2 via FACEIT live.** Two non-blocking FACEIT follow-ups remain: lock the webhook `event_id` field name + idempotency decision (20-min empirical capture), and the webhook egress IP-allowlist. Future games (Dota 2, Valorant, LoL) extend the same per-game adapter pattern — see archive M15 for the anti-cheat catalog + composition reference.
 - **M28** — Designed Fees page. **Not built yet** — the milestone was spec'd in full but no code shipped (no `FeesController` / `/fees` route / page on `main`; header still shows Support). Hand-coded `/fees` marketing surface: transparent 5–10% commission disclosure + interactive calculator, replaces footer Support link in header nav. Pre-launch trust signal; design-driven (`ui-ux-pro-max` skill). Full spec in the section below.
 - **M20** — Email notifications. **Spec materially shrunk**: M27 P5 already shipped the in-app preferences UI + `notification_preferences` table + 9 `PlayerNotification` classes; M30 P4 wired the `mail` channel for ban notifications. What's left = branded HTML email templates, flip `'mail'` into `via()` on the remaining PlayerNotification subclasses, production SMTP config. Realistically 2–3 days.
 - **M21** — Blacklist + safety. Block users from listings + chat, with anti-evasion considerations. Has open design questions (block semantics + multi-account evasion) — needs alignment before coding.
 - **M33** — Listing time-control contract. Make Stakly's accepted time controls (blitz / rapid / classical) explicit in the listing-creation form, surface `time_control_mismatch` as a player-facing banner on stuck matches, and optionally re-enable Slice 3d strictness behind a per-listing opt-in. Reverted from M14 on 2026-06-06 — friction (legitimate correspondence / bullet games rejected silently) outweighed the small sandbag attack surface at this stage. Revisit when launch scale or a real abuse incident makes it relevant.
-
-- **M41 — Verified skill ratings (display)** — replace the free-typed create-listing skill range with each player's **real, API-pulled rating** (FACEIT ELO + level; chess.com / Lichess per-time-control ratings), shown on listings + profiles. **Display-only — never gates a match** (taker's choice); the self-typed skill inputs come off the create form. FACEIT first, chess second. Carries an **Under review** sub-idea — asymmetric "punch-up-only" matching (stronger players can't take weaker players' listings). Spun out of a 2026-06-26 discussion; full spec + phases in the section below.
 
 > Active milestone keeps a detailed task list. Future milestones expand when started. Any of this can shift — flag the change, update the doc.
 
@@ -182,69 +192,3 @@ Not CMS-managed on purpose. The Filament CMS template (`cms/page.tsx`) is intent
 - Affiliate / referral fee tracking. Different scope; if revenue-share programs ship, they own their own page.
 - Localised currency conversion ("how much is this in EUR?"). USDT is the unit on every Stakly surface; introducing currency conversion UI confuses the platform's denomination.
 
----
-
-## M41 — Verified skill ratings (display)
-
-Spun out of a 2026-06-26 discussion. **Not started.** The create-listing skill range (Elo) is free-typed → unverifiable and a sandbag vector (a 2100 can type "1200–1500" to fish for weaker players). Replace self-reported skill with each player's **real, API-pulled rating**, shown everywhere their listing appears. Extends existing scaffolding: `linked_accounts.skill_rating`, `match_provider_snapshots.skill_rating_snapshot`, and FACEIT ELO already fetched on link (M15).
-
-### Decisions (2026-06-26)
-
-- **Display, never gate.** Show real ratings; anyone verified can take any listing — the taker decides for themselves. No creator-set bands, no blocking. (Asymmetric gating is parked under review below.)
-- **Remove the self-typed skill inputs** (`Cs2SkillRangeFilter` + `ChessSkillRangeFilter`) from `listings/create` entirely. Skill stops being something the creator invents.
-- **FACEIT first, chess second.** FACEIT = one ELO + level (clean). Chess = per-time-control ratings (chess.com & Lichess scales differ ~150–300 pts; never compared cross-site since a match is on one platform) + provisional handling.
-- **Marketplace skill filter → real ratings.** Keep the `/listings` skill filter but point it at the creator's verified rating ("listings from 1500–2000 players"), not a self-set band.
-- **Snapshot the creator's rating onto the listing at creation** (stable + auditable, like match snapshots), with a periodic throttled refresh; not read live per render.
-- **Unrated / provisional accounts → "Unrated" badge.** Still postable + takeable; the taker decides. No blocking.
-- **Chess per-TC display:** show the rating for the listing's time control(s) — compact cards show the headline TC, the detail page can show each. Revisit if it reads noisy.
-- **Cost:** more provider calls → cache + refresh-on-link + a throttled off-band refresher (per the self-throttle rule); keep the match-time snapshot for audit.
-
-### Phases
-
-**P1 — FACEIT rating capture**
-
-- [ ] Confirm FACEIT ELO + level are pulled + stored on link (`linked_accounts.skill_rating`); add a refresh path.
-- [ ] Snapshot the creator's rating onto the listing at creation (new column / snapshot).
-
-**P2 — FACEIT display + remove the CS2 skill input**
-
-- [ ] Show ELO + level on listing cards, the live preview, profile, and listing detail.
-- [ ] Drop `Cs2SkillRangeFilter` from the create form.
-
-**P3 — Chess rating capture**
-
-- [ ] Pull chess.com / Lichess **per-time-control** ratings on link (new — the chess profile clients don't fetch ratings today); store per format; flag provisional/unrated.
-
-**P4 — Chess display + remove the chess skill input**
-
-- [ ] Show the rating for the listing's time control; drop `ChessSkillRangeFilter` from create.
-
-**P5 — Marketplace skill filter rework**
-
-- [ ] Re-point the `/listings` skill filter at real ratings (or drop if it's not pulling its weight).
-
-**P6 — Data cleanup**
-
-- [ ] Retire `listings.skill_min` / `skill_max`; update seeders + factories; finalize the snapshot column + the "Unrated" empty state.
-
-### Under review — asymmetric "punch-up-only" matching
-
-> **Not decided — discuss before committing.** This *contradicts* the "display, never gate" decision above (it gates), but only asymmetrically: it blocks the **stronger** player from punching down, never the weaker player's choice to challenge up. Depends on the M41 verified-rating work landing first.
-
-**Idea:** a player may only **take** a listing whose creator is **equal or higher** rank than themselves — punch up, never down.
-
-- **Example:** user1 = 500, user2 = 200. user2 (lower) *can* take user1's listing (challenging someone stronger ✅). user1 (higher) *cannot* take user2's listing (a stronger player can't hunt a weaker one ❌).
-- **Why:** protects weaker players from being preyed on by sandbaggers, while preserving a weaker player's choice to test themselves against a stronger opponent.
-
-**Open questions:**
-
-- It re-introduces blocking — acceptable as a one-directional carve-out (only stops punch-down)?
-- **Unrated players** — how does the rule apply when either side has no rating? (Allow freely? Treat unrated as lowest? as highest?)
-- **Which rating to compare** — chess is per-time-control, so compare on the listing's platform + TC; cross-game never compares.
-- **Liquidity** — a strong player can then only get matches by *posting* (weaker players choose to take them) or *taking* equal/stronger listings; they lose the ability to take weaker listings. Acceptable trade for fairness?
-
-### Not in M41
-
-- Enforcing a creator-set opponent band (we removed bands entirely — skill is the verified number, not a range).
-- Cross-game / cross-platform rating comparison (each match is one game on one platform).
-- A composite "Stakly rating" of our own — we display the providers' ratings, we don't compute our own.

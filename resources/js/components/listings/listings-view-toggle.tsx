@@ -28,7 +28,7 @@ export function ListingsViewToggle({ value, onChange }: Props) {
                 }
             }}
             variant="outline"
-            size="sm"
+            size="lg"
             aria-label={t('Listings layout')}
         >
             <ToggleGroupItem value="rows" aria-label={t('Rows view')}>

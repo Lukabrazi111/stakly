@@ -26,8 +26,10 @@ use Illuminate\Support\Facades\Cache;
 
 /**
  * Admin catalog for the homepage GameSelector tiles. Server rule: Active is
- * only allowed when slug matches an `App\Enums\Game` enum case — guards
- * admin from advertising a "live" game before backend integration exists.
+ * only allowed when the slug matches an `App\Enums\Game` case that has a wired
+ * settlement adapter (`hasArbitrationDriver()`) — guards admin from
+ * advertising a "live" game before its backend integration exists (M42:
+ * tightened from bare enum membership, which let adapter-less Dota2 go Active).
  */
 class GameResource extends Resource
 {
@@ -59,14 +61,25 @@ class GameResource extends Resource
                 ->maxLength(64)
                 ->alphaDash()
                 ->unique(ignoreRecord: true)
-                ->rules([
+                // `->rule()` (singular) so Filament injects `$get`; `->rules([...])`
+                // hands the closure straight to Laravel, which calls it with
+                // ($attribute,...) — `$get` would be the attribute string and the
+                // returned closure silently ignored (the gate was a no-op).
+                ->rule(
                     fn (Get $get): Closure => function (string $attribute, mixed $value, Closure $fail) use ($get) {
-                        if ($get('status') === GameStatus::Active->value
-                            && GameEnum::tryFrom((string) $value) === null) {
-                            $fail('Slug must match an App\\Enums\\Game enum case before this game can be set to Active.');
+                        // $get('status') may be the enum or its backing string
+                        // depending on the Select's option source — normalize.
+                        $status = $get('status');
+                        $isActive = $status instanceof GameStatus
+                            ? $status === GameStatus::Active
+                            : $status === GameStatus::Active->value;
+
+                        if ($isActive
+                            && GameEnum::tryFrom((string) $value)?->hasArbitrationDriver() !== true) {
+                            $fail('Slug must match an App\\Enums\\Game case with a wired settlement adapter before this game can be set to Active.');
                         }
                     },
-                ]),
+                ),
 
             FileUpload::make('poster_path')
                 ->label('Poster')
@@ -83,11 +96,7 @@ class GameResource extends Resource
 
             Select::make('status')
                 ->label('Status')
-                ->options([
-                    GameStatus::Active->value => 'Active',
-                    GameStatus::ComingSoon->value => 'Coming soon',
-                    GameStatus::Disabled->value => 'Disabled',
-                ])
+                ->options(GameStatus::class)
                 ->default(GameStatus::ComingSoon->value)
                 ->required(),
         ]);
@@ -107,6 +116,7 @@ class GameResource extends Resource
                     ->disk('public')
                     ->height(72)
                     ->width(48)
+                    ->defaultImageUrl(asset('images/no-poster.svg'))
                     ->extraImgAttributes(['class' => 'rounded-md object-cover']),
 
                 TextColumn::make('display_name')

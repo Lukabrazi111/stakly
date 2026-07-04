@@ -32,7 +32,8 @@ export interface MatchListing {
     // this provider's API. Surfaced in `MatchInfoCard` as a capability
     // indicator + drives the M16 Pending action card copy.
     platform: ListingPlatform;
-    time_control: TimeControl[];
+    // The single chess time control (M41 P3a); null for non-chess matches.
+    time_control: TimeControl | null;
     // M34 — drives the frontend branch between 1v1 chess UI (creator +
     // taker) and team-play UI (team rosters). 1 for chess, 2 for Wingman,
     // 5 for CS2 5v5.

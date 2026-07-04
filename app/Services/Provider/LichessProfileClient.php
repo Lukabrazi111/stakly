@@ -3,6 +3,7 @@
 namespace App\Services\Provider;
 
 use App\Enums\LinkedAccountProvider;
+use App\Enums\TimeControl;
 use App\Services\Provider\Exceptions\PermanentProviderError;
 use App\Services\Provider\Exceptions\ProfileNotFoundException;
 use App\Services\Provider\Exceptions\ProviderError;
@@ -45,6 +46,71 @@ class LichessProfileClient implements ProfileClient
 
     public function fetchProfile(string $username): ProfileFetchResult
     {
+        $data = $this->requestUser($username);
+
+        return new ProfileFetchResult(
+            username: $data['username'] ?? $username,
+            bioFieldValue: $data['profile']['bio'] ?? null,
+        );
+    }
+
+    /**
+     * Per-time-control ratings from the SAME `/api/user` payload the bio
+     * verify uses — `perfs.{bullet,blitz,rapid}` (M41 P3b). Only time controls
+     * the player has actually played (`games > 0`) are returned; Lichess marks
+     * "Provisional" is decided by GAME COUNT (`games` below
+     * `provisional_min_games`), NOT Lichess's own `prov` flag (rd-based) — so a
+     * rusty-but-established perf isn't flagged. Provisional ratings still return
+     * the number; the UI shows them with a "?". Perfs we don't stake on
+     * (classical, correspondence, variants, puzzle modes) are ignored — and
+     * puzzle modes (storm/racer/streak) don't carry a `rating` field at all, so
+     * the `games`/`rating` guards skip them safely.
+     *
+     * @throws ProfileNotFoundException
+     */
+    public function fetchRatings(string $username): ChessRatings
+    {
+        $data = $this->requestUser($username, recordHealth: false);
+        $perfs = $data['perfs'] ?? [];
+        $minGames = (int) config('services.lichess.provisional_min_games', 20);
+
+        $ratings = [];
+
+        foreach (TimeControl::cases() as $timeControl) {
+            $perf = $perfs[$timeControl->value] ?? null;
+            $games = (int) ($perf['games'] ?? 0);
+
+            if (! is_array($perf) || ! isset($perf['rating']) || $games === 0) {
+                continue;
+            }
+
+            $ratings[] = new ChessTimeControlRating(
+                timeControl: $timeControl,
+                rating: (int) $perf['rating'],
+                rd: isset($perf['rd']) ? (int) $perf['rd'] : null,
+                isProvisional: $games < $minGames,
+            );
+        }
+
+        return new ChessRatings($ratings);
+    }
+
+    /**
+     * Shared `GET /api/user/{username}` call + breaker/error mapping used by
+     * both `fetchProfile` (bio) and `fetchRatings` (perfs). Returns the decoded
+     * JSON body (always an array — a non-object 200 body degrades to `[]`).
+     *
+     * `$recordHealth` gates the per-provider circuit breaker: the bio-verify
+     * path records (true); the high-volume rating path passes false so a
+     * rating-API blip can't trip — or dilute — the breaker that gates real
+     * chess SETTLEMENT. The rating job still READS `isOpen()`.
+     *
+     * @return array<string, mixed>
+     *
+     * @throws ProfileNotFoundException
+     */
+    private function requestUser(string $username, bool $recordHealth = true): array
+    {
         $url = "https://lichess.org/api/user/{$username}";
 
         try {
@@ -52,7 +118,9 @@ class LichessProfileClient implements ProfileClient
                 ->timeout(10)
                 ->get($url);
         } catch (ConnectionException $e) {
-            $this->breaker->recordFailure(LinkedAccountProvider::Lichess);
+            if ($recordHealth) {
+                $this->breaker->recordFailure(LinkedAccountProvider::Lichess);
+            }
 
             throw new TransientProviderError(
                 "Lichess unreachable for username '{$username}': {$e->getMessage()}",
@@ -64,25 +132,28 @@ class LichessProfileClient implements ProfileClient
             // 404 is a "user doesn't exist" answer, not a provider-health
             // failure. Count as breaker success — bad-username burst
             // shouldn't trip the breaker.
-            $this->breaker->recordSuccess(LinkedAccountProvider::Lichess);
+            if ($recordHealth) {
+                $this->breaker->recordSuccess(LinkedAccountProvider::Lichess);
+            }
 
             throw new ProfileNotFoundException("Lichess username '{$username}' not found.");
         }
 
         if (! $response->successful()) {
-            $this->breaker->recordFailure(LinkedAccountProvider::Lichess);
+            if ($recordHealth) {
+                $this->breaker->recordFailure(LinkedAccountProvider::Lichess);
+            }
 
             throw self::classifyResponseError($response, "for username '{$username}'");
         }
 
-        $this->breaker->recordSuccess(LinkedAccountProvider::Lichess);
+        if ($recordHealth) {
+            $this->breaker->recordSuccess(LinkedAccountProvider::Lichess);
+        }
 
-        $data = $response->json();
+        $body = $response->json();
 
-        return new ProfileFetchResult(
-            username: $data['username'] ?? $username,
-            bioFieldValue: $data['profile']['bio'] ?? null,
-        );
+        return is_array($body) ? $body : [];
     }
 
     /**

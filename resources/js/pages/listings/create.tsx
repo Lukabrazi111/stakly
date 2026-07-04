@@ -3,8 +3,6 @@ import { AlertCircle, Globe, Link2, Lock } from 'lucide-react';
 import type { ReactNode } from 'react';
 import InputError from '@/components/input-error';
 import { ChessFormatFilter } from '@/components/listings/chess-format-filter';
-import { ChessSkillRangeFilter } from '@/components/listings/chess-skill-range-filter';
-import { Cs2SkillRangeFilter } from '@/components/listings/cs2-skill-range-filter';
 import { DealSummary } from '@/components/listings/deal-summary';
 import { GamePicker } from '@/components/listings/game-picker';
 import { ListingPreviewCard } from '@/components/listings/listing-preview-card';
@@ -116,6 +114,8 @@ export default function ListingsCreate({
     games,
     requirementsByGame,
     feeRate,
+    userFaceitRating,
+    userChessRatings,
 }: ListingCreateProps) {
     const t = useT();
     const atCap = activeListingsCount >= maxActiveListings;
@@ -136,9 +136,7 @@ export default function ListingsCreate({
         game: GameId;
         platform: ListingPlatform;
         stake_amount: string;
-        skill_min: string;
-        skill_max: string;
-        time_control: TimeControl[];
+        time_control: TimeControl | null;
         region: string;
         language: string[];
         duration_hours: number;
@@ -149,9 +147,7 @@ export default function ListingsCreate({
         game: initialGame,
         platform: initialPlatform,
         stake_amount: '',
-        skill_min: '',
-        skill_max: '',
-        time_control: initialGame === 'chess' ? ['blitz'] : [],
+        time_control: initialGame === 'chess' ? 'blitz' : null,
         region: regions[0] ?? 'Global',
         language: [],
         duration_hours: durations.includes(24) ? 24 : (durations[0] ?? 24),
@@ -173,8 +169,14 @@ export default function ListingsCreate({
         data.stake_amount === '' ? 0 : Number(data.stake_amount);
     const balanceNumber = Number(balance);
     const exceedsBalance = stakeNumber > balanceNumber;
-    const hasTimeControl =
-        data.game !== 'chess' || data.time_control.length > 0;
+    const hasTimeControl = data.game !== 'chess' || data.time_control !== null;
+
+    // M41 P4 — the creator's verified rating for the chosen platform + time
+    // control drives the chess live preview; a missing pair → "Unrated".
+    const previewChessRating =
+        data.game === 'chess' && data.time_control !== null
+            ? (userChessRatings[data.platform]?.[data.time_control] ?? null)
+            : null;
     const canSubmit =
         !processing &&
         !atCap &&
@@ -199,15 +201,11 @@ export default function ListingsCreate({
             ...prev,
             game: next,
             platform,
-            // Cross-game skill metric semantics differ (chess Elo vs FACEIT
-            // ELO). Reset on switch so a value entered for one game doesn't
-            // get reinterpreted for the other.
-            skill_min: '',
-            skill_max: '',
-            // `time_control` is chess-only — clear when switching away so the
-            // backend stores null instead of a stale `['blitz']` placeholder
-            // on CS2 / future-game listings.
-            time_control: next === 'chess' ? prev.time_control : [],
+            // `time_control` is chess-only — null when switching away so the
+            // backend stores null on CS2 / future-game listings; default to
+            // 'blitz' when switching into chess from a game that had none.
+            time_control:
+                next === 'chess' ? (prev.time_control ?? 'blitz') : null,
             // M34 — reset team_size + creator_side to the new game's defaults.
             // is_public is the creator's choice and persists across switches.
             team_size: nextTeamSize,
@@ -489,61 +487,22 @@ export default function ListingsCreate({
                                     </div>
                                 </FormSection>
 
-                                <FormSection title={t('Match preferences')}>
-                                    <div className="space-y-5">
-                                        {data.game === 'chess' && (
-                                            <>
-                                                <ChessFormatFilter
-                                                    value={data.time_control}
-                                                    onChange={(next) =>
-                                                        setData(
-                                                            'time_control',
-                                                            next,
-                                                        )
-                                                    }
-                                                    error={errors.time_control}
-                                                />
-                                                <ChessSkillRangeFilter
-                                                    min={data.skill_min}
-                                                    max={data.skill_max}
-                                                    onMinChange={(next) =>
-                                                        setData(
-                                                            'skill_min',
-                                                            next,
-                                                        )
-                                                    }
-                                                    onMaxChange={(next) =>
-                                                        setData(
-                                                            'skill_max',
-                                                            next,
-                                                        )
-                                                    }
-                                                    errors={{
-                                                        min: errors.skill_min,
-                                                        max: errors.skill_max,
-                                                    }}
-                                                />
-                                            </>
-                                        )}
-
-                                        {data.game === 'cs2' && (
-                                            <Cs2SkillRangeFilter
-                                                min={data.skill_min}
-                                                max={data.skill_max}
-                                                onMinChange={(next) =>
-                                                    setData('skill_min', next)
-                                                }
-                                                onMaxChange={(next) =>
-                                                    setData('skill_max', next)
-                                                }
-                                                errors={{
-                                                    min: errors.skill_min,
-                                                    max: errors.skill_max,
-                                                }}
-                                            />
-                                        )}
-                                    </div>
-                                </FormSection>
+                                {/* Match preferences are chess-only — CS2 has no
+                                    time-control input. Skill is no longer
+                                    self-typed (M41 P4): opponents match against
+                                    the creator's verified rating for the chosen
+                                    time control, which the Listing preview shows. */}
+                                {data.game === 'chess' && (
+                                    <FormSection title={t('Match preferences')}>
+                                        <ChessFormatFilter
+                                            value={data.time_control ?? 'blitz'}
+                                            onChange={(next) =>
+                                                setData('time_control', next)
+                                            }
+                                            error={errors.time_control}
+                                        />
+                                    </FormSection>
+                                )}
 
                                 <FormSection title={t('Audience')}>
                                     <div className="space-y-5">
@@ -727,14 +686,14 @@ export default function ListingsCreate({
                             platform={data.platform}
                             teamSize={data.team_size}
                             stakeAmount={data.stake_amount}
-                            skillMin={data.skill_min}
-                            skillMax={data.skill_max}
                             timeControl={data.time_control}
                             region={data.region}
                             language={data.language}
                             durationHours={data.duration_hours}
                             isPublic={data.is_public}
                             verified={isGameVerified}
+                            faceitRating={userFaceitRating}
+                            chessRating={previewChessRating}
                         />
                         <DealSummary
                             stake={stakeNumber}

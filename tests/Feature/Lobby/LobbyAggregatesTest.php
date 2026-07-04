@@ -27,7 +27,7 @@ function aggLobby(int $teamSize = 5, string $stake = '100'): Listing
         'game' => Game::Cs2->value,
         'platform' => LinkedAccountProvider::Faceit->value,
         'stake_amount' => $stake,
-        'time_control' => [],
+        'time_control' => null,
         'duration_hours' => 24,
         'team_size' => $teamSize,
         'creator_side' => LobbyParticipant::SIDE_A,

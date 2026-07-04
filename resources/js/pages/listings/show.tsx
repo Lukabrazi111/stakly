@@ -2,6 +2,8 @@ import { Link, router, usePage } from '@inertiajs/react';
 import { Clock, Globe, Languages, Trophy } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useState } from 'react';
+import { ChessRatingBadge } from '@/components/listings/chess-rating-badge';
+import { FaceitRatingBadge } from '@/components/listings/faceit-rating-badge';
 import { SellerTrustMeta } from '@/components/listings/seller-trust-meta';
 import { VerifiedPlatformChip } from '@/components/listings/verified-platform-chip';
 import { TeamPlayLobbyView } from '@/components/lobby/team-play-lobby-view';
@@ -23,10 +25,9 @@ import { useInitials } from '@/hooks/use-initials';
 import SiteLayout from '@/layouts/site-layout';
 import { useT } from '@/lib/i18n';
 import {
-    formatSkillRange,
-    formatTimeControls,
     formatTimeRemaining,
     getTimeUrgency,
+    timeControlLabel,
 } from '@/lib/listings-format';
 import { edit as linkedAccountsEdit } from '@/routes/linked-accounts';
 import {
@@ -217,21 +218,13 @@ function ChessBranch({ listing, match }: ChessBranchProps) {
         );
     };
 
-    const timeControlLabel = formatTimeControls(listing.time_control, t);
+    const timeControlText = timeControlLabel(listing.time_control, t);
     const platformLabel = PLATFORM_LABEL[listing.platform];
     const metaTitle = t(":creator's $:stake match — chess on :platform", {
         creator: listing.creator.name,
         stake: listing.stake_amount,
         platform: platformLabel,
     });
-    const skillFragment =
-        listing.skill_min !== null && listing.skill_max !== null
-            ? ' ' +
-              t(':min–:max Elo.', {
-                  min: listing.skill_min,
-                  max: listing.skill_max,
-              })
-            : '';
     const completionFragment =
         listing.creator.completion_rate_30d !== null &&
         listing.creator.settled_lifetime > 0
@@ -246,10 +239,10 @@ function ChessBranch({ listing, match }: ChessBranchProps) {
         {
             username: listing.creator.username,
             stake: listing.stake_amount,
-            timeControl: timeControlLabel.toLowerCase(),
+            timeControl: timeControlText.toLowerCase(),
             platform: platformLabel,
         },
-    )}${skillFragment}${completionFragment} ${t('Both stakes escrowed.')}`;
+    )}${completionFragment} ${t('Both stakes escrowed.')}`;
 
     return (
         <SiteLayout>
@@ -299,7 +292,7 @@ function ChessBranch({ listing, match }: ChessBranchProps) {
                                             }
                                             alt={listing.creator.name}
                                         />
-                                        <AvatarFallback className="bg-gradient-primary text-xl font-semibold text-primary-foreground">
+                                        <AvatarFallback className="bg-primary/15 text-xl font-semibold text-primary">
                                             {getInitials(listing.creator.name)}
                                         </AvatarFallback>
                                     </Avatar>
@@ -381,22 +374,41 @@ function ChessBranch({ listing, match }: ChessBranchProps) {
                                 {t('Match details')}
                             </h2>
                             <dl className="grid gap-5 sm:grid-cols-2">
-                                <Detail
-                                    label={t('Skill range')}
-                                    icon={<Trophy className="size-4" />}
-                                    value={formatSkillRange(
-                                        listing.skill_min,
-                                        listing.skill_max,
-                                        t,
-                                    )}
-                                />
+                                {/* Rating row branches on game like the cards
+                                    do. Non-chess/CS2 1v1 listings (e.g. Dota 2)
+                                    have no verified-rating adapter yet, so they
+                                    render no rating row. */}
+                                {listing.game === 'chess' ? (
+                                    <Detail
+                                        label={t('Verified rating')}
+                                        icon={<Trophy className="size-4" />}
+                                        value={
+                                            <ChessRatingBadge
+                                                rating={
+                                                    listing.creator.chess_rating
+                                                }
+                                            />
+                                        }
+                                    />
+                                ) : listing.game === 'cs2' ? (
+                                    <Detail
+                                        label={t('Verified rating')}
+                                        icon={<Trophy className="size-4" />}
+                                        value={
+                                            <FaceitRatingBadge
+                                                rating={
+                                                    listing.creator
+                                                        .faceit_rating
+                                                }
+                                                variant="compact"
+                                            />
+                                        }
+                                    />
+                                ) : null}
                                 <Detail
                                     label={t('Time control')}
                                     icon={<Clock className="size-4" />}
-                                    value={formatTimeControls(
-                                        listing.time_control,
-                                        t,
-                                    )}
+                                    value={timeControlText}
                                 />
                                 <Detail
                                     label={t('Expires')}
@@ -788,7 +800,7 @@ function ChessBranch({ listing, match }: ChessBranchProps) {
 interface DetailProps {
     label: string;
     icon: ReactNode;
-    value: string;
+    value: ReactNode;
     valueClass?: string;
 }
 

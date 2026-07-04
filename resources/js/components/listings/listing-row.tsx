@@ -1,5 +1,7 @@
 import { Link } from '@inertiajs/react';
-import { Clock, Globe, Languages, Trophy } from 'lucide-react';
+import { Clock, Globe, Languages } from 'lucide-react';
+import { ChessRatingBadge } from '@/components/listings/chess-rating-badge';
+import { FaceitRatingBadge } from '@/components/listings/faceit-rating-badge';
 import { GameChip } from '@/components/listings/game-chip';
 import { ReadyCheckBanner } from '@/components/listings/ready-check-banner';
 import { SellerTrustMeta } from '@/components/listings/seller-trust-meta';
@@ -10,10 +12,9 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { useInitials } from '@/hooks/use-initials';
 import { useT } from '@/lib/i18n';
 import {
-    formatSkillRange,
     formatTimeRemaining,
     getTimeUrgency,
-    timeControlChipLabels,
+    timeControlLabel,
 } from '@/lib/listings-format';
 import { show as showListing } from '@/routes/listings';
 import { show as userShow } from '@/routes/users';
@@ -85,15 +86,15 @@ export function ListingRow({ listing }: Props) {
                             src={listing.creator.avatar_thumb_url ?? undefined}
                             alt={listing.creator.username}
                         />
-                        <AvatarFallback className="bg-gradient-primary text-sm font-semibold text-primary-foreground">
+                        <AvatarFallback className="bg-primary/15 text-sm font-semibold text-primary">
                             {getInitials(listing.creator.name)}
                         </AvatarFallback>
                     </Avatar>
 
                     <div className="flex min-w-0 flex-col gap-0.5">
-                        <span className="truncate text-sm font-semibold text-foreground transition-colors hover:text-primary">
+                        <h2 className="truncate text-sm font-semibold text-foreground transition-colors hover:text-primary">
                             {listing.creator.username}
-                        </span>
+                        </h2>
                         <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-muted-foreground">
                             {listing.region && (
                                 <span className="inline-flex items-center gap-1">
@@ -135,25 +136,23 @@ export function ListingRow({ listing }: Props) {
 
                         <VerifiedPlatformChip platform={listing.platform} />
 
-                        <span className="inline-flex items-center gap-1.5 rounded-full border border-border/60 bg-background/60 px-3 py-1 text-xs font-medium text-muted-foreground">
-                            <Trophy className="size-3" aria-hidden="true" />
-                            {formatSkillRange(
-                                listing.skill_min,
-                                listing.skill_max,
-                                t,
-                            )}
-                        </span>
+                        {listing.game === 'cs2' ? (
+                            <FaceitRatingBadge
+                                rating={listing.creator.faceit_rating}
+                                variant="compact"
+                            />
+                        ) : listing.game === 'chess' ? (
+                            <ChessRatingBadge
+                                rating={listing.creator.chess_rating}
+                                variant="bare"
+                            />
+                        ) : null}
 
-                        {timeControlChipLabels(listing.time_control, t).map(
-                            (label) => (
-                                <span
-                                    key={label}
-                                    className="inline-flex items-center gap-1.5 rounded-full border border-border/60 bg-background/60 px-3 py-1 text-xs font-medium text-muted-foreground"
-                                >
-                                    <Clock className="size-3" />
-                                    {label}
-                                </span>
-                            ),
+                        {listing.time_control && (
+                            <span className="inline-flex items-center gap-1.5 rounded-full border border-border/60 bg-background/60 px-3 py-1 text-xs font-medium text-muted-foreground">
+                                <Clock className="size-3" />
+                                {timeControlLabel(listing.time_control, t)}
+                            </span>
                         )}
 
                         {listing.language && listing.language.length > 0 && (

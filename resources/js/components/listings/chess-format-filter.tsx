@@ -5,22 +5,23 @@ import { useT } from '@/lib/i18n';
 import type { TimeControl } from '@/types/listings';
 
 const TIME_CONTROL_OPTIONS: ReadonlyArray<[TimeControl, string]> = [
+    ['bullet', 'Bullet'],
     ['blitz', 'Blitz'],
     ['rapid', 'Rapid'],
-    ['classical', 'Classical'],
 ];
 
 interface Props {
-    value: TimeControl[];
-    onChange: (next: TimeControl[]) => void;
+    value: TimeControl;
+    onChange: (next: TimeControl) => void;
     error?: string;
 }
 
 /**
- * Chess time-control toggle (multi-select). Lifted out of `pages/listings/create.tsx`
- * during M15 Phase 3 so the create form can swap chess-specific filter UI
- * for the per-game equivalent (CS2 has no time-control concept; future games
- * get their own sibling).
+ * Chess time-control toggle (single-select, M41 P3a — one chess listing maps to
+ * exactly one time control, so it shows exactly one verified rating). Lifted out
+ * of `pages/listings/create.tsx` during M15 Phase 3 so the create form can swap
+ * chess-specific filter UI for the per-game equivalent (CS2 has no time-control
+ * concept).
  */
 export function ChessFormatFilter({ value, onChange, error }: Props) {
     const t = useT();
@@ -29,10 +30,16 @@ export function ChessFormatFilter({ value, onChange, error }: Props) {
         <div className="space-y-2">
             <Label>{t('Time control')}</Label>
             <ToggleGroup
-                type="multiple"
+                type="single"
                 variant="outline"
                 value={value}
-                onValueChange={(next) => onChange(next as TimeControl[])}
+                onValueChange={(next) => {
+                    // Radix single-select emits '' when the active item is
+                    // re-clicked; ignore it so exactly one stays selected.
+                    if (next) {
+                        onChange(next as TimeControl);
+                    }
+                }}
                 className="flex flex-wrap"
             >
                 {TIME_CONTROL_OPTIONS.map(([slug, label]) => (
@@ -46,7 +53,9 @@ export function ChessFormatFilter({ value, onChange, error }: Props) {
                 ))}
             </ToggleGroup>
             <p className="text-xs text-muted-foreground">
-                {t('Pick at least one — the opponent picks which to play.')}
+                {t(
+                    'One listing, one time control — post a separate listing for another format.',
+                )}
             </p>
             <InputError message={error} />
         </div>

@@ -45,7 +45,7 @@ function chessComAuditMatch(?array $snapshots = null): GameMatch
 
     // M14 Slice 3d — TC catch-all so happy-path tests pass deterministically.
     $listing = Listing::factory()->taken()->forChessCom()->for($creator)
-        ->state(['stake_amount' => '100', 'time_control' => ['blitz', 'rapid', 'classical']])
+        ->state(['stake_amount' => '100', 'time_control' => 'blitz'])
         ->create();
     Wallet::hold(user: $creator, amount: '100', listing: $listing, reference: "listing-create:{$listing->id}");
     Wallet::hold(user: $taker, amount: '100', listing: $listing, reference: "match-take:{$listing->id}");
@@ -289,7 +289,7 @@ test('error on final attempt: writes outcome_reason=retry_exhausted', function (
 test('ambiguous: writes a row with candidates_count + outcome_reason=time_control_mismatch (M14 Slice 3c)', function () {
     $match = chessComAuditMatch();
     // Force TC mismatch so the picker rejects both candidates.
-    $match->listing->update(['time_control' => ['classical']]);
+    $match->listing->update(['time_control' => 'rapid']);
 
     Http::fake([
         'api.chess.com/pub/player/*/games/*' => Http::response(
@@ -311,7 +311,7 @@ test('ambiguous: writes a row with candidates_count + outcome_reason=time_contro
 
 test('multiple candidates with TC match: picker picks closest → outcome=matched, candidates_count=N (M14 Slice 3c)', function () {
     $match = chessComAuditMatch();
-    $match->listing->update(['time_control' => ['blitz']]);
+    $match->listing->update(['time_control' => 'blitz']);
 
     // chessComAuditMatch backdates created_at to 1h ago. early = -50min, late = -10min from now.
     // |early - created| = 10min; |late - created| = 50min → picker picks early.

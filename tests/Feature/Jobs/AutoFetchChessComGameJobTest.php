@@ -33,7 +33,7 @@ function chessComAutoFetchMatch(?array $snapshots = null): GameMatch
     // M14 Slice 3d — TC catch-all so happy-path tests pass deterministically;
     // tests that exercise TC mismatch override this back to a single value.
     $listing = Listing::factory()->taken()->forChessCom()->for($creator)
-        ->state(['stake_amount' => '100', 'time_control' => ['blitz', 'rapid', 'classical']])
+        ->state(['stake_amount' => '100', 'time_control' => 'blitz'])
         ->create();
     Wallet::hold(user: $creator, amount: '100', listing: $listing, reference: "listing-create:{$listing->id}");
     Wallet::hold(user: $taker, amount: '100', listing: $listing, reference: "match-take:{$listing->id}");

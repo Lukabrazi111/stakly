@@ -50,18 +50,24 @@
                     $accent = match ($role) {
                         'creator' => 'border-l-cyan-500',
                         'taker' => 'border-l-rose-500',
+                        'team_a' => 'border-l-cyan-500',
+                        'team_b' => 'border-l-rose-500',
                         'system' => 'border-l-gray-400 dark:border-l-gray-600',
                         default => 'border-l-gray-400',
                     };
                     $roleLabel = match ($role) {
                         'creator' => 'Creator',
                         'taker' => 'Taker',
+                        'team_a' => 'Team A',
+                        'team_b' => 'Team B',
                         'system' => 'System',
                         default => 'Unknown',
                     };
                     $roleBadgeClass = match ($role) {
                         'creator' => 'bg-cyan-100 text-cyan-900 dark:bg-cyan-900/50 dark:text-cyan-100',
                         'taker' => 'bg-rose-100 text-rose-900 dark:bg-rose-900/50 dark:text-rose-100',
+                        'team_a' => 'bg-cyan-100 text-cyan-900 dark:bg-cyan-900/50 dark:text-cyan-100',
+                        'team_b' => 'bg-rose-100 text-rose-900 dark:bg-rose-900/50 dark:text-rose-100',
                         'system' => 'bg-gray-200 text-gray-800 dark:bg-gray-700 dark:text-gray-100',
                         default => 'bg-gray-200 text-gray-800',
                     };
