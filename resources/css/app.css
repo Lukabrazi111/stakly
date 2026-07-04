@@ -189,6 +189,14 @@
     --faceit-orange: #f57c00;
     --faceit-red: #e23b3b;
 
+    /* per-platform brand accent — the calm colored icon + platform text in the
+       merged game chip (game · format · platform). Muted-but-legible, not the
+       loud filled pill it replaces. */
+    --platform-faceit: #ff8a4c;
+    --platform-chesscom: #d4a574;
+    --platform-lichess: #c7c9d6;
+    --platform-steam: #66c0f4;
+
     /* brand gradient endpoints + glow color */
     --gradient-from: #ec4899;
     --gradient-to: #a855f7;
