@@ -67,9 +67,10 @@ class IndexListingsRequest extends FormRequest
             'filter.game' => ['nullable', 'string', Rule::enum(Game::class)],
             'filter.stake_min' => ['nullable', 'numeric', 'min:0', 'max:100000'],
             'filter.stake_max' => ['nullable', 'numeric', 'min:0', 'max:100000'],
-            // M41 P5: skill_min/max now filter the CREATOR's verified rating —
-            // raw Elo for chess, FACEIT level (1–10) for CS2. The 0–3500 ceiling
-            // covers chess Elo; the controller clamps CS2 levels to 1–10.
+            // M41 P5: skill_min/max filter the CREATOR's verified rating as raw
+            // Elo for BOTH games — chess Elo and FACEIT Elo (CS2 was revised off
+            // the 1–10 level selector on 2026-06-28). The 0–3500 ceiling covers
+            // both; see ListingController::applyRatingFilter().
             'filter.skill_min' => ['nullable', 'integer', 'min:0', 'max:3500'],
             'filter.skill_max' => ['nullable', 'integer', 'min:0', 'max:3500'],
             'filter.unrated' => ['nullable', 'boolean'],

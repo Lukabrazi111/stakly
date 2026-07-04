@@ -16,9 +16,12 @@ use Illuminate\Support\Facades\Schema;
  * keeps the last-known rating rather than wiping it (display-only invariant —
  * settlement rides the match-time snapshot + the game API, never this cache).
  *
- * `is_provisional` is computed at capture time per provider: Lichess sends a
- * literal `prov:true`; chess.com has no flag, so we derive it from a high
- * Glicko rating deviation (`rd`). Provisional ratings still render "Unrated".
+ * `is_provisional` is computed at capture time from the account's GAME COUNT
+ * for that time control (`games < services.<provider>.provisional_min_games`,
+ * default 20) for BOTH providers — NOT Lichess's `prov` flag or chess.com's
+ * `rd` (M41 P4 revision, after a 537-game rating was wrongly hidden). A
+ * provisional rating still displays its number with a "?" marker; it is never
+ * hidden. "Unrated" means only that no row exists for that time control.
  */
 return new class extends Migration
 {
@@ -38,13 +41,15 @@ return new class extends Migration
             // The provider's current rating for this time control.
             $table->integer('rating');
 
-            // Glicko rating deviation — drives provisional inference for
-            // chess.com (no `prov` flag) and corroborates Lichess's. Nullable
-            // defensively; both providers return it for a played time control.
+            // Glicko rating deviation, stored for reference/display only — it no
+            // longer drives provisional inference (that's game-count based; see
+            // is_provisional). Nullable defensively; both providers return it for
+            // a played time control.
             $table->integer('rd')->nullable();
 
-            // True when the rating is low-confidence (Lichess `prov`, or
-            // chess.com `rd` over the configured threshold). Rendered "Unrated".
+            // True when the account has played fewer than the configured
+            // `provisional_min_games` (default 20) for this time control. The UI
+            // shows the rating number with a "?" marker (never hidden).
             $table->boolean('is_provisional')->default(false);
 
             // Last successful provider sync for THIS row. The account-level

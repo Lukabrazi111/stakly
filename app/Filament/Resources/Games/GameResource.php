@@ -116,7 +116,7 @@ class GameResource extends Resource
                     ->disk('public')
                     ->height(72)
                     ->width(48)
-                    ->defaultImageUrl('https://placehold.co/48x72/14101c/8a8696?text=No+poster')
+                    ->defaultImageUrl(asset('images/no-poster.svg'))
                     ->extraImgAttributes(['class' => 'rounded-md object-cover']),
 
                 TextColumn::make('display_name')
