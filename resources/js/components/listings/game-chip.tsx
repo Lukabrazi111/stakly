@@ -83,7 +83,9 @@ export function GameChip({ game, teamSize, platform }: Props) {
                     >
                         ·
                     </span>
-                    <span style={{ color: platformColor }}>{platformLabel}</span>
+                    <span style={{ color: platformColor }}>
+                        {platformLabel}
+                    </span>
                 </>
             )}
         </span>
