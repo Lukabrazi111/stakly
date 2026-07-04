@@ -306,9 +306,9 @@ Layout reference is **mmrangels.com** (screenshots in `images-examples/`). Stakl
 
 **GameSelector catalog:** tile list is DB-backed via `App\Models\Game` (admin at `/admin/games`), not a hardcoded array. `App\Enums\Game` is the backend identity for games with real integration; admin can add `ComingSoon` display tiles without an enum case, but flipping one `Active` requires the enum addition. Tiles look identical regardless of status — small "Soon" badge for non-Active, don't dim or lock visually. **Chess is the only Active game today.** Selected tile uses solid `border-primary` + `shadow-[var(--shadow-arena-card-glow)]`, NOT `border-glow`.
 
-### Design assistance — `ui-ux-pro-max` skill
+### Design assistance — `ui-ux-pro-max` + `frontend-design` skills
 
-For any UI design work (building, reviewing, layout, typography, animation timing, accessibility, component composition), **activate the `ui-ux-pro-max` skill**. It complements Stakly's visual system above — use it to inform decisions within the design system, not override it. Flag meaningful divergences.
+For any UI design work (building, reviewing, layout, typography, animation timing, accessibility, component composition), **activate the `ui-ux-pro-max` skill** and the **`frontend-design`** plugin skill (distinctive, intentional aesthetic direction — typography + choices that avoid templated / AI-default looks). Both complement Stakly's visual system above — use them to inform decisions within the design system, not override it. Flag meaningful divergences.
 
 ## Component Folder Convention
 
