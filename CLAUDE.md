@@ -62,10 +62,6 @@ This project has domain-specific skills available in `**/skills/**`. You MUST ac
 
 - You must only create documentation files if explicitly requested by the user.
 
-## Replies
-
-- Be concise in your explanations - focus on what's important rather than explaining obvious details.
-
 === boost rules ===
 
 # Laravel Boost
@@ -87,10 +83,7 @@ This project has domain-specific skills available in `**/skills/**`. You MUST ac
 
 ### Search Syntax
 
-1. Use words for auto-stemmed AND logic: `rate limit` matches both "rate" AND "limit".
-2. Use `"quoted phrases"` for exact position matching: `"infinite scroll"` requires adjacent words in order.
-3. Combine words and phrases for mixed queries: `middleware "rate limit"`.
-4. Use multiple queries for OR logic: `queries=["authentication", "middleware"]`.
+- Words = auto-stemmed AND (`rate limit` → "rate" AND "limit"); `"quoted phrases"` = exact adjacent order; combine both (`middleware "rate limit"`); multiple queries = OR (`queries=["authentication", "middleware"]`).
 
 ## Artisan
 
@@ -114,12 +107,6 @@ This project has domain-specific skills available in `**/skills/**`. You MUST ac
 - Follow existing application Enum naming conventions.
 - Prefer PHPDoc blocks over inline comments. Only add inline comments for exceptionally complex logic.
 - Use array shape type definitions in PHPDoc blocks.
-
-=== deployments rules ===
-
-# Deployment
-
-- Laravel can be deployed using [Laravel Cloud](https://cloud.laravel.com/), which is the fastest way to deploy and scale production Laravel applications.
 
 === sail rules ===
 
@@ -235,7 +222,7 @@ This is **not a dApp / web3 protocol**. It is a custodial web2 application that 
 
 ## Current scope
 
-What we're working on right now. Not a commitment — decisions are revisitable any time. Just the present state so you know what's in-flight.
+Present state, not a commitment — revisitable any time.
 
 - **Game**: chess only (via chess.com / Lichess APIs).
 - **Format**: 1v1.
@@ -397,3 +384,10 @@ The **Playwright MCP** is the agent-driven, interactive browser for verifying th
 - **High-stakes-milestone mode.** When the user flags work as critical / money-touching — OR when the work touches Wallet, settlement / escrow / payout, dispute resolution, the outcome pipeline (auto-fetch jobs / `GameApi` adapters / system card schema), webhook receivers, OAuth, key/secret storage, admin impersonation, or any new third-party integration — switch to stricter mode. Don't ship a slice the same session a meaningful question was open at the start. Run Context7 + `search-docs` + relevant skill on every API touchpoint, even known ones. Surface every non-trivial default (pagination caps, retry budgets, idempotency keys, time windows, exposed fields, error classification, anti-abuse) for explicit sign-off. Walk through the attacker view at every endpoint, job, or external call — webhook auth, replay, rate limits, scope leaks, identity confusion, races, snapshot drift — and call them out even if the mitigation is "nothing yet because X". Prefer interruption to wrong assumption.
 - **Comments are scarce and small.** Default to no comments. Add one only when the WHY is non-obvious (hidden constraints, subtle invariants, library gotchas, surprising behavior). Skip task tags, docblocks on self-explanatory props, callsite references, historical context — those belong in commit messages, not files. One short line beats a paragraph.
 - **Wrap up tasks human-first.** When a task / slice finishes, lead with 2–3 plain-language sentences about what changed in product terms (what users can do now, what's safer, what's fixed) — not a files-changed dump. Keep the commit title + a brief manual test plan; skip the verbose files-list + design-choices sections (that detail belongs in the milestone entry, not the end-of-task message).
+
+## gstack skills
+
+gstack (Garry Tan's Claude Code skill suite) is installed **globally** at `~/.claude/skills/gstack`. Invoke any skill as a slash command (e.g. `/review`, `/qa`, `/investigate`).
+
+- **Web browsing → use gstack's `/browse`** skill (and its browser skills like `/qa`, `/design-review`) for general web browsing. **Never use `mcp__claude-in-chrome__*` tools.** The existing Playwright MCP workflow (see **Browser verification** above) stays valid for ad-hoc verification of the running Stakly app — the two coexist.
+- **Available skills:** `/office-hours`, `/plan-ceo-review`, `/plan-eng-review`, `/plan-design-review`, `/design-consultation`, `/design-shotgun`, `/design-html`, `/review`, `/ship`, `/land-and-deploy`, `/canary`, `/benchmark`, `/browse`, `/connect-chrome`, `/qa`, `/qa-only`, `/design-review`, `/setup-browser-cookies`, `/setup-deploy`, `/setup-gbrain`, `/retro`, `/investigate`, `/document-release`, `/document-generate`, `/codex`, `/cso`, `/autoplan`, `/plan-devex-review`, `/devex-review`, `/careful`, `/freeze`, `/guard`, `/unfreeze`, `/gstack-upgrade`, `/learn`.
