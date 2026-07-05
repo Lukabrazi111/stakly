@@ -40,8 +40,16 @@ export function ProfileHeader({ user }: Props) {
                         <h1 className="truncate font-display text-3xl font-bold tracking-tight text-foreground md:text-4xl">
                             {user.name}
                         </h1>
-                        <p className="mt-1 truncate text-sm text-muted-foreground">
-                            @{user.username}
+                        <p className="mt-1 flex flex-wrap items-center gap-x-1.5 text-sm text-muted-foreground">
+                            <span className="min-w-0 truncate">
+                                @{user.username}
+                            </span>
+                            <span aria-hidden="true" className="opacity-60">
+                                ·
+                            </span>
+                            <span className="shrink-0 whitespace-nowrap">
+                                {t('Joined :date', { date: joinedDate })}
+                            </span>
                         </p>
                     </div>
                 </div>
@@ -55,18 +63,17 @@ export function ProfileHeader({ user }: Props) {
                 )}
             </div>
 
-            <div className="mt-5 flex flex-wrap items-center gap-2">
-                {user.linked_accounts.map((account) => (
-                    <VerificationChip
-                        key={account.provider}
-                        provider={account.provider}
-                        username={account.username}
-                    />
-                ))}
-                <span className="inline-flex shrink-0 items-center rounded-full border border-border/60 bg-card px-3 py-1 text-xs font-medium text-muted-foreground">
-                    {t('Joined :date', { date: joinedDate })}
-                </span>
-            </div>
+            {user.linked_accounts.length > 0 && (
+                <div className="mt-5 flex flex-wrap items-center gap-2">
+                    {user.linked_accounts.map((account) => (
+                        <VerificationChip
+                            key={account.provider}
+                            provider={account.provider}
+                            username={account.username}
+                        />
+                    ))}
+                </div>
+            )}
 
             {user.bio && (
                 <p className="mt-5 max-w-prose text-base leading-relaxed whitespace-pre-line text-foreground/90">
