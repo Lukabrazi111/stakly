@@ -93,7 +93,21 @@ describe('LobbyUpdated event shape', function () {
         expect($channels[0])->toBeInstanceOf(PrivateChannel::class);
         expect($channels[0]->name)->toBe("private-lobby.{$listing->id}");
         expect($event->broadcastAs())->toBe('lobby.updated');
-        expect($event->broadcastWith())->toBe(['listing_id' => $listing->id]);
+        expect($event->broadcastWith())->toBe([
+            'listing_id' => $listing->id,
+            'kicked_user_id' => null,
+        ]);
+    });
+
+    it('carries the kicked user id when the update is a kick', function () {
+        $listing = broadcastLobby();
+
+        $event = new LobbyUpdated($listing, kickedUserId: 42);
+
+        expect($event->broadcastWith())->toBe([
+            'listing_id' => $listing->id,
+            'kicked_user_id' => 42,
+        ]);
     });
 });
 
@@ -241,7 +255,11 @@ describe('KickParticipantAction', function () {
             ->handle($listing->user, $listing, $joiner);
 
         expect($result)->toBe('kicked');
-        Event::assertDispatched(LobbyUpdated::class);
+        Event::assertDispatched(
+            LobbyUpdated::class,
+            fn (LobbyUpdated $e) => $e->listing->id === $listing->id
+                && $e->kickedUserId === $joiner->id,
+        );
     });
 
     it('does not dispatch when a non-owner attempts a kick', function () {

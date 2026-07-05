@@ -79,7 +79,7 @@ class KickParticipantAction
 
         if ($sentinel === 'kicked') {
             $this->readyCheck->handle($listing->fresh());
-            LobbyUpdated::dispatch($listing);
+            LobbyUpdated::dispatch($listing, $target->id);
         }
 
         return $sentinel;

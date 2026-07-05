@@ -98,7 +98,13 @@ export function TeamPlayLobbyView({ lobby, messages }: Props) {
 
     return (
         <>
-            {isRealtimeActive && <LobbyRealtimeSync listingId={lobby.id} />}
+            {isRealtimeActive && (
+                <LobbyRealtimeSync
+                    listingId={lobby.id}
+                    viewerId={viewerId}
+                    isPublic={lobby.is_public}
+                />
+            )}
 
             <div className="space-y-6">
                 <LobbyHeader lobby={lobby} />

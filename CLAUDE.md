@@ -62,6 +62,10 @@ This project has domain-specific skills available in `**/skills/**`. You MUST ac
 
 - You must only create documentation files if explicitly requested by the user.
 
+## Replies
+
+- Be concise in your explanations - focus on what's important rather than explaining obvious details.
+
 === boost rules ===
 
 # Laravel Boost
@@ -83,7 +87,10 @@ This project has domain-specific skills available in `**/skills/**`. You MUST ac
 
 ### Search Syntax
 
-- Words = auto-stemmed AND (`rate limit` → "rate" AND "limit"); `"quoted phrases"` = exact adjacent order; combine both (`middleware "rate limit"`); multiple queries = OR (`queries=["authentication", "middleware"]`).
+1. Use words for auto-stemmed AND logic: `rate limit` matches both "rate" AND "limit".
+2. Use `"quoted phrases"` for exact position matching: `"infinite scroll"` requires adjacent words in order.
+3. Combine words and phrases for mixed queries: `middleware "rate limit"`.
+4. Use multiple queries for OR logic: `queries=["authentication", "middleware"]`.
 
 ## Artisan
 
@@ -107,6 +114,12 @@ This project has domain-specific skills available in `**/skills/**`. You MUST ac
 - Follow existing application Enum naming conventions.
 - Prefer PHPDoc blocks over inline comments. Only add inline comments for exceptionally complex logic.
 - Use array shape type definitions in PHPDoc blocks.
+
+=== deployments rules ===
+
+# Deployment
+
+- Laravel can be deployed using [Laravel Cloud](https://cloud.laravel.com/), which is the fastest way to deploy and scale production Laravel applications.
 
 === sail rules ===
 

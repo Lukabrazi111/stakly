@@ -171,7 +171,7 @@ class LobbyController extends Controller
             'not_team_play' => ['type' => 'warning', 'message' => __('This isn\'t a team-play listing.')],
             'not_linked' => ['type' => 'info', 'message' => __('Link a :platform account to join.', ['platform' => $platformName])],
             'already_in_lobby' => ['type' => 'warning', 'message' => __('You\'re already in another active lobby.')],
-            'kick_cooldown' => ['type' => 'warning', 'message' => __('You can\'t rejoin this lobby right now.')],
+            'kick_cooldown' => ['type' => 'warning', 'message' => __('You were removed from this lobby — you can rejoin in a few minutes.')],
             'listing_unavailable' => ['type' => 'info', 'message' => __('This lobby isn\'t accepting joins.')],
             'no_open_slots' => ['type' => 'info', 'message' => __('No open slots on that side.')],
             default => ['type' => 'warning', 'message' => __('Could not join the lobby.')],
