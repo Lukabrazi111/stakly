@@ -1,14 +1,5 @@
-import {
-    Check,
-    Copy,
-    Crown,
-    Link2,
-    Share2,
-    Swords,
-    Target,
-} from 'lucide-react';
+import { Check, Copy, Link2, Share2 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
-import type { ElementType } from 'react';
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { leaderLabel, pickLeader } from '@/components/lobby/lobby-leader';
@@ -27,10 +18,12 @@ import { show as listingShow } from '@/routes/listings';
 import { invite as lobbyInvite } from '@/routes/lobbies';
 import type { Lobby, LobbyParticipantPayload } from '@/types';
 
-const GAME_META: Record<GameId, { icon: ElementType; label: string }> = {
-    chess: { icon: Crown, label: 'Chess' },
-    cs2: { icon: Target, label: 'CS2' },
-    dota2: { icon: Swords, label: 'Dota 2' },
+// Text-only label — mirrors the shared `GameChip` (no game icon), so the lobby
+// header's mode chip reads consistently with the marketplace / match surfaces.
+const GAME_LABEL: Record<GameId, string> = {
+    chess: 'Chess',
+    cs2: 'CS2',
+    dota2: 'Dota 2',
 };
 
 // Team accent — Team A pink (primary), Team B purple (accent). Mirrors the slot
@@ -163,13 +156,11 @@ function TeamSide({
 
 function ModeRow({ lobby }: { lobby: Lobby }) {
     const t = useT();
-    const meta = GAME_META[lobby.game];
-    const Icon = meta?.icon ?? Target;
+    const label = GAME_LABEL[lobby.game] ?? lobby.game;
 
     return (
         <div className="flex items-center gap-1.5 rounded-full border border-border/60 bg-background/60 px-3 py-1 text-xs font-medium text-foreground">
-            <Icon className="size-3 text-primary" aria-hidden="true" />
-            <span>{t(meta?.label ?? lobby.game)}</span>
+            <span>{t(label)}</span>
             <span className="text-muted-foreground/60" aria-hidden="true">
                 ·
             </span>

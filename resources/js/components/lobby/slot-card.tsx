@@ -27,6 +27,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { useT } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
+import { show as userShow } from '@/routes/users';
 import type { LobbyParticipantPayload, LobbySide } from '@/types';
 
 // Team accent — Team A pink (primary), Team B purple (accent), the two ends of
@@ -119,9 +120,15 @@ export function FilledSlot({
                     </div>
 
                     <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-                        <span className="truncate text-sm font-semibold text-foreground">
+                        <Link
+                            href={
+                                userShow({ user: participant.user.username })
+                                    .url
+                            }
+                            className="w-fit max-w-full truncate text-sm font-semibold text-foreground transition-colors hover:text-primary hover:underline focus-visible:text-primary focus-visible:outline-none"
+                        >
                             {isViewer ? t('You') : participant.user.name}
-                        </span>
+                        </Link>
                         {participant.platform_account && (
                             <span className="truncate font-mono text-[11px] text-muted-foreground">
                                 {participant.platform_account.username}
@@ -198,7 +205,7 @@ function SlotOwnerMenu({ playerName, onConfirmRemove }: SlotOwnerMenuProps) {
                         />
                     </Button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="min-w-[10rem]">
+                <DropdownMenuContent align="end" className="min-w-40">
                     <DropdownMenuItem
                         variant="destructive"
                         onSelect={(event) => {
