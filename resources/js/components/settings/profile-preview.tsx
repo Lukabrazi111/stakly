@@ -4,6 +4,7 @@ import { VerificationChip } from '@/components/profile/verification-chip';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { useInitials } from '@/hooks/use-initials';
 import { useT } from '@/lib/i18n';
+import type { ListingPlatform } from '@/types';
 
 interface Props {
     name: string;
@@ -14,7 +15,7 @@ interface Props {
     avatarSrc: string | undefined;
     joinedAt: string;
     linkedAccounts: ReadonlyArray<{
-        provider: 'chess_com' | 'lichess';
+        provider: ListingPlatform;
         username: string;
     }>;
     profileUrl: string;
@@ -72,24 +73,29 @@ export function ProfilePreview({
                     <h3 className="truncate font-display text-xl font-bold tracking-tight text-foreground">
                         {trimmedName}
                     </h3>
-                    <p className="mt-0.5 truncate text-sm text-muted-foreground">
-                        @{username}
+                    <p className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-sm text-muted-foreground">
+                        <span className="min-w-0 truncate">@{username}</span>
+                        <span aria-hidden="true" className="opacity-60">
+                            ·
+                        </span>
+                        <span className="shrink-0 whitespace-nowrap">
+                            {t('Joined :date', { date: joinedLabel })}
+                        </span>
                     </p>
                 </div>
             </div>
 
-            <div className="mt-4 flex flex-wrap items-center gap-2">
-                {linkedAccounts.map((account) => (
-                    <VerificationChip
-                        key={account.provider}
-                        provider={account.provider}
-                        username={account.username}
-                    />
-                ))}
-                <span className="inline-flex shrink-0 items-center rounded-full border border-border/60 bg-card px-3 py-1 text-xs font-medium text-muted-foreground">
-                    {t('Joined :date', { date: joinedLabel })}
-                </span>
-            </div>
+            {linkedAccounts.length > 0 && (
+                <div className="mt-4 flex flex-wrap items-center gap-2">
+                    {linkedAccounts.map((account) => (
+                        <VerificationChip
+                            key={account.provider}
+                            provider={account.provider}
+                            username={account.username}
+                        />
+                    ))}
+                </div>
+            )}
 
             {trimmedBio ? (
                 <p className="mt-4 max-w-prose text-sm leading-relaxed whitespace-pre-line text-foreground/90">
