@@ -125,9 +125,9 @@ export function FilledSlot({
                                 userShow({ user: participant.user.username })
                                     .url
                             }
-                            className="w-fit max-w-full truncate text-sm font-semibold text-foreground transition-colors hover:text-primary hover:underline focus-visible:text-primary focus-visible:outline-none"
+                            className="w-fit max-w-full truncate text-sm font-semibold text-foreground hover:underline focus-visible:underline focus-visible:outline-none"
                         >
-                            {isViewer ? t('You') : participant.user.name}
+                            {participant.user.name}
                         </Link>
                         {participant.platform_account && (
                             <span className="truncate font-mono text-[11px] text-muted-foreground">
