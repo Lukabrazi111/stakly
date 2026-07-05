@@ -1,4 +1,5 @@
-import { CheckCircle2, Crown, X } from 'lucide-react';
+import { Link } from '@inertiajs/react';
+import { CheckCircle2, Crown, LogIn, UserPlus, X } from 'lucide-react';
 import { FaceitRatingBadge } from '@/components/listings/faceit-rating-badge';
 import { RecentFormStrip } from '@/components/listings/recent-form-strip';
 import { Button } from '@/components/ui/button';
@@ -6,8 +7,18 @@ import { useT } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import type { LobbyParticipantPayload, LobbySide } from '@/types';
 
+// Team accent — Team A pink (primary), Team B purple (accent), the two ends of
+// the brand gradient facing off. Applied as a subtle avatar ring so each player
+// reads as their team down the column, without touching the card border (which
+// already encodes ready / viewer state).
+const TEAM_AVATAR_RING: Record<LobbySide, string> = {
+    a: 'ring-2 ring-primary/50',
+    b: 'ring-2 ring-accent/50',
+};
+
 interface FilledSlotProps {
     participant: LobbyParticipantPayload;
+    side: LobbySide;
     isViewer: boolean;
     canKick: boolean;
     onKick: (username: string) => void;
@@ -21,6 +32,7 @@ interface FilledSlotProps {
  */
 export function FilledSlot({
     participant,
+    side,
     isViewer,
     canKick,
     onKick,
@@ -35,6 +47,7 @@ export function FilledSlot({
             .toUpperCase() ?? '??';
 
     const showKickX = !isViewer && canKick && !participant.is_creator;
+    const teamRing = TEAM_AVATAR_RING[side];
 
     return (
         <div
@@ -55,10 +68,18 @@ export function FilledSlot({
                             <img
                                 src={participant.user.avatar_thumb_url}
                                 alt={participant.user.name}
-                                className="size-10 rounded-full object-cover"
+                                className={cn(
+                                    'size-10 rounded-full object-cover',
+                                    teamRing,
+                                )}
                             />
                         ) : (
-                            <div className="flex size-10 items-center justify-center rounded-full bg-gradient-primary text-sm font-semibold text-foreground">
+                            <div
+                                className={cn(
+                                    'flex size-10 items-center justify-center rounded-full bg-gradient-primary text-sm font-semibold text-foreground',
+                                    teamRing,
+                                )}
+                            >
                                 {initials}
                             </div>
                         )}
@@ -222,36 +243,64 @@ function StatCell({ label, value, align = 'left' }: StatCellProps) {
 interface EmptySlotProps {
     side: LobbySide;
     canJoin: boolean;
+    /** Guest viewers get a sign-in link (opens the auth modal) instead of a
+     *  dead-end "Open slot" — set only when the lobby is joinable-if-authed. */
+    signInHref?: string;
     onJoin: (side: LobbySide) => void;
 }
 
 /**
- * Empty slot placeholder. When the viewer can join, the whole card is the
- * Join CTA. Otherwise it's a passive "Open slot" indicator. Height tracks the
- * filled card so a partially-filled team column reads as a clean vertical stack.
+ * Empty slot placeholder, three states by viewer:
+ *   - can join (authed, eligible)  → the whole card is a solid Join CTA.
+ *   - guest (lobby is joinable)     → a "Sign in to join" link.
+ *   - otherwise                     → a passive "Open slot" indicator.
+ * Height tracks the filled card so a partially-filled column reads as a clean
+ * vertical stack.
  */
-export function EmptySlot({ side, canJoin, onJoin }: EmptySlotProps) {
+export function EmptySlot({
+    side,
+    canJoin,
+    signInHref,
+    onJoin,
+}: EmptySlotProps) {
     const t = useT();
 
-    if (!canJoin) {
+    if (canJoin) {
         return (
-            <div className="flex h-[128px] w-full items-center justify-center rounded-xl border border-dashed border-border/40 bg-card/30 text-xs text-muted-foreground">
-                {t('Open slot')}
-            </div>
+            <button
+                type="button"
+                onClick={() => onJoin(side)}
+                className={cn(
+                    'group flex h-[128px] w-full cursor-pointer flex-col items-center justify-center gap-1.5 rounded-xl border text-sm font-semibold transition-colors',
+                    'border-primary/50 bg-primary/10 text-primary',
+                    'hover:border-primary hover:bg-primary/20',
+                )}
+            >
+                <UserPlus className="size-5" aria-hidden="true" />
+                {t('Join Team :side', { side: side.toUpperCase() })}
+            </button>
+        );
+    }
+
+    if (signInHref) {
+        return (
+            <Link
+                href={signInHref}
+                className={cn(
+                    'group flex h-[128px] w-full flex-col items-center justify-center gap-1.5 rounded-xl border border-dashed text-sm font-medium transition-colors',
+                    'border-primary/40 bg-primary/5 text-primary',
+                    'hover:border-primary/60 hover:bg-primary/10',
+                )}
+            >
+                <LogIn className="size-5" aria-hidden="true" />
+                {t('Sign in to join')}
+            </Link>
         );
     }
 
     return (
-        <button
-            type="button"
-            onClick={() => onJoin(side)}
-            className={cn(
-                'group flex h-[128px] w-full cursor-pointer items-center justify-center rounded-xl border border-dashed text-sm font-medium transition-colors',
-                'border-primary/40 bg-primary/5 text-primary',
-                'hover:border-primary hover:bg-primary/10',
-            )}
-        >
-            {t('Join Team :side', { side: side.toUpperCase() })}
-        </button>
+        <div className="flex h-[128px] w-full items-center justify-center rounded-xl border border-dashed border-border/40 bg-card/30 text-xs text-muted-foreground">
+            {t('Open slot')}
+        </div>
     );
 }

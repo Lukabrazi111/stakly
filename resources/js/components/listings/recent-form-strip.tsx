@@ -61,6 +61,26 @@ export function RecentFormStrip({
             return null;
         }
 
+        // No settled history at all → a single quiet column (M43 P4) instead of
+        // a stack of repeated faded "N" cells, which read as noise across a full
+        // roster. Partial history still pads with "N" below for context.
+        if (results.length === 0) {
+            return (
+                <span
+                    className="flex w-7 shrink-0 items-center justify-center self-stretch bg-muted/10"
+                    role="img"
+                    aria-label={label}
+                >
+                    <span
+                        className="text-[10px] font-medium text-muted-foreground/30"
+                        aria-hidden="true"
+                    >
+                        —
+                    </span>
+                </span>
+            );
+        }
+
         // Newest first; tail padded with null → a faded "N" cell.
         const cells = Array.from(
             { length: count },

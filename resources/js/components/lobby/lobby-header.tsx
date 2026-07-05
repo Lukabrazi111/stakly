@@ -33,6 +33,13 @@ const GAME_META: Record<GameId, { icon: ElementType; label: string }> = {
     dota2: { icon: Swords, label: 'Dota 2' },
 };
 
+// Team accent — Team A pink (primary), Team B purple (accent). Mirrors the slot
+// cards so the two sides read as distinct top-to-bottom (M43 P4).
+const TEAM_TONE = {
+    a: { ring: 'ring-primary/60', dot: 'bg-primary' },
+    b: { ring: 'ring-accent/60', dot: 'bg-accent' },
+} as const;
+
 interface Props {
     lobby: Lobby;
 }
@@ -113,10 +120,16 @@ function TeamSide({
     const label = leaderLabel(leader, fallback);
     const flexDir = align === 'end' ? 'flex-row-reverse' : 'flex-row';
     const textAlign = align === 'end' ? 'text-right' : 'text-left';
+    const tone = align === 'start' ? TEAM_TONE.a : TEAM_TONE.b;
 
     return (
         <div className={cn('flex min-w-0 items-center gap-3', flexDir)}>
-            <Avatar className="size-11 shrink-0 overflow-hidden rounded-full">
+            <Avatar
+                className={cn(
+                    'size-11 shrink-0 overflow-hidden rounded-full ring-2',
+                    tone.ring,
+                )}
+            >
                 {leader?.user.avatar_thumb_url && (
                     <AvatarImage
                         src={leader.user.avatar_thumb_url}
@@ -131,7 +144,16 @@ function TeamSide({
                 <h2 className="truncate font-display text-base font-semibold tracking-wide text-foreground">
                     {label}
                 </h2>
-                <span className="text-xs text-muted-foreground tabular-nums">
+                <span
+                    className={cn(
+                        'inline-flex items-center gap-1.5 text-xs text-muted-foreground tabular-nums',
+                        align === 'end' && 'flex-row-reverse',
+                    )}
+                >
+                    <span
+                        className={cn('size-1.5 rounded-full', tone.dot)}
+                        aria-hidden="true"
+                    />
                     {fillCount} / {teamSize}
                 </span>
             </div>
