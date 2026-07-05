@@ -1,10 +1,26 @@
 <?php
 
+use App\Enums\LinkedAccountProvider;
 use App\Enums\MatchStatus;
 use App\Models\GameMatch;
+use App\Models\LinkedAccount;
 use App\Models\Listing;
 use App\Models\User;
 use App\Services\Wallet;
+use Illuminate\Support\Str;
+
+function makeProfileLinkedAccount(User $user, LinkedAccountProvider $provider): LinkedAccount
+{
+    // `linked_accounts.verified_at` is NOT NULL — a row only exists once
+    // verified (pending links live in `pending_verifications`).
+    return LinkedAccount::create([
+        'user_id' => $user->id,
+        'provider' => $provider->value,
+        'username' => "{$user->username}-{$provider->value}",
+        'provider_user_id' => $provider === LinkedAccountProvider::Faceit ? (string) Str::uuid() : null,
+        'verified_at' => now(),
+    ]);
+}
 
 // ─── Basic show + auth context ────────────────────────────────────────────
 
@@ -68,6 +84,30 @@ test('profile resource never leaks email, usdt_balance, or is_platform', functio
         ->missing('user.two_factor_secret')
         ->missing('user.password')
     );
+});
+
+// ─── Linked accounts (M43 P5 — profile shows all verified accounts) ───────
+
+test('linked_accounts exposes every verified account, including FACEIT', function () {
+    $user = User::factory()->create(['username' => 'ravi']);
+    makeProfileLinkedAccount($user, LinkedAccountProvider::ChessCom);
+    makeProfileLinkedAccount($user, LinkedAccountProvider::Lichess);
+    makeProfileLinkedAccount($user, LinkedAccountProvider::Faceit);
+
+    $this->get('/users/ravi')
+        ->assertInertia(fn ($page) => $page
+            ->has('user.linked_accounts', 3)
+            ->where('user.linked_accounts', fn ($accounts) => collect($accounts)
+                ->contains(fn ($a) => $a['provider'] === 'faceit' && $a['username'] === 'ravi-faceit')
+            )
+        );
+});
+
+test('linked_accounts is an empty array when the user has linked nothing', function () {
+    User::factory()->create(['username' => 'tess']);
+
+    $this->get('/users/tess')
+        ->assertInertia(fn ($page) => $page->has('user.linked_accounts', 0));
 });
 
 // ─── openListings scoping ────────────────────────────────────────────────

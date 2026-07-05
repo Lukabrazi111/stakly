@@ -56,18 +56,13 @@ export function ProfileHeader({ user }: Props) {
             </div>
 
             <div className="mt-5 flex flex-wrap items-center gap-2">
-                {user.chess_com_username && (
+                {user.linked_accounts.map((account) => (
                     <VerificationChip
-                        provider="chess_com"
-                        username={user.chess_com_username}
+                        key={account.provider}
+                        provider={account.provider}
+                        username={account.username}
                     />
-                )}
-                {user.lichess_username && (
-                    <VerificationChip
-                        provider="lichess"
-                        username={user.lichess_username}
-                    />
-                )}
+                ))}
                 <span className="inline-flex shrink-0 items-center rounded-full border border-border/60 bg-card px-3 py-1 text-xs font-medium text-muted-foreground">
                     {t('Joined :date', { date: joinedDate })}
                 </span>

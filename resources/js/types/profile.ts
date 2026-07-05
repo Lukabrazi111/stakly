@@ -6,7 +6,7 @@
 // user (includes email + verification fields). `UserProfile` is the public slice
 // visible on `/users/{username}` — no email, no balance, no PII.
 
-import type { Listing } from './listings';
+import type { Listing, ListingPlatform } from './listings';
 import type { Match } from './match';
 
 export interface UserProfile {
@@ -27,8 +27,13 @@ export interface UserProfile {
     // Verified external game-account usernames (M8 Phase 1). `null` when not
     // linked. Pending verification state is NEVER exposed here — these fields
     // are only populated after the bio-code flow completes.
+    // Kept for backwards-compat; `linked_accounts` is the full public set.
     chess_com_username: string | null;
     lichess_username: string | null;
+    // Every verified linked account (chess.com / Lichess / FACEIT / Steam),
+    // game-agnostic — the profile shows them all. Mirrors the listing-detail
+    // shape; the header renders one `VerificationChip` per entry.
+    linked_accounts: Array<{ provider: ListingPlatform; username: string }>;
 }
 
 export interface ProfileStats {
