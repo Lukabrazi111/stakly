@@ -1405,6 +1405,19 @@ Four `/design-review`-driven passes tightening the listings + lobby visual syste
 
 ---
 
+## M44 — Recruiting-lobby findability (surface in Matches) ✅ shipped 2026-07-05
+
+`/office-hours`-designed, then built. Problem: a user who joins (or creates) a team-play lobby and navigates away had no easy way back during the `recruiting`/`ready_checking` window — the creator has My listings (they own it), but a **joiner had nothing**, and the Matches page deliberately excludes `LobbyFilling` (pre-lock). Decision: surface it in **Matches** (participation, not ownership — reuses the page + sidebar badge; NOT My listings), for **any lobby you're a live participant in** (creator + joiner, uniform).
+
+- **One reusable scope — `GameMatch::scopeInProgressForViewer($userId)`.** The "In Progress" set = `MatchStatus::inProgressValues()` (Pending/Disputed/ManualReview) OR a `LobbyFilling` match where the viewer is a live lobby participant. **`inProgressValues()` is left untouched** (it also gates the take-button `in_flight_games`); the scope admits recruiting lobbies only for the Matches surface. Used by BOTH `GameMatchController@index` and the badge middleware (DRY).
+- **Free correctness** from the existing `forRosterParticipant` scope: kicked (`kicked_at`) + left (row deleted) players are already excluded, so they never see a lobby they've left.
+- **Badge (`HandleInertiaRequests`).** The single `$inFlightMatches` fetch was broadened via the scope (now selects `status`); `active_matches_count` counts recruiting lobbies, while **`in_flight_games` filters `LobbyFilling` OUT** in PHP so the take-gate is unchanged (a recruiting lobby must not block taking a listing elsewhere).
+- **Resource.** `GameMatchResource` exposes `listing.lobby_state` (plain string, matching `ListingResource`) + `listing.live_participant_count` (via a `withCount(['lobbyParticipants' => live()])` on the index query's listing eager-load; null on contexts that don't add it).
+- **FE.** A dedicated `RecruitingLobbyRow` (no opponent yet): Users-icon + "NvN lobby" + host, `GameChip` (game·NvN·platform), a **Recruiting / Ready check** pill, a **fill/target** counter, **Return →** → `/listings/{id}`. Recruiting lobbies **pin to the top** of the In Progress view (`orderByRaw` CASE). The Matches page branches on `status === 'lobby_filling'`.
+- Tests: `ActiveMatchesTest` +8 (joiner + creator see it with fill/state; non-participant + kicked don't; badge counts it; **take-gate excludes it**; pinned first; not duplicated once it locks→Pending). Verified in-browser: a real dogfood joiner of a 5v5 recruiting lobby saw the row ("5 v 5 lobby · CS2·5v5·FACEIT · Recruiting · 9/10 · Return → · $50"), console clean. Live badge/card via the existing `private-lobby.{id}` Reverb channel = deferred (the lobby page is already live). A persistent header "Return to lobby" bar was floated and can layer on later. No money paths.
+
+---
+
 ## Parked milestones
 
 Work that has a clear shape but isn't being picked up right now. Lives in the archive so the active milestones list stays focused on what we can act on; revisit if priorities shift.

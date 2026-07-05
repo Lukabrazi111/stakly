@@ -257,3 +257,170 @@ test('in_flight_games spans every game the user is mid-match in (chess + CS2)', 
             ->has('auth.user.in_flight_games', 2)
         );
 });
+
+/*
+ * M44 — recruiting-lobby findability. A team-play lobby the user is a LIVE
+ * participant in (pre-lock, LobbyFilling) surfaces in the "In Progress" Matches
+ * view + counts toward the badge, so a joiner who navigated away can get back.
+ * It must NOT touch the take-gate (`in_flight_games`), and left/kicked players
+ * must not see it.
+ */
+
+/**
+ * A recruiting 2v2 CS2 lobby: the creator on side A slot 0, an optional
+ * `$joiner` on side B slot 0, plus the pre-lock LobbyFilling match. Returns the
+ * listing. Both participants are live (no kick), so live_participant_count is
+ * 1 (creator only) or 2 (with joiner).
+ */
+function m44RecruitingLobby(User $creator, ?User $joiner = null): Listing
+{
+    $listing = Listing::factory()->teamPlay(2)->for($creator)->create();
+    GameMatch::factory()->for($listing)->create([
+        'taker_user_id' => $creator->id,
+        'status' => MatchStatus::LobbyFilling,
+    ]);
+    LobbyParticipant::factory()->sideA()->create([
+        'listing_id' => $listing->id,
+        'user_id' => $creator->id,
+        'slot_index' => 0,
+    ]);
+    if ($joiner !== null) {
+        LobbyParticipant::factory()->sideB()->create([
+            'listing_id' => $listing->id,
+            'user_id' => $joiner->id,
+            'slot_index' => 0,
+        ]);
+    }
+
+    return $listing;
+}
+
+test('a joiner sees the recruiting lobby in the In Progress view, with fill + state (M44)', function () {
+    $creator = User::factory()->create();
+    $dave = User::factory()->create();
+    $listing = m44RecruitingLobby($creator, $dave);
+
+    $this->actingAs($dave)
+        ->get('/matches')
+        ->assertInertia(fn ($page) => $page
+            ->has('matches.data', 1)
+            ->where('matches.data.0.status', MatchStatus::LobbyFilling->value)
+            ->where('matches.data.0.listing.id', $listing->id)
+            ->where('matches.data.0.listing.team_size', 2)
+            ->where('matches.data.0.listing.live_participant_count', 2)
+            ->where('matches.data.0.listing.lobby_state', 'recruiting')
+        );
+});
+
+test('the creator also sees their own recruiting lobby in Matches (M44)', function () {
+    $creator = User::factory()->create();
+    $dave = User::factory()->create();
+    m44RecruitingLobby($creator, $dave);
+
+    $this->actingAs($creator)
+        ->get('/matches')
+        ->assertInertia(fn ($page) => $page->has('matches.data', 1));
+});
+
+test('a recruiting lobby you are not in is not visible (M44)', function () {
+    $creator = User::factory()->create();
+    $dave = User::factory()->create();
+    $carol = User::factory()->create();
+    m44RecruitingLobby($creator, $dave);
+
+    $this->actingAs($carol)
+        ->get('/matches')
+        ->assertInertia(fn ($page) => $page->has('matches.data', 0));
+});
+
+test('a kicked player no longer sees the recruiting lobby (M44)', function () {
+    $creator = User::factory()->create();
+    $dave = User::factory()->create();
+    $listing = m44RecruitingLobby($creator);
+    LobbyParticipant::factory()->sideB()->kicked()->create([
+        'listing_id' => $listing->id,
+        'user_id' => $dave->id,
+        'slot_index' => 0,
+    ]);
+
+    $this->actingAs($dave)
+        ->get('/matches')
+        ->assertInertia(fn ($page) => $page->has('matches.data', 0));
+});
+
+test('active_matches_count includes a recruiting lobby you are live in (M44)', function () {
+    $creator = User::factory()->create();
+    $dave = User::factory()->create();
+    m44RecruitingLobby($creator, $dave);
+
+    $this->actingAs($dave)
+        ->get('/matches')
+        ->assertInertia(fn ($page) => $page->where('auth.user.active_matches_count', 1));
+});
+
+test('in_flight_games EXCLUDES a recruiting lobby — the take-gate is unaffected (M44)', function () {
+    $creator = User::factory()->create();
+    $dave = User::factory()->create();
+    m44RecruitingLobby($creator, $dave); // CS2 recruiting lobby
+
+    // Dave is in a CS2 recruiting lobby, but that must NOT gate him from taking
+    // any listing — only LOCKED matches do. So in_flight_games stays empty even
+    // though active_matches_count is 1.
+    $this->actingAs($dave)
+        ->get('/matches')
+        ->assertInertia(fn ($page) => $page
+            ->where('auth.user.active_matches_count', 1)
+            ->where('auth.user.in_flight_games', [])
+        );
+});
+
+test('recruiting lobbies pin above locked matches in the In Progress view (M44)', function () {
+    $user = User::factory()->create();
+
+    // A locked (Pending) chess match — the NEWER row.
+    $lockedMatch = GameMatch::factory()
+        ->for(Listing::factory()->taken()->for(User::factory()))
+        ->for($user, 'taker')
+        ->create(['created_at' => now()]);
+
+    // A recruiting lobby the user joined — created EARLIER, but pinned first.
+    $lobbyOwner = User::factory()->create();
+    $lobbyListing = Listing::factory()->teamPlay(2)->for($lobbyOwner)->create();
+    $lobbyMatch = GameMatch::factory()->for($lobbyListing)->create([
+        'taker_user_id' => $lobbyOwner->id,
+        'status' => MatchStatus::LobbyFilling,
+        'created_at' => now()->subHours(3),
+    ]);
+    LobbyParticipant::factory()->sideA()->create([
+        'listing_id' => $lobbyListing->id, 'user_id' => $lobbyOwner->id, 'slot_index' => 0,
+    ]);
+    LobbyParticipant::factory()->sideB()->create([
+        'listing_id' => $lobbyListing->id, 'user_id' => $user->id, 'slot_index' => 0,
+    ]);
+
+    $this->actingAs($user)
+        ->get('/matches')
+        ->assertInertia(fn ($page) => $page
+            ->has('matches.data', 2)
+            ->where('matches.data.0.id', $lobbyMatch->id)   // recruiting pinned first
+            ->where('matches.data.1.id', $lockedMatch->id)
+        );
+});
+
+test('once the lobby locks it shows as a normal match, not duplicated (M44)', function () {
+    $creator = User::factory()->create();
+    $dave = User::factory()->create();
+    $listing = m44RecruitingLobby($creator, $dave);
+
+    // Lock: the match flips to Pending, the lobby to locked.
+    GameMatch::query()->where('listing_id', $listing->id)
+        ->update(['status' => MatchStatus::Pending]);
+    $listing->update(['lobby_state' => 'locked']);
+
+    $this->actingAs($dave)
+        ->get('/matches')
+        ->assertInertia(fn ($page) => $page
+            ->has('matches.data', 1) // still one row, not doubled
+            ->where('matches.data.0.status', MatchStatus::Pending->value)
+        );
+});

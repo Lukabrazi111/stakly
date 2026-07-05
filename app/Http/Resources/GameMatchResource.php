@@ -58,6 +58,14 @@ class GameMatchResource extends JsonResource
                 // Drives the frontend branch between 1v1 chess UI
                 // (creator/taker) and team-play UI (rosters).
                 'team_size' => $this->listing->team_size,
+                // M44 — the recruiting-lobby row on `/matches` uses these to
+                // render "Recruiting/Ready check · 3/5". `lobby_state` is null
+                // for 1v1; `live_participant_count` is null unless the caller
+                // added the withCount (only the `/matches` list does).
+                'lobby_state' => $this->listing->lobby_state,
+                'live_participant_count' => $this->listing->live_participant_count !== null
+                    ? (int) $this->listing->live_participant_count
+                    : null,
             ],
             'creator' => [
                 'id' => $this->listing->user->id,

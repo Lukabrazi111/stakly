@@ -52,7 +52,13 @@ class GameMatchController extends Controller
         $query = GameMatch::query()
             ->forRosterParticipant($user->id)
             ->with([
-                'listing:id,user_id,game,stake_amount,platform,time_control,status,team_size',
+                // Closure form (was a `listing:...` column string) so we can
+                // hang a live-fill withCount off the listing for the M44
+                // recruiting-lobby card. `lobby_state` added for the card's
+                // "Recruiting" vs "Ready check" label.
+                'listing' => fn ($q) => $q
+                    ->select('id', 'user_id', 'game', 'stake_amount', 'platform', 'time_control', 'status', 'team_size', 'lobby_state')
+                    ->withCount(['lobbyParticipants as live_participant_count' => fn ($p) => $p->live()]),
                 'listing.user:id,name,username',
                 'taker:id,name,username',
                 'winner:id,name,username',
@@ -67,8 +73,11 @@ class GameMatchController extends Controller
             $query = QueryBuilder::for($query)
                 ->allowedFilters(AllowedFilter::exact('status'));
         } else {
-            // In Progress view (default): the active group, chips ignored.
-            $query->whereIn('status', MatchStatus::inProgressValues());
+            // In Progress view (default): active locked matches + any recruiting
+            // lobby the viewer is live in (M44). Recruiting lobbies pin to the
+            // top — they're the most actionable thing to return to.
+            $query->inProgressForViewer($user->id)
+                ->orderByRaw('CASE WHEN status = ? THEN 0 ELSE 1 END', [MatchStatus::LobbyFilling->value]);
         }
 
         $matches = $query

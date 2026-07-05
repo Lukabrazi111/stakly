@@ -54,17 +54,20 @@ class HandleInertiaRequests extends Middleware
             $user->load('latestBanLog');
         }
 
-        // M36/M37 — the user's in-flight matches (Pending / Disputed /
-        // ManualReview), team-aware, fetched once. The count powers the sidebar
-        // "Matches" badge; the distinct games gate the Take button (M37, one
-        // active match per game). At most a couple rows under the per-game cap,
-        // so the eager-load is cheap.
+        // M36/M37/M44 — the user's active matches, team-aware, fetched once.
+        // Powers BOTH the sidebar "Matches" badge (count, incl. recruiting
+        // lobbies you're live in — M44) AND the Take-button gate (in_flight_games,
+        // M37 — one active match per game). The two diverge on LobbyFilling:
+        // it counts toward the badge but NOT the take-gate (a recruiting lobby
+        // shouldn't block you from taking a listing in another game), so
+        // `in_flight_games` filters it out below. `status` is selected so we
+        // can split the two. At most a couple rows, so the fetch is cheap.
         $inFlightMatches = $user !== null
             ? GameMatch::query()
                 ->forRosterParticipant($user->id)
-                ->whereIn('status', MatchStatus::inProgressValues())
+                ->inProgressForViewer($user->id)
                 ->with('listing:id,game')
-                ->get(['id', 'listing_id'])
+                ->get(['id', 'listing_id', 'status'])
             : collect();
 
         return [
@@ -99,13 +102,15 @@ class HandleInertiaRequests extends Middleware
                     'unread_notifications_count' => $user->playerNotifications()
                         ->where('created_at', '>', $user->notifications_last_seen_at ?? '1970-01-01')
                         ->count(),
-                    // M36: matches the user is mid-flight on (Pending / Disputed
-                    // / ManualReview), team-aware. Powers the sidebar "Matches"
-                    // badge. Derived from the single `$inFlightMatches` fetch.
+                    // M36/M44: active matches + recruiting lobbies you're live
+                    // in. Powers the sidebar "Matches" badge. Single fetch.
                     'active_matches_count' => $inFlightMatches->count(),
-                    // M37: the distinct games the user is currently mid-match in
+                    // M37: the distinct games the user is currently mid-MATCH in
                     // — gates the Take button (one active match per game).
+                    // Recruiting lobbies (LobbyFilling) are excluded — being in
+                    // a lobby doesn't lock you out of taking a listing elsewhere.
                     'in_flight_games' => $inFlightMatches
+                        ->reject(fn (GameMatch $match) => $match->status === MatchStatus::LobbyFilling)
                         ->pluck('listing.game')
                         ->filter()
                         ->map(fn (Game $game) => $game->value)

@@ -38,6 +38,12 @@ export interface MatchListing {
     // taker) and team-play UI (team rosters). 1 for chess, 2 for Wingman,
     // 5 for CS2 5v5.
     team_size: number;
+    // M44 — the recruiting-lobby row on `/matches` reads these. `lobby_state`
+    // labels the row ('recruiting' | 'ready_checking'); null for 1v1.
+    // `live_participant_count` is the filled-slot count for "3/5"; null unless
+    // the caller added the withCount (only `/matches` list does).
+    lobby_state: string | null;
+    live_participant_count: number | null;
 }
 
 // M34 P6 — one live roster entry on a team-play match. Mirrors
