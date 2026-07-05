@@ -1,8 +1,30 @@
 import { Link } from '@inertiajs/react';
-import { CheckCircle2, Crown, LogIn, UserPlus, X } from 'lucide-react';
+import {
+    CheckCircle2,
+    Crown,
+    EllipsisVertical,
+    LogIn,
+    UserMinus,
+    UserPlus,
+} from 'lucide-react';
+import { useState } from 'react';
 import { FaceitRatingBadge } from '@/components/listings/faceit-rating-badge';
 import { RecentFormStrip } from '@/components/listings/recent-form-strip';
 import { Button } from '@/components/ui/button';
+import {
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogFooter,
+    DialogHeader,
+    DialogTitle,
+} from '@/components/ui/dialog';
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { useT } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import type { LobbyParticipantPayload, LobbySide } from '@/types';
@@ -46,7 +68,7 @@ export function FilledSlot({
             .join('')
             .toUpperCase() ?? '??';
 
-    const showKickX = !isViewer && canKick && !participant.is_creator;
+    const showKick = !isViewer && canKick && !participant.is_creator;
     const teamRing = TEAM_AVATAR_RING[side];
 
     return (
@@ -108,31 +130,26 @@ export function FilledSlot({
                     </div>
 
                     <div className="flex shrink-0 flex-col items-end gap-1.5">
-                        <FaceitRatingBadge
-                            rating={participant.faceit_rating}
-                            variant="compact"
-                            dialSize={30}
-                        />
+                        <div className="flex items-center gap-1">
+                            <FaceitRatingBadge
+                                rating={participant.faceit_rating}
+                                variant="compact"
+                                dialSize={30}
+                            />
+                            {showKick && (
+                                <SlotOwnerMenu
+                                    playerName={participant.user.name}
+                                    onConfirmRemove={() =>
+                                        onKick(participant.user.username)
+                                    }
+                                />
+                            )}
+                        </div>
                         <ReadyPill ready={participant.is_ready} />
                     </div>
                 </div>
 
                 <StatsLine stats={participant.platform_stats} />
-
-                {showKickX && (
-                    <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        className="absolute top-1 right-1 size-6 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-                        onClick={() => onKick(participant.user.username)}
-                        aria-label={t('Kick :name from lobby', {
-                            name: participant.user.name,
-                        })}
-                    >
-                        <X className="size-3.5" aria-hidden="true" />
-                    </Button>
-                )}
             </div>
 
             {/* Recent W/L form — flush, full-height right-edge column, always 5
@@ -143,6 +160,97 @@ export function FilledSlot({
                 slots={5}
             />
         </div>
+    );
+}
+
+interface SlotOwnerMenuProps {
+    playerName: string;
+    onConfirmRemove: () => void;
+}
+
+/**
+ * Owner-only kebab menu on an opponent slot card (M34 P5). A neutral `⋮`
+ * trigger keeps the dense roster card calm and gives the destructive action
+ * its own lane, clear of the ELO dial / W/L strip. "Remove player" opens a
+ * confirm dialog before firing the kick so a stray tap can't drop a filled
+ * slot in a money lobby. The kick mutation itself stays in the parent
+ * (`team-play-lobby-view`) via `onConfirmRemove`.
+ */
+function SlotOwnerMenu({ playerName, onConfirmRemove }: SlotOwnerMenuProps) {
+    const t = useT();
+    const [menuOpen, setMenuOpen] = useState(false);
+    const [confirmOpen, setConfirmOpen] = useState(false);
+
+    return (
+        <>
+            <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
+                <DropdownMenuTrigger asChild>
+                    <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="size-8 text-muted-foreground hover:bg-transparent hover:text-primary"
+                        aria-label={t('Manage :name', { name: playerName })}
+                    >
+                        <EllipsisVertical
+                            className="size-4"
+                            aria-hidden="true"
+                        />
+                    </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="min-w-[10rem]">
+                    <DropdownMenuItem
+                        variant="destructive"
+                        onSelect={(event) => {
+                            // preventDefault stops Radix from returning focus to
+                            // the trigger as it auto-closes; close the menu
+                            // explicitly, then open the confirm so focus lands
+                            // in the dialog cleanly.
+                            event.preventDefault();
+                            setMenuOpen(false);
+                            setConfirmOpen(true);
+                        }}
+                    >
+                        <UserMinus aria-hidden="true" />
+                        {t('Remove player')}
+                    </DropdownMenuItem>
+                </DropdownMenuContent>
+            </DropdownMenu>
+
+            <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle>
+                            {t('Remove :name from the lobby?', {
+                                name: playerName,
+                            })}
+                        </DialogTitle>
+                        <DialogDescription>
+                            {t(
+                                'Their slot reopens for another player to join.',
+                            )}
+                        </DialogDescription>
+                    </DialogHeader>
+                    <DialogFooter>
+                        <Button
+                            variant="ghost"
+                            onClick={() => setConfirmOpen(false)}
+                        >
+                            {t('Cancel')}
+                        </Button>
+                        <Button
+                            variant="destructive"
+                            onClick={() => {
+                                onConfirmRemove();
+                                setConfirmOpen(false);
+                            }}
+                        >
+                            {t('Remove')}
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+        </>
     );
 }
 
