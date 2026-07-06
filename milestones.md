@@ -199,6 +199,7 @@ _Living "you are here" pointer — the short version of what to work on right no
 
 **M34 match/lobby — 2026-07-06** _(detail in the M34 entry above; pending user commit):_
 - [x] **(B) SHIPPED** — each roster player's FACEIT/chess **platform handle** renders on the match page as a clickable external-profile link (`GameMatchResource` ← `providerSnapshots`). `TeamMatchResourceTest` +1 green, browser-verified (10/10 handles).
+- [x] **"View lobby" link on the team match page** — the lobby had "View match page →" but the match had no return trip; added a top-right "View lobby" link (`team-match-view.tsx`, team-only, → `/listings/{id}`). Browser-verified round-trip. tsc + build clean.
 - [~] **(A) REVERTED** — the locked-lobby→match redirect was built + green but reverted same day: it yanked the player who locked the lobby (final Ready) straight to the match page. Locked lobbies stay on the lobby view like before. If revisited, don't redirect the locking actor.
 
 **Security hardening — queued from `/cso` (2026-07-06):** _money-flow audit came back clean (0 CRITICAL / 0 HIGH / 0 exploitable); two MEDIUM hardening items to slot in when the area is next touched:_
