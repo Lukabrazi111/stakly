@@ -56,6 +56,12 @@ export interface TeamMatchPlayer {
     name: string;
     avatar_thumb_url: string | null;
     slot_index: number;
+    // The player's external handle on the match's platform (FACEIT /
+    // chess.com / Lichess), snapshotted at lobby lock. Rendered as a
+    // clickable link to the public profile (config/platforms.ts) so
+    // teammates + opponents can scout each other in-game. Null when the
+    // snapshot row is missing or the resource ran in a list context.
+    platform_username: string | null;
     // M34 P8 Slice A — per-player skill + trust payload powering the rich
     // roster cards on the match page. Both nullable: skill is null when
     // the linked account has no rating; platform_stats is null when the

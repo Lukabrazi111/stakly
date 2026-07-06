@@ -101,7 +101,7 @@ describe('GET /matches/{match} for a 5v5 team match', function () {
         foreach ($payload['team_a'] as $entry) {
             expect($entry)->toHaveKeys([
                 'user_id', 'username', 'name', 'avatar_thumb_url', 'slot_index',
-                'skill_rating', 'platform_stats',
+                'platform_username', 'skill_rating', 'platform_stats',
             ]);
         }
 
@@ -130,6 +130,31 @@ describe('GET /matches/{match} for a 5v5 team match', function () {
 
         // winning_team null because match is Pending, not Settled.
         expect($payload['winning_team'])->toBeNull();
+    });
+
+    it('ships each roster player\'s snapshotted platform handle (M34 — scouting)', function () {
+        Notification::fake();
+
+        [, $match, $teamA, $teamB] = p6LockedTeamMatchForResource(teamSize: 2);
+
+        $response = $this->actingAs($teamA[0])->get(route('matches.show', $match));
+        $payload = $response->viewData('page')['props']['match'];
+
+        // Every live roster entry carries a FACEIT handle — all players are
+        // FACEIT-verified and the snapshot is written at lobby lock.
+        foreach ([...$payload['team_a'], ...$payload['team_b']] as $entry) {
+            expect($entry['platform_username'])->not->toBeNull();
+        }
+
+        // The handle matches the player's real linked FACEIT account (the
+        // snapshot is copied from it at lock, keyed by side + slot_index).
+        // $teamA[0] is the creator = side A, slot 0.
+        $expected = $teamA[0]->linkedAccounts()
+            ->where('provider', LinkedAccountProvider::Faceit)
+            ->value('username');
+
+        $slot0 = collect($payload['team_a'])->firstWhere('slot_index', 0);
+        expect($slot0['platform_username'])->toBe($expected);
     });
 
     it('filters kicked participants out of the rosters', function () {

@@ -1,6 +1,7 @@
 import { Link } from '@inertiajs/react';
-import { Crown, Frown } from 'lucide-react';
+import { Crown, ExternalLink, Frown } from 'lucide-react';
 import { MatchDetailsTrigger } from '@/components/match/match-details-strip';
+import { PLATFORM_LABEL, PLATFORM_PROFILE_URL } from '@/config/platforms';
 import { useInitials } from '@/hooks/use-initials';
 import { useT } from '@/lib/i18n';
 import { teamLabel } from '@/lib/team-leader';
@@ -92,6 +93,7 @@ export function TeamRosters({
                     isWinner={winningTeam === 'a'}
                     isLoser={winningTeam === 'b'}
                     viewerId={viewerId}
+                    platform={platform}
                 />
                 <TeamColumn
                     label={teamLabel(teamB, t('Team B'))}
@@ -100,6 +102,7 @@ export function TeamRosters({
                     isWinner={winningTeam === 'b'}
                     isLoser={winningTeam === 'a'}
                     viewerId={viewerId}
+                    platform={platform}
                 />
             </div>
         </section>
@@ -113,6 +116,7 @@ interface TeamColumnProps {
     isWinner: boolean;
     isLoser: boolean;
     viewerId: number | null;
+    platform: ListingPlatform;
 }
 
 function TeamColumn({
@@ -122,6 +126,7 @@ function TeamColumn({
     isWinner,
     isLoser,
     viewerId,
+    platform,
 }: TeamColumnProps) {
     const t = useT();
 
@@ -161,6 +166,7 @@ function TeamColumn({
                         isLoser={isLoser}
                         isViewer={player.user_id === viewerId}
                         isLeader={player.slot_index === 0}
+                        platform={platform}
                     />
                 ))}
             </ul>
@@ -175,6 +181,7 @@ interface RosterRowProps {
     isLoser: boolean;
     isViewer: boolean;
     isLeader: boolean;
+    platform: ListingPlatform;
 }
 
 function RosterRow({
@@ -184,6 +191,7 @@ function RosterRow({
     isLoser,
     isViewer,
     isLeader,
+    platform,
 }: RosterRowProps) {
     const t = useT();
     const getInitials = useInitials();
@@ -243,6 +251,28 @@ function RosterRow({
                     <span className="truncate font-mono text-[11px] text-muted-foreground">
                         @{player.username}
                     </span>
+                    {player.platform_username && (
+                        <a
+                            href={PLATFORM_PROFILE_URL[platform](
+                                player.platform_username,
+                            )}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            title={t('View :platform profile', {
+                                platform: PLATFORM_LABEL[platform],
+                            })}
+                            className="mt-0.5 inline-flex w-fit max-w-full items-center gap-0.5 font-mono text-[11px] text-muted-foreground transition-colors hover:text-primary"
+                        >
+                            <span className="truncate">
+                                {PLATFORM_LABEL[platform]}:{' '}
+                                {player.platform_username}
+                            </span>
+                            <ExternalLink
+                                className="size-2.5 shrink-0"
+                                aria-hidden="true"
+                            />
+                        </a>
+                    )}
                 </div>
 
                 {player.skill_rating !== null && (
