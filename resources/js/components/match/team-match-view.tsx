@@ -1,4 +1,5 @@
-import { router, usePage } from '@inertiajs/react';
+import { Link, router, usePage } from '@inertiajs/react';
+import { Users } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { GameChip } from '@/components/listings/game-chip';
 import { AdminReviewBanner } from '@/components/match/admin-review-banner';
@@ -192,12 +193,23 @@ export function TeamMatchView({ match, messages }: TeamMatchViewProps) {
 
                 <AdminReviewBanner match={match} viewerId={viewerId} />
 
-                <div className="mb-6">
+                <div className="mb-6 flex items-center justify-between gap-3">
                     <BackLink
                         fallback={
                             listingShow({ listing: match.listing.id }).url
                         }
                     />
+                    {/* Team match ↔ lobby are two views of the same event: the
+                        lobby hosts the FACEIT Coordinate tab + money breakdown,
+                        the match hosts settlement + chat. The lobby links here
+                        ("View match page →"); this is the return trip. */}
+                    <Link
+                        href={listingShow({ listing: match.listing.id }).url}
+                        className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-border/60 bg-card/60 px-3.5 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:border-primary/40 hover:bg-primary/10 hover:text-primary hover:[&_svg]:!text-primary"
+                    >
+                        <Users className="size-4" aria-hidden="true" />
+                        {t('View lobby')}
+                    </Link>
                 </div>
 
                 <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_460px] lg:gap-6">

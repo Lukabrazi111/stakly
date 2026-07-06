@@ -5,7 +5,9 @@ namespace App\Http\Resources;
 use App\Enums\MatchStatus;
 use App\Models\GameMatch;
 use App\Models\LobbyParticipant;
+use App\Models\MatchProviderSnapshot;
 use App\Models\User;
+use App\Support\FaceitLevel;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -58,6 +60,14 @@ class GameMatchResource extends JsonResource
                 // Drives the frontend branch between 1v1 chess UI
                 // (creator/taker) and team-play UI (rosters).
                 'team_size' => $this->listing->team_size,
+                // M44 — the recruiting-lobby row on `/matches` uses these to
+                // render "Recruiting/Ready check · 3/5". `lobby_state` is null
+                // for 1v1; `live_participant_count` is null unless the caller
+                // added the withCount (only the `/matches` list does).
+                'lobby_state' => $this->listing->lobby_state,
+                'live_participant_count' => $this->listing->live_participant_count !== null
+                    ? (int) $this->listing->live_participant_count
+                    : null,
             ],
             'creator' => [
                 'id' => $this->listing->user->id,
@@ -178,15 +188,68 @@ class GameMatchResource extends JsonResource
                 'name' => $p->user->name,
                 'avatar_thumb_url' => $p->user->avatar_thumb_url,
                 'slot_index' => (int) $p->slot_index,
+                // The player's external handle on the listing's platform
+                // (FACEIT / chess.com / Lichess), snapshotted at lobby lock so
+                // it survives a later unlink/rename. Lets teammates + opponents
+                // scout each other in-game; the FE links it out to the public
+                // profile via `config/platforms.ts`. Null if the snapshot row
+                // is missing (defensive — lock always snapshots live players).
+                'platform_username' => $this->platformUsernameFor($side, (int) $p->slot_index),
                 // M34 P8 Slice A — per-player trust + skill payload powering
                 // the rich roster cards on the match page. Mirrors the
                 // lobby's slot-card stats line. Nullable: controller may
                 // skip the batched aggregations on hot list-context calls,
                 // in which case the attributes are absent and we ship null.
                 'skill_rating' => $this->skillRatingFor($p->user),
+                // M34 lobby-parity — the FACEIT level dial object + recent W/L
+                // form so the match roster cards match the lobby slot cards.
+                // `faceit_rating` is derived from the platform ELO; `recent_form`
+                // is the controller-batched last-5 (empty [] in list contexts).
+                'faceit_rating' => $this->faceitRatingFor($p->user),
+                'recent_form' => array_values((array) ($p->user->getAttribute('recent_form') ?? [])),
                 'platform_stats' => $this->platformStatsFor($p->user),
             ])
             ->all();
+    }
+
+    /**
+     * The FACEIT level dial object for the roster card — mirrors
+     * `LobbyResource`'s `faceit_rating`. `level` is derived server-side from
+     * the platform ELO so the dial can't drift from the ladder. Unrated when
+     * the player has no ELO on the listing's platform.
+     *
+     * @return array{elo: int|null, level: int|null, is_unrated: bool}
+     */
+    private function faceitRatingFor(User $user): array
+    {
+        $elo = $this->skillRatingFor($user);
+
+        return [
+            'elo' => $elo,
+            'level' => FaceitLevel::fromElo($elo),
+            'is_unrated' => $elo === null,
+        ];
+    }
+
+    /**
+     * The roster player's snapshotted handle on the listing's platform,
+     * located by (side, slot_index, provider) in the eager-loaded
+     * `providerSnapshots`. Team snapshots are keyed by side + slot_index (no
+     * user_id column), and each live player has exactly one row per provider,
+     * so that triple is unique. Null when the relation isn't loaded (list
+     * contexts) or no matching row exists.
+     */
+    private function platformUsernameFor(string $side, int $slotIndex): ?string
+    {
+        if (! $this->relationLoaded('providerSnapshots')) {
+            return null;
+        }
+
+        return $this->providerSnapshots
+            ->first(fn (MatchProviderSnapshot $snapshot): bool => $snapshot->side === $side
+                && (int) $snapshot->slot_index === $slotIndex
+                && $snapshot->provider === $this->listing->platform)
+            ?->username;
     }
 
     /**

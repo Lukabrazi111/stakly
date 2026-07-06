@@ -4,7 +4,13 @@
 // - App\Enums\MatchStatus
 
 import type { GameId } from '@/config/games';
-import type { ListingPlatform, Paginator, TimeControl } from '@/types/listings';
+import type {
+    FaceitRating,
+    ListingPlatform,
+    Paginator,
+    RecentFormResult,
+    TimeControl,
+} from '@/types/listings';
 
 export type MatchStatus =
     | 'lobby_filling'
@@ -38,6 +44,12 @@ export interface MatchListing {
     // taker) and team-play UI (team rosters). 1 for chess, 2 for Wingman,
     // 5 for CS2 5v5.
     team_size: number;
+    // M44 — the recruiting-lobby row on `/matches` reads these. `lobby_state`
+    // labels the row ('recruiting' | 'ready_checking'); null for 1v1.
+    // `live_participant_count` is the filled-slot count for "3/5"; null unless
+    // the caller added the withCount (only `/matches` list does).
+    lobby_state: string | null;
+    live_participant_count: number | null;
 }
 
 // M34 P6 — one live roster entry on a team-play match. Mirrors
@@ -50,11 +62,22 @@ export interface TeamMatchPlayer {
     name: string;
     avatar_thumb_url: string | null;
     slot_index: number;
+    // The player's external handle on the match's platform (FACEIT /
+    // chess.com / Lichess), snapshotted at lobby lock. Rendered as a
+    // clickable link to the public profile (config/platforms.ts) so
+    // teammates + opponents can scout each other in-game. Null when the
+    // snapshot row is missing or the resource ran in a list context.
+    platform_username: string | null;
     // M34 P8 Slice A — per-player skill + trust payload powering the rich
     // roster cards on the match page. Both nullable: skill is null when
     // the linked account has no rating; platform_stats is null when the
     // controller skipped the batched aggregations (list contexts).
     skill_rating: number | null;
+    // M34 lobby-parity — FACEIT level dial object + recent W/L form, matching
+    // the lobby slot cards. `recent_form` is newest-first (≤5), empty in list
+    // contexts where the controller skips the batch.
+    faceit_rating: FaceitRating | null;
+    recent_form: RecentFormResult[];
     platform_stats: {
         total_matches: number;
         win_rate: number | null;

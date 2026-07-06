@@ -1,4 +1,5 @@
 import type { GameId } from '@/config/games';
+import { PLATFORM_COLOR, PLATFORM_LABEL } from '@/config/platforms';
 import { useT } from '@/lib/i18n';
 import type { ListingPlatform } from '@/types';
 
@@ -6,23 +7,6 @@ const GAME_LABEL: Record<GameId, string> = {
     chess: 'Chess',
     cs2: 'CS2',
     dota2: 'Dota 2',
-};
-
-const PLATFORM_LABEL: Record<ListingPlatform, string> = {
-    chess_com: 'chess.com',
-    lichess: 'Lichess',
-    faceit: 'FACEIT',
-    steam: 'Steam',
-};
-
-// Brand-accent tokens (app.css) — the platform's calm identity colour in the
-// merged chip. Keyed by platform so a listing reads with a coherent colour
-// instead of the old loud orange pill.
-const PLATFORM_COLOR: Record<ListingPlatform, string> = {
-    chess_com: 'var(--platform-chesscom)',
-    lichess: 'var(--platform-lichess)',
-    faceit: 'var(--platform-faceit)',
-    steam: 'var(--platform-steam)',
 };
 
 interface Props {

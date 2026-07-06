@@ -206,4 +206,28 @@ class GameMatch extends Model
                 ->orWhereHas('listing.lobbyParticipants', fn (Builder $inner) => $inner->where('user_id', $userId)->whereNull('kicked_at'));
         });
     }
+
+    /**
+     * The "In Progress" set for the Matches page + the sidebar badge (M44):
+     * the active locked matches ({@see MatchStatus::inProgressValues()} —
+     * Pending / Disputed / ManualReview) PLUS any recruiting lobby the viewer
+     * is a LIVE participant in. `LobbyFilling` is deliberately kept OUT of
+     * `inProgressValues()` (it also gates the take-button `in_flight_games`);
+     * this scope admits it only for the Matches surface, gated on live
+     * participation so a left / kicked player never sees a lobby they've left.
+     * Compose after {@see self::scopeForRosterParticipant()} which scopes the
+     * locked-match branch to the viewer.
+     */
+    public function scopeInProgressForViewer(Builder $query, int $userId): Builder
+    {
+        return $query->where(function (Builder $q) use ($userId) {
+            $q->whereIn('status', MatchStatus::inProgressValues())
+                ->orWhere(function (Builder $lobby) use ($userId) {
+                    $lobby->where('status', MatchStatus::LobbyFilling)
+                        ->whereHas('listing.lobbyParticipants', fn (Builder $p) => $p
+                            ->where('user_id', $userId)
+                            ->whereNull('kicked_at'));
+                });
+        });
+    }
 }

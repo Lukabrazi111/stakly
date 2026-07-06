@@ -1,3 +1,5 @@
+import type { ListingPlatform } from './listings';
+
 export type User = {
     id: number;
     name: string;
@@ -40,9 +42,10 @@ export type User = {
     // middleware does on every request — see `HandleInertiaRequests::share`).
     // Optional because callers that don't need it shouldn't have to think
     // about it, but it's reliably present at runtime. Used by the settings
-    // profile preview to render chess.com/Lichess `VerificationChip`s.
+    // profile preview to render every verified account (chess.com / Lichess /
+    // FACEIT / Steam) as a `VerificationChip`.
     linked_accounts?: Array<{
-        provider: 'chess_com' | 'lichess';
+        provider: ListingPlatform;
         username: string;
         verified_at: string;
     }>;

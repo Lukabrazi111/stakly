@@ -19,6 +19,7 @@ use App\Http\Resources\MessageResource;
 use App\Models\GameMatch;
 use App\Models\Listing;
 use App\Services\ParticipantStats;
+use App\Services\RecentForm;
 use App\Services\SellerTrust;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -52,7 +53,13 @@ class GameMatchController extends Controller
         $query = GameMatch::query()
             ->forRosterParticipant($user->id)
             ->with([
-                'listing:id,user_id,game,stake_amount,platform,time_control,status,team_size',
+                // Closure form (was a `listing:...` column string) so we can
+                // hang a live-fill withCount off the listing for the M44
+                // recruiting-lobby card. `lobby_state` added for the card's
+                // "Recruiting" vs "Ready check" label.
+                'listing' => fn ($q) => $q
+                    ->select('id', 'user_id', 'game', 'stake_amount', 'platform', 'time_control', 'status', 'team_size', 'lobby_state')
+                    ->withCount(['lobbyParticipants as live_participant_count' => fn ($p) => $p->live()]),
                 'listing.user:id,name,username',
                 'taker:id,name,username',
                 'winner:id,name,username',
@@ -67,8 +74,11 @@ class GameMatchController extends Controller
             $query = QueryBuilder::for($query)
                 ->allowedFilters(AllowedFilter::exact('status'));
         } else {
-            // In Progress view (default): the active group, chips ignored.
-            $query->whereIn('status', MatchStatus::inProgressValues());
+            // In Progress view (default): active locked matches + any recruiting
+            // lobby the viewer is live in (M44). Recruiting lobbies pin to the
+            // top — they're the most actionable thing to return to.
+            $query->inProgressForViewer($user->id)
+                ->orderByRaw('CASE WHEN status = ? THEN 0 ELSE 1 END', [MatchStatus::LobbyFilling->value]);
         }
 
         $matches = $query
@@ -227,6 +237,10 @@ class GameMatchController extends Controller
             if (count($userIds) > 0) {
                 $trust = SellerTrust::forBatch($userIds);
                 $stats = ParticipantStats::forBatch($userIds);
+                // M34 — recent W/L form for the match roster cards, matching the
+                // lobby slot cards. Scoped to the listing's game (team play = CS2)
+                // so the strip stays coherent with the FACEIT dial beside it.
+                $forms = RecentForm::forBatch($userIds, $match->listing->game);
 
                 foreach ($match->listing->lobbyParticipants as $participant) {
                     if ($participant->kicked_at !== null) {
@@ -240,6 +254,10 @@ class GameMatchController extends Controller
                     $participant->user->setAttribute(
                         'platform_stats',
                         $stats[$participant->user_id] ?? null,
+                    );
+                    $participant->user->setAttribute(
+                        'recent_form',
+                        $forms[$participant->user_id] ?? [],
                     );
                 }
             }

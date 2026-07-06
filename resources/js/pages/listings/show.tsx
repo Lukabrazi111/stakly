@@ -1,11 +1,9 @@
 import { Link, router, usePage } from '@inertiajs/react';
-import { Clock, Globe, Languages, Trophy } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useState } from 'react';
 import { ChessRatingBadge } from '@/components/listings/chess-rating-badge';
 import { FaceitRatingBadge } from '@/components/listings/faceit-rating-badge';
 import { SellerTrustMeta } from '@/components/listings/seller-trust-meta';
-import { VerifiedPlatformChip } from '@/components/listings/verified-platform-chip';
 import { TeamPlayLobbyView } from '@/components/lobby/team-play-lobby-view';
 import { VerificationChip } from '@/components/profile/verification-chip';
 import { BackLink } from '@/components/site/back-link';
@@ -21,6 +19,11 @@ import {
     DialogTitle,
     DialogTrigger,
 } from '@/components/ui/dialog';
+import {
+    GAME_PLATFORMS,
+    PLATFORM_COLOR,
+    PLATFORM_LABEL,
+} from '@/config/platforms';
 import { useInitials } from '@/hooks/use-initials';
 import SiteLayout from '@/layouts/site-layout';
 import { useT } from '@/lib/i18n';
@@ -38,21 +41,13 @@ import {
 import { index as matchesIndex, show as matchShow } from '@/routes/matches';
 import { show as userShow } from '@/routes/users';
 import { deposit as walletDeposit } from '@/routes/wallet';
-import type { ListingPlatform, ListingShowProps, ListingStatus } from '@/types';
+import type { ListingShowProps, ListingStatus } from '@/types';
 
 const STATUS_LABEL: Record<ListingStatus, string> = {
     open: 'Open',
     taken: 'Taken',
     expired: 'Expired',
     cancelled: 'Cancelled',
-};
-
-const PLATFORM_LABEL: Record<ListingPlatform, string> = {
-    chess_com: 'chess.com',
-    lichess: 'Lichess',
-    // M15 placeholders.
-    faceit: 'FACEIT',
-    steam: 'Steam',
 };
 
 const STATUS_TONE: Record<ListingStatus, string> = {
@@ -220,6 +215,13 @@ function ChessBranch({ listing, match }: ChessBranchProps) {
 
     const timeControlText = timeControlLabel(listing.time_control, t);
     const platformLabel = PLATFORM_LABEL[listing.platform];
+
+    // Only surface the creator's verified accounts that prove skill for THIS
+    // listing's game — a chess listing shouldn't advertise their FACEIT/CS2
+    // account (M43 P3).
+    const relevantAccounts = listing.creator.linked_accounts.filter((account) =>
+        GAME_PLATFORMS[listing.game].includes(account.provider),
+    );
     const metaTitle = t(":creator's $:stake match — chess on :platform", {
         creator: listing.creator.name,
         stake: listing.stake_amount,
@@ -301,7 +303,7 @@ function ChessBranch({ listing, match }: ChessBranchProps) {
                                         <h1 className="truncate font-display text-2xl font-bold tracking-tight text-foreground transition-colors hover:text-primary">
                                             {listing.creator.name}
                                         </h1>
-                                        <div className="mt-1">
+                                        <div className="mt-1 flex flex-wrap items-center gap-x-1.5 text-xs text-muted-foreground">
                                             <SellerTrustMeta
                                                 rate={
                                                     listing.creator
@@ -316,6 +318,25 @@ function ChessBranch({ listing, match }: ChessBranchProps) {
                                                         .verified_providers
                                                 }
                                             />
+                                            {joinedDate && (
+                                                <>
+                                                    {listing.creator
+                                                        .settled_lifetime >
+                                                        0 && (
+                                                        <span
+                                                            aria-hidden="true"
+                                                            className="opacity-60"
+                                                        >
+                                                            ·
+                                                        </span>
+                                                    )}
+                                                    <span>
+                                                        {t('Joined :date', {
+                                                            date: joinedDate,
+                                                        })}
+                                                    </span>
+                                                </>
+                                            )}
                                         </div>
                                     </div>
                                 </Link>
@@ -329,37 +350,25 @@ function ChessBranch({ listing, match }: ChessBranchProps) {
                                 )}
                             </div>
 
-                            {/* Chip strip — listing's required platform, then
-                                the creator's linked accounts (click-out to
-                                external profiles), then Joined pill. Wraps
-                                on every viewport: the listing-detail page
-                                shows up to 4 chips (platform + 2 linked
-                                accounts + joined), and horizontal-scrolling
-                                on mobile clipped chips mid-pill against the
-                                card edge. Wrapping lets all chips read at a
-                                glance at the cost of a slightly taller card
-                                — fine for a detail page. */}
-                            <div className="mt-5 flex flex-wrap items-center gap-2">
-                                <VerifiedPlatformChip
-                                    platform={listing.platform}
-                                />
-                                {listing.creator.linked_accounts.map(
-                                    (account) => (
+                            {/* Verified-account chips — the creator's linked
+                                accounts, filtered to the ones relevant to this
+                                listing's game (M43 P3), so a chess listing shows
+                                chess proof and not their FACEIT/CS2 account. The
+                                listing's own platform moved to Match details; the
+                                Joined date moved up to the trust line. Hidden
+                                entirely when the creator has no relevant linked
+                                account. Wraps on every viewport. */}
+                            {relevantAccounts.length > 0 && (
+                                <div className="mt-5 flex flex-wrap items-center gap-2">
+                                    {relevantAccounts.map((account) => (
                                         <VerificationChip
                                             key={account.provider}
                                             provider={account.provider}
                                             username={account.username}
                                         />
-                                    ),
-                                )}
-                                {joinedDate && (
-                                    <span className="inline-flex shrink-0 items-center rounded-full border border-border/60 bg-card px-3 py-1 text-xs font-medium text-muted-foreground">
-                                        {t('Joined :date', {
-                                            date: joinedDate,
-                                        })}
-                                    </span>
-                                )}
-                            </div>
+                                    ))}
+                                </div>
+                            )}
 
                             {listing.creator.bio && (
                                 <p className="mt-5 max-w-prose text-sm leading-relaxed whitespace-pre-line text-foreground/90">
@@ -370,18 +379,36 @@ function ChessBranch({ listing, match }: ChessBranchProps) {
 
                         {/* Listing details card */}
                         <section className="rounded-2xl border border-border/60 bg-card p-6">
-                            <h2 className="mb-5 font-display text-lg font-semibold text-foreground">
+                            <h2 className="mb-4 font-display text-lg font-semibold text-foreground">
                                 {t('Match details')}
                             </h2>
-                            <dl className="grid gap-5 sm:grid-cols-2">
-                                {/* Rating row branches on game like the cards
-                                    do. Non-chess/CS2 1v1 listings (e.g. Dota 2)
-                                    have no verified-rating adapter yet, so they
-                                    render no rating row. */}
+                            {/* Spec-sheet rows (M43 P3) — label-left /
+                                value-right with hairline dividers, rhyming with
+                                the stake breakdown in the booking widget. The
+                                Platform row is where the listing's played-on
+                                platform now lives (moved off the identity strip).
+                                Rating row branches on game like the cards do;
+                                non-chess/CS2 1v1 listings (e.g. Dota 2) have no
+                                verified-rating adapter yet, so they render no
+                                rating row. */}
+                            <dl>
+                                <SpecRow
+                                    label={t('Platform')}
+                                    value={
+                                        <span
+                                            style={{
+                                                color: PLATFORM_COLOR[
+                                                    listing.platform
+                                                ],
+                                            }}
+                                        >
+                                            {platformLabel}
+                                        </span>
+                                    }
+                                />
                                 {listing.game === 'chess' ? (
-                                    <Detail
+                                    <SpecRow
                                         label={t('Verified rating')}
-                                        icon={<Trophy className="size-4" />}
                                         value={
                                             <ChessRatingBadge
                                                 rating={
@@ -391,9 +418,8 @@ function ChessBranch({ listing, match }: ChessBranchProps) {
                                         }
                                     />
                                 ) : listing.game === 'cs2' ? (
-                                    <Detail
+                                    <SpecRow
                                         label={t('Verified rating')}
-                                        icon={<Trophy className="size-4" />}
                                         value={
                                             <FaceitRatingBadge
                                                 rating={
@@ -405,14 +431,12 @@ function ChessBranch({ listing, match }: ChessBranchProps) {
                                         }
                                     />
                                 ) : null}
-                                <Detail
+                                <SpecRow
                                     label={t('Time control')}
-                                    icon={<Clock className="size-4" />}
                                     value={timeControlText}
                                 />
-                                <Detail
+                                <SpecRow
                                     label={t('Expires')}
-                                    icon={<Clock className="size-4" />}
                                     value={formatTimeRemaining(
                                         listing.expires_at,
                                         t,
@@ -420,19 +444,15 @@ function ChessBranch({ listing, match }: ChessBranchProps) {
                                     valueClass={expiresTone}
                                 />
                                 {listing.region && (
-                                    <Detail
+                                    <SpecRow
                                         label={t('Region')}
-                                        icon={<Globe className="size-4" />}
                                         value={listing.region}
                                     />
                                 )}
                                 {listing.language &&
                                     listing.language.length > 0 && (
-                                        <Detail
+                                        <SpecRow
                                             label={t('Language')}
-                                            icon={
-                                                <Languages className="size-4" />
-                                            }
                                             value={listing.language.join(', ')}
                                         />
                                     )}
@@ -797,23 +817,27 @@ function ChessBranch({ listing, match }: ChessBranchProps) {
     );
 }
 
-interface DetailProps {
+interface SpecRowProps {
     label: string;
-    icon: ReactNode;
     value: ReactNode;
     valueClass?: string;
 }
 
-function Detail({ label, icon, value, valueClass }: DetailProps) {
+/**
+ * Single label-left / value-right row in the Match-details spec sheet (M43 P3).
+ * Hairline divider between rows; `first`/`last` trim the outer padding so the
+ * list sits flush against the heading and footer. No decorative icon — the
+ * label carries the meaning.
+ */
+function SpecRow({ label, value, valueClass }: SpecRowProps) {
     return (
-        <div>
-            <dt className="text-xs tracking-wide text-muted-foreground uppercase">
+        <div className="flex items-center justify-between gap-4 border-t border-border/40 py-3 first:border-t-0 first:pt-0 last:pb-0">
+            <dt className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
                 {label}
             </dt>
             <dd
-                className={`mt-1.5 inline-flex items-center gap-2 text-sm font-medium text-foreground ${valueClass ?? ''}`}
+                className={`text-right text-sm font-medium text-foreground ${valueClass ?? ''}`}
             >
-                {icon}
                 {value}
             </dd>
         </div>

@@ -6,6 +6,7 @@ import { MatchListRowSkeleton } from '@/components/match/match-list-row-skeleton
 import { MatchesFilterChips } from '@/components/match/matches-filter-chips';
 import { MatchesPagination } from '@/components/match/matches-pagination';
 import { MatchesViewTabs } from '@/components/match/matches-view-tabs';
+import { RecruitingLobbyRow } from '@/components/match/recruiting-lobby-row';
 import { PageMeta } from '@/components/site/page-meta';
 import PlayerHubLayout from '@/layouts/player-hub-layout';
 import { useT } from '@/lib/i18n';
@@ -113,9 +114,22 @@ export default function MatchesIndex({ matches, filters }: MatchesIndexProps) {
                             ? Array.from({ length: SKELETON_ROW_COUNT }).map(
                                   (_, i) => <MatchListRowSkeleton key={i} />,
                               )
-                            : matches.data.map((match) => (
-                                  <MatchListRow key={match.id} match={match} />
-                              ))}
+                            : matches.data.map((match) =>
+                                  // M44 — a recruiting lobby you're in has no
+                                  // opponent yet, so it renders its own row
+                                  // (fill progress + Return → to the lobby).
+                                  match.status === 'lobby_filling' ? (
+                                      <RecruitingLobbyRow
+                                          key={match.id}
+                                          match={match}
+                                      />
+                                  ) : (
+                                      <MatchListRow
+                                          key={match.id}
+                                          match={match}
+                                      />
+                                  ),
+                              )}
                     </div>
                 ) : (
                     <EmptyState view={filters.view} filtering={isFiltering} />

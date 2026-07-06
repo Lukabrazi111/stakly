@@ -1,14 +1,5 @@
-import {
-    Check,
-    Copy,
-    Crown,
-    Link2,
-    Share2,
-    Swords,
-    Target,
-} from 'lucide-react';
+import { Check, Copy, Link2, Share2 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
-import type { ElementType } from 'react';
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { leaderLabel, pickLeader } from '@/components/lobby/lobby-leader';
@@ -27,11 +18,20 @@ import { show as listingShow } from '@/routes/listings';
 import { invite as lobbyInvite } from '@/routes/lobbies';
 import type { Lobby, LobbyParticipantPayload } from '@/types';
 
-const GAME_META: Record<GameId, { icon: ElementType; label: string }> = {
-    chess: { icon: Crown, label: 'Chess' },
-    cs2: { icon: Target, label: 'CS2' },
-    dota2: { icon: Swords, label: 'Dota 2' },
+// Text-only label — mirrors the shared `GameChip` (no game icon), so the lobby
+// header's mode chip reads consistently with the marketplace / match surfaces.
+const GAME_LABEL: Record<GameId, string> = {
+    chess: 'Chess',
+    cs2: 'CS2',
+    dota2: 'Dota 2',
 };
+
+// Team accent — Team A pink (primary), Team B purple (accent). Mirrors the slot
+// cards so the two sides read as distinct top-to-bottom (M43 P4).
+const TEAM_TONE = {
+    a: { ring: 'ring-primary/60', dot: 'bg-primary' },
+    b: { ring: 'ring-accent/60', dot: 'bg-accent' },
+} as const;
 
 interface Props {
     lobby: Lobby;
@@ -113,10 +113,16 @@ function TeamSide({
     const label = leaderLabel(leader, fallback);
     const flexDir = align === 'end' ? 'flex-row-reverse' : 'flex-row';
     const textAlign = align === 'end' ? 'text-right' : 'text-left';
+    const tone = align === 'start' ? TEAM_TONE.a : TEAM_TONE.b;
 
     return (
         <div className={cn('flex min-w-0 items-center gap-3', flexDir)}>
-            <Avatar className="size-11 shrink-0 overflow-hidden rounded-full">
+            <Avatar
+                className={cn(
+                    'size-11 shrink-0 overflow-hidden rounded-full ring-2',
+                    tone.ring,
+                )}
+            >
                 {leader?.user.avatar_thumb_url && (
                     <AvatarImage
                         src={leader.user.avatar_thumb_url}
@@ -131,7 +137,16 @@ function TeamSide({
                 <h2 className="truncate font-display text-base font-semibold tracking-wide text-foreground">
                     {label}
                 </h2>
-                <span className="text-xs text-muted-foreground tabular-nums">
+                <span
+                    className={cn(
+                        'inline-flex items-center gap-1.5 text-xs text-muted-foreground tabular-nums',
+                        align === 'end' && 'flex-row-reverse',
+                    )}
+                >
+                    <span
+                        className={cn('size-1.5 rounded-full', tone.dot)}
+                        aria-hidden="true"
+                    />
                     {fillCount} / {teamSize}
                 </span>
             </div>
@@ -141,13 +156,11 @@ function TeamSide({
 
 function ModeRow({ lobby }: { lobby: Lobby }) {
     const t = useT();
-    const meta = GAME_META[lobby.game];
-    const Icon = meta?.icon ?? Target;
+    const label = GAME_LABEL[lobby.game] ?? lobby.game;
 
     return (
         <div className="flex items-center gap-1.5 rounded-full border border-border/60 bg-background/60 px-3 py-1 text-xs font-medium text-foreground">
-            <Icon className="size-3 text-primary" aria-hidden="true" />
-            <span>{t(meta?.label ?? lobby.game)}</span>
+            <span>{t(label)}</span>
             <span className="text-muted-foreground/60" aria-hidden="true">
                 ·
             </span>

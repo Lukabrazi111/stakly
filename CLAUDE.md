@@ -62,6 +62,10 @@ This project has domain-specific skills available in `**/skills/**`. You MUST ac
 
 - You must only create documentation files if explicitly requested by the user.
 
+## Replies
+
+- Be concise in your explanations - focus on what's important rather than explaining obvious details.
+
 === boost rules ===
 
 # Laravel Boost
@@ -83,7 +87,10 @@ This project has domain-specific skills available in `**/skills/**`. You MUST ac
 
 ### Search Syntax
 
-- Words = auto-stemmed AND (`rate limit` → "rate" AND "limit"); `"quoted phrases"` = exact adjacent order; combine both (`middleware "rate limit"`); multiple queries = OR (`queries=["authentication", "middleware"]`).
+1. Use words for auto-stemmed AND logic: `rate limit` matches both "rate" AND "limit".
+2. Use `"quoted phrases"` for exact position matching: `"infinite scroll"` requires adjacent words in order.
+3. Combine words and phrases for mixed queries: `middleware "rate limit"`.
+4. Use multiple queries for OR logic: `queries=["authentication", "middleware"]`.
 
 ## Artisan
 
@@ -107,6 +114,12 @@ This project has domain-specific skills available in `**/skills/**`. You MUST ac
 - Follow existing application Enum naming conventions.
 - Prefer PHPDoc blocks over inline comments. Only add inline comments for exceptionally complex logic.
 - Use array shape type definitions in PHPDoc blocks.
+
+=== deployments rules ===
+
+# Deployment
+
+- Laravel can be deployed using [Laravel Cloud](https://cloud.laravel.com/), which is the fastest way to deploy and scale production Laravel applications.
 
 === sail rules ===
 
@@ -389,5 +402,6 @@ The **Playwright MCP** is the agent-driven, interactive browser for verifying th
 
 gstack (Garry Tan's Claude Code skill suite) is installed **globally** at `~/.claude/skills/gstack`. Invoke any skill as a slash command (e.g. `/review`, `/qa`, `/investigate`).
 
+- **When the user invokes a gstack command, RUN THE GSTACK WORKFLOW — don't substitute an improvised/ad-hoc approach.** Follow the invoked skill's actual steps. The Stakly guardrails still apply on top (Sail-prefix all commands; **never auto-commit/push — the user commits**; Playwright MCP coexists with `/browse`; doc/dep changes need approval; gstack `/design-*` respect Stakly's visual system in this file rather than overriding it). If the invoked skill is the wrong fit for the task, flag it in ONE question and suggest the better-fit gstack skill — don't silently do your own thing. For visual polish of an existing page use **`/design-review`** (not `/design-consultation`, which builds a new DESIGN.md design-system doc that would conflict with the visual system already in this file).
 - **Web browsing → use gstack's `/browse`** skill (and its browser skills like `/qa`, `/design-review`) for general web browsing. **Never use `mcp__claude-in-chrome__*` tools.** The existing Playwright MCP workflow (see **Browser verification** above) stays valid for ad-hoc verification of the running Stakly app — the two coexist.
 - **Available skills:** `/office-hours`, `/plan-ceo-review`, `/plan-eng-review`, `/plan-design-review`, `/design-consultation`, `/design-shotgun`, `/design-html`, `/review`, `/ship`, `/land-and-deploy`, `/canary`, `/benchmark`, `/browse`, `/connect-chrome`, `/qa`, `/qa-only`, `/design-review`, `/setup-browser-cookies`, `/setup-deploy`, `/setup-gbrain`, `/retro`, `/investigate`, `/document-release`, `/document-generate`, `/codex`, `/cso`, `/autoplan`, `/plan-devex-review`, `/devex-review`, `/careful`, `/freeze`, `/guard`, `/unfreeze`, `/gstack-upgrade`, `/learn`.

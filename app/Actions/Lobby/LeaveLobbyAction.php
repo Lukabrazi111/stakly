@@ -94,10 +94,13 @@ class LeaveLobbyAction
     private function vacateSingleSlot(Listing $listing, LobbyParticipant $participant): void
     {
         if ($participant->is_ready) {
+            // Row-id anchor (unique per participation) keeps the refund
+            // idempotent across retries even though the row is deleted below.
             Wallet::release(
                 user: $participant->user,
                 amount: (string) $listing->stake_amount,
                 listing: $listing,
+                reference: "leave-refund:{$participant->id}",
                 description: 'Lobby leave — Ready stake refunded.',
             );
         }
@@ -122,10 +125,14 @@ class LeaveLobbyAction
 
         foreach ($participants as $participant) {
             if ($participant->is_ready) {
+                // Same per-participation row-id anchor as the single-leave
+                // path — a given participation is refunded by exactly one
+                // exit path, so `leave-refund:{id}` can't collide.
                 Wallet::release(
                     user: $participant->user,
                     amount: $stakeAmount,
                     listing: $listing,
+                    reference: "leave-refund:{$participant->id}",
                     description: 'Lobby creator left — Ready stake refunded.',
                 );
             }
