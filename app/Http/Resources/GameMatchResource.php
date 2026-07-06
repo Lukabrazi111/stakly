@@ -7,6 +7,7 @@ use App\Models\GameMatch;
 use App\Models\LobbyParticipant;
 use App\Models\MatchProviderSnapshot;
 use App\Models\User;
+use App\Support\FaceitLevel;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -200,9 +201,34 @@ class GameMatchResource extends JsonResource
                 // skip the batched aggregations on hot list-context calls,
                 // in which case the attributes are absent and we ship null.
                 'skill_rating' => $this->skillRatingFor($p->user),
+                // M34 lobby-parity — the FACEIT level dial object + recent W/L
+                // form so the match roster cards match the lobby slot cards.
+                // `faceit_rating` is derived from the platform ELO; `recent_form`
+                // is the controller-batched last-5 (empty [] in list contexts).
+                'faceit_rating' => $this->faceitRatingFor($p->user),
+                'recent_form' => array_values((array) ($p->user->getAttribute('recent_form') ?? [])),
                 'platform_stats' => $this->platformStatsFor($p->user),
             ])
             ->all();
+    }
+
+    /**
+     * The FACEIT level dial object for the roster card — mirrors
+     * `LobbyResource`'s `faceit_rating`. `level` is derived server-side from
+     * the platform ELO so the dial can't drift from the ladder. Unrated when
+     * the player has no ELO on the listing's platform.
+     *
+     * @return array{elo: int|null, level: int|null, is_unrated: bool}
+     */
+    private function faceitRatingFor(User $user): array
+    {
+        $elo = $this->skillRatingFor($user);
+
+        return [
+            'elo' => $elo,
+            'level' => FaceitLevel::fromElo($elo),
+            'is_unrated' => $elo === null,
+        ];
     }
 
     /**

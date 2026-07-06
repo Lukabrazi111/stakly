@@ -101,9 +101,19 @@ describe('GET /matches/{match} for a 5v5 team match', function () {
         foreach ($payload['team_a'] as $entry) {
             expect($entry)->toHaveKeys([
                 'user_id', 'username', 'name', 'avatar_thumb_url', 'slot_index',
-                'platform_username', 'skill_rating', 'platform_stats',
+                'platform_username', 'skill_rating', 'faceit_rating', 'recent_form',
+                'platform_stats',
             ]);
         }
+
+        // M34 lobby-parity — the FACEIT level dial object + recent W/L form
+        // powering the match roster cards. `faceit_rating` mirrors the lobby's
+        // `{elo, level, is_unrated}` shape; `recent_form` is a (possibly empty)
+        // list of W/L/D chips.
+        expect($payload['team_a'][0]['faceit_rating'])->toHaveKeys([
+            'elo', 'level', 'is_unrated',
+        ]);
+        expect($payload['team_a'][0]['recent_form'])->toBeArray();
 
         // platform_stats is attached by the controller (SellerTrust +
         // ParticipantStats batches). Non-null shape on a Pending team

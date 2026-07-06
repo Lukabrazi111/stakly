@@ -4,7 +4,13 @@
 // - App\Enums\MatchStatus
 
 import type { GameId } from '@/config/games';
-import type { ListingPlatform, Paginator, TimeControl } from '@/types/listings';
+import type {
+    FaceitRating,
+    ListingPlatform,
+    Paginator,
+    RecentFormResult,
+    TimeControl,
+} from '@/types/listings';
 
 export type MatchStatus =
     | 'lobby_filling'
@@ -67,6 +73,11 @@ export interface TeamMatchPlayer {
     // the linked account has no rating; platform_stats is null when the
     // controller skipped the batched aggregations (list contexts).
     skill_rating: number | null;
+    // M34 lobby-parity — FACEIT level dial object + recent W/L form, matching
+    // the lobby slot cards. `recent_form` is newest-first (≤5), empty in list
+    // contexts where the controller skips the batch.
+    faceit_rating: FaceitRating | null;
+    recent_form: RecentFormResult[];
     platform_stats: {
         total_matches: number;
         win_rate: number | null;

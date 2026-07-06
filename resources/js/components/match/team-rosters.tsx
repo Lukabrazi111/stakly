@@ -1,5 +1,7 @@
 import { Link } from '@inertiajs/react';
 import { Crown, ExternalLink, Frown } from 'lucide-react';
+import { FaceitRatingBadge } from '@/components/listings/faceit-rating-badge';
+import { RecentFormStrip } from '@/components/listings/recent-form-strip';
 import { MatchDetailsTrigger } from '@/components/match/match-details-strip';
 import { PLATFORM_LABEL, PLATFORM_PROFILE_URL } from '@/config/platforms';
 import { useInitials } from '@/hooks/use-initials';
@@ -43,10 +45,10 @@ interface TeamRostersProps {
 /**
  * Roster display for the team-aware match show page. Two columns (Team A
  * | Team B) on desktop, stacked on mobile. Cards mirror the lobby's
- * `slot-card.tsx` shape (team-color avatar ring, name → profile link + platform
- * handle, labeled rating, and a uniform stats row so every card is the same
- * height). Leader crown sits on slot 0 of each side; winner crown appears once
- * the match Settles.
+ * `slot-card.tsx` shape at full parity — team-color avatar ring, name → profile
+ * link + platform handle, the FACEIT level dial, a uniform stats row, and a
+ * flush right-edge W/L form strip. Leader crown sits on slot 0 of each side;
+ * winner crown appears once the match Settles.
  */
 export function TeamRosters({
     teamA,
@@ -200,7 +202,7 @@ function RosterRow({
     return (
         <li
             className={cn(
-                'flex flex-col rounded-xl border bg-card/60 px-3 py-2.5 transition-colors',
+                'flex overflow-hidden rounded-xl border bg-card/60 transition-colors',
                 isWinner && 'border-success/40 bg-success/5',
                 isLoser && 'border-border/60 opacity-80',
                 !isWinner &&
@@ -210,91 +212,97 @@ function RosterRow({
                 !isWinner && !isLoser && !isViewer && 'border-border/60',
             )}
         >
-            <div className="flex items-center gap-3">
-                <div className="relative size-10 shrink-0">
-                    {player.avatar_thumb_url ? (
-                        <img
-                            src={player.avatar_thumb_url}
-                            alt={player.name}
-                            className={cn(
-                                'size-10 rounded-full object-cover',
-                                teamRing,
-                            )}
-                        />
-                    ) : (
-                        <div
-                            className={cn(
-                                'flex size-10 items-center justify-center rounded-full bg-gradient-primary text-sm font-semibold text-white',
-                                teamRing,
-                            )}
-                        >
-                            {getInitials(player.name)}
-                        </div>
-                    )}
-                    {isLeader && (
-                        <span
-                            title={t('Team leader')}
-                            className="absolute -top-1 -right-1 flex size-4 items-center justify-center rounded-full bg-accent text-background"
-                        >
-                            <Crown className="size-2.5" aria-hidden="true" />
-                        </span>
-                    )}
-                </div>
-
-                <div className="flex min-w-0 flex-1 flex-col">
-                    <Link
-                        href={userShow({ user: player.username }).url}
-                        className="w-fit max-w-full truncate text-sm font-semibold text-foreground hover:underline focus-visible:underline focus-visible:outline-none"
-                    >
-                        {player.name}
-                    </Link>
-                    <span className="truncate font-mono text-[11px] text-muted-foreground">
-                        @{player.username}
-                    </span>
-                    {player.platform_username && (
-                        <a
-                            href={PLATFORM_PROFILE_URL[platform](
-                                player.platform_username,
-                            )}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            title={t('View :platform profile', {
-                                platform: PLATFORM_LABEL[platform],
-                            })}
-                            className="mt-0.5 inline-flex w-fit max-w-full items-center gap-0.5 font-mono text-[11px] text-muted-foreground transition-colors hover:text-primary"
-                        >
-                            <span className="truncate">
-                                {PLATFORM_LABEL[platform]}:{' '}
-                                {player.platform_username}
-                            </span>
-                            <ExternalLink
-                                className="size-2.5 shrink-0"
-                                aria-hidden="true"
+            <div className="flex min-w-0 flex-1 flex-col px-3 py-2.5">
+                <div className="flex items-center gap-3">
+                    <div className="relative size-10 shrink-0">
+                        {player.avatar_thumb_url ? (
+                            <img
+                                src={player.avatar_thumb_url}
+                                alt={player.name}
+                                className={cn(
+                                    'size-10 rounded-full object-cover',
+                                    teamRing,
+                                )}
                             />
-                        </a>
+                        ) : (
+                            <div
+                                className={cn(
+                                    'flex size-10 items-center justify-center rounded-full bg-gradient-primary text-sm font-semibold text-white',
+                                    teamRing,
+                                )}
+                            >
+                                {getInitials(player.name)}
+                            </div>
+                        )}
+                        {isLeader && (
+                            <span
+                                title={t('Team leader')}
+                                className="absolute -top-1 -right-1 flex size-4 items-center justify-center rounded-full bg-accent text-background"
+                            >
+                                <Crown
+                                    className="size-2.5"
+                                    aria-hidden="true"
+                                />
+                            </span>
+                        )}
+                    </div>
+
+                    <div className="flex min-w-0 flex-1 flex-col">
+                        <Link
+                            href={userShow({ user: player.username }).url}
+                            className="w-fit max-w-full truncate text-sm font-semibold text-foreground hover:underline focus-visible:underline focus-visible:outline-none"
+                        >
+                            {player.name}
+                        </Link>
+                        <span className="truncate font-mono text-[11px] text-muted-foreground">
+                            @{player.username}
+                        </span>
+                        {player.platform_username && (
+                            <a
+                                href={PLATFORM_PROFILE_URL[platform](
+                                    player.platform_username,
+                                )}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                title={t('View :platform profile', {
+                                    platform: PLATFORM_LABEL[platform],
+                                })}
+                                className="mt-0.5 inline-flex w-fit max-w-full items-center gap-0.5 font-mono text-[11px] text-muted-foreground transition-colors hover:text-primary"
+                            >
+                                <span className="truncate">
+                                    {PLATFORM_LABEL[platform]}:{' '}
+                                    {player.platform_username}
+                                </span>
+                                <ExternalLink
+                                    className="size-2.5 shrink-0"
+                                    aria-hidden="true"
+                                />
+                            </a>
+                        )}
+                    </div>
+
+                    <FaceitRatingBadge
+                        rating={player.faceit_rating}
+                        variant="compact"
+                        dialSize={30}
+                    />
+
+                    {isWinner && (
+                        <Crown
+                            className="size-4 shrink-0 text-success"
+                            aria-label={t('Winner')}
+                        />
                     )}
                 </div>
 
-                {player.skill_rating !== null && (
-                    <div className="flex shrink-0 flex-col items-end">
-                        <span className="text-[9px] tracking-wider text-muted-foreground/70 uppercase">
-                            {t('Rating')}
-                        </span>
-                        <span className="font-display text-sm font-bold text-foreground tabular-nums">
-                            {player.skill_rating}
-                        </span>
-                    </div>
-                )}
-
-                {isWinner && (
-                    <Crown
-                        className="size-4 shrink-0 text-success"
-                        aria-label={t('Winner')}
-                    />
-                )}
+                <StatsLine stats={player.platform_stats} />
             </div>
 
-            <StatsLine stats={player.platform_stats} />
+            <RecentFormStrip
+                form={player.recent_form}
+                orientation="vertical"
+                slots={5}
+            />
         </li>
     );
 }

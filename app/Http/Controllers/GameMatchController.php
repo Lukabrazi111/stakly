@@ -19,6 +19,7 @@ use App\Http\Resources\MessageResource;
 use App\Models\GameMatch;
 use App\Models\Listing;
 use App\Services\ParticipantStats;
+use App\Services\RecentForm;
 use App\Services\SellerTrust;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -236,6 +237,10 @@ class GameMatchController extends Controller
             if (count($userIds) > 0) {
                 $trust = SellerTrust::forBatch($userIds);
                 $stats = ParticipantStats::forBatch($userIds);
+                // M34 — recent W/L form for the match roster cards, matching the
+                // lobby slot cards. Scoped to the listing's game (team play = CS2)
+                // so the strip stays coherent with the FACEIT dial beside it.
+                $forms = RecentForm::forBatch($userIds, $match->listing->game);
 
                 foreach ($match->listing->lobbyParticipants as $participant) {
                     if ($participant->kicked_at !== null) {
@@ -249,6 +254,10 @@ class GameMatchController extends Controller
                     $participant->user->setAttribute(
                         'platform_stats',
                         $stats[$participant->user_id] ?? null,
+                    );
+                    $participant->user->setAttribute(
+                        'recent_form',
+                        $forms[$participant->user_id] ?? [],
                     );
                 }
             }
