@@ -1418,6 +1418,21 @@ Four `/design-review`-driven passes tightening the listings + lobby visual syste
 
 ---
 
+## M34 follow-ups + hardening ✅ shipped 2026-07-05 → 2026-07-06
+
+Post-core-M34 lobby + team-match polish and money hardening (the core M34 lobby milestone is above, shipped 2026-06). Shipped as a cluster over two sessions:
+
+- **Kicked-player notification.** The kicked player now learns they were removed + when they can rejoin: `kicked_user_id` rides the existing `LobbyUpdated` broadcast (`private-lobby.{id}`); `LobbyRealtimeSync` toasts the kicked viewer, then public → stay as spectator (reload), private → redirect to marketplace (avoids the kick-bars-access 404); the `kick_cooldown` rejoin toast tightened to the real window. `LobbyBroadcastTest` + two-tab browser verified.
+- **Match roster-card polish + full lobby parity.** `team-rosters.tsx` rebuilt: team-color avatar rings (A pink / B purple), name → profile link (real name, not "You"), uniform 3-stat grid (new players read `0/—/—`), the FACEIT **level dial** + recent **W/L strip** — reusing the shared `FaceitRatingBadge` + `RecentFormStrip` so match cards match lobby slot cards exactly. Backend: `TeamMatchPlayer` gained `faceit_rating` (dial, from platform ELO via `FaceitLevel::fromElo`) + `recent_form` (last-5, batched via `RecentForm::forBatch` in `GameMatchController::show`).
+- **Match ↔ lobby navigation.** (B) Each roster player's external **platform handle** (FACEIT/chess) renders as a clickable profile link, sourced from `providerSnapshots` by `(side, slot_index, provider)`. A **"View lobby"** link added to the team match page (the return trip; the lobby already linked to the match via "View match page →"). **(A) locked-lobby→match redirect was built, tested green, then REVERTED** — it yanked the player whose final Ready locked the lobby straight off the lobby onto the match page (the `toggleReady` `back()` re-hit the now-locked `/listings/{id}`). Locked lobby + match page coexist as before. *If revisited: don't redirect the actor who just locked; a fresh direct GET to a locked listing could still redirect.*
+- **H2 — lobby refund idempotency keys (`/cso` hardening).** The terminal lobby refunds — `KickParticipantAction`, `LeaveLobbyAction` (single-leave + creator-cancel) — gained a per-participation `reference` (`kick-refund:{participant_id}` / `leave-refund:{participant_id}`), anchored on the **LobbyParticipant row id** (NOT `{listing}:{user}` — a kicked player can rejoin as a new row + be kicked again, which `{listing}:{user}` would idempotency-block, shorting their re-staked funds). The un-Ready release stays reference-less by design (repeatable toggle — a static ref would short the pot on re-ready). `LobbyRefundIdempotencyTest` (5, incl. the rejoin-double-refund case).
+- **Kick-control kebab redesign** (committed `b4b10c9`). The dial-colliding bare `✕` → a `⋮` owner-only menu in its own lane + shadcn `Dialog` confirm ("Remove :name from the lobby?"). Reuses the installed `DropdownMenu` + `Dialog`; owner-only, non-creator slots.
+- **P3.1 lobby polish.** Recent W/L form on lobby slot cards shipped (`RecentFormStrip`); opponent nickname → profile link; lobby mode-chip dropped its game icon for shared-`GameChip` parity. **Country flags spun out to M45** (needs its own `users.country` column + settings picker + `flag-icons`).
+
+Full suite green throughout (1708–1711 across the cluster); all money-touching work Pest-covered. The **/cso money-flow audit (2026-07-06)** came back clean — 0 critical / 0 high / 0 exploitable — with H2 (above) + H1 (FACEIT webhook IP allowlist, tracked under M15) the only two MEDIUM hardening items.
+
+---
+
 ## Parked milestones
 
 Work that has a clear shape but isn't being picked up right now. Lives in the archive so the active milestones list stays focused on what we can act on; revisit if priorities shift.
