@@ -107,6 +107,12 @@ class ToggleReadyAction
 
     private function unReady(Listing $listing, LobbyParticipant $participant): void
     {
+        // Reference-less on purpose — the mirror of `markReady`. Ready is a
+        // repeatable toggle, so a static per-participation ref would trip
+        // Wallet idempotency on a re-Ready→re-unReady cycle (returns the prior
+        // row, refunds nothing, shorts the pot). Idempotency here is the row
+        // lock + the `is_ready` state flip, not a reference key. (Unlike the
+        // terminal kick/leave refunds, which DO carry a row-id reference.)
         Wallet::release(
             user: $participant->user,
             amount: (string) $listing->stake_amount,

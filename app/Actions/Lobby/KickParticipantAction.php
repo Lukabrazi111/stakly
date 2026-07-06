@@ -60,10 +60,16 @@ class KickParticipantAction
             }
 
             if ($participant->is_ready) {
+                // Idempotency anchored on the participant ROW id, not
+                // (listing, user): a kicked player can rejoin after the
+                // cooldown as a NEW row and be kicked again — keyed on
+                // (listing, user) the second refund would be idempotency-
+                // blocked and short the player their re-staked funds.
                 Wallet::release(
                     user: $target,
                     amount: (string) $locked->stake_amount,
                     listing: $locked,
+                    reference: "kick-refund:{$participant->id}",
                     description: 'Kicked from lobby — stake refunded.',
                 );
             }
