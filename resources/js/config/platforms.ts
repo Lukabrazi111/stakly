@@ -46,5 +46,5 @@ export const PLATFORM_PROFILE_URL: Record<
 export const GAME_PLATFORMS: Record<GameId, ListingPlatform[]> = {
     chess: ['chess_com', 'lichess'],
     cs2: ['faceit'],
-    dota2: ['steam'],
+    dota2: ['faceit'],
 };

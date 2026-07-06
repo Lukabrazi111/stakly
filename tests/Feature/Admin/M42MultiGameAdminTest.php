@@ -24,14 +24,24 @@ beforeEach(function () {
     actingAs(User::factory()->admin()->create());
 });
 
-test('listings index renders with FACEIT (CS2) + Steam (Dota2) listings', function () {
+test('listings index renders FACEIT (CS2 + Dota2) and a legacy Steam listing', function () {
     $cs2 = Listing::factory()->create([
         'game' => Game::Cs2,
         'platform' => LinkedAccountProvider::Faceit,
         'team_size' => 2,
         'status' => ListingStatus::Open,
     ]);
+    // Dota 2 verifies via FACEIT as of 2026-07-06 (was Steam).
     $dota = Listing::factory()->create([
+        'game' => Game::Dota2,
+        'platform' => LinkedAccountProvider::Faceit,
+        'status' => ListingStatus::Open,
+    ]);
+    // Steam is now a vestigial LinkedAccountProvider case — no game requires it —
+    // but the enum arm + the table's platform formatStateUsing still handle it.
+    // Keep a Steam row so a legacy listing can't reintroduce the non-exhaustive
+    // match() 500 the M42 audit fixed.
+    $legacySteam = Listing::factory()->create([
         'game' => Game::Dota2,
         'platform' => LinkedAccountProvider::Steam,
         'status' => ListingStatus::Open,
@@ -40,7 +50,7 @@ test('listings index renders with FACEIT (CS2) + Steam (Dota2) listings', functi
     // Forces the table body (incl. the platform column's formatStateUsing) to
     // render — the exact path that 500'd on a FACEIT/Steam enum case.
     Livewire::test(ListListings::class)
-        ->assertCanSeeTableRecords([$cs2, $dota]);
+        ->assertCanSeeTableRecords([$cs2, $dota, $legacySteam]);
 });
 
 test('platform filter offers FACEIT, not just chess providers', function () {

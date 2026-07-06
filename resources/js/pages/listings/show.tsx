@@ -164,7 +164,7 @@ function ChessBranch({ listing, match }: ChessBranchProps) {
     // verified the LISTING'S platform, not just "any chess provider." A user
     // with only chess.com linked can't take a Lichess listing because they
     // literally couldn't play the match. Server re-checks via TakeListingAction.
-    // CS2 (FACEIT) and Dota 2 (Steam) listings are dev-seed only today —
+    // CS2 + Dota 2 (both FACEIT) listings are dev-seed only today —
     // nobody has those platforms linked, so the check correctly falls to false.
     // Widening cast satisfies TS — `linked_platforms` is narrowed to chess-
     // only, but runtime `.includes()` is identical: a chess-only array can

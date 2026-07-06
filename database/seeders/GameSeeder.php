@@ -28,9 +28,9 @@ class GameSeeder extends Seeder
         $tiles = [
             ['chess', 'Chess', '/images/games/chess.png', GameStatus::Active],
             // CS2 carries real FACEIT linking + create-flow gating from M15
-            // Phase 2/3. Dota 2 stays ComingSoon until the Steam + OpenDota
-            // adapters land in a later M15 slice — flipping it Active now
-            // would dead-end the create-form picker on "Link Steam to post".
+            // Phase 2/3. Dota 2 stays ComingSoon until its FACEIT adapter lands
+            // in a later M15 slice — flipping it Active now would dead-end the
+            // create-form picker on "Link FACEIT to post".
             ['cs2', 'CS2', '/images/games/cs2.jpg', GameStatus::Active],
             ['dota2', 'Dota 2', '/images/games/dota2.jpg', GameStatus::ComingSoon],
             ['valorant', 'Valorant', '/images/games/valorant.jpg', GameStatus::ComingSoon],

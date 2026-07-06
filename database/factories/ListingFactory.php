@@ -170,8 +170,9 @@ class ListingFactory extends Factory
     }
 
     /**
-     * Adjusts platform + time_control to match the target game. CS2 routes
-     * to FACEIT, Dota 2 routes to Steam (per the planned M15 catalog).
+     * Adjusts platform + time_control to match the target game. CS2 + Dota 2
+     * both route to FACEIT — FACEIT is Stakly's verification provider for every
+     * non-chess game (decided 2026-07-06).
      * Non-chess games set `time_control` to null since the concept doesn't
      * apply — `gameSupports()` hides the filter UI for them.
      */
@@ -183,7 +184,7 @@ class ListingFactory extends Factory
                 LinkedAccountProvider::Lichess,
             ]),
             Game::Cs2 => LinkedAccountProvider::Faceit,
-            Game::Dota2 => LinkedAccountProvider::Steam,
+            Game::Dota2 => LinkedAccountProvider::Faceit,
         };
 
         return $this->state(fn () => [

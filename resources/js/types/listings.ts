@@ -100,8 +100,9 @@ export type ChessProvider = 'chess_com' | 'lichess';
 // The external provider the match must be played on (M8 Phase 5 Slice B).
 // Matches `App\Enums\LinkedAccountProvider` values. Taker must have THIS
 // platform verified to take the listing.
-// `faceit` + `steam` are M15 placeholders — they appear on dev-seeded CS2
-// (FACEIT) and Dota 2 (Steam) listings, never via the Create flow today.
+// `faceit` + `steam` map to `App\Enums\LinkedAccountProvider`. `faceit` appears
+// on dev-seeded CS2 + Dota 2 listings (both verify via FACEIT). `steam` is now
+// vestigial — no game requires it since 2026-07-06 — kept only for legacy links.
 // See backend `App\Enums\LinkedAccountProvider` for the matching cases.
 export type ListingPlatform = ChessProvider | 'faceit' | 'steam';
 
