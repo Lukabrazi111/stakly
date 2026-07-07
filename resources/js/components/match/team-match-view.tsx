@@ -258,6 +258,7 @@ export function TeamMatchView({ match, messages }: TeamMatchViewProps) {
                                 <WaitingForGameCard
                                     platform={match.listing.platform}
                                     snapshots={match.snapshots}
+                                    timeControl={match.listing.time_control}
                                     hasAutoFetchedCard={hasAutoFetchedCard}
                                 />
 

@@ -270,6 +270,7 @@ function ChessMatchShow({ match, messages }: MatchShowProps) {
                                 <WaitingForGameCard
                                     platform={match.listing.platform}
                                     snapshots={match.snapshots}
+                                    timeControl={match.listing.time_control}
                                     hasAutoFetchedCard={hasAutoFetchedCard}
                                 />
 
