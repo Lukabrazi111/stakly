@@ -52,6 +52,11 @@ function lichessAuditMatch(?array $snapshots = null): GameMatch
         'taker_user_id' => $taker->id,
     ]);
 
+    // Backdate created_at so the fixture game's ~5-min-ago timestamps sit after
+    // the match (search `since` + M46 P2 started-after-creation guard). Mirrors
+    // chessComAuditMatch().
+    $match->forceFill(['created_at' => now()->subHour()])->save();
+
     $snapshots ??= [
         ['side' => GameMatch::SIDE_CREATOR, 'provider' => LinkedAccountProvider::Lichess, 'username' => 'alice-lichess'],
         ['side' => GameMatch::SIDE_TAKER, 'provider' => LinkedAccountProvider::Lichess, 'username' => 'bob-lichess'],

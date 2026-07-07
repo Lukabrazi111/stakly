@@ -3,6 +3,7 @@
 use App\Actions\GameMatch\RecordAutoFetchAttemptAction;
 use App\Actions\GameMatch\SettleFromCardAction;
 use App\Actions\Message\PostSystemMessageAction;
+use App\Enums\AutoFetchOutcome;
 use App\Enums\LinkedAccountProvider;
 use App\Enums\MatchStatus;
 use App\Enums\MessageType;
@@ -10,6 +11,7 @@ use App\Events\MessageSent;
 use App\Jobs\AutoFetchLichessGameJob;
 use App\Models\GameMatch;
 use App\Models\Listing;
+use App\Models\MatchAutoFetchAttempt;
 use App\Models\MatchProviderSnapshot;
 use App\Models\Message;
 use App\Models\User;
@@ -60,6 +62,11 @@ function autoFetchMatch(?array $snapshots = null): GameMatch
         'taker_user_id' => $taker->id,
         'status' => MatchStatus::Pending,
     ]);
+
+    // Backdate created_at so the search `since` window AND the M46 P2
+    // started-after-creation guard sit before the fixture game's ~5-min-ago
+    // timestamps. Mirrors chessComAutoFetchMatch().
+    $match->forceFill(['created_at' => now()->subHour()])->save();
 
     $snapshots ??= [
         ['side' => GameMatch::SIDE_CREATOR, 'provider' => LinkedAccountProvider::Lichess, 'username' => 'alice-lichess'],
@@ -470,4 +477,56 @@ test('lichess-api rate limiter reflects services.lichess.requests_per_minute con
 
     expect($limit)->toBeInstanceOf(Limit::class)
         ->and($limit->maxAttempts)->toBe(11);
+});
+
+// ─── M46 P2 — started-after-creation guard (SECURITY: pre-play reuse) ───────
+
+test('Lichess game that STARTED before match creation is rejected as stale (not settled)', function () {
+    $match = autoFetchMatch(); // created_at backdated to now()->subHour()
+
+    $stale = json_encode(lichessGameFixture([
+        'id' => 'stalegame',
+        // createdAt 2h ago — BEFORE the match (created 1h ago).
+        'createdAt' => now()->subHours(2)->getTimestampMs(),
+        'lastMoveAt' => now()->subMinutes(5)->getTimestampMs(),
+    ]));
+    Http::fake(['lichess.org/api/games/user/*' => Http::response($stale, 200)]);
+
+    runAutoFetch($match);
+
+    // A pre-play game must never auto-settle — no card, match stays Pending.
+    expect(Message::query()->where('match_id', $match->id)->where('type', MessageType::System)->count())->toBe(0)
+        ->and($match->fresh()->status)->toBe(MatchStatus::Pending);
+
+    $attempt = MatchAutoFetchAttempt::query()->where('match_id', $match->id)->latest('id')->first();
+    expect($attempt->outcome)->toBe(AutoFetchOutcome::NoMatch)
+        ->and($attempt->outcome_reason)->toBe('stale_game_rejected')
+        ->and($attempt->candidates_count)->toBe(1);
+});
+
+test('Lichess picks the FIRST game started after match creation among a rematch', function () {
+    $match = autoFetchMatch();
+
+    // Later game — bob (black) wins. Earlier game — alice (white) wins.
+    $late = json_encode(lichessGameFixture([
+        'id' => 'lategame0',
+        'winner' => 'black',
+        'createdAt' => now()->subMinutes(10)->getTimestampMs(),
+        'lastMoveAt' => now()->subMinutes(5)->getTimestampMs(),
+    ]));
+    $early = json_encode(lichessGameFixture([
+        'id' => 'earlygame',
+        'winner' => 'white',
+        'createdAt' => now()->subMinutes(40)->getTimestampMs(),
+        'lastMoveAt' => now()->subMinutes(35)->getTimestampMs(),
+    ]));
+    // Order late-then-early to prove the pick is by start time, not list order.
+    Http::fake(['lichess.org/api/games/user/*' => Http::response($late."\n".$early, 200)]);
+
+    runAutoFetch($match);
+
+    // Earliest-started game (alice = creator wins) settled.
+    $match->refresh();
+    expect($match->status)->toBe(MatchStatus::Settled)
+        ->and($match->winner_user_id)->toBe($match->listing->user_id);
 });

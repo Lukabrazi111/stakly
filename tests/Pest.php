@@ -143,8 +143,11 @@ function lichessGameFixture(array $overrides = []): array
         'variant' => 'standard',
         'speed' => 'blitz',
         'perf' => 'blitz',
-        'createdAt' => 1_716_000_000_000,
-        'lastMoveAt' => 1_716_000_180_000,
+        // now-relative so a fixture game reads as "just played" — after the
+        // match's created_at (M46 P2 started-after-creation guard) and inside
+        // the `since` window. Tests exercising staleness override `createdAt`.
+        'createdAt' => now()->subMinutes(6)->getTimestampMs(),
+        'lastMoveAt' => now()->subMinutes(5)->getTimestampMs(),
         'status' => 'mate',
         'winner' => 'white',
         'players' => [
@@ -171,8 +174,11 @@ function chessComGameFixture(array $overrides = []): array
         'time_class' => 'blitz',
         'rules' => 'chess',
         'rated' => true,
-        'start_time' => 1_716_000_000,
-        'end_time' => 1_716_000_180,
+        // now-relative so a fixture game reads as "just played" — after the
+        // match's created_at (M46 P2 started-after-creation guard) and inside
+        // the `since` window. Tests exercising staleness override `start_time`.
+        'start_time' => now()->subMinutes(6)->timestamp,
+        'end_time' => now()->subMinutes(5)->timestamp,
         'white' => [
             'username' => 'alice-chesscom',
             'rating' => 1500,

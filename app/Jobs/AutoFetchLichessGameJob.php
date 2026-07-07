@@ -202,12 +202,21 @@ class AutoFetchLichessGameJob implements ShouldBeUnique, ShouldQueueAfterCommit
 
         $latencyMs = $this->elapsedMs($start);
         $completed = $this->filterCompleted($games);
-        $count = count($completed);
+
+        // M46 P2 — started-after-creation guard (SECURITY). Drop any game that
+        // STARTED before this match was created; the staked game must post-date
+        // the stake. Guards the single-candidate direct-settle path against
+        // pre-play reuse.
+        $fresh = $this->rejectStale($completed);
+        $count = count($fresh);
 
         if ($count === 0) {
+            // stale_game_rejected distinguishes "found only pre-stake games"
+            // (pre-play attempt or clock skew) from "found nothing" in the audit.
             $this->record($recordAttempt, AutoFetchOutcome::NoMatch, [
-                'candidates_count' => 0,
+                'candidates_count' => count($completed),
                 'latency_ms' => $latencyMs,
+                'outcome_reason' => $completed !== [] ? 'stale_game_rejected' : null,
             ]);
 
             return;
@@ -220,9 +229,10 @@ class AutoFetchLichessGameJob implements ShouldBeUnique, ShouldQueueAfterCommit
         // practice given Lichess's `correspondence` / `ultraBullet` speeds
         // sit outside Stakly's TimeControl enum (bullet joined the enum in
         // M41 P3a, so a single bullet game still settles via this path).
+        // Both paths operate on started-after candidates only (stale dropped above).
         $game = $count === 1
-            ? $completed[0]
-            : $this->pickSettleableCandidate($completed);
+            ? $fresh[0]
+            : $this->pickSettleableCandidate($fresh);
 
         if ($game === null) {
             $this->record($recordAttempt, AutoFetchOutcome::Ambiguous, [
@@ -264,9 +274,9 @@ class AutoFetchLichessGameJob implements ShouldBeUnique, ShouldQueueAfterCommit
      * Pick the candidate this job should settle on. M14 Slice 3d — applies
      * to any candidate count: filter to those whose speed equals the
      * listing's single `time_control` value (M41 P3a); if multiple survive
-     * (Slice 3c), pick the one whose `lastMoveAt` is closest to the match's
-     * `created_at` (= the first game played for this match), tie-breaking
-     * on lexicographic game id for determinism.
+     * (Slice 3c), pick the earliest game *started* after the stake — the first
+     * game played for this match; a rematch is later (M46 P2). Tie-break on
+     * lexicographic game id for determinism.
      *
      * Returns null when no candidate matches the listing's time-control —
      * caller records `outcome=ambiguous` with `outcome_reason=time_control_mismatch`
@@ -292,16 +302,14 @@ class AutoFetchLichessGameJob implements ShouldBeUnique, ShouldQueueAfterCommit
             return $tcMatches[0];
         }
 
-        $matchCreatedTs = $this->match->created_at->getTimestamp();
-        usort($tcMatches, function (LichessGameResult $a, LichessGameResult $b) use ($matchCreatedTs) {
-            $aDelta = abs($a->lastMoveAt->getTimestamp() - $matchCreatedTs);
-            $bDelta = abs($b->lastMoveAt->getTimestamp() - $matchCreatedTs);
+        // M46 P2 — deterministic pick: the FIRST game started after the stake
+        // (earliest `createdAt`) is the staked game; a rematch is later. Was
+        // closest-to-`created_at` by `lastMoveAt` — the started-after guard
+        // already drops pre-stake games, and "first after" is the clearer rule.
+        usort($tcMatches, function (LichessGameResult $a, LichessGameResult $b) {
+            $byStart = $a->createdAt->getTimestamp() <=> $b->createdAt->getTimestamp();
 
-            if ($aDelta !== $bDelta) {
-                return $aDelta <=> $bDelta;
-            }
-
-            return strcmp($a->id, $b->id);
+            return $byStart !== 0 ? $byStart : strcmp($a->id, $b->id);
         });
 
         return $tcMatches[0];
@@ -331,6 +339,25 @@ class AutoFetchLichessGameJob implements ShouldBeUnique, ShouldQueueAfterCommit
         return array_values(array_filter(
             $games,
             fn (LichessGameResult $g) => $g->isAborted(),
+        ));
+    }
+
+    /**
+     * M46 P2 — SECURITY guard. Keep only games that STARTED at or after this
+     * match was created; the staked game must post-date the stake. Lichess
+     * `createdAt` is the game's creation (start) timestamp. Guards the
+     * single-candidate direct-settle path against pre-play reuse.
+     *
+     * @param  list<LichessGameResult>  $games
+     * @return list<LichessGameResult>
+     */
+    private function rejectStale(array $games): array
+    {
+        $matchCreated = $this->match->created_at;
+
+        return array_values(array_filter(
+            $games,
+            fn (LichessGameResult $g) => $g->createdAt->gte($matchCreated),
         ));
     }
 
