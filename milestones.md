@@ -55,6 +55,9 @@ Decisions made earlier that have shaped a lot of code downstream. Not locked —
 
 _Why keep watch-and-search (vs the orchestrate / URL-capture options weighed):_ for 1v1 chess, players challenging each other on chess.com / Lichess is already low-friction, so the pain isn't coordination — it's the *finding*. Hardening the finder is the lowest-friction, provider-agnostic win (covers both chess.com and Lichess) with no new OAuth scopes or manual paste step. Orchestration / URL-capture stay parked and on the table if hardening proves insufficient.
 
+**▶ Phase status:** P1 ⬜ · **P2 ✅ DONE (2026-07-07, committed)** · P3 ⬜ · P4 ⬜ · P5 ⬜
+**▶ NEXT for M46: P3 or P4** — both buildable now (P3 = Lichess-stream / retry hardening, P4 = player-guidance UX). P1 audit wants real production traffic, so it waits until after launch.
+
 **Phases (P1 first — data before code):**
 - **P1 — Audit the real failure modes.** Query `match_auto_fetch_attempts` (the existing audit trail) for chess: break down `NoMatch` / `Ambiguous` / `Error` outcomes and categorize *why* matches actually get stuck (archive lag vs multiple candidates vs wrong TC vs abandoned vs opponent-not-found vs pre-existing game). Scope P2+ to what the data shows, not guesses.
 - **P2 — Disambiguation hardening. ✅ SHIPPED 2026-07-07** (branch `feat/m46-chess-disambiguation`) — **started-after-creation guard** (`rejectStale()` in both auto-fetch jobs: drop any game whose *start* pre-dates the stake; SECURITY — closes the single-candidate direct-settle bypass to pre-play reuse) + **deterministic pick** (first game *started* after the stake; was closest-`endedAt`, which could favour a pre-stake game) + new **`stale_game_rejected`** audit reason. **Kept** TC as a multi-candidate disambiguator only (M33 revert respected — strict single-candidate TC NOT re-added); abandoned/aborted handling already existed. +4 Pest tests (stale-rejected + rematch-pick, both providers); fixture default timestamps made now-relative; 324 provider/job tests green + Pint clean. **Not done in this slice:** P1 audit, P3 stream, P4 guidance UX.
@@ -92,6 +95,9 @@ _Why keep watch-and-search (vs the orchestrate / URL-capture options weighed):_ 
 - **Baseline (no partnership)** — the pinned chess-like approach above (captain sets up the FACEIT match, Stakly auto-detects the finished match).
 
 **Baseline implementation phases** (`/office-hours` + `/plan-ceo-review`, 2026-07-07 → ship **2v2 Wingman FIRST, DEFER 5v5** [CEO-review scope cut — findings below]. Demand is an *unproven bet* [no evidence CS2 players team-wager today; ship-and-learn], so P1 front-loads the make-or-break unknown before any build spend):
+
+**▶ Phase status:** P1 ⬜ · P2 ⬜ · P3 ⬜ · P4 ⬜ · P5 ⬜  (nothing built yet — planning complete)
+**▶ NEXT for M47: P1 feasibility spike — MAKE-OR-BREAK.** Needs YOU to create a real FACEIT custom match (with friends), then Stakly queries the Data API to confirm it (a) ran kernel anti-cheat and (b) shows in the players' match history like a matchmaking game. Gates P2–P4; if it fails, the baseline needs the FACEIT partnership (Path A).
 
 - **P1 — Feasibility spike (MAKE-OR-BREAK — do FIRST, no production code until green).** The whole baseline rests on two *unverified* assumptions. Verify against a real FACEIT custom match: (a) a player-created **custom / friendly** CS2 match **runs FACEIT kernel anti-cheat** (our entire CS2 integrity story), and (b) it **appears in the Data API player match history** with full rosters + factions, exactly like a matchmaking match (so `AutoFetchFaceitGameJob` can find it at all). **Test via the EXACT `FaceitGameClient` calls the job uses** (`/players/{id}/history?game=cs2` + `/matches/{id}`), not ad-hoc curl, and confirm a custom match is distinguishable by `competition_type` / `type`. If either assumption is false → the baseline is NOT viable without the partnership; escalate + re-plan, don't build. _This is the office-hours assignment._
 - **P2 — Match-setup UX (the coordination the baseline can't remove).** On the CS2 locked-lobby / match page, guide the captain to create the FACEIT custom match with the correct roster + team split, and tell every player exactly what to do ("join this FACEIT match — you're on Team A"). Setup happens on FACEIT, nothing pasted into Stakly. Clear + unambiguous. **2v2 first (5v5 deferred).**
@@ -283,12 +289,14 @@ Not CMS-managed on purpose. The Filament CMS template (`cms/page.tsx`) is intent
 
 ## ▶ Next up — do this next
 
-_Living "you are here" pointer — the short version of what to work on right now. Update as work lands; full detail lives in the milestone entries above. Last updated 2026-07-06._
+_Living "you are here" pointer — the short version of what to work on right now. Update as work lands; full detail lives in the milestone entries above. Last updated 2026-07-07._
 
-**Uncommitted right now — commit these:**
-- [ ] This doc — archives the M34 follow-ups + opens M45. Suggested: `docs: archive M34 follow-ups + open M45 (player country flags)`. _(All M34 code already committed; the follow-up detail moved to `milestones_archived.md`.)_
+**🎯 NOW — active focus: verified match results (M46 chess + M47 CS2).** Planning pipeline for BOTH is complete (office-hours + CEO/eng reviews, 2026-07-07).
+- **M46 (chess):** P1 ⬜ · **P2 ✅ DONE + committed** (started-after-creation SECURITY guard + deterministic pick + `stale_game_rejected`; branch `feat/m46-chess-disambiguation`) · P3 ⬜ · P4 ⬜ · P5 ⬜.  **→ Next: M46 P3 (Lichess-stream / retry hardening) or P4 (player-guidance UX)** — both buildable now; P1 audit waits for real launch traffic.
+- **M47 (CS2):** P1 ⬜ · P2 ⬜ · P3 ⬜ · P4 ⬜ · P5 ⬜ (nothing built).  **→ Next: M47 P1 feasibility spike — MAKE-OR-BREAK, needs YOU to create a real FACEIT custom match** and confirm it (a) runs anti-cheat + (b) shows in the Data API. Gates P2–P4. FACEIT partnership application submitted 2026-07-07, awaiting reply.
+- Full phase detail + all review findings live in the **M46 + M47** entries above.
 
-**Next feature — M45: Player country flags** _(spec'd + design decided above; `flag-icons` dep approved):_ Stakly-owned `users.country` (self-reported in profile settings, fake-OK because cosmetic), rendered via self-hosted `flag-icons` on the lobby + match roster cards. Build when ready — start with the migration + `flag-icons` install.
+**Later — M45: Player country flags** _(spec'd + design decided above; `flag-icons` dep approved):_ Stakly-owned `users.country` (self-reported in profile settings, fake-OK because cosmetic), rendered via self-hosted `flag-icons` on the lobby + match roster cards. Build when ready — start with the migration + `flag-icons` install.
 
 **Security hardening — H1 (queued):** FACEIT webhook IP allowlist — a 2nd auth layer over the static shared-secret (can't mispay, can burn quota). Detail in the **M15** entry above; needs FACEIT support's egress IPs. _(H2 shipped + archived; the `/cso` money-flow audit came back clean — 0 critical / high / exploitable.)_
 
