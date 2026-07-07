@@ -1,5 +1,6 @@
 <?php
 
+use App\Enums\AutoFetchOutcome;
 use App\Enums\LinkedAccountProvider;
 use App\Enums\MatchAdminResolutionAction;
 use App\Enums\MatchStatus;
@@ -118,7 +119,9 @@ test('auto-fetch history surfaces skipped reasons + error messages', function ()
 
     Livewire::test(ViewGameMatch::class, ['record' => $match->getKey()])
         ->assertSuccessful()
-        ->assertSee('not_pending')
+        // M46 P5 — reason codes render as human labels, not raw snake_case.
+        ->assertSee('Match was no longer pending')
+        ->assertDontSee('not_pending')
         ->assertSee('Lichess returned 503.');
 });
 
@@ -132,7 +135,43 @@ test('auto-fetch history surfaces outcome_reason for ambiguous rows (M14 Slice 3
 
     Livewire::test(ViewGameMatch::class, ['record' => $match->getKey()])
         ->assertSuccessful()
-        ->assertSee('time_control_mismatch');
+        // M46 P5 — human label, not the raw `time_control_mismatch` code.
+        ->assertSee('Wrong time control')
+        ->assertDontSee('time_control_mismatch');
+});
+
+// ─── M46 P5 — "Why it's in review" summary ─────────────────────────────────
+
+test('"Why it\'s in review" summary shows the human cause for a ManualReview match', function () {
+    [, , , $match] = pendingMatch();
+    $match->update(['status' => MatchStatus::ManualReview]);
+
+    // Terminal attempt: no game found after the retry chain exhausted.
+    MatchAutoFetchAttempt::factory()->create([
+        'match_id' => $match->id,
+        'outcome' => AutoFetchOutcome::NoMatch,
+        'outcome_reason' => 'retry_exhausted',
+        'candidates_count' => 0,
+    ]);
+
+    Livewire::test(ViewGameMatch::class, ['record' => $match->getKey()])
+        ->assertSuccessful()
+        ->assertSee("Why it's in review")
+        ->assertSee('The finder found no game to settle on')
+        ->assertSee('No game found after all retries');
+});
+
+test('"Why it\'s in review" summary is hidden for a Settled match', function () {
+    [, , , $match] = pendingMatch();
+    $match->update(['status' => MatchStatus::Settled, 'settled_at' => now()]);
+
+    MatchAutoFetchAttempt::factory()->matched('alice-lichess')->create([
+        'match_id' => $match->id,
+    ]);
+
+    Livewire::test(ViewGameMatch::class, ['record' => $match->getKey()])
+        ->assertSuccessful()
+        ->assertDontSee("Why it's in review");
 });
 
 test('resolve actions are visible for Disputed match', function () {

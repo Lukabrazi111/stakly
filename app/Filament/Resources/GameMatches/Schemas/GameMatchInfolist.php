@@ -31,6 +31,9 @@ class GameMatchInfolist
     {
         return $schema
             ->components([
+                // First thing an admin sees on a stuck match: a one-line "why".
+                // Hidden for every other status, so Status stays the lead there.
+                self::needsReviewSection()->columnSpanFull(),
                 self::statusSection()->columnSpanFull(),
                 self::moneySection()->columnSpanFull(),
                 self::timelineSection()->columnSpanFull(),
@@ -49,6 +52,27 @@ class GameMatchInfolist
                 self::autoFetchHistorySection()->columnSpanFull(),
                 self::resolutionHistorySection()->columnSpanFull(),
             ]);
+    }
+
+    /**
+     * "Why it's in review" — a synthesised one-liner from the terminal
+     * auto-fetch attempt so an admin sees the cause without reading the whole
+     * timeline. Shown only for the two states an admin actively resolves.
+     */
+    private static function needsReviewSection(): Section
+    {
+        return Section::make("Why it's in review")
+            ->icon(Heroicon::ExclamationTriangle)
+            ->schema([
+                TextEntry::make('review_reason_summary')
+                    ->hiddenLabel()
+                    ->state(fn (GameMatch $record) => self::reviewReasonSummary($record))
+                    ->html(),
+            ])
+            ->visible(fn (GameMatch $record): bool => in_array($record->status, [
+                MatchStatus::ManualReview,
+                MatchStatus::Disputed,
+            ], true));
     }
 
     private static function statusSection(): Section
@@ -447,6 +471,41 @@ class GameMatchInfolist
         return $html;
     }
 
+    /**
+     * One-line plain-English cause, synthesised from the most recent auto-fetch
+     * attempt. Admin-facing — carries the granular detection reason (the player
+     * banner deliberately shows only a coarse timeout-vs-dispute explanation).
+     */
+    private static function reviewReasonSummary(GameMatch $record): string
+    {
+        $terminal = $record->autoFetchAttempts->sortByDesc('id')->first();
+
+        if ($terminal === null) {
+            return '<div class="text-sm">The automated finder recorded no attempts. '
+                .'Resolve from the chat and any evidence below.</div>';
+        }
+
+        $reason = MatchAutoFetchAttempt::reasonLabel($terminal->outcome_reason);
+        $suffix = $reason ? ' — '.e($reason) : '';
+
+        $sentence = match ($terminal->outcome) {
+            AutoFetchOutcome::Matched => 'The finder matched a game (winner: '
+                .e($terminal->winner_username ?? '—').'), but this match still needs manual resolution — see the timeline and chat below.',
+            AutoFetchOutcome::NoMatch => 'The finder found no game to settle on'.$suffix.'.',
+            AutoFetchOutcome::Ambiguous => 'The finder found '.($terminal->candidates_count ?? 0)
+                .' candidate game(s) it could not safely pick between'.$suffix.'.',
+            AutoFetchOutcome::AcIncomplete => 'The finder located the match, but FACEIT anti-cheat was not enforced on every player.',
+            AutoFetchOutcome::Error => 'The finder kept hitting provider errors: '
+                .e($terminal->error_message ?? 'unknown error').'.',
+            AutoFetchOutcome::Skipped => 'The last attempt was skipped'.$suffix.'.',
+        };
+
+        $when = e($terminal->created_at->diffForHumans());
+
+        return '<div class="text-sm">'.$sentence
+            .' <span class="text-gray-500">(last attempt '.$when.')</span></div>';
+    }
+
     private static function autoFetchSummary(GameMatch $record): string
     {
         $rows = $record->autoFetchAttempts;
@@ -496,22 +555,35 @@ class GameMatchInfolist
             AutoFetchOutcome::Matched => 'Winner: '.e($row->winner_username ?? '—')
                 .' · '.self::latencyLabel($row->latency_ms),
             AutoFetchOutcome::NoMatch => '0 candidates'
-                .($row->outcome_reason ? ' · '.e($row->outcome_reason) : '')
+                .self::reasonClause($row->outcome_reason)
                 .' · '.self::latencyLabel($row->latency_ms),
             AutoFetchOutcome::Ambiguous => ($row->candidates_count ?? 0).' candidates'
-                .($row->outcome_reason ? ' · '.e($row->outcome_reason) : '')
+                .self::reasonClause($row->outcome_reason)
                 .' · '.self::latencyLabel($row->latency_ms),
+            // The prefix already states the cause, so the redundant `ac_incomplete`
+            // reason code is dropped here.
             AutoFetchOutcome::AcIncomplete => 'FACEIT anti-cheat not enforced on every roster slot'
-                .($row->outcome_reason ? ' · '.e($row->outcome_reason) : '')
                 .' · '.self::latencyLabel($row->latency_ms),
             AutoFetchOutcome::Error => e($row->error_message ?? 'Unknown error')
                 .' · '.self::latencyLabel($row->latency_ms),
-            AutoFetchOutcome::Skipped => 'Reason: '.e($row->outcome_reason ?? 'unspecified'),
+            AutoFetchOutcome::Skipped => 'Reason: '
+                .e(MatchAutoFetchAttempt::reasonLabel($row->outcome_reason) ?? 'unspecified'),
         };
     }
 
     private static function latencyLabel(?int $ms): string
     {
         return $ms === null ? 'no provider call' : "{$ms}ms";
+    }
+
+    /**
+     * " · <human reason>" clause for a timeline row, or '' when there's no
+     * reason. Maps the raw `outcome_reason` code to a plain-English label.
+     */
+    private static function reasonClause(?string $reason): string
+    {
+        $label = MatchAutoFetchAttempt::reasonLabel($reason);
+
+        return $label !== null ? ' · '.e($label) : '';
     }
 }
