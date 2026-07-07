@@ -271,7 +271,14 @@ class GameMatchController extends Controller
             return to_route('listings.show', $match->listing);
         }
 
-        $dispatchAutoFetch->handle($match);
+        // Only Pending matches can auto-settle. Dispatching for a resolved
+        // match just records a `not_pending` skip row on every page view —
+        // unbounded write growth + admin-infolist noise. The cron / chat-send /
+        // stream trigger sites keep their own defensive skip for the genuine
+        // status-race window; this high-frequency page-visit path doesn't need it.
+        if ($match->status === MatchStatus::Pending) {
+            $dispatchAutoFetch->handle($match);
+        }
 
         // M8 Phase 2 — last 200 messages, chrono order. The composite
         // (match_id, id) index makes this cheap; a busy match should not

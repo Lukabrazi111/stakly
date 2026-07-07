@@ -3,12 +3,14 @@
 use App\Actions\GameMatch\RecordAutoFetchAttemptAction;
 use App\Actions\GameMatch\SettleFromCardAction;
 use App\Actions\Message\PostSystemMessageAction;
+use App\Enums\AutoFetchOutcome;
 use App\Enums\LinkedAccountProvider;
 use App\Enums\MatchStatus;
 use App\Enums\MessageType;
 use App\Jobs\AutoFetchChessComGameJob;
 use App\Models\GameMatch;
 use App\Models\Listing;
+use App\Models\MatchAutoFetchAttempt;
 use App\Models\MatchProviderSnapshot;
 use App\Models\Message;
 use App\Models\User;
@@ -289,4 +291,111 @@ test('chess-com-api rate limiter reflects services.chess_com.requests_per_minute
 
     expect($limit)->toBeInstanceOf(Limit::class)
         ->and($limit->maxAttempts)->toBe(7);
+});
+
+// ─── M46 P2 — started-after-creation guard (SECURITY: pre-play reuse) ───────
+
+test('chess.com game that STARTED before match creation is rejected as stale (not settled)', function () {
+    $match = chessComAutoFetchMatch(); // created_at backdated to now()->subHour()
+
+    Http::fake([
+        'api.chess.com/pub/player/*/games/*' => Http::response(
+            chessComArchiveFixture([
+                chessComGameFixture([
+                    // Started 2h ago — BEFORE the match (created 1h ago). end_time
+                    // is recent so the `since` filter passes; only the
+                    // started-after guard should reject it.
+                    'start_time' => CarbonImmutable::now()->subHours(2)->timestamp,
+                    'end_time' => CarbonImmutable::now()->subMinutes(5)->timestamp,
+                ]),
+            ]),
+            200,
+        ),
+    ]);
+
+    runChessComAutoFetch($match);
+
+    // A pre-play game must never auto-settle — no card, match stays Pending.
+    expect(Message::query()->where('match_id', $match->id)->where('type', MessageType::System)->count())->toBe(0)
+        ->and($match->fresh()->status)->toBe(MatchStatus::Pending);
+
+    $attempt = MatchAutoFetchAttempt::query()->where('match_id', $match->id)->latest('id')->first();
+    expect($attempt->outcome)->toBe(AutoFetchOutcome::NoMatch)
+        ->and($attempt->outcome_reason)->toBe('stale_game_rejected')
+        ->and($attempt->candidates_count)->toBe(1);
+});
+
+test('chess.com drops a pre-stake game and settles the real one played after (mixed response)', function () {
+    $match = chessComAutoFetchMatch(); // created_at backdated to now()->subHour()
+
+    Http::fake([
+        'api.chess.com/pub/player/*/games/*' => Http::response(
+            chessComArchiveFixture([
+                // Pre-play game — STARTED 2h ago (before the stake) but ended
+                // after it, so searchGamesBetween returns it; bob wins. The
+                // guard must DROP it. Without the PGN-start fix it would look
+                // fresh (createdAt = end_time) and the picker would settle it,
+                // paying the taker for a game that predates the stake.
+                chessComGameFixture([
+                    'url' => 'https://www.chess.com/game/live/stale',
+                    'start_time' => CarbonImmutable::now()->subHours(2)->timestamp,
+                    'end_time' => CarbonImmutable::now()->subMinutes(50)->timestamp,
+                    'white' => ['username' => 'alice-chesscom', 'rating' => 1500, 'result' => 'checkmated'],
+                    'black' => ['username' => 'bob-chesscom', 'rating' => 1495, 'result' => 'win'],
+                ]),
+                // Real staked game — STARTED 20min ago (after the stake); alice wins.
+                chessComGameFixture([
+                    'url' => 'https://www.chess.com/game/live/real',
+                    'start_time' => CarbonImmutable::now()->subMinutes(20)->timestamp,
+                    'end_time' => CarbonImmutable::now()->subMinutes(15)->timestamp,
+                    'white' => ['username' => 'alice-chesscom', 'rating' => 1500, 'result' => 'win'],
+                    'black' => ['username' => 'bob-chesscom', 'rating' => 1495, 'result' => 'checkmated'],
+                ]),
+            ]),
+            200,
+        ),
+    ]);
+
+    runChessComAutoFetch($match);
+
+    // Only the real (post-stake) game survives → creator wins. A no-op guard
+    // would keep both and settle the earliest-started = the stale one = taker.
+    $match->refresh();
+    expect($match->status)->toBe(MatchStatus::Settled)
+        ->and($match->winner_user_id)->toBe($match->listing->user_id);
+});
+
+test('chess.com picks the FIRST game started after match creation among a rematch', function () {
+    $match = chessComAutoFetchMatch();
+
+    Http::fake([
+        'api.chess.com/pub/player/*/games/*' => Http::response(
+            chessComArchiveFixture([
+                // Later game — bob wins. Must NOT be picked.
+                chessComGameFixture([
+                    'url' => 'https://www.chess.com/game/live/222',
+                    'start_time' => CarbonImmutable::now()->subMinutes(10)->timestamp,
+                    'end_time' => CarbonImmutable::now()->subMinutes(5)->timestamp,
+                    'white' => ['username' => 'alice-chesscom', 'rating' => 1500, 'result' => 'checkmated'],
+                    'black' => ['username' => 'bob-chesscom', 'rating' => 1495, 'result' => 'win'],
+                ]),
+                // Earlier game (first played after the stake) — alice wins. Picked.
+                chessComGameFixture([
+                    'url' => 'https://www.chess.com/game/live/111',
+                    'start_time' => CarbonImmutable::now()->subMinutes(40)->timestamp,
+                    'end_time' => CarbonImmutable::now()->subMinutes(35)->timestamp,
+                    'white' => ['username' => 'alice-chesscom', 'rating' => 1500, 'result' => 'win'],
+                    'black' => ['username' => 'bob-chesscom', 'rating' => 1495, 'result' => 'checkmated'],
+                ]),
+            ]),
+            200,
+        ),
+    ]);
+
+    runChessComAutoFetch($match);
+
+    // Earliest-started game (alice = creator wins) settled.
+    $match->refresh();
+    expect($match->status)->toBe(MatchStatus::Settled)
+        ->and($match->winner_user_id)->toBe($match->listing->user_id);
 });

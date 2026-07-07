@@ -118,6 +118,63 @@ test('match older than 4h is skipped (timeout cron owns that zone)', function ()
     Queue::assertNothingPushed();
 });
 
+// ─── M46 P3 — young-match tier (parameterized age window) ──────────────────
+
+test('young tier (--min-age-minutes=1 --max-age-minutes=10) dispatches a 3-min-old match the backstop skips', function () {
+    Queue::fake();
+
+    $match = pendingForCron(platform: LinkedAccountProvider::ChessCom, minutesOld: 3);
+
+    // Default backstop ignores it (younger than 10min)...
+    $this->artisan('stakly:auto-fetch-pending')->assertSuccessful();
+    Queue::assertNothingPushed();
+
+    // ...but the young tier picks it up.
+    $this->artisan('stakly:auto-fetch-pending --min-age-minutes=1 --max-age-minutes=10')
+        ->assertSuccessful();
+
+    Queue::assertPushed(
+        AutoFetchChessComGameJob::class,
+        fn (AutoFetchChessComGameJob $job) => $job->match->id === $match->id,
+    );
+});
+
+test('young tier skips a 30-min-old match (outside its max-age=10 window — the backstop owns that zone)', function () {
+    Queue::fake();
+
+    pendingForCron(platform: LinkedAccountProvider::ChessCom, minutesOld: 30);
+
+    $this->artisan('stakly:auto-fetch-pending --min-age-minutes=1 --max-age-minutes=10')
+        ->assertSuccessful();
+
+    Queue::assertNothingPushed();
+});
+
+test('young tier skips a match younger than its min-age=1 (initial trigger owns fresh matches)', function () {
+    Queue::fake();
+
+    pendingForCron(platform: LinkedAccountProvider::ChessCom, minutesOld: 0);
+
+    $this->artisan('stakly:auto-fetch-pending --min-age-minutes=1 --max-age-minutes=10')
+        ->assertSuccessful();
+
+    Queue::assertNothingPushed();
+});
+
+test('young tier is provider-agnostic — a young Lichess match is dispatched too (stream-outage backstop)', function () {
+    Queue::fake();
+
+    $match = pendingForCron(platform: LinkedAccountProvider::Lichess, minutesOld: 3);
+
+    $this->artisan('stakly:auto-fetch-pending --min-age-minutes=1 --max-age-minutes=10')
+        ->assertSuccessful();
+
+    Queue::assertPushed(
+        AutoFetchLichessGameJob::class,
+        fn (AutoFetchLichessGameJob $job) => $job->match->id === $match->id,
+    );
+});
+
 // ─── Status filtering ──────────────────────────────────────────────────────
 
 test('Settled match in the window is skipped', function () {
