@@ -36,6 +36,11 @@ use Illuminate\Queue\SerializesModels;
  * double-post or double-settle.
  *
  * Retry policy (M14 Slice 2b):
+ *   - no_match (M46 P3): explicit `release()` per `RETRY_DELAYS` ([3, 8, 20]s, ~31s).
+ *     Bridges the few-second lag between a Lichess game-end (which the stream
+ *     sidecar fires this job on) and the game appearing in the `/api/games/user`
+ *     export the search reads — so the fast stream signal lands on the first
+ *     shot instead of falling through to the 10-min cron backstop.
  *   - `TransientProviderError` / `RateLimitedError` → audit row + re-throw; Laravel
  *     retries per `backoff()` up to `$tries`.
  *   - `PermanentProviderError` → audit row (`outcome_reason='permanent'`) + `$this->fail($e)`;
@@ -59,9 +64,20 @@ class AutoFetchLichessGameJob implements ShouldBeUnique, ShouldQueueAfterCommit
 
     /**
      * Caps unique-lock lifetime past the worst-case retry chain so the lock
-     * doesn't strand if the queue worker dies mid-retry.
+     * doesn't strand if the queue worker dies mid-retry. Comfortably covers
+     * the ~31s no_match chain (M46 P3) plus rate-limit release headroom.
      */
     public int $uniqueFor = 240;
+
+    /**
+     * Per-attempt delays for the no_match retry chain (M46 P3). HTTP transient
+     * errors use `backoff()` instead. Short by design — it only bridges the
+     * Lichess game-export indexing lag after a stream-triggered dispatch; the
+     * stream + cron re-fire on any longer gap.
+     *
+     * @var list<int>
+     */
+    private const RETRY_DELAYS = [3, 8, 20];
 
     public function __construct(
         public GameMatch $match,
@@ -213,11 +229,18 @@ class AutoFetchLichessGameJob implements ShouldBeUnique, ShouldQueueAfterCommit
         if ($count === 0) {
             // stale_game_rejected distinguishes "found only pre-stake games"
             // (pre-play attempt or clock skew) from "found nothing" in the audit.
+            // Both retry (M46 P3): the real game may not be in the export index
+            // yet even though the stream already fired us on its game-end.
+            $reason = $this->noMatchRetriesExhausted()
+                ? 'retry_exhausted'
+                : ($completed !== [] ? 'stale_game_rejected' : null);
             $this->record($recordAttempt, AutoFetchOutcome::NoMatch, [
                 'candidates_count' => count($completed),
                 'latency_ms' => $latencyMs,
-                'outcome_reason' => $completed !== [] ? 'stale_game_rejected' : null,
+                'outcome_reason' => $reason,
             ]);
+
+            $this->retryNoMatchIfBudgetRemains();
 
             return;
         }
@@ -263,6 +286,25 @@ class AutoFetchLichessGameJob implements ShouldBeUnique, ShouldQueueAfterCommit
     private function errorRetriesExhausted(): bool
     {
         return $this->attempts() >= $this->tries;
+    }
+
+    /**
+     * True once attempts have reached the no_match retry chain length (M46 P3).
+     * Drives the `retry_exhausted` audit reason for terminal no_match outcomes.
+     */
+    private function noMatchRetriesExhausted(): bool
+    {
+        return $this->attempts() >= count(self::RETRY_DELAYS) + 1;
+    }
+
+    private function retryNoMatchIfBudgetRemains(): void
+    {
+        if ($this->noMatchRetriesExhausted()) {
+            return;
+        }
+
+        // `attempts()` is 1-indexed; RETRY_DELAYS is 0-indexed.
+        $this->release(self::RETRY_DELAYS[$this->attempts() - 1]);
     }
 
     private function elapsedMs(float $start): int

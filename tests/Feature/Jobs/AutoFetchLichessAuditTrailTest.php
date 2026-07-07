@@ -109,6 +109,116 @@ test('no_match: writes a row with candidates_count = 0', function () {
         ->and($attempt->winner_username)->toBeNull();
 });
 
+test('M46 P3: no_match on a non-final attempt releases for retry (bridges export-index lag)', function () {
+    $match = lichessAuditMatch();
+    Http::fake(['lichess.org/api/games/user/*' => Http::response('', 200)]);
+
+    // Attempt 1 of the [3,8,20] chain — must release with the first delay so
+    // a stream-triggered dispatch that beat the export index tries again fast.
+    $job = new class($match) extends AutoFetchLichessGameJob
+    {
+        public ?int $releasedDelay = null;
+
+        public function release($delay = 0): mixed
+        {
+            $this->releasedDelay = $delay;
+
+            return null;
+        }
+    };
+
+    $job->handle(
+        app(LichessGameClient::class),
+        app(PostSystemMessageAction::class),
+        app(SettleFromCardAction::class),
+        app(RecordAutoFetchAttemptAction::class),
+        app(ProviderCircuitBreaker::class),
+    );
+
+    expect($job->releasedDelay)->toBe(3);
+
+    $attempt = MatchAutoFetchAttempt::query()->where('match_id', $match->id)->first();
+    expect($attempt->outcome)->toBe(AutoFetchOutcome::NoMatch)
+        ->and($attempt->outcome_reason)->toBeNull();
+});
+
+test('M46 P3: no_match on attempt 3 releases with the LAST delay (20s) — pins the chain end', function () {
+    $match = lichessAuditMatch();
+    Http::fake(['lichess.org/api/games/user/*' => Http::response('', 200)]);
+
+    // Attempt 3 is the final NON-terminal attempt of the [3,8,20] chain; it
+    // must release the last element (20s). Guards against a chain-shortening
+    // off-by-one that would silently drop the final retry before exhaustion.
+    $job = new class($match) extends AutoFetchLichessGameJob
+    {
+        public ?int $releasedDelay = null;
+
+        public function attempts(): int
+        {
+            return 3;
+        }
+
+        public function release($delay = 0): mixed
+        {
+            $this->releasedDelay = $delay;
+
+            return null;
+        }
+    };
+
+    $job->handle(
+        app(LichessGameClient::class),
+        app(PostSystemMessageAction::class),
+        app(SettleFromCardAction::class),
+        app(RecordAutoFetchAttemptAction::class),
+        app(ProviderCircuitBreaker::class),
+    );
+
+    expect($job->releasedDelay)->toBe(20);
+
+    $attempt = MatchAutoFetchAttempt::query()->where('match_id', $match->id)->first();
+    expect($attempt->outcome)->toBe(AutoFetchOutcome::NoMatch)
+        ->and($attempt->outcome_reason)->toBeNull();
+});
+
+test('M46 P3: no_match on the final attempt writes outcome_reason = retry_exhausted', function () {
+    $match = lichessAuditMatch();
+    Http::fake(['lichess.org/api/games/user/*' => Http::response('', 200)]);
+
+    // The [3,8,20] chain is 4 attempts; attempt 4 is terminal.
+    $job = new class($match) extends AutoFetchLichessGameJob
+    {
+        public ?int $releasedDelay = null;
+
+        public function attempts(): int
+        {
+            return 4;
+        }
+
+        public function release($delay = 0): mixed
+        {
+            $this->releasedDelay = $delay;
+
+            return null;
+        }
+    };
+
+    $job->handle(
+        app(LichessGameClient::class),
+        app(PostSystemMessageAction::class),
+        app(SettleFromCardAction::class),
+        app(RecordAutoFetchAttemptAction::class),
+        app(ProviderCircuitBreaker::class),
+    );
+
+    // Terminal attempt does not release.
+    expect($job->releasedDelay)->toBeNull();
+
+    $attempt = MatchAutoFetchAttempt::query()->where('match_id', $match->id)->first();
+    expect($attempt->outcome)->toBe(AutoFetchOutcome::NoMatch)
+        ->and($attempt->outcome_reason)->toBe('retry_exhausted');
+});
+
 test('ambiguous: writes a row with candidates_count + outcome_reason=time_control_mismatch (M14 Slice 3c)', function () {
     $match = lichessAuditMatch();
     // Force TC mismatch so the picker rejects both candidates.

@@ -35,20 +35,26 @@ use Illuminate\Queue\SerializesModels;
  *
  * Retry policy (M14 Slice 2b):
  *   - Two retry chains share the `$tries` budget:
- *     * no_match (archive lag): explicit `release()` per `RETRY_DELAYS` ([5, 15, 45]s).
+ *     * no_match: explicit `release()` per `RETRY_DELAYS` ([5, 15, 45, 90, 150]s).
  *     * HTTP error: re-throw + Laravel-driven `backoff()` ([5, 15, 30]s).
  *   - `PermanentProviderError` → audit row + `$this->fail($e)`, no retry.
  *   - `TransientProviderError` / `RateLimitedError` → audit row + re-throw, retried.
  *   - `retryUntil()` caps the chain at `match.created_at + M16 confirmation timeout`.
+ *
+ * M46 P3 — the no_match tail extends to ~5 min (was ~65 s). chess.com has no
+ * real-time stream, so a game played a few minutes after the take used to sit
+ * until the 10-min cron backstop; the longer tail (plus the [1min,10min]
+ * young-match cron tier in routes/console.php) settles it in ~1-2 min instead.
  */
 class AutoFetchChessComGameJob implements ShouldBeUnique, ShouldQueueAfterCommit
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
     /**
-     * Budget covers the longest plausible run: 3 transient-error retries +
-     * the 4-attempt no_match chain. They share the counter; the actual mix
-     * depends on what the provider returns.
+     * Budget covers the longest plausible run: transient-error retries +
+     * the 6-attempt no_match chain (M46 P3). They share the counter; the
+     * actual mix depends on what the provider returns. 15 leaves ~9 slots
+     * of headroom over the no_match chain for `RateLimited` releases.
      *
      * M35 P1 — extra headroom for `RateLimited` middleware releases. Each
      * throttle release consumes an attempt without running the handler, so
@@ -64,16 +70,23 @@ class AutoFetchChessComGameJob implements ShouldBeUnique, ShouldQueueAfterCommit
      * Caps unique-lock lifetime past the worst-case retry chain (combined
      * no_match + transient-error delays). Prevents the lock from stranding
      * if the queue worker dies mid-retry.
+     *
+     * M46 P3 — 360→600 to cover the extended ~305s no_match tail plus
+     * rate-limit release headroom. Capped at the 10-min young-cron window
+     * boundary so a genuinely hung chain frees the lock exactly as the
+     * `[10min,4h]` backstop cron takes over.
      */
-    public int $uniqueFor = 360;
+    public int $uniqueFor = 600;
 
     /**
-     * Per-attempt delays for the archive-lag retry chain (no_match outcome).
-     * HTTP transient errors use `backoff()` instead.
+     * Per-attempt delays for the no_match retry chain. HTTP transient errors
+     * use `backoff()` instead. M46 P3 — extended from [5, 15, 45] (~65s) to
+     * ~305s (~5 min) to bridge the gap between chess.com archive lag and when
+     * players actually finish the game, without waiting for the 10-min cron.
      *
      * @var list<int>
      */
-    private const RETRY_DELAYS = [5, 15, 45];
+    private const RETRY_DELAYS = [5, 15, 45, 90, 150];
 
     public function __construct(
         public GameMatch $match,
