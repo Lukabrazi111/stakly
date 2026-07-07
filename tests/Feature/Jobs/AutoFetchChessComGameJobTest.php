@@ -325,6 +325,46 @@ test('chess.com game that STARTED before match creation is rejected as stale (no
         ->and($attempt->candidates_count)->toBe(1);
 });
 
+test('chess.com drops a pre-stake game and settles the real one played after (mixed response)', function () {
+    $match = chessComAutoFetchMatch(); // created_at backdated to now()->subHour()
+
+    Http::fake([
+        'api.chess.com/pub/player/*/games/*' => Http::response(
+            chessComArchiveFixture([
+                // Pre-play game — STARTED 2h ago (before the stake) but ended
+                // after it, so searchGamesBetween returns it; bob wins. The
+                // guard must DROP it. Without the PGN-start fix it would look
+                // fresh (createdAt = end_time) and the picker would settle it,
+                // paying the taker for a game that predates the stake.
+                chessComGameFixture([
+                    'url' => 'https://www.chess.com/game/live/stale',
+                    'start_time' => CarbonImmutable::now()->subHours(2)->timestamp,
+                    'end_time' => CarbonImmutable::now()->subMinutes(50)->timestamp,
+                    'white' => ['username' => 'alice-chesscom', 'rating' => 1500, 'result' => 'checkmated'],
+                    'black' => ['username' => 'bob-chesscom', 'rating' => 1495, 'result' => 'win'],
+                ]),
+                // Real staked game — STARTED 20min ago (after the stake); alice wins.
+                chessComGameFixture([
+                    'url' => 'https://www.chess.com/game/live/real',
+                    'start_time' => CarbonImmutable::now()->subMinutes(20)->timestamp,
+                    'end_time' => CarbonImmutable::now()->subMinutes(15)->timestamp,
+                    'white' => ['username' => 'alice-chesscom', 'rating' => 1500, 'result' => 'win'],
+                    'black' => ['username' => 'bob-chesscom', 'rating' => 1495, 'result' => 'checkmated'],
+                ]),
+            ]),
+            200,
+        ),
+    ]);
+
+    runChessComAutoFetch($match);
+
+    // Only the real (post-stake) game survives → creator wins. A no-op guard
+    // would keep both and settle the earliest-started = the stale one = taker.
+    $match->refresh();
+    expect($match->status)->toBe(MatchStatus::Settled)
+        ->and($match->winner_user_id)->toBe($match->listing->user_id);
+});
+
 test('chess.com picks the FIRST game started after match creation among a rematch', function () {
     $match = chessComAutoFetchMatch();
 

@@ -161,6 +161,42 @@ test('"Why it\'s in review" summary shows the human cause for a ManualReview mat
         ->assertSee('No game found after all retries');
 });
 
+test('"Why it\'s in review" summary ignores trailing skipped re-check rows (stable on refresh)', function () {
+    [, , , $match] = pendingMatch();
+    $match->update(['status' => MatchStatus::ManualReview]);
+
+    // The real terminal detection attempt — the reason it's actually stuck.
+    MatchAutoFetchAttempt::factory()->create([
+        'match_id' => $match->id,
+        'outcome' => AutoFetchOutcome::NoMatch,
+        'outcome_reason' => 'retry_exhausted',
+        'candidates_count' => 0,
+    ]);
+    // ...then noise: visiting the match page after it left Pending records
+    // `not_pending` skips with higher ids. These must NOT hijack the summary.
+    MatchAutoFetchAttempt::factory()->skipped('not_pending')->create(['match_id' => $match->id]);
+    MatchAutoFetchAttempt::factory()->skipped('not_pending')->create(['match_id' => $match->id]);
+
+    Livewire::test(ViewGameMatch::class, ['record' => $match->getKey()])
+        ->assertSuccessful()
+        ->assertSee('The finder found no game to settle on')
+        ->assertSee('No game found after all retries');
+});
+
+test('"Why it\'s in review" summary falls back to a skip reason when nothing reached the provider', function () {
+    [, , , $match] = pendingMatch();
+    $match->update(['status' => MatchStatus::ManualReview]);
+
+    // Only skips on record (e.g. a player never linked their account) — the
+    // last skip IS the meaningful reason here.
+    MatchAutoFetchAttempt::factory()->skipped('snapshot_missing')->create(['match_id' => $match->id]);
+
+    Livewire::test(ViewGameMatch::class, ['record' => $match->getKey()])
+        ->assertSuccessful()
+        ->assertSee('The last attempt was skipped')
+        ->assertSee("Player's provider account not snapshotted");
+});
+
 test('"Why it\'s in review" summary is hidden for a Settled match', function () {
     [, , , $match] = pendingMatch();
     $match->update(['status' => MatchStatus::Settled, 'settled_at' => now()]);

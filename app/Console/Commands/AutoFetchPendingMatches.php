@@ -52,6 +52,11 @@ class AutoFetchPendingMatches extends Command
         GameMatch::query()
             ->where('status', MatchStatus::Pending)
             ->whereBetween('created_at', [$oldest, $youngest])
+            // Eager-load what DispatchAutoFetchAction reads so its per-match
+            // loadMissing('listing', 'providerSnapshots') is a no-op — otherwise
+            // it's 2 queries × up to CHUNK_SIZE rows every run (amplified by the
+            // M46 P3 every-minute young tier).
+            ->with(['listing', 'providerSnapshots'])
             ->orderBy('id')
             ->chunkById(self::CHUNK_SIZE, function ($matches) use ($dispatchAutoFetch, &$dispatched, &$failed) {
                 foreach ($matches as $match) {

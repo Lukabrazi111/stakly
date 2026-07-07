@@ -504,6 +504,33 @@ test('Lichess game that STARTED before match creation is rejected as stale (not 
         ->and($attempt->candidates_count)->toBe(1);
 });
 
+test('Lichess drops a pre-stake game and settles the real one played after (mixed response)', function () {
+    $match = autoFetchMatch(); // created_at backdated to now()->subHour()
+
+    // Pre-play game — createdAt 2h ago (before the stake), bob (black) wins. Dropped.
+    $stale = json_encode(lichessGameFixture([
+        'id' => 'stalegam',
+        'winner' => 'black',
+        'createdAt' => now()->subHours(2)->getTimestampMs(),
+        'lastMoveAt' => now()->subMinutes(50)->getTimestampMs(),
+    ]));
+    // Real staked game — createdAt 20min ago (after the stake), alice (white) wins.
+    $real = json_encode(lichessGameFixture([
+        'id' => 'realgame',
+        'winner' => 'white',
+        'createdAt' => now()->subMinutes(20)->getTimestampMs(),
+        'lastMoveAt' => now()->subMinutes(15)->getTimestampMs(),
+    ]));
+    Http::fake(['lichess.org/api/games/user/*' => Http::response($stale."\n".$real, 200)]);
+
+    runAutoFetch($match);
+
+    // Only the post-stake game survives → creator (white) wins.
+    $match->refresh();
+    expect($match->status)->toBe(MatchStatus::Settled)
+        ->and($match->winner_user_id)->toBe($match->listing->user_id);
+});
+
 test('Lichess picks the FIRST game started after match creation among a rematch', function () {
     $match = autoFetchMatch();
 

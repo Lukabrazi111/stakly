@@ -478,7 +478,17 @@ class GameMatchInfolist
      */
     private static function reviewReasonSummary(GameMatch $record): string
     {
-        $terminal = $record->autoFetchAttempts->sortByDesc('id')->first();
+        $attempts = $record->autoFetchAttempts->sortByDesc('id');
+
+        // Prefer the last real detection attempt. A match already in review keeps
+        // accruing `skipped` (not_pending) re-check rows from every match-page
+        // visit — those are dispatch noise, not why it's stuck — so keying off
+        // the raw latest row would flip this summary on refresh. Fall back to
+        // the last skip only when nothing ever reached the provider (e.g. a
+        // never-linked account skipping on snapshot_missing throughout).
+        $terminal = $attempts->first(
+            fn (MatchAutoFetchAttempt $a): bool => $a->outcome !== AutoFetchOutcome::Skipped,
+        ) ?? $attempts->first();
 
         if ($terminal === null) {
             return '<div class="text-sm">The automated finder recorded no attempts. '

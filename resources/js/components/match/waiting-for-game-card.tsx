@@ -103,7 +103,7 @@ function LookingState({
     // auto-fetch finder has an unambiguous target: one rated game, the listing's
     // time control, started now. Team / CS2 matches (no chess time control) keep
     // the generic copy — their tailored setup guidance is M47's job.
-    const isChessGuidance = controlLabel !== '';
+    const isChessGuidance = timeControl !== null;
 
     const heading = isChessGuidance
         ? t('Play your rated :control game on :platform', {

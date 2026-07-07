@@ -158,27 +158,33 @@ function lichessGameFixture(array $overrides = []): array
 }
 
 /**
- * Realistic chess.com monthly-archive game fixture, trimmed to the
- * fields `ChessComGameClient` parses. Captured from a real
- * `api.chess.com/pub/player/{user}/games/{YYYY}/{MM}` response. Wrap a
- * list of these in `['games' => [...]]` to mimic the full archive shape.
+ * Realistic chess.com monthly-archive game fixture, trimmed to the fields
+ * `ChessComGameClient` parses. Mirrors a REAL live-game response: there is NO
+ * top-level `start_time` (that field is daily-chess only) — the start time
+ * lives in the PGN as `[UTCDate]` + `[StartTime]`, which is exactly what the
+ * M46 P2 guard parses. `start_time` / `end_time` are accepted as logical
+ * inputs (staleness tests pass them) but `start_time` is emitted into the PGN,
+ * never as a top-level field, so the fixture matches production shape.
  *
  * @param  array<string, mixed>  $overrides
  * @return array<string, mixed>
  */
 function chessComGameFixture(array $overrides = []): array
 {
+    $startTs = (int) ($overrides['start_time'] ?? now()->subMinutes(6)->timestamp);
+    $endTs = (int) ($overrides['end_time'] ?? now()->subMinutes(5)->timestamp);
+    // Real live games carry the start ONLY in the PGN — drop any top-level
+    // start_time so tests can't accidentally exercise a shape the API never returns.
+    unset($overrides['start_time']);
+
     return array_merge([
         'url' => 'https://www.chess.com/game/live/12345678901',
         'time_control' => '180',
         'time_class' => 'blitz',
         'rules' => 'chess',
         'rated' => true,
-        // now-relative so a fixture game reads as "just played" — after the
-        // match's created_at (M46 P2 started-after-creation guard) and inside
-        // the `since` window. Tests exercising staleness override `start_time`.
-        'start_time' => now()->subMinutes(6)->timestamp,
-        'end_time' => now()->subMinutes(5)->timestamp,
+        'end_time' => $endTs,
+        'pgn' => chessComPgnFixture($startTs, $endTs),
         'white' => [
             'username' => 'alice-chesscom',
             'rating' => 1500,
@@ -190,6 +196,28 @@ function chessComGameFixture(array $overrides = []): array
             'result' => 'checkmated',
         ],
     ], $overrides);
+}
+
+/**
+ * Minimal chess.com live-game PGN carrying the header tags the client reads:
+ * `[UTCDate]` + `[StartTime]` (the true start) and `[EndDate]` + `[EndTime]`,
+ * all UTC, derived from the given unix timestamps.
+ */
+function chessComPgnFixture(int $startTs, int $endTs): string
+{
+    $start = CarbonImmutable::createFromTimestamp($startTs, 'UTC');
+    $end = CarbonImmutable::createFromTimestamp($endTs, 'UTC');
+
+    return implode("\n", [
+        '[Event "Live Chess"]',
+        '[UTCDate "'.$start->format('Y.m.d').'"]',
+        '[StartTime "'.$start->format('H:i:s').'"]',
+        '[EndDate "'.$end->format('Y.m.d').'"]',
+        '[EndTime "'.$end->format('H:i:s').'"]',
+        '',
+        '1. e4 e5 1-0',
+        '',
+    ]);
 }
 
 /**

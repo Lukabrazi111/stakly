@@ -361,9 +361,11 @@ class AutoFetchChessComGameJob implements ShouldBeUnique, ShouldQueueAfterCommit
     /**
      * M46 P2 — SECURITY guard. Keep only games that STARTED at or after this
      * match was created; the staked game must post-date the stake. chess.com
-     * `createdAt` is the game's `start_time` (end_time fallback for daily
-     * games, which aren't Stakly time controls). Guards the single-candidate
-     * direct-settle path against pre-play reuse.
+     * `createdAt` is the game's true start — parsed from the PGN
+     * `[UTCDate]`+`[StartTime]` for live games (top-level `start_time` is
+     * daily-chess only), with an `end_time` floor when the PGN is unparseable
+     * (M46 P5 review fix). Guards the single-candidate direct-settle path
+     * against pre-play reuse.
      *
      * @param  list<ChessComGameResult>  $games
      * @return list<ChessComGameResult>
