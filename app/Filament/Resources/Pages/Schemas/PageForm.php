@@ -9,6 +9,7 @@ use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rules\Unique;
 
 /**
@@ -30,8 +31,9 @@ class PageForm
                 ->label('Slug')
                 ->required()
                 ->maxLength(64)
-                ->alphaDash()
-                ->helperText('Lowercase, dashes only. Example: privacy-policy.')
+                ->rule('regex:/^[a-z0-9]+(?:-[a-z0-9]+)*$/')
+                ->dehydrateStateUsing(fn (?string $state): string => Str::slug((string) $state))
+                ->helperText('Lowercase letters, numbers, and single dashes only. Example: privacy-policy.')
                 ->unique(
                     ignoreRecord: true,
                     modifyRuleUsing: fn (Unique $rule, Get $get) => $rule->where(
@@ -42,7 +44,9 @@ class PageForm
 
             Select::make('locale')
                 ->label('Locale')
-                ->options(array_combine(Page::supportedLocales(), Page::supportedLocales()))
+                ->options(collect(Page::supportedLocales())
+                    ->mapWithKeys(fn (string $l): array => [$l => config("stakly.locales_meta.$l.native_label", $l)])
+                    ->all())
                 ->default(Page::defaultLocale())
                 ->required()
                 ->native(false),

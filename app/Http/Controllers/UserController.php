@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Actions\LinkedAccount\RefreshDisplayedRatingsAction;
 use App\Enums\MatchStatus;
 use App\Http\Resources\GameMatchResource;
 use App\Http\Resources\ListingResource;
@@ -38,8 +39,9 @@ class UserController extends Controller
 
         // Eager-load linked accounts so the backwards-compat accessors on
         // `User` (chess_com_username / lichess_username / etc.) read from
-        // the loaded collection.
-        $user->load('linkedAccounts');
+        // the loaded collection. `.ratings` feeds the chess rating badge on the
+        // profile's listing rows (M41 P4).
+        $user->load('linkedAccounts.ratings');
 
         $isOwnProfile = $request->user()?->id === $user->id;
 
@@ -66,6 +68,11 @@ class UserController extends Controller
         // Pre-set the `user` relation so `ListingResource` renders the
         // creator chip without re-querying (saves one IN-query).
         $openListings->each(fn (Listing $listing) => $listing->setRelation('user', $user));
+
+        // M41 P2/P3b — refresh-on-view: keep the profile's listing ratings
+        // fresh (CS2 FACEIT + chess per-TC; stale-gated + deduped + throttled),
+        // same policy as the marketplace surfaces, shared via the action.
+        app(RefreshDisplayedRatingsAction::class)->forListings($openListings);
 
         // Settled-only — exposing pending matches would leak "user X is
         // currently in a $500 match with Y" to the world. Disputed /

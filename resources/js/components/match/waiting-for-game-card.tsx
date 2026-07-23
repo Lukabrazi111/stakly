@@ -3,11 +3,16 @@ import { CheckCircle2, Loader2 } from 'lucide-react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { useEffect, useState } from 'react';
 import { useT } from '@/lib/i18n';
-import type { ListingPlatform, MatchSnapshots } from '@/types';
+import { timeControlLabel } from '@/lib/listings-format';
+import type { ListingPlatform, MatchSnapshots, TimeControl } from '@/types';
 
 interface WaitingForGameCardProps {
     platform: ListingPlatform;
     snapshots: MatchSnapshots;
+    /** The listing's single chess time control (M41 P3a); null for non-chess.
+     *  Drives the "rated :control game" instruction so the auto-fetch finder
+     *  has an unambiguous target (M46 P4). */
+    timeControl: TimeControl | null;
     /** Truthy when an auto-fetched game card has landed in chat; swaps card
      *  to "found — settling now" until status flips to Settled. */
     hasAutoFetchedCard: boolean;
@@ -35,6 +40,7 @@ const PLATFORM_PROFILE_URL: Record<ListingPlatform, (u: string) => string> = {
 export function WaitingForGameCard({
     platform,
     snapshots,
+    timeControl,
     hasAutoFetchedCard,
 }: WaitingForGameCardProps) {
     const reduceMotion = useReducedMotion();
@@ -65,6 +71,7 @@ export function WaitingForGameCard({
                         <LookingState
                             platform={platform}
                             snapshots={snapshots}
+                            timeControl={timeControl}
                             reduceMotion={reduceMotion ?? false}
                         />
                     </motion.div>
@@ -77,17 +84,43 @@ export function WaitingForGameCard({
 function LookingState({
     platform,
     snapshots,
+    timeControl,
     reduceMotion,
 }: {
     platform: ListingPlatform;
     snapshots: MatchSnapshots;
+    timeControl: TimeControl | null;
     reduceMotion: boolean;
 }) {
     const t = useT();
     const secondsAgo = useSecondsSinceLastVisit();
 
     const platformLabel = PLATFORM_LABEL[platform];
+    const controlLabel = timeControlLabel(timeControl, t);
     const buildProfileUrl = PLATFORM_PROFILE_URL[platform];
+
+    // Chess 1v1 (time control present) gets the precise M46 P4 guidance so the
+    // auto-fetch finder has an unambiguous target: one rated game, the listing's
+    // time control, started now. Team / CS2 matches (no chess time control) keep
+    // the generic copy — their tailored setup guidance is M47's job.
+    const isChessGuidance = timeControl !== null;
+
+    const heading = isChessGuidance
+        ? t('Play your rated :control game on :platform', {
+              control: controlLabel,
+              platform: platformLabel,
+          })
+        : t('Play your match on :platform', { platform: platformLabel });
+
+    const body = isChessGuidance
+        ? t(
+              'Start it now and play a single game to a finish — Stakly reads the result from :platform automatically, so there’s nothing to report here.',
+              { platform: platformLabel },
+          )
+        : t(
+              'Stakly settles automatically as soon as your game on :platform finishes — no buttons to press.',
+              { platform: platformLabel },
+          );
 
     return (
         <div className="flex items-start gap-4">
@@ -107,17 +140,10 @@ function LookingState({
 
             <div className="min-w-0 flex-1">
                 <h2 className="font-display text-lg font-semibold text-foreground">
-                    {t('Play your match on :platform', {
-                        platform: platformLabel,
-                    })}
+                    {heading}
                 </h2>
 
-                <p className="mt-1 text-sm text-muted-foreground">
-                    {t(
-                        'Stakly settles automatically as soon as your game on :platform finishes — no buttons to press.',
-                        { platform: platformLabel },
-                    )}
-                </p>
+                <p className="mt-1 text-sm text-muted-foreground">{body}</p>
 
                 {snapshots.creator_username !== null &&
                     snapshots.taker_username !== null && (

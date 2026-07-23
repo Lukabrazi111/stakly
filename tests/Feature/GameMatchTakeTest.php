@@ -1,5 +1,6 @@
 <?php
 
+use App\Actions\GameMatch\TakeListingAction;
 use App\Actions\Listing\CreateTeamPlayListingAction;
 use App\Enums\Game;
 use App\Enums\LinkedAccountProvider;
@@ -564,7 +565,7 @@ test('taking a team-play listing returns not_takeable — no match write, neutra
         'game' => Game::Cs2->value,
         'platform' => LinkedAccountProvider::Faceit->value,
         'stake_amount' => '100',
-        'time_control' => [],
+        'time_control' => null,
         'duration_hours' => 24,
         'team_size' => 5,
         'creator_side' => LobbyParticipant::SIDE_A,
@@ -585,4 +586,114 @@ test('taking a team-play listing returns not_takeable — no match write, neutra
     expect(GameMatch::query()->where('listing_id', $listing->id)->count())->toBe(1);
     expect(GameMatch::query()->where('listing_id', $listing->id)->value('id'))->toBe($existingMatchId);
     expect(bccomp((string) $taker->fresh()->usdt_balance, '500.000000', 6))->toBe(0);
+});
+
+// ─── M37: one active match per game (concurrency guard) ─────────────────────
+
+/**
+ * Drops the given user into a live (Pending) CS2 team match as a side-B roster
+ * member — used to prove cross-game concurrency is allowed (a CS2 match must
+ * not block a chess take, and vice-versa).
+ */
+function putUserInLiveCs2Match(User $user): void
+{
+    $cs2Listing = Listing::factory()->teamPlay(2)->lobbyLocked()->for(User::factory())->create();
+    GameMatch::factory()->for($cs2Listing)->create([
+        'taker_user_id' => $cs2Listing->user_id,
+        'status' => MatchStatus::Pending,
+    ]);
+    LobbyParticipant::factory()->sideB()->create([
+        'listing_id' => $cs2Listing->id,
+        'user_id' => $user->id,
+        'slot_index' => 0,
+    ]);
+}
+
+test('a player already in a chess match cannot take a second chess listing', function () {
+    [, $first] = openListingWithCreator(stake: '100');
+    [, $second] = openListingWithCreator(stake: '100');
+    $taker = takerWithBalance(balance: '500');
+
+    // First take puts the taker in a live chess match.
+    $this->actingAs($taker)->postJson("/listings/{$first->id}/take")->assertRedirect();
+
+    $response = $this->actingAs($taker)->postJson("/listings/{$second->id}/take");
+
+    $response->assertRedirect(route('listings.show', $second));
+    $response->assertInertiaFlash('toast', [
+        'type' => 'warning',
+        'message' => 'Finish your current Chess match before taking another.',
+    ]);
+
+    // Only the first match exists; the second listing is untouched and the taker
+    // was charged exactly once (one 100 hold).
+    expect(GameMatch::count())->toBe(1)
+        ->and($second->fresh()->status)->toBe(ListingStatus::Open)
+        ->and((string) $taker->fresh()->usdt_balance)->toBe('400.000000');
+});
+
+test('a listing whose owner is already in a chess match cannot be taken (owner_busy)', function () {
+    [$creator, $listing] = openListingWithCreator(stake: '100');
+    $taker = takerWithBalance(balance: '500');
+
+    // Put the owner into a live chess match by having them take someone else's
+    // open listing first.
+    [, $otherListing] = openListingWithCreator(stake: '100');
+    app(TakeListingAction::class)->handle($creator, $otherListing);
+
+    $response = $this->actingAs($taker)->postJson("/listings/{$listing->id}/take");
+
+    $response->assertRedirect(route('listings.show', $listing));
+    $response->assertInertiaFlash('toast', [
+        'type' => 'info',
+        'message' => 'This player is in another match right now. Their listing will be available again soon.',
+    ]);
+
+    // Listing stays Open, taker not charged.
+    expect($listing->fresh()->status)->toBe(ListingStatus::Open)
+        ->and((string) $taker->fresh()->usdt_balance)->toBe('500.000000');
+});
+
+test('a player in a CS2 match can still take a chess listing (one active match PER game)', function () {
+    [, $chessListing] = openListingWithCreator(stake: '100');
+    $taker = takerWithBalance(balance: '500');
+
+    putUserInLiveCs2Match($taker);
+
+    $response = $this->actingAs($taker)->postJson("/listings/{$chessListing->id}/take");
+
+    $match = GameMatch::query()->where('listing_id', $chessListing->id)->firstOrFail();
+    $response->assertRedirect(route('matches.show', $match));
+    expect($chessListing->fresh()->status)->toBe(ListingStatus::Taken);
+});
+
+test('a listing whose owner is in a CS2 match is still takeable (cross-game allowed)', function () {
+    [$creator, $listing] = openListingWithCreator(stake: '100');
+    $taker = takerWithBalance(balance: '500');
+
+    putUserInLiveCs2Match($creator);
+
+    $response = $this->actingAs($taker)->postJson("/listings/{$listing->id}/take");
+
+    $match = GameMatch::query()->where('listing_id', $listing->id)->firstOrFail();
+    $response->assertRedirect(route('matches.show', $match));
+    expect($listing->fresh()->status)->toBe(ListingStatus::Taken);
+});
+
+test('a settled chess match does not block taking a new chess listing', function () {
+    [, $listing] = openListingWithCreator(stake: '100');
+    $taker = takerWithBalance(balance: '500');
+
+    // A prior chess match that already settled — terminal, not in-flight.
+    $opponent = User::factory()->withLichess()->create();
+    GameMatch::factory()
+        ->for(Listing::factory()->taken()->forLichess()->for($opponent))
+        ->for($taker, 'taker')
+        ->settled($taker)
+        ->create();
+
+    $response = $this->actingAs($taker)->postJson("/listings/{$listing->id}/take");
+
+    $match = GameMatch::query()->where('listing_id', $listing->id)->firstOrFail();
+    $response->assertRedirect(route('matches.show', $match));
 });

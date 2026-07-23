@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="48" height="72" viewBox="0 0 48 72" fill="none" role="img" aria-label="No poster">
+  <rect width="48" height="72" fill="#14101c"/>
+  <rect x="11" y="24" width="26" height="20" rx="2" stroke="#8a8696" stroke-width="1.5"/>
+  <circle cx="18.5" cy="31" r="2.5" fill="#8a8696"/>
+  <path d="M14 44l7.5-8 4.5 4.5 4-4 6 7.5" stroke="#8a8696" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="24" y="56" font-family="system-ui, sans-serif" font-size="6" fill="#8a8696" text-anchor="middle">No poster</text>
+</svg>

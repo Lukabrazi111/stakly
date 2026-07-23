@@ -19,6 +19,7 @@ use App\Http\Resources\MessageResource;
 use App\Models\GameMatch;
 use App\Models\Listing;
 use App\Services\ParticipantStats;
+use App\Services\RecentForm;
 use App\Services\SellerTrust;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -49,23 +50,38 @@ class GameMatchController extends Controller
     {
         $user = $request->user();
 
-        $matches = QueryBuilder::for(
-            GameMatch::query()
-                ->forParticipant($user->id)
-                ->with([
-                    'listing:id,user_id,game,stake_amount,platform,time_control,status,team_size',
-                    'listing.user:id,name,username',
-                    'taker:id,name,username',
-                    'winner:id,name,username',
-                    // GameMatchResource exposes snapshotted usernames per
-                    // listing.platform — without this eager-load the
-                    // resource transformer N+1s on the snapshot table.
-                    'providerSnapshots',
-                ]),
-        )
-            ->allowedFilters(
-                AllowedFilter::exact('status'),
-            )
+        $query = GameMatch::query()
+            ->forRosterParticipant($user->id)
+            ->with([
+                // Closure form (was a `listing:...` column string) so we can
+                // hang a live-fill withCount off the listing for the M44
+                // recruiting-lobby card. `lobby_state` added for the card's
+                // "Recruiting" vs "Ready check" label.
+                'listing' => fn ($q) => $q
+                    ->select('id', 'user_id', 'game', 'stake_amount', 'platform', 'time_control', 'status', 'team_size', 'lobby_state')
+                    ->withCount(['lobbyParticipants as live_participant_count' => fn ($p) => $p->live()]),
+                'listing.user:id,name,username',
+                'taker:id,name,username',
+                'winner:id,name,username',
+                // GameMatchResource exposes snapshotted usernames per
+                // listing.platform — without this eager-load the
+                // resource transformer N+1s on the snapshot table.
+                'providerSnapshots',
+            ]);
+
+        if ($request->view() === 'all') {
+            // All view: every status, sliced by the optional chip filter.
+            $query = QueryBuilder::for($query)
+                ->allowedFilters(AllowedFilter::exact('status'));
+        } else {
+            // In Progress view (default): active locked matches + any recruiting
+            // lobby the viewer is live in (M44). Recruiting lobbies pin to the
+            // top — they're the most actionable thing to return to.
+            $query->inProgressForViewer($user->id)
+                ->orderByRaw('CASE WHEN status = ? THEN 0 ELSE 1 END', [MatchStatus::LobbyFilling->value]);
+        }
+
+        $matches = $query
             ->orderByDesc('created_at')
             ->orderByDesc('id')
             ->paginate(self::MATCHES_PER_PAGE)
@@ -87,6 +103,10 @@ class GameMatchController extends Controller
      *   - `'race_lost'`        → listing state changed during the request
      *                            (Taken / Expired / Cancelled / past-expiry).
      *   - `'owner_inactive'`   → owner flipped to Inactive Mode mid-flight.
+     *   - `'already_in_match'` → taker is already in an in-flight match for this
+     *                            game (M37 one-active-match-per-game).
+     *   - `'owner_busy'`       → the listing owner is already in an in-flight
+     *                            match for this game.
      *
      * `InsufficientBalanceException` is the rare race where balance dropped
      * between TakeRequest's pre-check and the wallet's row-locked re-check
@@ -126,6 +146,26 @@ class GameMatchController extends Controller
             Inertia::flash('toast', [
                 'type' => 'info',
                 'message' => __('This player is currently inactive. Their listings are temporarily unavailable.'),
+            ]);
+
+            return to_route('listings.show', $listing);
+        }
+
+        if ($result === 'already_in_match') {
+            Inertia::flash('toast', [
+                'type' => 'warning',
+                'message' => __('Finish your current :game match before taking another.', [
+                    'game' => $listing->game->displayName(),
+                ]),
+            ]);
+
+            return to_route('listings.show', $listing);
+        }
+
+        if ($result === 'owner_busy') {
+            Inertia::flash('toast', [
+                'type' => 'info',
+                'message' => __('This player is in another match right now. Their listing will be available again soon.'),
             ]);
 
             return to_route('listings.show', $listing);
@@ -197,6 +237,10 @@ class GameMatchController extends Controller
             if (count($userIds) > 0) {
                 $trust = SellerTrust::forBatch($userIds);
                 $stats = ParticipantStats::forBatch($userIds);
+                // M34 — recent W/L form for the match roster cards, matching the
+                // lobby slot cards. Scoped to the listing's game (team play = CS2)
+                // so the strip stays coherent with the FACEIT dial beside it.
+                $forms = RecentForm::forBatch($userIds, $match->listing->game);
 
                 foreach ($match->listing->lobbyParticipants as $participant) {
                     if ($participant->kicked_at !== null) {
@@ -211,6 +255,10 @@ class GameMatchController extends Controller
                         'platform_stats',
                         $stats[$participant->user_id] ?? null,
                     );
+                    $participant->user->setAttribute(
+                        'recent_form',
+                        $forms[$participant->user_id] ?? [],
+                    );
                 }
             }
         }
@@ -223,7 +271,14 @@ class GameMatchController extends Controller
             return to_route('listings.show', $match->listing);
         }
 
-        $dispatchAutoFetch->handle($match);
+        // Only Pending matches can auto-settle. Dispatching for a resolved
+        // match just records a `not_pending` skip row on every page view —
+        // unbounded write growth + admin-infolist noise. The cron / chat-send /
+        // stream trigger sites keep their own defensive skip for the genuine
+        // status-race window; this high-frequency page-visit path doesn't need it.
+        if ($match->status === MatchStatus::Pending) {
+            $dispatchAutoFetch->handle($match);
+        }
 
         // M8 Phase 2 — last 200 messages, chrono order. The composite
         // (match_id, id) index makes this cheap; a busy match should not

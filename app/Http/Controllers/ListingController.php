@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Actions\LinkedAccount\RefreshDisplayedRatingsAction;
 use App\Actions\Listing\CancelListingAction;
 use App\Actions\Listing\CreateListingAction;
 use App\Actions\Listing\CreateTeamPlayListingAction;
@@ -16,11 +17,15 @@ use App\Http\Resources\ListingResource;
 use App\Http\Resources\LobbyResource;
 use App\Http\Resources\MessageResource;
 use App\Models\Game as GameModel;
+use App\Models\LinkedAccount;
+use App\Models\LinkedAccountRating;
 use App\Models\Listing;
 use App\Services\ParticipantStats;
+use App\Services\RecentForm;
 use App\Services\SellerTrust;
 use App\Services\Wallet;
 use App\Support\BanGuard;
+use App\Support\FaceitLevel;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -54,24 +59,40 @@ class ListingController extends Controller
             fn (Builder $q) => $q->orderByDesc('created_at')->orderByDesc('id'),
         );
 
-        $listings = QueryBuilder::for(
-            Listing::query()
-                ->onPublicMarketplace()
-                ->with([
-                    'user:id,name,username,is_active_mode',
-                    'user.linkedAccounts',
-                    'lobbyParticipants' => fn ($q) => $q->live()->orderBy('joined_at'),
-                    'lobbyParticipants.user:id,name,username',
-                    'lobbyParticipants.user.media',
-                ])
-                ->withCount(['lobbyParticipants as live_participant_count' => fn ($q) => $q->live()]),
-        )
+        $filters = $request->filters();
+
+        // The verified-rating filter (M41 P5) needs coordinated min/max + the
+        // "unrated" toggle + each listing's own platform/time-control, so it's a
+        // correlated EXISTS on the base query rather than independent Spatie
+        // filter callbacks (which can't see sibling params or the listing row).
+        $base = Listing::query()
+            ->onPublicMarketplace()
+            ->with([
+                'user:id,name,username,is_active_mode',
+                // `.ratings` feeds the chess rating badge (M41 P4); the
+                // FACEIT scalar lives on the account row itself.
+                'user.linkedAccounts.ratings',
+                'lobbyParticipants' => fn ($q) => $q->live()->orderBy('joined_at'),
+                'lobbyParticipants.user:id,name,username',
+                'lobbyParticipants.user.media',
+            ])
+            ->withCount(['lobbyParticipants as live_participant_count' => fn ($q) => $q->live()]);
+
+        $this->applyRatingFilter($base, $filters['game'], $filters['skill_min'], $filters['skill_max'], $filters['unrated']);
+
+        $listings = QueryBuilder::for($base)
             ->allowedFilters(
                 AllowedFilter::exact('game')->default(Game::Chess->value),
                 AllowedFilter::callback('stake_min', fn (Builder $q, $value) => $q->where('stake_amount', '>=', $value)),
                 AllowedFilter::callback('stake_max', fn (Builder $q, $value) => $q->where('stake_amount', '<=', $value)),
-                AllowedFilter::callback('skill_min', $this->skillMinOverlap()),
-                AllowedFilter::callback('skill_max', $this->skillMaxOverlap()),
+                // The verified-rating filter (skill_min/skill_max/unrated) is
+                // applied on the base query via applyRatingFilter() — a correlated
+                // EXISTS that needs coordinated params Spatie callbacks can't see.
+                // These are registered as no-ops so Spatie accepts the URL keys
+                // instead of throwing InvalidFilterQuery; the real work is upstream.
+                AllowedFilter::callback('skill_min', fn () => null),
+                AllowedFilter::callback('skill_max', fn () => null),
+                AllowedFilter::callback('unrated', fn () => null),
                 AllowedFilter::callback('time_control', $this->timeControlOverlap()),
                 AllowedFilter::exact('region'),
                 AllowedFilter::callback('language', $this->languageMatch()),
@@ -91,6 +112,14 @@ class ListingController extends Controller
         // `seller_trust` attribute that `ListingResource` reads.
         SellerTrust::attachTo($listings);
 
+        // M41 P7 — batch-load each CS2 creator's recent W/L/D form (last 5
+        // settled matches) in a fixed number of queries; no-op for chess.
+        RecentForm::attachTo($listings->getCollection());
+
+        // M41 P2/P3b — keep displayed ratings fresh (CS2 FACEIT + chess per-TC).
+        // Stale-gated + deduped + throttled, so this is safe on the read path.
+        app(RefreshDisplayedRatingsAction::class)->forListings($listings->getCollection());
+
         // Reuse the homepage's resolved-array cache — `Game::booted` already
         // invalidates it on save/delete, so admin tile edits land here too.
         $games = Cache::remember(
@@ -101,7 +130,7 @@ class ListingController extends Controller
 
         return Inertia::render('listings/index', [
             'listings' => ListingResource::collection($listings),
-            'filters' => $request->filters(),
+            'filters' => $filters,
             'sorts' => IndexListingsRequest::SORTS,
             'games' => ['data' => $games],
         ]);
@@ -140,7 +169,7 @@ class ListingController extends Controller
         // users migration) so payload cost is bounded.
         $listing->load([
             'user:id,name,username,is_active_mode,bio,created_at',
-            'user.linkedAccounts',
+            'user.linkedAccounts.ratings',
             'gameMatch:id,listing_id,taker_user_id',
             'lobbyParticipants' => fn ($q) => $q->live()->orderBy('joined_at'),
             'lobbyParticipants.user:id,name,username',
@@ -150,6 +179,10 @@ class ListingController extends Controller
 
         // M22 Phase 1 — seller trust on the listing detail (single-row batch).
         SellerTrust::attachTo([$listing]);
+        RecentForm::attachTo([$listing]);
+
+        // M41 P2/P3b — refresh-on-view (CS2 FACEIT + chess per-TC), stale-gated.
+        app(RefreshDisplayedRatingsAction::class)->forListings([$listing]);
 
         $user = $request->user();
         $match = $listing->gameMatch;
@@ -176,6 +209,11 @@ class ListingController extends Controller
      */
     private function showTeamPlay(Request $request, Listing $listing): Response|RedirectResponse
     {
+        // Visibility gate (M34 P5): public lobbies are open; private ones need
+        // the creator / a live participant / an invite-token session pass. The
+        // invite link (`/lobbies/{token}`) is itself auth-gated, so a guest is
+        // funnelled to login there — a guest reaching THIS page can't hold a
+        // pass, so denials just 404 (hiding the private lobby's existence).
         abort_if(Gate::denies('viewLobby', $listing), 404);
 
         $listing->load([
@@ -206,6 +244,9 @@ class ListingController extends Controller
             ->all();
         $trust = SellerTrust::forBatch($userIds);
         $stats = ParticipantStats::forBatch($userIds);
+        // M41 P7 — recent W/L/D form per participant, scoped to the lobby's game
+        // (CS2). Ledger-based so team wins resolve correctly (see RecentForm).
+        $forms = RecentForm::forBatch($userIds, $listing->game);
         foreach ($listing->lobbyParticipants as $participant) {
             if ($participant->kicked_at !== null) {
                 continue;
@@ -218,7 +259,21 @@ class ListingController extends Controller
                 'platform_stats',
                 $stats[$participant->user_id] ?? null,
             );
+            $participant->user->setAttribute(
+                'recent_form',
+                $forms[$participant->user_id] ?? [],
+            );
         }
+
+        // M41 P2 — refresh-on-view for the lobby: the creator + every live
+        // participant whose rating shows in the roster.
+        $refreshRatings = app(RefreshDisplayedRatingsAction::class);
+        $refreshRatings->forListings([$listing]);
+        $refreshRatings->forAccounts(
+            collect($listing->lobbyParticipants)
+                ->whereNull('kicked_at')
+                ->flatMap(fn ($participant) => $participant->user->linkedAccounts)
+        );
 
         // Chat content is participant-only — strangers, guests, and kicked
         // users get an empty collection. Without this gate the messages.data
@@ -275,12 +330,37 @@ class ListingController extends Controller
         // have multiple, (c) swap the form for the link-CTA notice when
         // they have zero (handled by the existing `has_chess_link` flag in
         // shared auth.user props).
-        $user->loadMissing('linkedAccounts');
+        $user->loadMissing('linkedAccounts.ratings');
         $linkedPlatforms = $user->linkedAccounts
             ->pluck('provider')
             ->map(fn (LinkedAccountProvider $provider) => $provider->value)
             ->sort()
             ->values()
+            ->all();
+
+        // M41 P2 — the creator's own FACEIT rating drives the CS2 live preview
+        // + the in-form "your verified rating" note. Null when no FACEIT link.
+        $faceit = $user->linkedAccounts->firstWhere('provider', LinkedAccountProvider::Faceit);
+        $userFaceitRating = $faceit === null ? null : [
+            'elo' => $faceit->skill_rating,
+            'level' => FaceitLevel::fromElo($faceit->skill_rating),
+            'is_unrated' => $faceit->skill_rating === null,
+        ];
+
+        // M41 P4 — the creator's own chess ratings, keyed platform → time
+        // control, drive the chess live preview (it picks the row for the
+        // selected platform + TC). Provisional ratings surface as "Unrated".
+        $userChessRatings = $user->linkedAccounts
+            ->whereIn('provider', [LinkedAccountProvider::ChessCom, LinkedAccountProvider::Lichess])
+            ->mapWithKeys(fn (LinkedAccount $account) => [
+                $account->provider->value => $account->ratings->mapWithKeys(fn (LinkedAccountRating $row) => [
+                    $row->time_control->value => [
+                        'rating' => $row->rating,
+                        'is_provisional' => $row->is_provisional,
+                        'is_unrated' => false,
+                    ],
+                ])->all(),
+            ])
             ->all();
 
         // Reuse the homepage's resolved-array cache — `Game::booted` already
@@ -323,6 +403,12 @@ class ListingController extends Controller
             'linkedPlatforms' => $linkedPlatforms,
             'games' => ['data' => $games],
             'requirementsByGame' => $requirementsByGame,
+            // Single source for the create-form Deal summary (M40) — the same
+            // config the wallet ledger uses at settlement. Float at the JSON
+            // boundary only; internal money math stays BCMath.
+            'feeRate' => (float) config('stakly.platform_fee_rate'),
+            'userFaceitRating' => $userFaceitRating,
+            'userChessRatings' => $userChessRatings,
         ]);
     }
 
@@ -349,7 +435,7 @@ class ListingController extends Controller
         $query = $user->listings()
             ->with([
                 'user:id,name,username,is_active_mode',
-                'user.linkedAccounts',
+                'user.linkedAccounts.ratings',
                 'lobbyParticipants' => fn ($q) => $q->live()->orderBy('joined_at'),
                 'lobbyParticipants.user:id,name,username',
                 'lobbyParticipants.user.media',
@@ -372,6 +458,10 @@ class ListingController extends Controller
         // all rows on this page (single creator), so the batch trivially
         // collapses to one aggregate.
         SellerTrust::attachTo($listings);
+        RecentForm::attachTo($listings->getCollection());
+
+        // M41 P2/P3b — refresh-on-view (CS2 + chess; gated/deduped/throttled).
+        app(RefreshDisplayedRatingsAction::class)->forListings($listings->getCollection());
 
         // Counts both Open and Paused — the cap is about "listings holding
         // your capital that aren't yet concluded." Mirrors the rule in
@@ -484,44 +574,111 @@ class ListingController extends Controller
     }
 
     /**
-     * Skill-range overlap (lower bound): a listing matches if its
-     * [skill_min, skill_max] band intersects the user's filter lower bound,
-     * OR if the listing has no upper bound ("any skill").
+     * Verified-rating filter (M41 P5). Replaces the dead self-typed skill_min/
+     * skill_max overlap. Branches by game:
+     *   - Chess → Elo range on the creator's rating for THIS listing's platform
+     *     + time control (correlated against `linked_account_ratings`).
+     *   - CS2 → raw FACEIT Elo range on the cached `skill_rating` scalar.
+     *
+     * An active range excludes "unrated" creators (no matching rating row). The
+     * `$unratedOnly` toggle inverts that — show ONLY listings whose creator has
+     * no rating for this game/platform/TC. No bounds + no toggle → no-op.
+     *
+     * `$skillMin`/`$skillMax` are raw Elo for both games (CS2 = FACEIT Elo,
+     * revised 2026-06-28 from the 1–10 level selector). Games without ratings
+     * (e.g. Dota 2) get no constraint.
      */
-    private function skillMinOverlap(): \Closure
+    private function applyRatingFilter(Builder $query, string $game, ?int $skillMin, ?int $skillMax, bool $unratedOnly): void
     {
-        return fn (Builder $q, $value) => $q->where(
-            fn (Builder $inner) => $inner->whereNull('skill_max')->orWhere('skill_max', '>=', $value),
-        );
+        $gameEnum = Game::tryFrom($game);
+
+        if ($gameEnum === Game::Chess) {
+            if ($unratedOnly) {
+                $query->whereNotExists($this->chessRatingExists(null, null));
+
+                return;
+            }
+
+            if ($skillMin !== null || $skillMax !== null) {
+                $query->whereExists($this->chessRatingExists($skillMin, $skillMax));
+            }
+
+            return;
+        }
+
+        if ($gameEnum === Game::Cs2) {
+            if ($unratedOnly) {
+                $query->whereNotExists($this->faceitRatingExists(null, null));
+
+                return;
+            }
+
+            if ($skillMin !== null || $skillMax !== null) {
+                $query->whereExists($this->faceitRatingExists($skillMin, $skillMax));
+            }
+        }
     }
 
     /**
-     * Skill-range overlap (upper bound): mirror of the above for the user's
-     * filter upper bound. Listings with no lower bound also match.
+     * Correlated subquery: does the listing creator hold a chess rating for this
+     * listing's platform + time control, optionally within [min, max] Elo? With
+     * both bounds null it tests mere existence (used by the "unrated" inversion).
+     *
+     * @return \Closure(\Illuminate\Database\Query\Builder): void
      */
-    private function skillMaxOverlap(): \Closure
+    private function chessRatingExists(?int $min, ?int $max): \Closure
     {
-        return fn (Builder $q, $value) => $q->where(
-            fn (Builder $inner) => $inner->whereNull('skill_min')->orWhere('skill_min', '<=', $value),
-        );
+        return function ($sub) use ($min, $max) {
+            $sub->selectRaw('1')
+                ->from('linked_accounts as la')
+                ->join('linked_account_ratings as lar', 'lar.linked_account_id', '=', 'la.id')
+                ->whereColumn('la.user_id', 'listings.user_id')
+                ->whereColumn('la.provider', 'listings.platform')
+                ->whereColumn('lar.time_control', 'listings.time_control')
+                ->when($min !== null, fn ($q) => $q->where('lar.rating', '>=', $min))
+                ->when($max !== null, fn ($q) => $q->where('lar.rating', '<=', $max));
+        };
     }
 
     /**
-     * Time control overlap: `time_control` is now a jsonb array on each
-     * listing. The filter value can be a single string or an array (Spatie
-     * splits comma-separated values). A listing matches if its offered set
-     * intersects the user's selection.
+     * Correlated subquery: does the listing creator hold a FACEIT account with a
+     * cached CS2 ELO, optionally within [min, max]? Null bounds test existence
+     * (the "unrated" inversion). Unrated = no FACEIT link or a null skill_rating.
+     *
+     * @return \Closure(\Illuminate\Database\Query\Builder): void
+     */
+    private function faceitRatingExists(?int $eloMin, ?int $eloMax): \Closure
+    {
+        return function ($sub) use ($eloMin, $eloMax) {
+            $sub->selectRaw('1')
+                ->from('linked_accounts as la')
+                ->whereColumn('la.user_id', 'listings.user_id')
+                ->where('la.provider', LinkedAccountProvider::Faceit->value)
+                ->whereNotNull('la.skill_rating')
+                ->when($eloMin !== null, fn ($q) => $q->where('la.skill_rating', '>=', $eloMin))
+                ->when($eloMax !== null, fn ($q) => $q->where('la.skill_rating', '<=', $eloMax));
+        };
+    }
+
+    /**
+     * Time control filter: each listing now stores a SINGLE `time_control`
+     * string (M41 P3a). The filter stays multi-select — the value can be a
+     * single string or an array (Spatie splits comma-separated values) — and a
+     * listing matches if its one time control is in the user's selection.
      */
     private function timeControlOverlap(): \Closure
     {
         return function (Builder $q, $value) {
-            $values = is_array($value) ? $value : [$value];
+            $values = array_filter(is_array($value) ? $value : [$value]);
 
-            $q->where(function (Builder $inner) use ($values) {
-                foreach ($values as $v) {
-                    $inner->orWhereJsonContains('time_control', $v);
-                }
-            });
+            // A present-but-empty filter (e.g. `?filter[time_control]=`) leaves
+            // no values — skip the constraint so the board stays unfiltered
+            // rather than `whereIn([])` collapsing to zero rows.
+            if ($values === []) {
+                return;
+            }
+
+            $q->whereIn('time_control', $values);
         };
     }
 

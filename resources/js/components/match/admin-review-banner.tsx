@@ -67,11 +67,20 @@ function resolveCopy(
     );
 
     if (match.status === 'manual_review') {
+        // Coarse, non-leaky reason: whether a dispute preceded review (an
+        // opener is recorded) or it timed out with no verified game. The
+        // granular detection reason stays admin-only.
+        const cameFromDispute = match.dispute.opened_by_id !== null;
+
         return {
             title: t('Match flagged for admin review'),
-            body: t(
-                'This match was auto-flagged after the confirmation window expired without a verified game record. A Stakly admin will review the chat and resolve. Your stake stays in escrow until then.',
-            ),
+            body: cameFromDispute
+                ? t(
+                      'We reviewed the reported problem but couldn’t confirm a result automatically, so a Stakly admin will settle this match. Your stake stays in escrow until then — add anything that helps (game link, screenshot) in the chat below.',
+                  )
+                : t(
+                      'We couldn’t automatically verify a game for this match before the confirmation window closed, so a Stakly admin will review and settle it. Your stake stays in escrow until then — add anything that helps (game link, screenshot) in the chat below.',
+                  ),
         };
     }
 

@@ -59,8 +59,9 @@ class WalletTransaction extends Model
 
         $sign = str_starts_with($amount, '-') ? '-' : '';
         $abs = ltrim($amount, '-');
-        $truncated = bcadd($abs, '0', 2);
-        [$int, $dec] = explode('.', $truncated.'.00');
+        // bcadd truncates to scale, so add half a cent first for half-up rounding ($abs is already sign-stripped).
+        $rounded = bcadd($abs, '0.005', 2);
+        [$int, $dec] = explode('.', $rounded.'.00');
 
         return $sign.'$'.number_format((int) $int, 0, '.', ',').'.'.substr($dec.'00', 0, 2);
     }

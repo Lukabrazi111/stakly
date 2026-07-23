@@ -8,7 +8,6 @@ use App\Actions\Message\PostSystemMessageAction;
 use App\Enums\AutoFetchOutcome;
 use App\Enums\LinkedAccountProvider;
 use App\Enums\MessageType;
-use App\Enums\TimeControl;
 use App\Models\GameMatch;
 use App\Models\Message;
 use App\Services\Provider\ChessComGameClient;
@@ -36,20 +35,26 @@ use Illuminate\Queue\SerializesModels;
  *
  * Retry policy (M14 Slice 2b):
  *   - Two retry chains share the `$tries` budget:
- *     * no_match (archive lag): explicit `release()` per `RETRY_DELAYS` ([5, 15, 45]s).
+ *     * no_match: explicit `release()` per `RETRY_DELAYS` ([5, 15, 45, 90, 150]s).
  *     * HTTP error: re-throw + Laravel-driven `backoff()` ([5, 15, 30]s).
  *   - `PermanentProviderError` → audit row + `$this->fail($e)`, no retry.
  *   - `TransientProviderError` / `RateLimitedError` → audit row + re-throw, retried.
  *   - `retryUntil()` caps the chain at `match.created_at + M16 confirmation timeout`.
+ *
+ * M46 P3 — the no_match tail extends to ~5 min (was ~65 s). chess.com has no
+ * real-time stream, so a game played a few minutes after the take used to sit
+ * until the 10-min cron backstop; the longer tail (plus the [1min,10min]
+ * young-match cron tier in routes/console.php) settles it in ~1-2 min instead.
  */
 class AutoFetchChessComGameJob implements ShouldBeUnique, ShouldQueueAfterCommit
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
     /**
-     * Budget covers the longest plausible run: 3 transient-error retries +
-     * the 4-attempt no_match chain. They share the counter; the actual mix
-     * depends on what the provider returns.
+     * Budget covers the longest plausible run: transient-error retries +
+     * the 6-attempt no_match chain (M46 P3). They share the counter; the
+     * actual mix depends on what the provider returns. 15 leaves ~9 slots
+     * of headroom over the no_match chain for `RateLimited` releases.
      *
      * M35 P1 — extra headroom for `RateLimited` middleware releases. Each
      * throttle release consumes an attempt without running the handler, so
@@ -65,16 +70,23 @@ class AutoFetchChessComGameJob implements ShouldBeUnique, ShouldQueueAfterCommit
      * Caps unique-lock lifetime past the worst-case retry chain (combined
      * no_match + transient-error delays). Prevents the lock from stranding
      * if the queue worker dies mid-retry.
+     *
+     * M46 P3 — 360→600 to cover the extended ~305s no_match tail plus
+     * rate-limit release headroom. Capped at the 10-min young-cron window
+     * boundary so a genuinely hung chain frees the lock exactly as the
+     * `[10min,4h]` backstop cron takes over.
      */
-    public int $uniqueFor = 360;
+    public int $uniqueFor = 600;
 
     /**
-     * Per-attempt delays for the archive-lag retry chain (no_match outcome).
-     * HTTP transient errors use `backoff()` instead.
+     * Per-attempt delays for the no_match retry chain. HTTP transient errors
+     * use `backoff()` instead. M46 P3 — extended from [5, 15, 45] (~65s) to
+     * ~305s (~5 min) to bridge the gap between chess.com archive lag and when
+     * players actually finish the game, without waiting for the 10-min cron.
      *
      * @var list<int>
      */
-    private const RETRY_DELAYS = [5, 15, 45];
+    private const RETRY_DELAYS = [5, 15, 45, 90, 150];
 
     public function __construct(
         public GameMatch $match,
@@ -209,13 +221,26 @@ class AutoFetchChessComGameJob implements ShouldBeUnique, ShouldQueueAfterCommit
 
         $latencyMs = $this->elapsedMs($start);
         $completed = $this->filterCompleted($games);
-        $count = count($completed);
+
+        // M46 P2 — started-after-creation guard (SECURITY). Drop any game that
+        // STARTED before this match was created; the staked game must post-date
+        // the stake. Without it, a game played (or in progress) before the
+        // listing was taken could be auto-settled — pre-play reuse. Applied
+        // before the single-vs-multi branch so the single-candidate
+        // direct-settle path can't be gamed either.
+        $fresh = $this->rejectStale($completed);
+        $count = count($fresh);
 
         if ($count === 0) {
-            // Record before releasing so each retry shows independently in the audit timeline.
-            $reason = $this->noMatchRetriesExhausted() ? 'retry_exhausted' : null;
+            // Distinguish "found only pre-stake games" (stale_game_rejected)
+            // from "found nothing" in the audit — a stale hit signals a
+            // pre-play attempt or clock skew, not just archive lag. Both retry:
+            // the real game may still land (chess.com archive lags 5-15s).
+            $reason = $this->noMatchRetriesExhausted()
+                ? 'retry_exhausted'
+                : ($completed !== [] ? 'stale_game_rejected' : null);
             $this->record($recordAttempt, AutoFetchOutcome::NoMatch, [
-                'candidates_count' => 0,
+                'candidates_count' => count($completed),
                 'latency_ms' => $latencyMs,
                 'outcome_reason' => $reason,
             ]);
@@ -225,12 +250,13 @@ class AutoFetchChessComGameJob implements ShouldBeUnique, ShouldQueueAfterCommit
             return;
         }
 
-        // M14 Slice 3c — single candidates are settled directly (no TC
-        // filter). Picker only fires for multi-candidate disambiguation.
-        // Slice 3d's strict enforcement reverted on 2026-06-06.
+        // M14 Slice 3c — single candidates are settled directly (no TC filter;
+        // Slice 3d's strict enforcement reverted 2026-06-06). Picker fires for
+        // multi-candidate disambiguation. Both operate on started-after
+        // candidates only (stale ones dropped above).
         $game = $count === 1
-            ? $completed[0]
-            : $this->pickSettleableCandidate($completed);
+            ? $fresh[0]
+            : $this->pickSettleableCandidate($fresh);
 
         if ($game === null) {
             $this->record($recordAttempt, AutoFetchOutcome::Ambiguous, [
@@ -264,10 +290,11 @@ class AutoFetchChessComGameJob implements ShouldBeUnique, ShouldQueueAfterCommit
 
     /**
      * Pick the candidate this job should settle on. M14 Slice 3d — applies
-     * to any candidate count: filter to those whose speed matches the
-     * listing's `time_control` array; if multiple survive (Slice 3c),
-     * pick the one whose `endedAt` is closest to the match's `created_at`,
-     * tie-breaking on lexicographic game id.
+     * to any candidate count: filter to those whose speed equals the
+     * listing's single `time_control` value (M41 P3a); if multiple survive
+     * (Slice 3c), pick the earliest game *started* after the stake — the first
+     * game played for this match; a rematch is later (M46 P2). Tie-break on
+     * lexicographic game id for determinism.
      *
      * Returns null when no candidate matches the listing's time-control —
      * caller records ambiguous, match stays Pending.
@@ -276,13 +303,11 @@ class AutoFetchChessComGameJob implements ShouldBeUnique, ShouldQueueAfterCommit
      */
     private function pickSettleableCandidate(array $candidates): ?ChessComGameResult
     {
-        $listingControls = $this->match->listing->time_control
-            ->map(fn (TimeControl $tc) => $tc->value)
-            ->all();
+        $listingControl = $this->match->listing->time_control?->value;
 
         $tcMatches = array_values(array_filter(
             $candidates,
-            fn (ChessComGameResult $g) => in_array($g->speed, $listingControls, true),
+            fn (ChessComGameResult $g) => $g->speed === $listingControl,
         ));
 
         if ($tcMatches === []) {
@@ -293,16 +318,14 @@ class AutoFetchChessComGameJob implements ShouldBeUnique, ShouldQueueAfterCommit
             return $tcMatches[0];
         }
 
-        $matchCreatedTs = $this->match->created_at->getTimestamp();
-        usort($tcMatches, function (ChessComGameResult $a, ChessComGameResult $b) use ($matchCreatedTs) {
-            $aDelta = abs($a->endedAt->getTimestamp() - $matchCreatedTs);
-            $bDelta = abs($b->endedAt->getTimestamp() - $matchCreatedTs);
+        // M46 P2 — deterministic pick: the FIRST game started after the stake
+        // (earliest `createdAt`) is the staked game; a rematch is later. Was
+        // closest-to-`created_at` by end time — the started-after guard already
+        // drops pre-stake games, and "first after" is the clearer rule.
+        usort($tcMatches, function (ChessComGameResult $a, ChessComGameResult $b) {
+            $byStart = $a->createdAt->getTimestamp() <=> $b->createdAt->getTimestamp();
 
-            if ($aDelta !== $bDelta) {
-                return $aDelta <=> $bDelta;
-            }
-
-            return strcmp($a->id, $b->id);
+            return $byStart !== 0 ? $byStart : strcmp($a->id, $b->id);
         });
 
         return $tcMatches[0];
@@ -332,6 +355,28 @@ class AutoFetchChessComGameJob implements ShouldBeUnique, ShouldQueueAfterCommit
         return array_values(array_filter(
             $games,
             fn (ChessComGameResult $g) => $g->isAborted(),
+        ));
+    }
+
+    /**
+     * M46 P2 — SECURITY guard. Keep only games that STARTED at or after this
+     * match was created; the staked game must post-date the stake. chess.com
+     * `createdAt` is the game's true start — parsed from the PGN
+     * `[UTCDate]`+`[StartTime]` for live games (top-level `start_time` is
+     * daily-chess only), with an `end_time` floor when the PGN is unparseable
+     * (M46 P5 review fix). Guards the single-candidate direct-settle path
+     * against pre-play reuse.
+     *
+     * @param  list<ChessComGameResult>  $games
+     * @return list<ChessComGameResult>
+     */
+    private function rejectStale(array $games): array
+    {
+        $matchCreated = $this->match->created_at;
+
+        return array_values(array_filter(
+            $games,
+            fn (ChessComGameResult $g) => $g->createdAt->gte($matchCreated),
         ));
     }
 

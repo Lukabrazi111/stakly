@@ -31,12 +31,18 @@ export function buildListingsQuery(
         filter.stake_max = filters.stake_max;
     }
 
-    if (filters.skill_min !== null) {
-        filter.skill_min = filters.skill_min;
-    }
+    // M41 P5: the "unrated only" toggle is mutually exclusive with a rating
+    // range — send one or the other, never both.
+    if (filters.unrated) {
+        filter.unrated = 1;
+    } else {
+        if (filters.skill_min !== null) {
+            filter.skill_min = filters.skill_min;
+        }
 
-    if (filters.skill_max !== null) {
-        filter.skill_max = filters.skill_max;
+        if (filters.skill_max !== null) {
+            filter.skill_max = filters.skill_max;
+        }
     }
 
     // Spatie convention: CSV string for multi-value filters.

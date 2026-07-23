@@ -1,4 +1,5 @@
 import { EmptySlot, FilledSlot } from '@/components/lobby/slot-card';
+import { show as listingShow } from '@/routes/listings';
 import type { Lobby, LobbySide } from '@/types';
 
 interface Props {
@@ -18,12 +19,19 @@ export function TeamSlotColumn({ lobby, side, onJoin, onKick }: Props) {
     const slots = lobby.roster[side];
     const viewer = lobby.viewer;
 
+    const lobbyIsJoinable =
+        lobby.lobby_state === 'recruiting' && lobby.status === 'open';
+
     const canViewerJoin =
-        viewer !== null &&
-        !viewer.is_participant &&
-        lobby.lobby_state === 'recruiting' &&
-        lobby.status === 'open';
+        viewer !== null && !viewer.is_participant && lobbyIsJoinable;
     const canKick = viewer?.is_owner === true;
+
+    // Guest looking at a joinable lobby → an empty slot invites sign-in (opens
+    // the auth modal on this page) rather than dead-ending on "Open slot".
+    const signInHref =
+        viewer === null && lobbyIsJoinable
+            ? `${listingShow({ listing: lobby.id }).url}?auth=login`
+            : undefined;
 
     return (
         <div className="space-y-2">
@@ -33,11 +41,13 @@ export function TeamSlotColumn({ lobby, side, onJoin, onKick }: Props) {
                         <EmptySlot
                             side={side}
                             canJoin={canViewerJoin}
+                            signInHref={signInHref}
                             onJoin={onJoin}
                         />
                     ) : (
                         <FilledSlot
                             participant={slot}
+                            side={side}
                             isViewer={slot.user.id === viewer?.id}
                             canKick={canKick}
                             onKick={onKick}

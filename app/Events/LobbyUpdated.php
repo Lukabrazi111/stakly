@@ -27,7 +27,17 @@ class LobbyUpdated implements ShouldBroadcast, ShouldDispatchAfterCommit
 {
     use Dispatchable, InteractsWithSockets, SerializesModels;
 
-    public function __construct(public Listing $listing) {}
+    /**
+     * @param  int|null  $kickedUserId  Set only when the update is a kick — lets
+     *                                  the removed player's own client recognise
+     *                                  it was them (toast + leave) instead of a
+     *                                  plain roster reload. Null for every other
+     *                                  roster/state change.
+     */
+    public function __construct(
+        public Listing $listing,
+        public ?int $kickedUserId = null,
+    ) {}
 
     /**
      * @return array<int, PrivateChannel>
@@ -47,6 +57,9 @@ class LobbyUpdated implements ShouldBroadcast, ShouldDispatchAfterCommit
      */
     public function broadcastWith(): array
     {
-        return ['listing_id' => $this->listing->id];
+        return [
+            'listing_id' => $this->listing->id,
+            'kicked_user_id' => $this->kickedUserId,
+        ];
     }
 }

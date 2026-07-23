@@ -4,6 +4,7 @@ use App\Enums\WalletTransactionType;
 use App\Filament\Resources\WalletTransactions\Pages\ListWalletTransactions;
 use App\Filament\Resources\WalletTransactions\Pages\ViewWalletTransaction;
 use App\Filament\Resources\WalletTransactions\WalletTransactionResource;
+use App\Models\Listing;
 use App\Models\User;
 use App\Models\WalletTransaction;
 use Livewire\Livewire;
@@ -174,12 +175,14 @@ test('view page renders contextual link for a known reference prefix', function 
 
 test('sibling section lists other rows referencing the same entity', function () {
     $user = User::factory()->create();
-    // Two rows with DIFFERENT prefixes pointing at the same match #99 —
-    // the realistic "settle" pattern. reference_id is unique per row;
-    // siblings share the entity, not the prefix.
-    $payout = WalletTransaction::factory()->payout()->for($user)->create(['reference_id' => 'match-payout:99']);
-    $fee = WalletTransaction::factory()->fee()->for($user)->create(['reference_id' => 'match-fee:99']);
-    $unrelated = WalletTransaction::factory()->deposit()->for($user)->create(['reference_id' => 'match-payout:1000']);
+    // Payout + fee for the SAME settlement share the listing FK (every escrow
+    // + settlement row carries related_listing_id; one listing == one match's
+    // full hold/payout/fee/refund set). Siblings group by that FK, so a
+    // different listing's row is excluded even with a same-prefix reference.
+    $listing = Listing::factory()->create();
+    $payout = WalletTransaction::factory()->payout()->for($user)->create(['reference_id' => 'match-payout:99', 'related_listing_id' => $listing->id]);
+    $fee = WalletTransaction::factory()->fee()->for($user)->create(['reference_id' => 'match-fee:99', 'related_listing_id' => $listing->id]);
+    $unrelated = WalletTransaction::factory()->payout()->for($user)->create(['reference_id' => 'match-payout:1000']);
 
     Livewire::test(ViewWalletTransaction::class, [
         'record' => $payout->getRouteKey(),

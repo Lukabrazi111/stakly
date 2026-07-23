@@ -172,6 +172,55 @@ test('fetchGame classifies abandoned games via isAborted (M14 Slice 3b)', functi
         ->and($game->status)->toBe('abandoned');
 });
 
+// ─── start-time parsing (M46 P5 review — real API has no top-level start_time) ─
+
+test('createdAt is the PGN start time, not end_time (live games carry start only in the PGN)', function () {
+    // Real chess.com blitz games have NO top-level start_time — the start lives
+    // in the PGN. If parseGame fell back to end_time, the M46 P2 started-after
+    // guard would be a no-op. Start and end are deliberately far apart so a
+    // fallback-to-end_time regression is unmissable.
+    $start = CarbonImmutable::parse('2026-07-01T11:00:00Z');
+    $end = CarbonImmutable::parse('2026-07-01T12:05:23Z');
+
+    Http::fake([
+        'api.chess.com/pub/player/*/games/*' => Http::response(
+            chessComArchiveFixture([
+                chessComGameFixture([
+                    'start_time' => $start->timestamp, // fixture emits this into the PGN only
+                    'end_time' => $end->timestamp,
+                ]),
+            ]),
+            200,
+        ),
+    ]);
+
+    $game = chessComClient()->fetchGame('https://www.chess.com/game/live/12345678901', 'alice-chesscom');
+
+    expect($game->createdAt->getTimestamp())->toBe($start->getTimestamp())
+        ->and($game->endedAt->getTimestamp())->toBe($end->getTimestamp())
+        ->and($game->createdAt->getTimestamp())->not->toBe($end->getTimestamp());
+});
+
+test('createdAt falls back to end_time when the PGN carries no start tags (defensive)', function () {
+    $end = CarbonImmutable::parse('2026-07-01T12:05:23Z');
+
+    Http::fake([
+        'api.chess.com/pub/player/*/games/*' => Http::response(
+            chessComArchiveFixture([
+                chessComGameFixture([
+                    'end_time' => $end->timestamp,
+                    'pgn' => "[Event \"Live Chess\"]\n\n1. e4 e5 1-0\n", // no UTCDate/StartTime
+                ]),
+            ]),
+            200,
+        ),
+    ]);
+
+    $game = chessComClient()->fetchGame('https://www.chess.com/game/live/12345678901', 'alice-chesscom');
+
+    expect($game->createdAt->getTimestamp())->toBe($end->getTimestamp());
+});
+
 // ─── searchGamesBetween ─────────────────────────────────────────────────────
 
 test('searchGamesBetween filters by opponent + since', function () {

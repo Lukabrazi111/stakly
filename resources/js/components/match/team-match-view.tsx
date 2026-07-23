@@ -1,4 +1,5 @@
-import { router, usePage } from '@inertiajs/react';
+import { Link, router, usePage } from '@inertiajs/react';
+import { Users } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { GameChip } from '@/components/listings/game-chip';
 import { AdminReviewBanner } from '@/components/match/admin-review-banner';
@@ -128,10 +129,11 @@ export function TeamMatchView({ match, messages }: TeamMatchViewProps) {
     // perPlayerPayout zeroes out) shouldn't collapse the headline number.
     const potentialWinnerPayout = (pot - pot * match.fee_rate) / teamSize;
 
-    // 4h auto-fetch deadline mirrors 1v1 — `ResolveMatchTimeoutAction`
-    // flips stuck Pending to ManualReview at this boundary.
-    const matchDeadline = match.created_at
-        ? new Date(new Date(match.created_at).getTime() + 4 * 60 * 60 * 1000)
+    // API-resolution deadline — same backend-computed `match_deadline_at` as
+    // 1v1 (`GameMatchResource`), so the team clock can't drift from the
+    // `matches:resolve-timeouts` cron. Null unless Pending.
+    const matchDeadline = match.match_deadline_at
+        ? new Date(match.match_deadline_at)
         : null;
 
     // Polling: same 8s tick as 1v1 while Pending so the page picks up
@@ -191,12 +193,23 @@ export function TeamMatchView({ match, messages }: TeamMatchViewProps) {
 
                 <AdminReviewBanner match={match} viewerId={viewerId} />
 
-                <div className="mb-6">
+                <div className="mb-6 flex items-center justify-between gap-3">
                     <BackLink
                         fallback={
                             listingShow({ listing: match.listing.id }).url
                         }
                     />
+                    {/* Team match ↔ lobby are two views of the same event: the
+                        lobby hosts the FACEIT Coordinate tab + money breakdown,
+                        the match hosts settlement + chat. The lobby links here
+                        ("View match page →"); this is the return trip. */}
+                    <Link
+                        href={listingShow({ listing: match.listing.id }).url}
+                        className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-border/60 bg-card/60 px-3.5 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:border-primary/40 hover:bg-primary/10 hover:text-primary hover:[&_svg]:!text-primary"
+                    >
+                        <Users className="size-4" aria-hidden="true" />
+                        {t('View lobby')}
+                    </Link>
                 </div>
 
                 <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_460px] lg:gap-6">
@@ -245,6 +258,7 @@ export function TeamMatchView({ match, messages }: TeamMatchViewProps) {
                                 <WaitingForGameCard
                                     platform={match.listing.platform}
                                     snapshots={match.snapshots}
+                                    timeControl={match.listing.time_control}
                                     hasAutoFetchedCard={hasAutoFetchedCard}
                                 />
 
@@ -291,6 +305,7 @@ export function TeamMatchView({ match, messages }: TeamMatchViewProps) {
                             stakeEach={match.listing.stake_amount}
                             winnerPayout={potentialWinnerPayout}
                             loserLoss={match.listing.stake_amount}
+                            feeRate={match.fee_rate}
                             platform={match.listing.platform}
                         />
 
@@ -302,7 +317,7 @@ export function TeamMatchView({ match, messages }: TeamMatchViewProps) {
                     {/* Right-rail chat — same dock as 1v1. Only renders for
                         participants (chat channel auth would 403 spectators). */}
                     {viewerIsParticipant && (
-                        <aside className="hidden lg:sticky lg:top-28 lg:block lg:h-[750px]">
+                        <aside className="hidden lg:sticky lg:top-20 lg:block lg:h-[750px]">
                             <ChatPanel
                                 messages={chat.messages}
                                 viewerId={viewerId ?? 0}

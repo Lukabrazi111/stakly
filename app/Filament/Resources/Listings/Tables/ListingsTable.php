@@ -2,15 +2,16 @@
 
 namespace App\Filament\Resources\Listings\Tables;
 
+use App\Enums\Game;
 use App\Enums\LinkedAccountProvider;
 use App\Enums\ListingStatus;
-use App\Enums\TimeControl;
 use App\Models\Listing;
 use Filament\Actions\ViewAction;
 use Filament\Forms\Components\TextInput;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\Filter;
 use Filament\Tables\Filters\SelectFilter;
+use Filament\Tables\Filters\TernaryFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 
@@ -41,30 +42,51 @@ class ListingsTable
 
                 TextColumn::make('game')
                     ->label('Game')
+                    ->formatStateUsing(fn (Game $state): string => $state->displayName())
                     ->toggleable(isToggledHiddenByDefault: true),
+
+                TextColumn::make('team_size')
+                    ->label('Format')
+                    ->badge()
+                    ->state(fn (Listing $record): string => $record->isTeamPlay()
+                        ? $record->team_size.'v'.$record->team_size
+                        : '1v1',
+                    )
+                    ->sortable(),
 
                 TextColumn::make('platform')
                     ->label('Platform')
-                    ->formatStateUsing(fn (LinkedAccountProvider $state): string => match ($state) {
-                        LinkedAccountProvider::ChessCom => 'chess.com',
-                        LinkedAccountProvider::Lichess => 'Lichess',
-                    })
+                    ->formatStateUsing(fn (LinkedAccountProvider $state): string => $state->displayName())
                     ->sortable(),
 
                 TextColumn::make('stake_amount')
-                    ->label('Stake')
+                    ->label('Stake / player')
                     ->alignRight()
                     ->formatStateUsing(fn ($state): string => '$'.number_format((float) $state, 2).' USDT')
                     ->sortable(),
 
-                TextColumn::make('skill_range')
-                    ->label('Skill range')
-                    ->state(fn (Listing $record): string => self::formatSkillRange($record))
-                    ->toggleable(),
+                TextColumn::make('pot')
+                    ->label('Pot')
+                    ->alignRight()
+                    // Total escrow = per-player stake × (team_size × 2). Matches
+                    // SettleFromCardAction so the admin sees true exposure, not
+                    // the per-player figure (10× off for a 5v5).
+                    ->state(fn (Listing $record): string => '$'.number_format(
+                        (float) bcmul((string) $record->stake_amount, (string) ($record->team_size * 2), 6),
+                        2,
+                    ).' USDT')
+                    ->toggleable(isToggledHiddenByDefault: true),
+
+                TextColumn::make('is_public')
+                    ->label('Visibility')
+                    ->badge()
+                    ->state(fn (Listing $record): string => $record->is_public ? 'Public' : 'Private')
+                    ->color(fn (Listing $record): string => $record->is_public ? 'success' : 'warning')
+                    ->toggleable(isToggledHiddenByDefault: true),
 
                 TextColumn::make('time_control')
-                    ->label('Time controls')
-                    ->state(fn (Listing $record): string => self::formatTimeControls($record))
+                    ->label('Time control')
+                    ->state(fn (Listing $record): string => self::formatTimeControl($record))
                     ->toggleable(isToggledHiddenByDefault: true),
 
                 TextColumn::make('region')
@@ -100,12 +122,26 @@ class ListingsTable
                     ->multiple()
                     ->options(ListingStatus::class),
 
+                SelectFilter::make('game')
+                    ->label('Game')
+                    ->multiple()
+                    ->options(collect(Game::cases())
+                        ->mapWithKeys(fn (Game $g): array => [$g->value => $g->displayName()])
+                        ->all(),
+                    ),
+
                 SelectFilter::make('platform')
                     ->label('Platform')
-                    ->options([
-                        LinkedAccountProvider::ChessCom->value => 'chess.com',
-                        LinkedAccountProvider::Lichess->value => 'Lichess',
-                    ]),
+                    ->options(collect(LinkedAccountProvider::cases())
+                        ->mapWithKeys(fn (LinkedAccountProvider $p): array => [$p->value => $p->displayName()])
+                        ->all(),
+                    ),
+
+                TernaryFilter::make('is_public')
+                    ->label('Visibility')
+                    ->trueLabel('Public only')
+                    ->falseLabel('Private only')
+                    ->placeholder('All'),
 
                 SelectFilter::make('user_id')
                     ->label('Creator')
@@ -154,20 +190,11 @@ class ListingsTable
             ]);
     }
 
-    private static function formatSkillRange(Listing $record): string
+    private static function formatTimeControl(Listing $record): string
     {
-        if ($record->skill_min === null && $record->skill_max === null) {
-            return 'Any';
-        }
-
-        return ($record->skill_min ?? '?').'–'.($record->skill_max ?? '?');
-    }
-
-    private static function formatTimeControls(Listing $record): string
-    {
-        return $record->time_control
-            ->map(fn (TimeControl $tc) => ucfirst($tc->value))
-            ->join(', ');
+        return $record->time_control !== null
+            ? ucfirst($record->time_control->value)
+            : '—';
     }
 
     private static function formatLanguages(Listing $record): string

@@ -4,7 +4,13 @@
 // - App\Enums\MatchStatus
 
 import type { GameId } from '@/config/games';
-import type { ListingPlatform, Paginator, TimeControl } from '@/types/listings';
+import type {
+    FaceitRating,
+    ListingPlatform,
+    Paginator,
+    RecentFormResult,
+    TimeControl,
+} from '@/types/listings';
 
 export type MatchStatus =
     | 'lobby_filling'
@@ -32,11 +38,18 @@ export interface MatchListing {
     // this provider's API. Surfaced in `MatchInfoCard` as a capability
     // indicator + drives the M16 Pending action card copy.
     platform: ListingPlatform;
-    time_control: TimeControl[];
+    // The single chess time control (M41 P3a); null for non-chess matches.
+    time_control: TimeControl | null;
     // M34 — drives the frontend branch between 1v1 chess UI (creator +
     // taker) and team-play UI (team rosters). 1 for chess, 2 for Wingman,
     // 5 for CS2 5v5.
     team_size: number;
+    // M44 — the recruiting-lobby row on `/matches` reads these. `lobby_state`
+    // labels the row ('recruiting' | 'ready_checking'); null for 1v1.
+    // `live_participant_count` is the filled-slot count for "3/5"; null unless
+    // the caller added the withCount (only `/matches` list does).
+    lobby_state: string | null;
+    live_participant_count: number | null;
 }
 
 // M34 P6 — one live roster entry on a team-play match. Mirrors
@@ -49,11 +62,22 @@ export interface TeamMatchPlayer {
     name: string;
     avatar_thumb_url: string | null;
     slot_index: number;
+    // The player's external handle on the match's platform (FACEIT /
+    // chess.com / Lichess), snapshotted at lobby lock. Rendered as a
+    // clickable link to the public profile (config/platforms.ts) so
+    // teammates + opponents can scout each other in-game. Null when the
+    // snapshot row is missing or the resource ran in a list context.
+    platform_username: string | null;
     // M34 P8 Slice A — per-player skill + trust payload powering the rich
     // roster cards on the match page. Both nullable: skill is null when
     // the linked account has no rating; platform_stats is null when the
     // controller skipped the batched aggregations (list contexts).
     skill_rating: number | null;
+    // M34 lobby-parity — FACEIT level dial object + recent W/L form, matching
+    // the lobby slot cards. `recent_form` is newest-first (≤5), empty in list
+    // contexts where the controller skips the batch.
+    faceit_rating: FaceitRating | null;
+    recent_form: RecentFormResult[];
     platform_stats: {
         total_matches: number;
         win_rate: number | null;
@@ -106,6 +130,11 @@ export interface Match {
     winner: MatchPlayer | null;
     settled_at: string | null;
     created_at: string | null;
+    // API-resolution deadline (created_at + stakly.match_confirmation_timeout_hours),
+    // backend-computed in GameMatchResource so the MatchTimer countdown can't
+    // drift from the cron that enforces it. Null unless the match is Pending
+    // (the timer only renders inside the polling window).
+    match_deadline_at: string | null;
     cancellation: MatchCancellation;
     dispute: MatchDispute;
     // M34 P6 — team rosters and winning side. Present only when the
@@ -280,8 +309,13 @@ export interface MatchShowProps {
 }
 
 // Filters echoed from the backend (IndexMatchesRequest::filters()) so the
+// M36: 'in_progress' (default) shows the active group; 'all' shows every
+// status sliced by the chips. Mirrors Bybit's Orders → In Progress / All.
+export type MatchView = 'in_progress' | 'all';
+
 // chip row can hydrate from the URL.
 export interface MatchFilters {
+    view: MatchView;
     status: MatchStatus | null;
 }
 

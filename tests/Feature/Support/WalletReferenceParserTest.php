@@ -73,7 +73,30 @@ test('allReferencesFor enumerates every prefix targeting an entity', function ()
     expect($matchRefs)->toContain('match-fee:7');
     expect($matchRefs)->toContain('match-draw-creator:7');
     expect($matchRefs)->toContain('match-draw-taker:7');
+    expect($matchRefs)->toContain('match-draw:7');
     expect($matchRefs)->toContain('cancel-refund-creator:7');
     expect($matchRefs)->toContain('cancel-refund-taker:7');
-    expect($matchRefs)->toHaveCount(6);
+    expect($matchRefs)->toContain('cancel-refund:7');
+    expect($matchRefs)->toHaveCount(8);
 });
+
+/**
+ * Team settlements stamp suffixed refs (`match-payout:42:player-7`,
+ * `match-draw:42:9`, `cancel-refund:42:9`). The id is the FIRST numeric segment
+ * after the prefix; the per-player discriminator must be ignored so the admin
+ * money-trail link resolves to the match.
+ */
+test('suffixed team settlement refs resolve to the match', function (string $reference) {
+    $parsed = WalletReferenceParser::parse($reference);
+
+    expect($parsed)->not->toBeNull();
+    expect($parsed['label'])->toBe('Match #42');
+    expect($parsed['url'])->toBe(route('filament.admin.resources.disputes.view', 42));
+
+    expect(WalletReferenceParser::parseEntity($reference))
+        ->toBe(['kind' => 'match', 'id' => 42]);
+})->with([
+    'team payout' => ['match-payout:42:player-7'],
+    'team draw' => ['match-draw:42:9'],
+    'team cancel-refund' => ['cancel-refund:42:9'],
+]);

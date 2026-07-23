@@ -2,6 +2,7 @@
 
 namespace App\Providers;
 
+use App\Listeners\LogCacheFailover;
 use App\Listeners\RecordImpersonationEnd;
 use App\Listeners\RecordImpersonationStart;
 use App\Services\GameApi\ChessGameApi;
@@ -14,6 +15,7 @@ use App\Services\Payments\NowPaymentsGateway;
 use App\Services\Payments\PaymentGateway;
 use App\Services\Provider\FaceitProvider;
 use Carbon\CarbonImmutable;
+use Illuminate\Cache\Events\CacheFailedOver;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\DB;
@@ -109,6 +111,19 @@ class AppServiceProvider extends ServiceProvider
         $this->registerImpersonationListeners();
         $this->registerSocialiteListeners();
         $this->registerProviderRateLimiters();
+        $this->registerCacheFailoverListener();
+    }
+
+    /**
+     * Surface a Redis outage (M38). The default cache is a `redis → array`
+     * failover store; when Redis is unreachable Laravel degrades to the array
+     * tail and fires `CacheFailedOver`. We log it loudly so the blip is
+     * alertable — while degraded the circuit breaker is per-process and
+     * settlement timing is affected, even though nothing 500s.
+     */
+    private function registerCacheFailoverListener(): void
+    {
+        Event::listen(CacheFailedOver::class, LogCacheFailover::class);
     }
 
     /**
@@ -133,6 +148,20 @@ class AppServiceProvider extends ServiceProvider
 
         RateLimiter::for('faceit-api', fn () => Limit::perMinute(
             (int) config('services.faceit.requests_per_minute', 30),
+        ));
+
+        // M41 P1/P3b — rating refresh runs on its OWN budget per provider so a
+        // refresh burst can't starve the settlement-critical `*-api` limiters.
+        RateLimiter::for('faceit-rating-api', fn () => Limit::perMinute(
+            (int) config('services.faceit.rating_requests_per_minute', 20),
+        ));
+
+        RateLimiter::for('chess-com-rating-api', fn () => Limit::perMinute(
+            (int) config('services.chess_com.rating_requests_per_minute', 30),
+        ));
+
+        RateLimiter::for('lichess-rating-api', fn () => Limit::perMinute(
+            (int) config('services.lichess.rating_requests_per_minute', 30),
         ));
     }
 

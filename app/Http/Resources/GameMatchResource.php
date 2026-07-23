@@ -5,7 +5,9 @@ namespace App\Http\Resources;
 use App\Enums\MatchStatus;
 use App\Models\GameMatch;
 use App\Models\LobbyParticipant;
+use App\Models\MatchProviderSnapshot;
 use App\Models\User;
+use App\Support\FaceitLevel;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -54,13 +56,18 @@ class GameMatchResource extends JsonResource
                 // is auto-verified via Lichess, a chess.com listing via
                 // chess.com.
                 'platform' => $this->listing->platform->value,
-                'time_control' => $this->listing->time_control
-                    ->map(fn ($tc) => $tc->value)
-                    ->values()
-                    ->all(),
+                'time_control' => $this->listing->time_control?->value,
                 // Drives the frontend branch between 1v1 chess UI
                 // (creator/taker) and team-play UI (rosters).
                 'team_size' => $this->listing->team_size,
+                // M44 — the recruiting-lobby row on `/matches` uses these to
+                // render "Recruiting/Ready check · 3/5". `lobby_state` is null
+                // for 1v1; `live_participant_count` is null unless the caller
+                // added the withCount (only the `/matches` list does).
+                'lobby_state' => $this->listing->lobby_state,
+                'live_participant_count' => $this->listing->live_participant_count !== null
+                    ? (int) $this->listing->live_participant_count
+                    : null,
             ],
             'creator' => [
                 'id' => $this->listing->user->id,
@@ -97,6 +104,13 @@ class GameMatchResource extends JsonResource
             ] : null,
             'settled_at' => $this->settled_at?->toIso8601String(),
             'created_at' => $this->created_at?->toIso8601String(),
+            // API-resolution deadline driving the frontend `MatchTimer`
+            // countdown. Single source = `stakly.match_confirmation_timeout_hours`
+            // (the same value the `matches:resolve-timeouts` cron + auto-fetch
+            // retry windows read), so the on-screen clock can't drift from the
+            // job that enforces it. Pending-only — null once the match leaves
+            // the polling window. Mirrors `LobbyResource::matchDeadlineAt()`.
+            'match_deadline_at' => $this->matchDeadlineAt(),
             // Mutual cancellation state. FE infers open-request / cooldown
             // / terminal banner from the combination. `requested_by_id`
             // is enough — FE looks up the name from creator / taker
@@ -120,6 +134,23 @@ class GameMatchResource extends JsonResource
             // omit these fields entirely.
             ...$this->teamRosterFields(),
         ];
+    }
+
+    /**
+     * The instant a Pending match flips to ManualReview if no API-verified
+     * result lands: `created_at` + `stakly.match_confirmation_timeout_hours`.
+     * Null outside Pending so the FE countdown only renders while the match
+     * is actually in the polling window (matches the cron's `Pending` filter).
+     */
+    private function matchDeadlineAt(): ?string
+    {
+        if ($this->status !== MatchStatus::Pending || $this->created_at === null) {
+            return null;
+        }
+
+        $hours = (int) config('stakly.match_confirmation_timeout_hours');
+
+        return $this->created_at->copy()->addHours($hours)->toIso8601String();
     }
 
     /**
@@ -157,21 +188,76 @@ class GameMatchResource extends JsonResource
                 'name' => $p->user->name,
                 'avatar_thumb_url' => $p->user->avatar_thumb_url,
                 'slot_index' => (int) $p->slot_index,
+                // The player's external handle on the listing's platform
+                // (FACEIT / chess.com / Lichess), snapshotted at lobby lock so
+                // it survives a later unlink/rename. Lets teammates + opponents
+                // scout each other in-game; the FE links it out to the public
+                // profile via `config/platforms.ts`. Null if the snapshot row
+                // is missing (defensive — lock always snapshots live players).
+                'platform_username' => $this->platformUsernameFor($side, (int) $p->slot_index),
                 // M34 P8 Slice A — per-player trust + skill payload powering
                 // the rich roster cards on the match page. Mirrors the
                 // lobby's slot-card stats line. Nullable: controller may
                 // skip the batched aggregations on hot list-context calls,
                 // in which case the attributes are absent and we ship null.
                 'skill_rating' => $this->skillRatingFor($p->user),
+                // M34 lobby-parity — the FACEIT level dial object + recent W/L
+                // form so the match roster cards match the lobby slot cards.
+                // `faceit_rating` is derived from the platform ELO; `recent_form`
+                // is the controller-batched last-5 (empty [] in list contexts).
+                'faceit_rating' => $this->faceitRatingFor($p->user),
+                'recent_form' => array_values((array) ($p->user->getAttribute('recent_form') ?? [])),
                 'platform_stats' => $this->platformStatsFor($p->user),
             ])
             ->all();
     }
 
     /**
-     * Snapshot of the user's skill rating on the listing's platform. Null
-     * when the linked account isn't loaded or rating isn't populated
-     * (chess providers don't snapshot ratings yet).
+     * The FACEIT level dial object for the roster card — mirrors
+     * `LobbyResource`'s `faceit_rating`. `level` is derived server-side from
+     * the platform ELO so the dial can't drift from the ladder. Unrated when
+     * the player has no ELO on the listing's platform.
+     *
+     * @return array{elo: int|null, level: int|null, is_unrated: bool}
+     */
+    private function faceitRatingFor(User $user): array
+    {
+        $elo = $this->skillRatingFor($user);
+
+        return [
+            'elo' => $elo,
+            'level' => FaceitLevel::fromElo($elo),
+            'is_unrated' => $elo === null,
+        ];
+    }
+
+    /**
+     * The roster player's snapshotted handle on the listing's platform,
+     * located by (side, slot_index, provider) in the eager-loaded
+     * `providerSnapshots`. Team snapshots are keyed by side + slot_index (no
+     * user_id column), and each live player has exactly one row per provider,
+     * so that triple is unique. Null when the relation isn't loaded (list
+     * contexts) or no matching row exists.
+     */
+    private function platformUsernameFor(string $side, int $slotIndex): ?string
+    {
+        if (! $this->relationLoaded('providerSnapshots')) {
+            return null;
+        }
+
+        return $this->providerSnapshots
+            ->first(fn (MatchProviderSnapshot $snapshot): bool => $snapshot->side === $side
+                && (int) $snapshot->slot_index === $slotIndex
+                && $snapshot->provider === $this->listing->platform)
+            ?->username;
+    }
+
+    /**
+     * The user's scalar skill rating on the listing's platform (FACEIT ELO).
+     * Null for chess — chess ratings are per-time-control and live in
+     * `linked_account_ratings` (snapshotted at match-take in M41 P3b). The match
+     * roster does NOT yet surface chess ratings; M41 P4 wired chess rating
+     * display into listings only, not the match page.
      */
     private function skillRatingFor(User $user): ?int
     {

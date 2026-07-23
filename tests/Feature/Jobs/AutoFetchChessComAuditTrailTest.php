@@ -45,7 +45,7 @@ function chessComAuditMatch(?array $snapshots = null): GameMatch
 
     // M14 Slice 3d — TC catch-all so happy-path tests pass deterministically.
     $listing = Listing::factory()->taken()->forChessCom()->for($creator)
-        ->state(['stake_amount' => '100', 'time_control' => ['blitz', 'rapid', 'classical']])
+        ->state(['stake_amount' => '100', 'time_control' => 'blitz'])
         ->create();
     Wallet::hold(user: $creator, amount: '100', listing: $listing, reference: "listing-create:{$listing->id}");
     Wallet::hold(user: $taker, amount: '100', listing: $listing, reference: "match-take:{$listing->id}");
@@ -131,11 +131,23 @@ test('no_match on final attempt: writes outcome_reason = retry_exhausted', funct
 
     // Stand-in for a queue worker that has already burned through the
     // retry budget — overrides `attempts()` to return the terminal value.
+    // M46 P3 — the no_match chain is [5,15,45,90,150] (6 attempts), so the
+    // terminal attempt is 6 (was 4 for the old 3-delay chain). Also captures
+    // release() to assert the terminal attempt does NOT re-queue.
     $job = new class($match) extends AutoFetchChessComGameJob
     {
+        public ?int $releasedDelay = null;
+
         public function attempts(): int
         {
-            return 4;
+            return 6;
+        }
+
+        public function release($delay = 0): mixed
+        {
+            $this->releasedDelay = $delay;
+
+            return null;
         }
     };
 
@@ -147,10 +159,94 @@ test('no_match on final attempt: writes outcome_reason = retry_exhausted', funct
         app(ProviderCircuitBreaker::class),
     );
 
+    expect($job->releasedDelay)->toBeNull();
+
     $attempt = MatchAutoFetchAttempt::query()->where('match_id', $match->id)->first();
     expect($attempt->outcome)->toBe(AutoFetchOutcome::NoMatch)
         ->and($attempt->outcome_reason)->toBe('retry_exhausted')
-        ->and($attempt->attempt_number)->toBe(4);
+        ->and($attempt->attempt_number)->toBe(6);
+});
+
+test('M46 P3: no_match on attempt 5 releases with the LAST delay (150s) — pins the chain end', function () {
+    $match = chessComAuditMatch();
+    Http::fake([
+        'api.chess.com/pub/player/*/games/*' => Http::response(chessComArchiveFixture([]), 200),
+    ]);
+
+    // Attempt 5 is the final NON-terminal attempt; it must release the last
+    // RETRY_DELAYS element (150s). Guards against a chain-shortening off-by-one
+    // in noMatchRetriesExhausted() that would silently drop the final retry.
+    $job = new class($match) extends AutoFetchChessComGameJob
+    {
+        public ?int $releasedDelay = null;
+
+        public function attempts(): int
+        {
+            return 5;
+        }
+
+        public function release($delay = 0): mixed
+        {
+            $this->releasedDelay = $delay;
+
+            return null;
+        }
+    };
+
+    $job->handle(
+        app(ChessComGameClient::class),
+        app(PostSystemMessageAction::class),
+        app(SettleFromCardAction::class),
+        app(RecordAutoFetchAttemptAction::class),
+        app(ProviderCircuitBreaker::class),
+    );
+
+    expect($job->releasedDelay)->toBe(150);
+
+    $attempt = MatchAutoFetchAttempt::query()->where('match_id', $match->id)->first();
+    expect($attempt->outcome)->toBe(AutoFetchOutcome::NoMatch)
+        ->and($attempt->outcome_reason)->toBeNull();
+});
+
+test('M46 P3: no_match on attempt 4 still releases (extended tail past the old 3-delay chain)', function () {
+    $match = chessComAuditMatch();
+    Http::fake([
+        'api.chess.com/pub/player/*/games/*' => Http::response(chessComArchiveFixture([]), 200),
+    ]);
+
+    // Attempt 4 was the terminal (retry_exhausted) attempt under the old
+    // [5,15,45] chain. Under the extended [5,15,45,90,150] chain it must
+    // still be non-terminal and release with the 4th delay (90s).
+    $job = new class($match) extends AutoFetchChessComGameJob
+    {
+        public ?int $releasedDelay = null;
+
+        public function attempts(): int
+        {
+            return 4;
+        }
+
+        public function release($delay = 0): mixed
+        {
+            $this->releasedDelay = $delay;
+
+            return null;
+        }
+    };
+
+    $job->handle(
+        app(ChessComGameClient::class),
+        app(PostSystemMessageAction::class),
+        app(SettleFromCardAction::class),
+        app(RecordAutoFetchAttemptAction::class),
+        app(ProviderCircuitBreaker::class),
+    );
+
+    expect($job->releasedDelay)->toBe(90);
+
+    $attempt = MatchAutoFetchAttempt::query()->where('match_id', $match->id)->first();
+    expect($attempt->outcome)->toBe(AutoFetchOutcome::NoMatch)
+        ->and($attempt->outcome_reason)->toBeNull();
 });
 
 test('error (5xx): writes a row + re-throws TransientProviderError for retry', function () {
@@ -289,7 +385,7 @@ test('error on final attempt: writes outcome_reason=retry_exhausted', function (
 test('ambiguous: writes a row with candidates_count + outcome_reason=time_control_mismatch (M14 Slice 3c)', function () {
     $match = chessComAuditMatch();
     // Force TC mismatch so the picker rejects both candidates.
-    $match->listing->update(['time_control' => ['classical']]);
+    $match->listing->update(['time_control' => 'rapid']);
 
     Http::fake([
         'api.chess.com/pub/player/*/games/*' => Http::response(
@@ -311,7 +407,7 @@ test('ambiguous: writes a row with candidates_count + outcome_reason=time_contro
 
 test('multiple candidates with TC match: picker picks closest → outcome=matched, candidates_count=N (M14 Slice 3c)', function () {
     $match = chessComAuditMatch();
-    $match->listing->update(['time_control' => ['blitz']]);
+    $match->listing->update(['time_control' => 'blitz']);
 
     // chessComAuditMatch backdates created_at to 1h ago. early = -50min, late = -10min from now.
     // |early - created| = 10min; |late - created| = 50min → picker picks early.

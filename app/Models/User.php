@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\Game;
 use App\Enums\LinkedAccountProvider;
 use App\Enums\MatchStatus;
 use App\Notifications\PlayerNotification;
@@ -56,17 +57,23 @@ class User extends Authenticatable implements FilamentUser, HasMedia, MustVerify
     protected $appends = ['avatar_url', 'avatar_thumb_url'];
 
     /**
+     * Single source of truth for "is this user an admin?" — consumed by the
+     * Filament panel gate (`canAccessPanel`) and the Horizon dashboard gate
+     * (`viewHorizon` in `HorizonServiceProvider`). The platform user
+     * (`is_platform = true`) is excluded even if somehow admin-roled — same
+     * posture as the wallet routes' `is_platform → 403` gate, defense in depth.
+     */
+    public function isAdmin(): bool
+    {
+        return ! $this->is_platform && $this->hasRole('admin');
+    }
+
+    /**
      * Filament panel access gate. Only `admin`-roled users reach `/admin/*`.
-     * The platform user (`is_platform = true`) is also blocked — same posture
-     * as the wallet routes' `is_platform → 403` gate, defense in depth.
      */
     public function canAccessPanel(Panel $panel): bool
     {
-        if ($this->is_platform) {
-            return false;
-        }
-
-        return $this->hasRole('admin');
+        return $this->isAdmin();
     }
 
     public const USERNAME_CHANGE_COOLDOWN_DAYS = 30;
@@ -191,6 +198,23 @@ class User extends Authenticatable implements FilamentUser, HasMedia, MustVerify
                     ->orWhereDoesntHave('gameMatch', fn ($m) => $m
                         ->whereIn('status', $terminalMatchStatuses))))
             ->first();
+    }
+
+    /**
+     * M37 — is this user currently in an in-flight match for `$game`? Powers
+     * the "one active match per game" rule: a chess match and a CS2 match at
+     * once is fine, two of the same game is not. Team-aware (creator / taker /
+     * live lobby roster); counts the in-progress set (Pending / Disputed /
+     * ManualReview) for listings of that game. The username-rename blocker uses
+     * a game-agnostic version instead — any in-flight match blocks a rename.
+     */
+    public function hasInFlightMatchForGame(Game $game): bool
+    {
+        return GameMatch::query()
+            ->forRosterParticipant($this->id)
+            ->whereIn('status', MatchStatus::inProgressValues())
+            ->whereHas('listing', fn ($q) => $q->where('game', $game->value))
+            ->exists();
     }
 
     /**

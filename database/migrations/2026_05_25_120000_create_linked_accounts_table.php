@@ -48,6 +48,10 @@ return new class extends Migration
             // chess rating once a refresh cron exists). Nullable until the
             // provider's adapter populates it.
             $table->integer('skill_rating')->nullable();
+            // M41 P1 — last successful Data-API rating sync. NULL = never
+            // synced (also covers "API key was unset at link time"); the lazy
+            // refresh path treats NULL as stale and re-pulls on next trigger.
+            $table->timestamp('skill_rating_synced_at')->nullable();
             $table->timestamp('verified_at');
             $table->timestamps();
 

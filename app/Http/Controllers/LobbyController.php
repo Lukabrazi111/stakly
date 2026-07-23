@@ -11,6 +11,7 @@ use App\Enums\ListingStatus;
 use App\Models\Listing;
 use App\Models\LobbyParticipant;
 use App\Models\User;
+use App\Support\LobbyInvitePass;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
@@ -70,7 +71,13 @@ class LobbyController extends Controller
             abort(404);
         }
 
-        return to_route('listings.show', ['listing' => $listing], 301);
+        // The token IS the access credential (M34 P5): record a per-session
+        // invite pass so the canonical /listings/{id} page (the redirect
+        // target) authorizes this viewer. 302, not 301 — a cached permanent
+        // redirect would skip this pass-granting hop on later clicks.
+        LobbyInvitePass::grant($listing);
+
+        return to_route('listings.show', ['listing' => $listing]);
     }
 
     public function join(Request $request, Listing $listing, JoinLobbyAction $action): RedirectResponse
@@ -163,9 +170,8 @@ class LobbyController extends Controller
         return match ($result) {
             'not_team_play' => ['type' => 'warning', 'message' => __('This isn\'t a team-play listing.')],
             'not_linked' => ['type' => 'info', 'message' => __('Link a :platform account to join.', ['platform' => $platformName])],
-            'skill_out_of_range' => ['type' => 'warning', 'message' => __('Your skill rating is outside this lobby\'s range.')],
             'already_in_lobby' => ['type' => 'warning', 'message' => __('You\'re already in another active lobby.')],
-            'kick_cooldown' => ['type' => 'warning', 'message' => __('You can\'t rejoin this lobby right now.')],
+            'kick_cooldown' => ['type' => 'warning', 'message' => __('You were removed from this lobby — you can rejoin in a few minutes.')],
             'listing_unavailable' => ['type' => 'info', 'message' => __('This lobby isn\'t accepting joins.')],
             'no_open_slots' => ['type' => 'info', 'message' => __('No open slots on that side.')],
             default => ['type' => 'warning', 'message' => __('Could not join the lobby.')],

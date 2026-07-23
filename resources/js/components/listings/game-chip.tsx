@@ -1,12 +1,12 @@
-import { Crown, Swords, Target } from 'lucide-react';
-import type { ElementType } from 'react';
 import type { GameId } from '@/config/games';
+import { PLATFORM_COLOR, PLATFORM_LABEL } from '@/config/platforms';
 import { useT } from '@/lib/i18n';
+import type { ListingPlatform } from '@/types';
 
-const GAME_META: Record<GameId, { icon: ElementType; label: string }> = {
-    chess: { icon: Crown, label: 'Chess' },
-    cs2: { icon: Target, label: 'CS2' },
-    dota2: { icon: Swords, label: 'Dota 2' },
+const GAME_LABEL: Record<GameId, string> = {
+    chess: 'Chess',
+    cs2: 'CS2',
+    dota2: 'Dota 2',
 };
 
 interface Props {
@@ -18,28 +18,34 @@ interface Props {
      * just metadata. Passing 1 / omitted leaves the chip as just the game.
      */
     teamSize?: number;
+    /**
+     * Optional verification platform (chess.com / Lichess / FACEIT / Steam).
+     * When set, appends a "· Platform" segment tinted with the platform's
+     * brand accent so game / format / platform read as one metadata pill —
+     * instead of the game chip plus a separate loud brand-coloured chip.
+     */
+    platform?: ListingPlatform;
 }
 
 /**
  * Compact game indicator used on dense list surfaces (My listings, Match
- * history, Marketplace row). Same icon mapping as the create-form picker
- * so the visual association from create → manage → match stays consistent.
+ * history, Marketplace row). Text-only — the game name carries it; no icon.
  */
-export function GameChip({ game, teamSize }: Props) {
+export function GameChip({ game, teamSize, platform }: Props) {
     const t = useT();
-    const meta = GAME_META[game];
+    const label = GAME_LABEL[game];
 
-    if (!meta) {
+    if (!label) {
         return null;
     }
 
-    const Icon = meta.icon;
     const isTeamPlay = teamSize !== undefined && teamSize > 1;
+    const platformLabel = platform ? PLATFORM_LABEL[platform] : null;
+    const platformColor = platform ? PLATFORM_COLOR[platform] : undefined;
 
     return (
         <span className="inline-flex items-center gap-1.5 rounded-full border border-border/60 bg-card/60 px-2.5 py-0.5 text-xs font-medium text-foreground">
-            <Icon className="size-3 text-primary" aria-hidden="true" />
-            {t(meta.label)}
+            {t(label)}
             {isTeamPlay && (
                 <>
                     <span
@@ -50,6 +56,19 @@ export function GameChip({ game, teamSize }: Props) {
                     </span>
                     <span className="font-semibold text-accent">
                         {teamSize}v{teamSize}
+                    </span>
+                </>
+            )}
+            {platformLabel && (
+                <>
+                    <span
+                        className="text-muted-foreground/60"
+                        aria-hidden="true"
+                    >
+                        ·
+                    </span>
+                    <span style={{ color: platformColor }}>
+                        {platformLabel}
                     </span>
                 </>
             )}

@@ -3,6 +3,7 @@
 namespace App\Filament\Resources\Listings\Pages;
 
 use App\Actions\Listing\CancelListingAction;
+use App\Actions\Lobby\Admin\ForceCancelTeamLobbyAction;
 use App\Enums\ListingStatus;
 use App\Filament\Resources\Listings\ListingResource;
 use App\Models\Listing;
@@ -24,6 +25,7 @@ class ViewListing extends ViewRecord
     {
         return [
             $this->forceCancelAction(),
+            $this->forceCancelTeamLobbyAction(),
         ];
     }
 
@@ -33,7 +35,9 @@ class ViewListing extends ViewRecord
             ->label('Force cancel')
             ->color('danger')
             ->icon('heroicon-o-no-symbol')
-            ->visible(fn (Listing $record): bool => $record->status === ListingStatus::Open)
+            // 1v1 only — team lobbies route through `forceCancelTeamLobbyAction`
+            // (CancelListingAction mis-refunds a team lobby's pooled escrow).
+            ->visible(fn (Listing $record): bool => $record->status === ListingStatus::Open && ! $record->isTeamPlay())
             ->requiresConfirmation()
             ->modalHeading('Force cancel this listing?')
             ->modalDescription(fn (Listing $record): string => sprintf(
@@ -48,7 +52,7 @@ class ViewListing extends ViewRecord
                 // case the action was triggered from a stale page where the
                 // listing has since been Taken or Cancelled. The visibility
                 // gate above is the primary guard; this is the belt.
-                if ($record->status !== ListingStatus::Open) {
+                if ($record->status !== ListingStatus::Open || $record->isTeamPlay()) {
                     Notification::make()
                         ->title('Listing is no longer Open.')
                         ->danger()
@@ -62,6 +66,57 @@ class ViewListing extends ViewRecord
                 Notification::make()
                     ->title('Listing cancelled.')
                     ->body('Stake refunded to the creator.')
+                    ->success()
+                    ->send();
+            });
+    }
+
+    /**
+     * Team-play force-cancel. Refunds every Ready player's pooled escrow,
+     * clears the roster, and cancels the lobby + paired match — the lobby-aware
+     * path the 1v1 `CancelListingAction` can't safely do.
+     */
+    private function forceCancelTeamLobbyAction(): Action
+    {
+        return Action::make('force_cancel_team')
+            ->label('Force cancel lobby')
+            ->color('danger')
+            ->icon('heroicon-o-no-symbol')
+            ->visible(fn (Listing $record): bool => $record->status === ListingStatus::Open && $record->isTeamPlay())
+            ->requiresConfirmation()
+            ->modalHeading('Force cancel this team lobby?')
+            ->modalDescription(fn (Listing $record): string => sprintf(
+                'Listing #%d · %dv%d · $%s per player. Every Ready player\'s stake is refunded via Wallet::release, the roster is cleared, and the lobby + match move to Cancelled. This cannot be undone.',
+                $record->id,
+                $record->team_size,
+                $record->team_size,
+                number_format((float) $record->stake_amount, 2),
+            ))
+            ->modalSubmitActionLabel('Force cancel lobby')
+            ->action(function (Listing $record): void {
+                if ($record->status !== ListingStatus::Open || ! $record->isTeamPlay()) {
+                    Notification::make()
+                        ->title('Lobby is no longer cancellable.')
+                        ->danger()
+                        ->send();
+
+                    return;
+                }
+
+                $result = app(ForceCancelTeamLobbyAction::class)->handle($record);
+
+                if ($result !== 'cancelled') {
+                    Notification::make()
+                        ->title('Lobby is no longer cancellable.')
+                        ->danger()
+                        ->send();
+
+                    return;
+                }
+
+                Notification::make()
+                    ->title('Team lobby cancelled.')
+                    ->body('Ready players refunded; roster cleared.')
                     ->success()
                     ->send();
             });

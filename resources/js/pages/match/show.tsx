@@ -150,11 +150,11 @@ function ChessMatchShow({ match, messages }: MatchShowProps) {
     // stake). For wins, it's pot minus platform fee.
     const winnerPayout = isDraw ? match.listing.stake_amount : pot - fee;
 
-    // 4-hour deadline from match creation. `ResolveMatchTimeoutAction`
-    // flips Pending matches past this to ManualReview via the
-    // `matches:resolve-timeouts` cron sweep.
-    const matchDeadline = match.created_at
-        ? new Date(new Date(match.created_at).getTime() + 4 * 60 * 60 * 1000)
+    // API-resolution deadline. Backend-computed (`GameMatchResource`) from
+    // `stakly.match_confirmation_timeout_hours` so this clock can't drift from
+    // the `matches:resolve-timeouts` cron that enforces it. Null unless Pending.
+    const matchDeadline = match.match_deadline_at
+        ? new Date(match.match_deadline_at)
         : null;
 
     // Polling: refresh the match resource every 8s while Pending so the
@@ -270,6 +270,7 @@ function ChessMatchShow({ match, messages }: MatchShowProps) {
                                 <WaitingForGameCard
                                     platform={match.listing.platform}
                                     snapshots={match.snapshots}
+                                    timeControl={match.listing.time_control}
                                     hasAutoFetchedCard={hasAutoFetchedCard}
                                 />
 
@@ -336,17 +337,14 @@ function ChessMatchShow({ match, messages }: MatchShowProps) {
                         </div>
                     </div>
 
-                    {/* Desktop right-rail chat. Sticky at top-28 (112px) so
-                        the panel docks immediately below the marquee strip
-                        (which is sticky at top-16, ~46px tall, ending around
-                        110px). Using top-24 like before would tuck the chat
-                        UNDER the marquee's z-40 band, causing the marquee
-                        text to overlap the chat header on scroll. Fixed
-                        600px height keeps the panel compact rather than
-                        dominating viewport; internal scroll handles message
-                        overflow. */}
+                    {/* Desktop right-rail chat, sticky below the header with a
+                        small gap (top-20 = header height + ~16px breathing room;
+                        the marquee is homepage/listings-only so there's no
+                        marquee band to clear here). Fixed height keeps the panel
+                        compact rather than dominating the viewport; internal
+                        scroll handles message overflow. */}
                     {auth.user && (
-                        <aside className="hidden lg:sticky lg:top-28 lg:block lg:h-[750px]">
+                        <aside className="hidden lg:sticky lg:top-20 lg:block lg:h-[750px]">
                             <ChatPanel
                                 messages={chat.messages}
                                 viewerId={auth.user.id}

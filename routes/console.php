@@ -31,6 +31,17 @@ Schedule::command('stakly:auto-fetch-pending')
     ->everyFiveMinutes()
     ->withoutOverlapping();
 
+// M46 P3 — young-match auto-fetch tier. The [10min,4h] backstop above is too
+// coarse for chess.com (no real-time stream): a game finished minutes after the
+// listing was taken would sit until the 10-min cron. This 1-min sweep of ages
+// [1min,10min] closes that seam so chess.com settles in ~1-2 min. Jobs are
+// ShouldBeUnique + rate-limited + circuit-breaker-guarded, so the finer cadence
+// can't hammer a provider. Provider-agnostic: it also backstops a Lichess
+// stream-sidecar outage (Lichess is otherwise covered by its game-end stream).
+Schedule::command('stakly:auto-fetch-pending --min-age-minutes=1 --max-age-minutes=10')
+    ->everyMinute()
+    ->withoutOverlapping();
+
 // M34 P1 — ready-check timeout sweep. 5-min deadline needs sub-5-min
 // cadence; per-minute keeps the timer feeling responsive. The action is
 // row-locked + state-guarded so back-to-back runs on the same listing
@@ -44,3 +55,8 @@ Schedule::command('lobbies:sweep-ready-check-timeouts')
 Schedule::command('lobbies:sweep-fill-timeouts')
     ->hourly()
     ->withoutOverlapping();
+
+// M38 P3 — Horizon metrics snapshot. The dashboard's throughput / runtime
+// graphs stay blank until snapshots accumulate; 5-min cadence matches
+// Horizon's documented default + the `metrics.trim_snapshots` retention.
+Schedule::command('horizon:snapshot')->everyFiveMinutes();

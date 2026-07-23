@@ -4,7 +4,11 @@
 // - App\Enums\Game, LinkedAccountProvider, ListingStatus
 
 import type { GameId } from '@/config/games';
-import type { ListingPlatform } from '@/types/listings';
+import type {
+    FaceitRating,
+    ListingPlatform,
+    RecentFormResult,
+} from '@/types/listings';
 import type { ChatMessage, MatchStatus } from './match';
 
 export type LobbySide = 'a' | 'b';
@@ -33,6 +37,11 @@ export interface LobbyParticipantPayload {
         username: string;
         skill_rating: number | null;
     } | null;
+    // M41 P7 — FACEIT level dial (level derived from the platform ELO) + recent
+    // W/L/D form (last 5 settled CS2 matches), pairing the lobby roster with the
+    // marketplace cards.
+    faceit_rating: FaceitRating | null;
+    recent_form: RecentFormResult[];
     platform_stats: {
         total_matches: number;
         win_rate: number | null;
@@ -115,8 +124,6 @@ export interface Lobby {
     lobby_state: LobbyState | null;
     lobby_ready_check_deadline: string | null;
     status: 'open' | 'taken' | 'expired' | 'cancelled';
-    skill_min: number | null;
-    skill_max: number | null;
     region: string | null;
     language: string[] | null;
     expires_at: string;

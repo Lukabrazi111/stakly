@@ -173,12 +173,23 @@ test('cannot send to a Settled match — chat is read-only after resolution', fu
     expect(Message::count())->toBe(0);
 });
 
-test('cannot send to a ManualReview match', function () {
+test('can still send to a ManualReview match — chat is the evidence record for the admin', function () {
     [$creator, , $match] = chatMatch();
     $match->update(['status' => MatchStatus::ManualReview]);
 
     $this->actingAs($creator)
-        ->postJson("/matches/{$match->id}/messages", ['content' => 'admin?'])
+        ->post("/matches/{$match->id}/messages", ['content' => 'here is my PGN for the admin'])
+        ->assertRedirect();
+
+    expect(Message::count())->toBe(1);
+});
+
+test('cannot send to a Cancelled match — chat is read-only after refund', function () {
+    [$creator, , $match] = chatMatch();
+    $match->update(['status' => MatchStatus::Cancelled, 'cancelled_at' => now()]);
+
+    $this->actingAs($creator)
+        ->postJson("/matches/{$match->id}/messages", ['content' => 'gg'])
         ->assertJsonValidationErrors('content');
 
     expect(Message::count())->toBe(0);

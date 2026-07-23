@@ -33,7 +33,7 @@ enum Game: string
         return match ($this) {
             self::Chess => [LinkedAccountProvider::ChessCom, LinkedAccountProvider::Lichess],
             self::Cs2 => [LinkedAccountProvider::Faceit],
-            self::Dota2 => [LinkedAccountProvider::Steam],
+            self::Dota2 => [LinkedAccountProvider::Faceit],
         };
     }
 

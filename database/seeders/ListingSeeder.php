@@ -7,6 +7,7 @@ use App\Actions\Lobby\JoinLobbyAction;
 use App\Actions\Lobby\ToggleReadyAction;
 use App\Enums\Game;
 use App\Enums\LinkedAccountProvider;
+use App\Enums\TimeControl;
 use App\Models\Listing;
 use App\Models\LobbyParticipant;
 use App\Models\User;
@@ -44,6 +45,11 @@ class ListingSeeder extends Seeder
         foreach ($users as $user) {
             Wallet::deposit($user, '10000', reference: "seed:dev-deposit:{$user->id}");
         }
+
+        // M41 P4 — verified chess ratings so the marketplace shows real numbers
+        // (with "Unrated" / provisional variety), and the accounts read fresh so
+        // refresh-on-view doesn't fire real provider calls for fake usernames.
+        $this->seedChessRatings($users);
 
         $openChess = Listing::factory()
             ->count(25)
@@ -146,6 +152,46 @@ class ListingSeeder extends Seeder
     }
 
     /**
+     * Seed per-time-control chess ratings for the pool's chess.com + Lichess
+     * accounts, with realistic spread + "Unrated" / provisional variety, and
+     * stamp the account fresh so refresh-on-view doesn't fire real provider
+     * calls for the fake seed usernames (M41 P4).
+     *
+     * @param  Collection<int, User>  $users
+     */
+    private function seedChessRatings(Collection $users): void
+    {
+        $chessProviders = [LinkedAccountProvider::ChessCom, LinkedAccountProvider::Lichess];
+
+        foreach ($users as $user) {
+            $chessAccounts = $user->linkedAccounts->whereIn('provider', $chessProviders);
+
+            foreach ($chessAccounts as $account) {
+                foreach (TimeControl::cases() as $timeControl) {
+                    // ~25% of (account, time control) pairs stay unrated.
+                    if (fake()->boolean(25)) {
+                        continue;
+                    }
+
+                    $provisional = fake()->boolean(12);
+
+                    $account->ratings()->create([
+                        'time_control' => $timeControl->value,
+                        'rating' => fake()->numberBetween(800, 2400),
+                        'rd' => $provisional
+                            ? fake()->numberBetween(120, 300)
+                            : fake()->numberBetween(40, 90),
+                        'is_provisional' => $provisional,
+                        'synced_at' => now(),
+                    ]);
+                }
+
+                $account->update(['skill_rating_synced_at' => now()]);
+            }
+        }
+    }
+
+    /**
      * Seed a single team-play lobby in the given state via the production
      * actions (Create → Join → ToggleReady). Going through the actions
      * means the paired GameMatch, MatchProviderSnapshots, Wallet holds,
@@ -175,7 +221,7 @@ class ListingSeeder extends Seeder
             'game' => Game::Cs2->value,
             'platform' => LinkedAccountProvider::Faceit->value,
             'stake_amount' => '20',
-            'time_control' => [],
+            'time_control' => null,
             'duration_hours' => 24,
             'team_size' => $teamSize,
             'creator_side' => LobbyParticipant::SIDE_A,

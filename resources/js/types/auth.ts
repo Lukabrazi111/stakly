@@ -1,3 +1,5 @@
+import type { ListingPlatform } from './listings';
+
 export type User = {
     id: number;
     name: string;
@@ -40,14 +42,21 @@ export type User = {
     // middleware does on every request — see `HandleInertiaRequests::share`).
     // Optional because callers that don't need it shouldn't have to think
     // about it, but it's reliably present at runtime. Used by the settings
-    // profile preview to render chess.com/Lichess `VerificationChip`s.
+    // profile preview to render every verified account (chess.com / Lichess /
+    // FACEIT / Steam) as a `VerificationChip`.
     linked_accounts?: Array<{
-        provider: 'chess_com' | 'lichess';
+        provider: ListingPlatform;
         username: string;
         verified_at: string;
     }>;
     notifications_last_seen_at: string | null;
     unread_notifications_count: number;
+    // M36: matches the user is mid-flight on (Pending / Disputed /
+    // ManualReview). Powers the sidebar "Matches" badge + the In Progress tab.
+    active_matches_count: number;
+    // M37: the games the user is currently mid-match in (e.g. ['chess']) —
+    // gates the Take button (one active match per game).
+    in_flight_games: string[];
     notification_sound: string;
     notification_sound_map: Record<string, boolean>;
     username_edit: {

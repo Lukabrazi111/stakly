@@ -3,6 +3,7 @@
 use App\Actions\GameMatch\RecordAutoFetchAttemptAction;
 use App\Actions\GameMatch\SettleFromCardAction;
 use App\Actions\Message\PostSystemMessageAction;
+use App\Enums\AutoFetchOutcome;
 use App\Enums\LinkedAccountProvider;
 use App\Enums\MatchStatus;
 use App\Enums\MessageType;
@@ -10,6 +11,7 @@ use App\Events\MessageSent;
 use App\Jobs\AutoFetchLichessGameJob;
 use App\Models\GameMatch;
 use App\Models\Listing;
+use App\Models\MatchAutoFetchAttempt;
 use App\Models\MatchProviderSnapshot;
 use App\Models\Message;
 use App\Models\User;
@@ -47,10 +49,10 @@ function autoFetchMatch(?array $snapshots = null): GameMatch
     Wallet::deposit($creator, '500', reference: "test:deposit:c:{$creator->id}");
     Wallet::deposit($taker, '500', reference: "test:deposit:t:{$taker->id}");
 
-    // M14 Slice 3d — TC catch-all so happy-path tests pass deterministically;
-    // tests that exercise TC mismatch override this back to a single value.
+    // Listing TC matches the fixture default (blitz) so happy-path tests pass
+    // deterministically; TC-mismatch tests override this to another control.
     $listing = Listing::factory()->taken()->forLichess()->for($creator)
-        ->state(['stake_amount' => '100', 'time_control' => ['blitz', 'rapid', 'classical']])
+        ->state(['stake_amount' => '100', 'time_control' => 'blitz'])
         ->create();
     Wallet::hold(user: $creator, amount: '100', listing: $listing, reference: "listing-create:{$listing->id}");
     Wallet::hold(user: $taker, amount: '100', listing: $listing, reference: "match-take:{$listing->id}");
@@ -60,6 +62,11 @@ function autoFetchMatch(?array $snapshots = null): GameMatch
         'taker_user_id' => $taker->id,
         'status' => MatchStatus::Pending,
     ]);
+
+    // Backdate created_at so the search `since` window AND the M46 P2
+    // started-after-creation guard sit before the fixture game's ~5-min-ago
+    // timestamps. Mirrors chessComAutoFetchMatch().
+    $match->forceFill(['created_at' => now()->subHour()])->save();
 
     $snapshots ??= [
         ['side' => GameMatch::SIDE_CREATOR, 'provider' => LinkedAccountProvider::Lichess, 'username' => 'alice-lichess'],
@@ -209,7 +216,7 @@ test('multiple decisive games with time-control mismatch → ambiguous, no post 
     $match = autoFetchMatch();
     // Force listing time-control away from the fixture default (blitz)
     // so the picker's TC filter eliminates both candidates.
-    $match->listing->update(['time_control' => ['classical']]);
+    $match->listing->update(['time_control' => 'rapid']);
 
     $g1 = json_encode(lichessGameFixture(['id' => 'game0001']));
     $g2 = json_encode(lichessGameFixture(['id' => 'game0002', 'winner' => 'black']));
@@ -227,7 +234,7 @@ test('multiple decisive games with time-control mismatch → ambiguous, no post 
 
 test('multiple completions (decisive + drawn) with time-control mismatch → ambiguous, no post', function () {
     $match = autoFetchMatch();
-    $match->listing->update(['time_control' => ['classical']]);
+    $match->listing->update(['time_control' => 'rapid']);
 
     $decisive = lichessGameFixture(['id' => 'winnergg']);
     $drawn = lichessGameFixture(['id' => 'drawnone', 'status' => 'draw']);
@@ -249,7 +256,7 @@ test('multiple completions (decisive + drawn) with time-control mismatch → amb
 
 test('multiple decisive games with time-control match → picker picks game closest to match.created_at (M14 Slice 3c)', function () {
     $match = autoFetchMatch();
-    $match->listing->update(['time_control' => ['blitz']]);
+    $match->listing->update(['time_control' => 'blitz']);
 
     // match.created_at is approximately "now". Build two games:
     //   - first played soon after match creation
@@ -290,7 +297,7 @@ test('multiple decisive games with time-control match → picker picks game clos
 
 test('picker tie-breaks on game id when delta is equal (M14 Slice 3c)', function () {
     $match = autoFetchMatch();
-    $match->listing->update(['time_control' => ['blitz']]);
+    $match->listing->update(['time_control' => 'blitz']);
 
     // Both games at the same lastMoveAt — picker falls back to id sort.
     // 'aaaagame' < 'zzzzgame' lexically → 'aaaagame' wins.
@@ -470,4 +477,83 @@ test('lichess-api rate limiter reflects services.lichess.requests_per_minute con
 
     expect($limit)->toBeInstanceOf(Limit::class)
         ->and($limit->maxAttempts)->toBe(11);
+});
+
+// ─── M46 P2 — started-after-creation guard (SECURITY: pre-play reuse) ───────
+
+test('Lichess game that STARTED before match creation is rejected as stale (not settled)', function () {
+    $match = autoFetchMatch(); // created_at backdated to now()->subHour()
+
+    $stale = json_encode(lichessGameFixture([
+        'id' => 'stalegame',
+        // createdAt 2h ago — BEFORE the match (created 1h ago).
+        'createdAt' => now()->subHours(2)->getTimestampMs(),
+        'lastMoveAt' => now()->subMinutes(5)->getTimestampMs(),
+    ]));
+    Http::fake(['lichess.org/api/games/user/*' => Http::response($stale, 200)]);
+
+    runAutoFetch($match);
+
+    // A pre-play game must never auto-settle — no card, match stays Pending.
+    expect(Message::query()->where('match_id', $match->id)->where('type', MessageType::System)->count())->toBe(0)
+        ->and($match->fresh()->status)->toBe(MatchStatus::Pending);
+
+    $attempt = MatchAutoFetchAttempt::query()->where('match_id', $match->id)->latest('id')->first();
+    expect($attempt->outcome)->toBe(AutoFetchOutcome::NoMatch)
+        ->and($attempt->outcome_reason)->toBe('stale_game_rejected')
+        ->and($attempt->candidates_count)->toBe(1);
+});
+
+test('Lichess drops a pre-stake game and settles the real one played after (mixed response)', function () {
+    $match = autoFetchMatch(); // created_at backdated to now()->subHour()
+
+    // Pre-play game — createdAt 2h ago (before the stake), bob (black) wins. Dropped.
+    $stale = json_encode(lichessGameFixture([
+        'id' => 'stalegam',
+        'winner' => 'black',
+        'createdAt' => now()->subHours(2)->getTimestampMs(),
+        'lastMoveAt' => now()->subMinutes(50)->getTimestampMs(),
+    ]));
+    // Real staked game — createdAt 20min ago (after the stake), alice (white) wins.
+    $real = json_encode(lichessGameFixture([
+        'id' => 'realgame',
+        'winner' => 'white',
+        'createdAt' => now()->subMinutes(20)->getTimestampMs(),
+        'lastMoveAt' => now()->subMinutes(15)->getTimestampMs(),
+    ]));
+    Http::fake(['lichess.org/api/games/user/*' => Http::response($stale."\n".$real, 200)]);
+
+    runAutoFetch($match);
+
+    // Only the post-stake game survives → creator (white) wins.
+    $match->refresh();
+    expect($match->status)->toBe(MatchStatus::Settled)
+        ->and($match->winner_user_id)->toBe($match->listing->user_id);
+});
+
+test('Lichess picks the FIRST game started after match creation among a rematch', function () {
+    $match = autoFetchMatch();
+
+    // Later game — bob (black) wins. Earlier game — alice (white) wins.
+    $late = json_encode(lichessGameFixture([
+        'id' => 'lategame0',
+        'winner' => 'black',
+        'createdAt' => now()->subMinutes(10)->getTimestampMs(),
+        'lastMoveAt' => now()->subMinutes(5)->getTimestampMs(),
+    ]));
+    $early = json_encode(lichessGameFixture([
+        'id' => 'earlygame',
+        'winner' => 'white',
+        'createdAt' => now()->subMinutes(40)->getTimestampMs(),
+        'lastMoveAt' => now()->subMinutes(35)->getTimestampMs(),
+    ]));
+    // Order late-then-early to prove the pick is by start time, not list order.
+    Http::fake(['lichess.org/api/games/user/*' => Http::response($late."\n".$early, 200)]);
+
+    runAutoFetch($match);
+
+    // Earliest-started game (alice = creator wins) settled.
+    $match->refresh();
+    expect($match->status)->toBe(MatchStatus::Settled)
+        ->and($match->winner_user_id)->toBe($match->listing->user_id);
 });

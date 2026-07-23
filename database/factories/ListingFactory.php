@@ -28,13 +28,6 @@ class ListingFactory extends Factory
             100, 100, 150, 200, 250, 500,
         ]);
 
-        // 70% of listings specify a skill range; 30% are "any skill".
-        $hasSkillRange = $this->faker->boolean(70);
-        $skillMin = $hasSkillRange ? $this->faker->numberBetween(800, 2000) : null;
-        $skillMax = $hasSkillRange ? $skillMin + $this->faker->numberBetween(200, 600) : null;
-
-        $timeControlValues = array_map(fn (TimeControl $tc) => $tc->value, TimeControl::cases());
-
         return [
             // Auto-created users are active by default — an "open listing"
             // implies a reachable owner, so the factory's default produces a
@@ -50,12 +43,7 @@ class ListingFactory extends Factory
                 LinkedAccountProvider::Lichess,
             ]),
             'stake_amount' => $stake,
-            'skill_min' => $skillMin,
-            'skill_max' => $skillMax,
-            'time_control' => $this->faker->randomElements(
-                $timeControlValues,
-                $this->faker->numberBetween(1, 3),
-            ),
+            'time_control' => $this->faker->randomElement(TimeControl::cases())->value,
             'region' => $this->faker->randomElement([
                 'Global', 'EU', 'NA', 'Asia', 'CIS', 'LATAM',
             ]),
@@ -182,11 +170,11 @@ class ListingFactory extends Factory
     }
 
     /**
-     * Adjusts platform + time_control to match the target game. CS2 routes
-     * to FACEIT, Dota 2 routes to Steam (per the planned M15 catalog).
-     * Non-chess games clear `time_control` since the concept doesn't apply
-     * — `gameSupports()` hides the filter UI for them, and an empty
-     * jsonb array is valid storage.
+     * Adjusts platform + time_control to match the target game. CS2 + Dota 2
+     * both route to FACEIT — FACEIT is Stakly's verification provider for every
+     * non-chess game (decided 2026-07-06).
+     * Non-chess games set `time_control` to null since the concept doesn't
+     * apply — `gameSupports()` hides the filter UI for them.
      */
     public function forGame(Game $game): static
     {
@@ -196,18 +184,15 @@ class ListingFactory extends Factory
                 LinkedAccountProvider::Lichess,
             ]),
             Game::Cs2 => LinkedAccountProvider::Faceit,
-            Game::Dota2 => LinkedAccountProvider::Steam,
+            Game::Dota2 => LinkedAccountProvider::Faceit,
         };
 
         return $this->state(fn () => [
             'game' => $game,
             'platform' => $platform,
             'time_control' => $game === Game::Chess
-                ? $this->faker->randomElements(
-                    array_map(fn (TimeControl $tc) => $tc->value, TimeControl::cases()),
-                    $this->faker->numberBetween(1, 3),
-                )
-                : [],
+                ? $this->faker->randomElement(TimeControl::cases())->value
+                : null,
         ]);
     }
 }

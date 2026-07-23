@@ -3,6 +3,7 @@
 namespace App\Services\Provider;
 
 use App\Enums\LinkedAccountProvider;
+use App\Enums\TimeControl;
 use App\Services\Provider\Exceptions\PermanentProviderError;
 use App\Services\Provider\Exceptions\ProfileNotFoundException;
 use App\Services\Provider\Exceptions\ProviderError;
@@ -46,8 +47,81 @@ class ChessComProfileClient implements ProfileClient
 
     public function fetchProfile(string $username): ProfileFetchResult
     {
-        $url = "https://api.chess.com/pub/player/{$username}";
+        $data = $this->getJson("https://api.chess.com/pub/player/{$username}", $username);
 
+        return new ProfileFetchResult(
+            username: $data['username'] ?? $username,
+            bioFieldValue: $data['location'] ?? null,
+        );
+    }
+
+    /**
+     * Per-time-control ratings from the SEPARATE `/stats` endpoint (M41 P3b) —
+     * chess.com puts ratings on `GET /pub/player/{username}/stats`, NOT the
+     * profile endpoint the bio verify uses, so this is a second call.
+     * `chess_{bullet,blitz,rapid}.last.{rating,rd}` map to our time controls
+     * (chess.com has no online classical — and we don't offer it). A category
+     * key is absent when the player has never played it → no rating returned.
+     * "Provisional" is decided by GAME COUNT (`record` w+l+d below
+     * `provisional_min_games`), not `rd`: a rusty established rating has inflated
+     * rd but is not provisional. Provisional ratings still return the number —
+     * the UI shows them with a "?" rather than hiding them.
+     *
+     * @throws ProfileNotFoundException
+     */
+    public function fetchRatings(string $username): ChessRatings
+    {
+        $data = $this->getJson(
+            "https://api.chess.com/pub/player/{$username}/stats",
+            $username,
+            recordHealth: false,
+        );
+        $minGames = (int) config('services.chess_com.provisional_min_games', 20);
+
+        $ratings = [];
+
+        foreach (TimeControl::cases() as $timeControl) {
+            $category = $data["chess_{$timeControl->value}"] ?? null;
+            $last = $category['last'] ?? null;
+
+            if (! is_array($last) || ! isset($last['rating'])) {
+                continue;
+            }
+
+            $record = $category['record'] ?? [];
+            $games = (int) ($record['win'] ?? 0)
+                + (int) ($record['loss'] ?? 0)
+                + (int) ($record['draw'] ?? 0);
+
+            $ratings[] = new ChessTimeControlRating(
+                timeControl: $timeControl,
+                rating: (int) $last['rating'],
+                rd: isset($last['rd']) ? (int) $last['rd'] : null,
+                isProvisional: $games < $minGames,
+            );
+        }
+
+        return new ChessRatings($ratings);
+    }
+
+    /**
+     * Shared GET + breaker/error mapping for chess.com's public read endpoints
+     * (profile + stats live at different URLs but classify identically).
+     * Returns the decoded JSON body (always an array — a non-object 200 body
+     * degrades to `[]` so callers reading `$data['key'] ?? null` keep working).
+     *
+     * `$recordHealth` gates whether this call feeds the per-provider circuit
+     * breaker. The bio-verify path records (true); the high-volume rating path
+     * passes false so a rating-API blip can't trip — or dilute — the breaker
+     * that gates real chess SETTLEMENT (`DispatchAutoFetchAction`). The rating
+     * job still READS `isOpen()` to skip when the provider is already unhealthy.
+     *
+     * @return array<string, mixed>
+     *
+     * @throws ProfileNotFoundException
+     */
+    private function getJson(string $url, string $username, bool $recordHealth = true): array
+    {
         try {
             $response = Http::withHeaders([
                 'User-Agent' => config('stakly.chess_com_user_agent', 'Stakly/1.0'),
@@ -56,7 +130,9 @@ class ChessComProfileClient implements ProfileClient
                 ->timeout(10)
                 ->get($url);
         } catch (ConnectionException $e) {
-            $this->breaker->recordFailure(LinkedAccountProvider::ChessCom);
+            if ($recordHealth) {
+                $this->breaker->recordFailure(LinkedAccountProvider::ChessCom);
+            }
 
             throw new TransientProviderError(
                 "chess.com unreachable for username '{$username}': {$e->getMessage()}",
@@ -69,25 +145,28 @@ class ChessComProfileClient implements ProfileClient
             // provider-health failure. Don't trip the breaker — record
             // success and let the caller distinguish via the dedicated
             // exception type.
-            $this->breaker->recordSuccess(LinkedAccountProvider::ChessCom);
+            if ($recordHealth) {
+                $this->breaker->recordSuccess(LinkedAccountProvider::ChessCom);
+            }
 
             throw new ProfileNotFoundException("chess.com username '{$username}' not found.");
         }
 
         if (! $response->successful()) {
-            $this->breaker->recordFailure(LinkedAccountProvider::ChessCom);
+            if ($recordHealth) {
+                $this->breaker->recordFailure(LinkedAccountProvider::ChessCom);
+            }
 
             throw self::classifyResponseError($response, "for username '{$username}'");
         }
 
-        $this->breaker->recordSuccess(LinkedAccountProvider::ChessCom);
+        if ($recordHealth) {
+            $this->breaker->recordSuccess(LinkedAccountProvider::ChessCom);
+        }
 
-        $data = $response->json();
+        $body = $response->json();
 
-        return new ProfileFetchResult(
-            username: $data['username'] ?? $username,
-            bioFieldValue: $data['location'] ?? null,
-        );
+        return is_array($body) ? $body : [];
     }
 
     /**

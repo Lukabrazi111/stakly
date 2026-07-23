@@ -1,5 +1,4 @@
-import { Check, ChevronDown, Crown, Link2, Swords, Target } from 'lucide-react';
-import type { ElementType } from 'react';
+import { Check, ChevronDown, Link2 } from 'lucide-react';
 import { useState } from 'react';
 import {
     Popover,
@@ -19,12 +18,6 @@ const PROVIDER_DISPLAY: Record<ListingPlatform, string> = {
     steam: 'Steam',
 };
 
-const GAME_ICONS: Record<string, ElementType> = {
-    chess: Crown,
-    cs2: Target,
-    dota2: Swords,
-};
-
 interface Props {
     games: readonly GameTile[];
     selected: GameId;
@@ -37,7 +30,7 @@ interface Props {
 
 /**
  * Game picker for the create-listing form. Mirrors the original chess-only
- * card aesthetic (gradient icon square + title + subtext inside a `border-glow`
+ * card aesthetic (game poster thumbnail + title + subtext inside a `border-glow`
  * wrapper) but the card is now an interactive trigger — clicking opens a
  * Popover with all Active games. Selected state in the dropdown is the check
  * icon only (no bg) so it doesn't collide visually with the hover pink wash.
@@ -55,7 +48,6 @@ export function GamePicker({
     const selectedRequirements = requirementsByGame[selected];
     const selectedProviders = selectedRequirements?.providers ?? [];
     const selectedVerified = selectedRequirements?.verified ?? false;
-    const SelectedIcon = GAME_ICONS[selected] ?? Crown;
 
     return (
         <Popover open={open} onOpenChange={setOpen}>
@@ -66,12 +58,7 @@ export function GamePicker({
                     aria-expanded={open}
                     className="flex w-full cursor-pointer items-center gap-3 rounded-xl border border-primary/40 bg-card/60 p-4 text-left shadow-glow transition-colors hover:border-primary/60 focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-primary/25 focus-visible:outline-none"
                 >
-                    <div className="inline-flex size-10 shrink-0 items-center justify-center rounded-lg bg-gradient-primary">
-                        <SelectedIcon
-                            className="size-5 text-primary-foreground"
-                            aria-hidden="true"
-                        />
-                    </div>
+                    <GameThumb game={selectedGame} className="size-10" />
                     <div className="min-w-0 flex-1">
                         <div className="font-semibold text-foreground">
                             {selectedGame?.display_name ?? '—'}
@@ -128,6 +115,7 @@ export function GamePicker({
                                 )}
                                 aria-hidden="true"
                             />
+                            <GameThumb game={game} className="size-8" />
                             <div className="min-w-0 flex-1">
                                 <div className="font-semibold text-foreground">
                                     {game.display_name}
@@ -176,5 +164,39 @@ function VerificationChip({ verified, providers }: VerificationChipProps) {
             <Link2 className="size-3" aria-hidden="true" />
             {t('Link :provider', { provider: providerNames })}
         </span>
+    );
+}
+
+/**
+ * Real game art (DB-backed `poster_path`, same source as the homepage
+ * `GameSelector` tiles) — never a React-icon stand-in. Falls back to a gradient
+ * square with the game's initial when a poster isn't set.
+ */
+function GameThumb({
+    game,
+    className,
+}: {
+    game?: GameTile;
+    className?: string;
+}) {
+    return (
+        <div
+            className={cn(
+                'shrink-0 overflow-hidden rounded-lg ring-1 ring-border/60 ring-inset',
+                className,
+            )}
+        >
+            {game?.poster_path ? (
+                <img
+                    src={game.poster_path}
+                    alt=""
+                    className="size-full object-cover"
+                />
+            ) : (
+                <div className="flex size-full items-center justify-center bg-gradient-primary text-sm font-bold text-primary-foreground">
+                    {game?.display_name?.charAt(0) ?? '?'}
+                </div>
+            )}
+        </div>
     );
 }

@@ -29,14 +29,17 @@ interface NavItem {
      *  then activates the parent across the whole subsection (eg. wallet
      *  stays lit on `/{locale}/wallet/deposit` + `/withdraw` + `/history`). */
     matchPrefix: string;
+    /** Optional live badge count — M36 surfaces active matches on the Matches
+     *  item. Omitted (undefined) on items without a badge. */
+    count?: number;
 }
 
 const COOKIE_NAME = 'player_sidebar_collapsed';
 const COOKIE_MAX_AGE = 60 * 60 * 24 * 365;
 
 /**
- * Side navigation for the player hub. Sticky at `top-28` (just below
- * SiteHeader + MarqueeStrip). Collapsible rail mode persists in a cookie
+ * Side navigation for the player hub. Sticky at `top-16` (just below the
+ * SiteHeader — the marquee is homepage/listings-only). Collapsible rail mode persists in a cookie
  * shared via Inertia (`playerSidebarCollapsed`) so SSR + first paint +
  * every subsequent navigation render the user's saved width — no
  * post-mount transition from default → saved state on nav clicks.
@@ -44,6 +47,7 @@ const COOKIE_MAX_AGE = 60 * 60 * 24 * 365;
 export function PlayerSidebar() {
     const { url, props } = usePage();
     const username = props.auth.user?.username;
+    const activeMatchesCount = props.auth.user?.active_matches_count ?? 0;
     const [collapsed, setCollapsed] = useState(props.playerSidebarCollapsed);
 
     const toggleCollapsed = () => {
@@ -83,6 +87,7 @@ export function PlayerSidebar() {
             label: 'Matches',
             icon: Swords,
             matchPrefix: matchesIndex().url,
+            count: activeMatchesCount,
         },
         {
             href: walletIndex().url,
@@ -95,7 +100,7 @@ export function PlayerSidebar() {
     return (
         <aside
             aria-label="Player management navigation"
-            className={`sticky top-28 hidden h-[calc(100vh-7rem)] shrink-0 self-start border-r border-border/60 bg-card/40 transition-[width] duration-200 ease-out md:flex md:flex-col ${
+            className={`sticky top-16 hidden h-[calc(100vh-4rem)] shrink-0 self-start border-r border-border/60 bg-card/40 transition-[width] duration-200 ease-out md:flex md:flex-col ${
                 collapsed ? 'md:w-16' : 'md:w-60'
             }`}
         >
@@ -124,12 +129,21 @@ export function PlayerSidebar() {
                     {items.map((item) => {
                         const isActive = url.startsWith(item.matchPrefix);
                         const Icon = item.icon;
+                        const count = item.count ?? 0;
+                        const hasCount = count > 0;
+                        const displayCount = count > 9 ? '9+' : String(count);
+                        const linkAriaLabel = hasCount
+                            ? `${item.label}, ${count} active`
+                            : collapsed
+                              ? item.label
+                              : undefined;
 
                         const link = (
                             <Link
                                 href={item.href}
                                 prefetch
                                 aria-current={isActive ? 'page' : undefined}
+                                aria-label={linkAriaLabel}
                                 className={`group relative flex items-center gap-3 rounded-md py-2.5 text-sm font-medium transition-colors duration-150 ease-out ${
                                     collapsed ? 'justify-center px-0' : 'px-3'
                                 } ${
@@ -152,6 +166,17 @@ export function PlayerSidebar() {
                                     }`}
                                 />
                                 {!collapsed && <span>{item.label}</span>}
+                                {!collapsed && hasCount && (
+                                    <span className="ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-[10px] font-semibold text-primary-foreground">
+                                        {displayCount}
+                                    </span>
+                                )}
+                                {collapsed && hasCount && (
+                                    <span
+                                        aria-hidden
+                                        className="absolute top-1.5 right-1.5 size-2 rounded-full bg-primary ring-2 ring-card"
+                                    />
+                                )}
                             </Link>
                         );
 
@@ -162,7 +187,9 @@ export function PlayerSidebar() {
                                         {link}
                                     </TooltipTrigger>
                                     <TooltipContent side="right" sideOffset={8}>
-                                        {item.label}
+                                        {hasCount
+                                            ? `${item.label} · ${count} active`
+                                            : item.label}
                                     </TooltipContent>
                                 </Tooltip>
                             );

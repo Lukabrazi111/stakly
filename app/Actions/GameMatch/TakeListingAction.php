@@ -3,9 +3,12 @@
 namespace App\Actions\GameMatch;
 
 use App\Actions\Message\PostSystemMessageAction;
+use App\Enums\LinkedAccountProvider;
 use App\Enums\ListingStatus;
 use App\Enums\MatchStatus;
+use App\Enums\TimeControl;
 use App\Models\GameMatch;
+use App\Models\LinkedAccount;
 use App\Models\Listing;
 use App\Models\MatchProviderSnapshot;
 use App\Models\User;
@@ -27,6 +30,11 @@ use Illuminate\Support\Facades\DB;
  *                            Controller redirects to listing with info toast.
  *   - `'owner_inactive'`   → owner flipped to Inactive Mode between page load
  *                            + submit. Controller info toast + redirect.
+ *   - `'already_in_match'` → taker is already in an in-flight match for this
+ *                            game (M37). Controller warning toast + redirect.
+ *   - `'owner_busy'`       → the listing owner is already in an in-flight match
+ *                            for this game; taking would start a second.
+ *                            Controller info toast + redirect.
  *
  * Self-take is hard-rejected via `abort(403)` since the UI hides the Take
  * button for owners; reaching the action with a self-take is a hand-crafted
@@ -77,8 +85,30 @@ class TakeListingAction
                 return 'race_lost';
             }
 
-            if (! $this->ownerIsActive($locked)) {
+            // Lock owner + taker up front (ascending id) so the Active-Mode and
+            // per-game concurrency checks below read a consistent, race-proof
+            // view — and so two concurrent takes touching the same pair in
+            // opposite roles can't deadlock.
+            [$owner, $taker] = $this->lockParticipants($locked, $user);
+
+            // Active Mode gate (M6 Phase 6.5): "I'm not available". Must gate
+            // the actual match-start, not just marketplace visibility — a stale
+            // tab or direct URL would otherwise bypass the intent.
+            if (! (bool) $owner->is_active_mode) {
                 return 'owner_inactive';
+            }
+
+            // M37 — one active match per game. Neither side may be pulled into a
+            // second concurrent match for THIS game (the taker starting one, or
+            // the owner's listing starting one for them). A different game (a
+            // CS2 match) doesn't block — it settles through a separate provider
+            // pipeline, so the two can't be confused.
+            if ($taker->hasInFlightMatchForGame($locked->game)) {
+                return 'already_in_match';
+            }
+
+            if ($owner->hasInFlightMatchForGame($locked->game)) {
+                return 'owner_busy';
             }
 
             $this->escrowTakerStake($user, $locked);
@@ -113,20 +143,25 @@ class TakeListingAction
     }
 
     /**
-     * Active Mode gate (M6 Phase 6.5): if the owner flipped to Inactive
-     * between the taker loading the listing detail page and submitting this
-     * Take, the listing is no longer takeable. `lockForUpdate` on the owner
-     * row serializes against any in-flight `ActiveModeController` toggle so
-     * the check sees a consistent view. Active Mode is "I'm not available"
-     * — it must gate the actual match-start, not just marketplace
-     * visibility, otherwise stale browser tabs bypass the intent.
+     * Lock the owner + taker rows up front, ordered by id. A stable lock order
+     * means two concurrent takes that touch the same two users in opposite
+     * roles (A takes B's listing while B takes A's) serialize on the shared row
+     * instead of deadlocking. Both downstream gates — Active Mode and the M37
+     * per-game concurrency guard — read these locked rows, so neither can be
+     * raced by a parallel take or an `ActiveModeController` toggle.
+     *
+     * @return array{0: User, 1: User} [owner, taker]
      */
-    private function ownerIsActive(Listing $listing): bool
+    private function lockParticipants(Listing $listing, User $taker): array
     {
-        return (bool) User::query()
+        $rows = User::query()
+            ->whereIn('id', [$listing->user_id, $taker->id])
+            ->orderBy('id')
             ->lockForUpdate()
-            ->where('id', $listing->user_id)
-            ->value('is_active_mode');
+            ->get()
+            ->keyBy('id');
+
+        return [$rows[$listing->user_id], $rows[$taker->id]];
     }
 
     /**
@@ -158,7 +193,7 @@ class TakeListingAction
             'status' => MatchStatus::Pending,
         ]);
 
-        $this->snapshotProviderAccounts($match, $listing->user, $taker);
+        $this->snapshotProviderAccounts($match, $listing, $listing->user, $taker);
 
         return $match;
     }
@@ -172,19 +207,24 @@ class TakeListingAction
      * provider's stable identifier + rating at match time survive any
      * subsequent updates to the user's link.
      *
+     * M41 P3b — for chess links the snapshot records the rating for the
+     * listing's single time control (from `linked_account_ratings`), not the
+     * scalar `skill_rating` (which chess never populates). Audit/history only;
+     * display reads the live rating.
+     *
      * Batch insert via the model query builder so all rows land in a single
      * SQL statement. Timestamps are set explicitly because `insert()`
      * bypasses Eloquent's auto-timestamping. The outer `DB::transaction` in
      * `handle()` covers atomicity — a failed insert here rolls back the
      * match + escrow hold + listing flip.
      */
-    private function snapshotProviderAccounts(GameMatch $match, User $creator, User $taker): void
+    private function snapshotProviderAccounts(GameMatch $match, Listing $listing, User $creator, User $taker): void
     {
         $rows = [];
         $now = now();
 
         foreach ([GameMatch::SIDE_CREATOR => $creator, GameMatch::SIDE_TAKER => $taker] as $side => $user) {
-            $user->loadMissing('linkedAccounts');
+            $user->loadMissing('linkedAccounts.ratings');
 
             foreach ($user->linkedAccounts as $link) {
                 $rows[] = [
@@ -193,7 +233,7 @@ class TakeListingAction
                     'provider' => $link->provider->value,
                     'username' => $link->username,
                     'provider_user_id' => $link->provider_user_id,
-                    'skill_rating_snapshot' => $link->skill_rating,
+                    'skill_rating_snapshot' => $this->snapshotRatingFor($link, $listing->time_control),
                     'created_at' => $now,
                     'updated_at' => $now,
                 ];
@@ -203,5 +243,27 @@ class TakeListingAction
         if (count($rows) > 0) {
             MatchProviderSnapshot::insert($rows);
         }
+    }
+
+    /**
+     * The rating to snapshot for a link. Chess links carry per-time-control
+     * ratings, so snapshot the one for the listing's time control; FACEIT (+
+     * future scalar providers) use the cached `skill_rating`. Null when the
+     * player has no rating for that time control (Unrated).
+     */
+    private function snapshotRatingFor(LinkedAccount $link, ?TimeControl $timeControl): ?int
+    {
+        $isChess = in_array($link->provider, [
+            LinkedAccountProvider::ChessCom,
+            LinkedAccountProvider::Lichess,
+        ], true);
+
+        if ($isChess && $timeControl !== null) {
+            return $link->ratings
+                ->firstWhere('time_control', $timeControl)
+                ?->rating;
+        }
+
+        return $link->skill_rating;
     }
 }

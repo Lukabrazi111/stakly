@@ -168,6 +168,7 @@ test('callback creates LinkedAccount with M15 columns on happy path', function (
     expect($link->username)->toBe('TestUser')
         ->and($link->provider_user_id)->toBe('faceit-guid-9b6e')
         ->and($link->skill_rating)->toBe(1850)
+        ->and($link->skill_rating_synced_at)->not->toBeNull()
         ->and($link->verified_at)->not->toBeNull();
 });
 
@@ -193,7 +194,8 @@ test('callback links the account with null skill_rating when no FACEIT_API_KEY i
 
     expect($link->username)->toBe('TestUser')
         ->and($link->provider_user_id)->toBe('faceit-guid-no-key')
-        ->and($link->skill_rating)->toBeNull();
+        ->and($link->skill_rating)->toBeNull()
+        ->and($link->skill_rating_synced_at)->toBeNull();
 });
 
 test('callback populates skill_rating as null when user has no CS2 block', function () {

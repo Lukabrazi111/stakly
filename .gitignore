@@ -44,3 +44,6 @@ yarn-error.log
 # Python bytecode (e.g. from the `ui-ux-pro-max` skill's search.py)
 __pycache__/
 *.pyc
+
+# Playwright MCP screenshot/snapshot output (throwaway)
+.playwright-mcp/

@@ -12,8 +12,11 @@ use Inertia\Response;
 /**
  * Public reader for admin-managed CMS pages. Two paths through `show`:
  *
- *   - **Public** — must be published; cached via `Cache::rememberForever`
- *     keyed by `Page::cacheKey()`. Busts on model save/delete.
+ *   - **Public** — must be published; published payloads are cached forever
+ *     keyed by `Page::cacheKey()` (busts on model save/delete). Misses
+ *     (draft / scheduled / absent) cache a short-TTL sentinel instead of
+ *     `null` to avoid re-querying every request, so a scheduled page goes
+ *     live within the TTL after `published_at` passes.
  *   - **Admin preview** — request carries a valid temporary signature
  *     (`URL::temporarySignedRoute`, 30 min). Bypasses cache + published-at
  *     gate so drafts and scheduled rows render.
@@ -46,18 +49,28 @@ class PageController extends Controller
      */
     private function payloadForPublic(string $slug, string $locale): ?array
     {
-        return Cache::rememberForever(
-            Page::cacheKey($slug, $locale),
-            function () use ($slug, $locale): ?array {
-                $page = Page::forSlugWithFallback($slug, $locale);
+        $key = Page::cacheKey($slug, $locale);
 
-                if ($page === null || ! $page->isPublished()) {
-                    return null;
-                }
+        $cached = Cache::get($key);
 
-                return $this->renderPayload($page);
-            },
-        );
+        if ($cached !== null) {
+            // Sentinel marks a known miss; translate it back to a 404.
+            return ($cached['__missing'] ?? false) === true ? null : $cached;
+        }
+
+        $page = Page::forSlugWithFallback($slug, $locale);
+
+        if ($page === null || ! $page->isPublished()) {
+            Cache::put($key, ['__missing' => true], now()->addMinutes(5));
+
+            return null;
+        }
+
+        $payload = $this->renderPayload($page);
+
+        Cache::forever($key, $payload);
+
+        return $payload;
     }
 
     /**

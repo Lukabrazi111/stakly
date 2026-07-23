@@ -91,10 +91,16 @@ return [
             'driver' => 'octane',
         ],
 
+        // M38 — default store (CACHE_STORE=failover). Reads/writes hit Redis;
+        // if Redis is unreachable, `FailoverStore` catches the throwable and
+        // falls through to the in-memory `array` tail (infallible), so a Redis
+        // blip never 500s the homepage and leaves the circuit breaker reading
+        // fail-open (empty → not tripped). The fall-through fires a
+        // `CacheFailedOver` event — see `App\Listeners\LogCacheFailover`.
         'failover' => [
             'driver' => 'failover',
             'stores' => [
-                'database',
+                'redis',
                 'array',
             ],
         ],

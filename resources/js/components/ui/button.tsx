@@ -21,6 +21,8 @@ const buttonVariants = cva(
         link: "text-primary underline-offset-4 hover:underline",
         gradient:
           "bg-gradient-primary text-white rounded-full font-semibold shadow-[var(--shadow-button-glow)] hover:shadow-[var(--shadow-button-glow-hover)] transition-shadow duration-200 ease-out",
+        outlinePrimary:
+          "border border-primary/50 bg-transparent text-primary font-semibold hover:border-primary hover:bg-primary hover:text-primary-foreground",
       },
       size: {
         default: "h-9 px-4 py-2 has-[>svg]:px-3",

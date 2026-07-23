@@ -67,6 +67,20 @@ return [
         'requests_per_minute' => (int) env('LICHESS_REQUESTS_PER_MINUTE', 60),
 
         /*
+         * M41 P3b — chess rating-refresh self-throttle + freshness TTL, on a
+         * SEPARATE budget from `requests_per_minute` so a rating-refresh burst
+         * can't starve the settlement-critical `lichess-api` limiter. Lichess
+         * doesn't publish a numeric read limit ("one request at a time, 60s
+         * back-off on 429"); 30/min is the CLAUDE.md conservative default.
+         */
+        'rating_requests_per_minute' => (int) env('LICHESS_RATING_REQUESTS_PER_MINUTE', 30),
+        'rating_ttl_hours' => (int) env('LICHESS_RATING_TTL_HOURS', 24),
+        // M41 P4 revision — a perf with fewer than this many games is
+        // "provisional" (shown with a "?"); Lichess's own `prov` flag (rd-based)
+        // no longer decides it, so a rusty-but-established perf isn't hidden.
+        'provisional_min_games' => (int) env('LICHESS_PROVISIONAL_MIN_GAMES', 20),
+
+        /*
          * Per-provider `ProviderCircuitBreaker` thresholds (M15 P5 Item 3).
          * Each provider can tune its own trip + cooldown without affecting
          * the others. Missing values fall back to the class-level defaults
@@ -90,6 +104,19 @@ return [
      */
     'chess_com' => [
         'requests_per_minute' => (int) env('CHESS_COM_REQUESTS_PER_MINUTE', 30),
+
+        /*
+         * M41 P3b — chess rating-refresh self-throttle + freshness TTL on a
+         * SEPARATE budget from settlement's `chess-com-api`. chess.com asks for
+         * serial requests with no numeric quota; 30/min is the conservative
+         * default. `provisional_min_games` (M41 P4 revision): a rating with fewer
+         * than this many games is "provisional" (shown with a "?"); `rd` no
+         * longer decides it — an established-but-rusty rating has inflated rd but
+         * is NOT provisional.
+         */
+        'rating_requests_per_minute' => (int) env('CHESS_COM_RATING_REQUESTS_PER_MINUTE', 30),
+        'rating_ttl_hours' => (int) env('CHESS_COM_RATING_TTL_HOURS', 24),
+        'provisional_min_games' => (int) env('CHESS_COM_PROVISIONAL_MIN_GAMES', 20),
 
         // Per-provider `ProviderCircuitBreaker` thresholds (M15 P5 Item 3).
         'circuit_breaker' => [
@@ -140,6 +167,17 @@ return [
          * once we observe real headroom or 429s.
          */
         'requests_per_minute' => (int) env('FACEIT_REQUESTS_PER_MINUTE', 30),
+
+        /*
+         * M41 P1 — rating-refresh self-throttle + freshness TTL. The rating
+         * limiter is SEPARATE from `requests_per_minute` so a refresh burst
+         * can never consume the budget money-critical settlement
+         * (`AutoFetchFaceitGameJob`) depends on. Rating refresh is low-volume,
+         * hence the lower default cap. `rating_ttl_hours` is how long a cached
+         * rating is considered fresh before the lazy path re-pulls it.
+         */
+        'rating_requests_per_minute' => (int) env('FACEIT_RATING_REQUESTS_PER_MINUTE', 20),
+        'rating_ttl_hours' => (int) env('FACEIT_RATING_TTL_HOURS', 24),
 
         // Per-provider `ProviderCircuitBreaker` thresholds (M15 P5 Item 3).
         'circuit_breaker' => [

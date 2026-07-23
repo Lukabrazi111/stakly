@@ -3,6 +3,7 @@ import { SlidersHorizontal } from 'lucide-react';
 import { useState } from 'react';
 import type { ReactNode } from 'react';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
@@ -41,9 +42,9 @@ interface Props {
 }
 
 const TIME_CONTROL_OPTIONS: { value: TimeControl; label: string }[] = [
+    { value: 'bullet', label: 'Bullet' },
     { value: 'blitz', label: 'Blitz' },
     { value: 'rapid', label: 'Rapid' },
-    { value: 'classical', label: 'Classical' },
 ];
 
 const REGIONS = ['Global', 'EU', 'NA', 'Asia', 'CIS', 'LATAM'];
@@ -57,6 +58,7 @@ interface DraftFilters {
     stake_max: string;
     skill_min: string;
     skill_max: string;
+    unrated: boolean;
     time_control: TimeControl[];
     region: string | null;
     language: string | null;
@@ -68,6 +70,7 @@ function filtersToDraft(filters: ListingFiltersType): DraftFilters {
         stake_max: filters.stake_max !== null ? String(filters.stake_max) : '',
         skill_min: filters.skill_min !== null ? String(filters.skill_min) : '',
         skill_max: filters.skill_max !== null ? String(filters.skill_max) : '',
+        unrated: filters.unrated,
         time_control: filters.time_control,
         region: filters.region,
         language: filters.language,
@@ -148,14 +151,24 @@ function FilterForm({ filters, onClose }: FormProps) {
         filtersToDraft(filters),
     );
     const showTimeControl = gameSupports(filters.game, 'time_control');
+    const showRating = gameSupports(filters.game, 'skill_range');
+    const isCs2 = filters.game === 'cs2';
 
     const apply = () => {
         const next: ListingFiltersType = {
             game: filters.game,
             stake_min: draft.stake_min === '' ? null : Number(draft.stake_min),
             stake_max: draft.stake_max === '' ? null : Number(draft.stake_max),
-            skill_min: draft.skill_min === '' ? null : Number(draft.skill_min),
-            skill_max: draft.skill_max === '' ? null : Number(draft.skill_max),
+            // "Unrated only" is exclusive with a range — drop the bounds.
+            skill_min:
+                draft.unrated || draft.skill_min === ''
+                    ? null
+                    : Number(draft.skill_min),
+            skill_max:
+                draft.unrated || draft.skill_max === ''
+                    ? null
+                    : Number(draft.skill_max),
+            unrated: draft.unrated,
             time_control: draft.time_control,
             region: draft.region,
             language: draft.language,
@@ -176,6 +189,7 @@ function FilterForm({ filters, onClose }: FormProps) {
             stake_max: '',
             skill_min: '',
             skill_max: '',
+            unrated: false,
             time_control: [],
             region: null,
             language: null,
@@ -206,20 +220,43 @@ function FilterForm({ filters, onClose }: FormProps) {
                     />
                 </Field>
 
-                <Field label={t('Skill range (Elo)')}>
-                    <RangePair
-                        minValue={draft.skill_min}
-                        maxValue={draft.skill_max}
-                        onMinChange={(v) =>
-                            setDraft({ ...draft, skill_min: v })
-                        }
-                        onMaxChange={(v) =>
-                            setDraft({ ...draft, skill_max: v })
-                        }
-                        max={3500}
-                        inputMode="numeric"
-                    />
-                </Field>
+                {/* Verified-rating filter (M41 P5). Chess → creator's Elo for
+                    the listing's platform+TC; CS2 → the creator's raw FACEIT Elo
+                    (revised 2026-06-28 from a 1–10 level selector). The "unrated"
+                    toggle is exclusive with the range. Dota 2 carries no
+                    `skill_range` (no rating adapter yet) so this hides. */}
+                {showRating && (
+                    <Field label={isCs2 ? t('FACEIT Elo') : t('Rating (Elo)')}>
+                        <div className="space-y-3">
+                            {!draft.unrated && (
+                                <RangePair
+                                    minValue={draft.skill_min}
+                                    maxValue={draft.skill_max}
+                                    onMinChange={(v) =>
+                                        setDraft({ ...draft, skill_min: v })
+                                    }
+                                    onMaxChange={(v) =>
+                                        setDraft({ ...draft, skill_max: v })
+                                    }
+                                    max={3500}
+                                    inputMode="numeric"
+                                />
+                            )}
+                            <label className="flex cursor-pointer items-center gap-2 text-sm text-muted-foreground">
+                                <Checkbox
+                                    checked={draft.unrated}
+                                    onCheckedChange={(checked) =>
+                                        setDraft({
+                                            ...draft,
+                                            unrated: checked === true,
+                                        })
+                                    }
+                                />
+                                {t('Show only unrated')}
+                            </label>
+                        </div>
+                    </Field>
+                )}
 
                 {/* Chess-specific. When a second game adapter ships (M15),
                     branch here per `filters.game` with a sibling component

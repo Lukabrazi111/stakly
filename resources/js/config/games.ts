@@ -19,11 +19,13 @@ export interface GameConfig {
     filters: ReadonlyArray<'time_control' | 'skill_range'>;
 }
 
-// CS2 + Dota 2 are M15 placeholders (see backend `App\Enums\Game`) — they're
-// `available: true` so the per-game tabs strip drives the marketplace, but
-// the Create-listing flow is still chess-only (no FACEIT/Steam profile
-// clients yet). `filters: ['skill_range']` skips `time_control` so the
-// chess-specific filter UI hides when these are selected.
+// `skill_range` gates the verified-rating filter (M41 P5): chess filters on the
+// creator's Elo for the listing's platform+TC, CS2 on the creator's FACEIT Elo.
+// Dota 2 has no rating integration yet (FACEIT Dota 2 Elo fetch not wired), so
+// it carries NO rating filter — re-add `skill_range` when the FACEIT Dota 2
+// adapter ships. CS2's
+// Create-listing flow is still seeded-only (no FACEIT Create form yet), but its
+// dev-seeded listings carry real FACEIT ratings, so the filter applies.
 export const GAMES: readonly GameConfig[] = [
     {
         id: 'chess',
@@ -41,7 +43,7 @@ export const GAMES: readonly GameConfig[] = [
         id: 'dota2',
         name: 'Dota 2',
         available: true,
-        filters: ['skill_range'],
+        filters: [],
     },
 ] as const;
 

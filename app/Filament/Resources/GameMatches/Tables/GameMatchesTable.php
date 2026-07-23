@@ -41,18 +41,40 @@ class GameMatchesTable
                         : null,
                         shouldOpenInNewTab: true),
 
+                TextColumn::make('listing.team_size')
+                    ->label('Format')
+                    ->badge()
+                    ->formatStateUsing(fn ($state): string => (int) $state > 1 ? $state.'v'.$state : '1v1')
+                    ->sortable(),
+
+                // Team matches have no single taker — show the format instead of
+                // a blank cell (which reads as an untaken 1v1).
                 TextColumn::make('taker.username')
-                    ->label('Taker')
-                    ->searchable()
-                    ->url(fn ($record) => $record->taker
+                    ->label('Taker / opponent')
+                    ->state(fn (GameMatch $record): string => ($record->listing?->isTeamPlay() ?? false)
+                        ? 'Team '.$record->listing->team_size.'v'.$record->listing->team_size
+                        : ($record->taker?->username !== null ? '@'.$record->taker->username : '—'),
+                    )
+                    ->url(fn (GameMatch $record) => (! ($record->listing?->isTeamPlay() ?? false) && $record->taker)
                         ? route('users.show', $record->taker->username)
                         : null,
-                        shouldOpenInNewTab: true),
+                        shouldOpenInNewTab: true)
+                    ->searchable(),
 
                 TextColumn::make('listing.stake_amount')
-                    ->label('Stake')
+                    ->label('Stake / player')
                     ->formatStateUsing(fn ($state) => '$'.number_format((float) $state, 2).' USDT')
                     ->sortable(),
+
+                TextColumn::make('pot')
+                    ->label('Pot')
+                    // Per-player stake × full headcount (team_size × 2); the true
+                    // escrow at stake, not the per-player figure.
+                    ->state(fn (GameMatch $record): string => $record->listing !== null
+                        ? '$'.number_format((float) bcmul((string) $record->listing->stake_amount, (string) ($record->listing->team_size * 2), 6), 2).' USDT'
+                        : '—',
+                    )
+                    ->toggleable(isToggledHiddenByDefault: true),
 
                 TextColumn::make('status')
                     ->badge()

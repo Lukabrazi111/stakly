@@ -75,7 +75,7 @@
     --color-sidebar-border: var(--sidebar-border);
     --color-sidebar-ring: var(--sidebar-ring);
 
-    --animate-marquee: marquee 40s linear infinite;
+    --animate-marquee: marquee 50s linear infinite;
 }
 
 @keyframes marquee {
@@ -176,6 +176,26 @@
     --success-foreground: #0a0710;
     --warning: #f59e0b;
     --warning-foreground: #0a0710;
+
+    /* FACEIT level ladder (M41 P7) — AUTHENTIC FACEIT colors for the CS2 level
+       dial, matching the official ladder: L1 grey, L2–3 green, L4–7 yellow,
+       L8–9 orange, L10 red. A deliberate divergence from the Stakly palette
+       (provider-accurate colors for instant recognizability); the centered level
+       number carries the meaning, so the rings stay readable as a LEVEL, not
+       win/dispute status next to a stake. Tune here. */
+    --faceit-grey: #9a9aa5;
+    --faceit-green: #4caf50;
+    --faceit-yellow: #f5c518;
+    --faceit-orange: #f57c00;
+    --faceit-red: #e23b3b;
+
+    /* per-platform brand accent — the calm colored icon + platform text in the
+       merged game chip (game · format · platform). Muted-but-legible, not the
+       loud filled pill it replaces. */
+    --platform-faceit: #ff8a4c;
+    --platform-chesscom: #d4a574;
+    --platform-lichess: #c7c9d6;
+    --platform-steam: #66c0f4;
 
     /* brand gradient endpoints + glow color */
     --gradient-from: #ec4899;

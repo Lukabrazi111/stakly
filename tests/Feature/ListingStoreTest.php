@@ -3,6 +3,7 @@
 use App\Enums\Game;
 use App\Enums\LinkedAccountProvider;
 use App\Enums\ListingStatus;
+use App\Enums\TimeControl;
 use App\Enums\WalletTransactionType;
 use App\Models\Listing;
 use App\Models\LobbyParticipant;
@@ -18,7 +19,7 @@ function validPayload(array $overrides = []): array
         // `->withLichess()` user the helpers/tests construct.
         'platform' => 'lichess',
         'stake_amount' => 100,
-        'time_control' => ['blitz'],
+        'time_control' => 'blitz',
         'region' => 'Global',
         'duration_hours' => 24,
     ], $overrides);
@@ -51,6 +52,8 @@ test('verified users see the create form with balance + option lists', function 
         ->has('regions')
         ->has('languages')
         ->has('durations')
+        // M40 — fee rate drives the live Deal summary; single source = config.
+        ->where('feeRate', (float) config('stakly.platform_fee_rate'))
     );
 });
 
@@ -76,7 +79,7 @@ test('store creates the listing AND writes the escrow hold ledger row', function
 
     $response = $this->actingAs($user)->postJson('/listings', validPayload([
         'stake_amount' => 100,
-        'time_control' => ['blitz', 'rapid'],
+        'time_control' => 'rapid',
     ]));
 
     $listing = Listing::query()->where('user_id', $user->id)->firstOrFail();
@@ -86,7 +89,7 @@ test('store creates the listing AND writes the escrow hold ledger row', function
     expect($listing->status)->toBe(ListingStatus::Open)
         ->and($listing->user_id)->toBe($user->id)
         ->and((float) $listing->stake_amount)->toBe(100.0)
-        ->and($listing->time_control->map->value->all())->toBe(['blitz', 'rapid']);
+        ->and($listing->time_control)->toBe(TimeControl::Rapid);
 
     $hold = WalletTransaction::query()
         ->where('user_id', $user->id)
@@ -140,7 +143,7 @@ test('missing time_control with game=chess still produces a required error', fun
         ->assertJsonValidationErrors('time_control');
 });
 
-test('CS2 listing without time_control is accepted and stored as empty', function () {
+test('CS2 listing without time_control is accepted and stored as null', function () {
     platformUser();
     $user = User::factory()->active()->withFaceit()->create();
     Wallet::deposit($user, '500', reference: "test:deposit:{$user->id}");
@@ -157,7 +160,30 @@ test('CS2 listing without time_control is accepted and stored as empty', functio
     $this->actingAs($user)->postJson('/listings', $payload)->assertRedirect();
 
     $listing = Listing::query()->where('user_id', $user->id)->firstOrFail();
-    expect($listing->time_control->all())->toBe([]);
+    expect($listing->time_control)->toBeNull();
+});
+
+test('a non-chess listing rejects a stray time_control at the validation boundary', function () {
+    // The "non-chess ⇒ time_control IS NULL" invariant must hold even against a
+    // crafted request — `prohibited` rejects a smuggled value rather than
+    // letting it ride to the DB (M41 P3a review hardening).
+    platformUser();
+    $user = User::factory()->active()->withFaceit()->create();
+    Wallet::deposit($user, '500', reference: "test:deposit:{$user->id}");
+
+    $payload = validPayload([
+        'game' => 'cs2',
+        'platform' => 'faceit',
+        'team_size' => 5,
+        'creator_side' => LobbyParticipant::SIDE_A,
+        'time_control' => 'blitz',
+    ]);
+
+    $this->actingAs($user)
+        ->postJson('/listings', $payload)
+        ->assertJsonValidationErrors('time_control');
+
+    expect(Listing::query()->where('user_id', $user->id)->exists())->toBeFalse();
 });
 
 test('team-play creators are redirected to the lobby (listing detail), not /listings/mine', function () {
@@ -184,21 +210,31 @@ test('team-play creators are redirected to the lobby (listing detail), not /list
     $response->assertRedirect(route('listings.show', $listing));
 });
 
-test('time_control must be a non-empty array of valid enum values', function () {
+test('time_control must be a single valid enum value', function () {
+    $user = User::factory()->withLichess()->create();
+    Wallet::deposit($user, '500', reference: "test:deposit:{$user->id}");
+
+    // Unknown enum value rejected.
+    $this->actingAs($user)
+        ->postJson('/listings', validPayload(['time_control' => 'bogus']))
+        ->assertJsonValidationErrors('time_control');
+
+    // An array is no longer accepted — one chess listing = one time control.
+    $this->actingAs($user)
+        ->postJson('/listings', validPayload(['time_control' => ['blitz']]))
+        ->assertJsonValidationErrors('time_control');
+});
+
+test('bullet is an accepted chess time control', function () {
     $user = User::factory()->withLichess()->create();
     Wallet::deposit($user, '500', reference: "test:deposit:{$user->id}");
 
     $this->actingAs($user)
-        ->postJson('/listings', validPayload(['time_control' => []]))
-        ->assertJsonValidationErrors('time_control');
+        ->postJson('/listings', validPayload(['time_control' => 'bullet']))
+        ->assertRedirect(route('listings.mine'));
 
-    $this->actingAs($user)
-        ->postJson('/listings', validPayload(['time_control' => ['bogus']]))
-        ->assertJsonValidationErrors('time_control.0');
-
-    $this->actingAs($user)
-        ->postJson('/listings', validPayload(['time_control' => ['blitz', 'blitz']]))
-        ->assertJsonValidationErrors('time_control.0');
+    $listing = Listing::query()->where('user_id', $user->id)->firstOrFail();
+    expect($listing->time_control)->toBe(TimeControl::Bullet);
 });
 
 test('stake_amount with more than 2 decimal places is rejected', function () {
@@ -381,6 +417,8 @@ test('CS2 listing creation succeeds when the user has FACEIT linked', function (
         'platform' => 'faceit',
         'team_size' => 5,
         'creator_side' => LobbyParticipant::SIDE_A,
+        // CS2 has no time control — the real form sends null.
+        'time_control' => null,
     ]));
 
     $listing = Listing::query()->where('user_id', $user->id)->firstOrFail();
@@ -404,6 +442,7 @@ test('CS2 listing creation is blocked when the user has no FACEIT link', functio
         'platform' => 'faceit',
         'team_size' => 5,
         'creator_side' => LobbyParticipant::SIDE_A,
+        'time_control' => null,
     ]));
 
     $response->assertRedirect(route('linked-accounts.edit'));

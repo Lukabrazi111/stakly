@@ -3,7 +3,6 @@ import { useState } from 'react';
 import { LobbyCenterColumn } from '@/components/lobby/center/center-column';
 import { LobbyChatPanel } from '@/components/lobby/lobby-chat-panel';
 import { LobbyHeader } from '@/components/lobby/lobby-header';
-import { LobbyInviteBanner } from '@/components/lobby/lobby-invite-banner';
 import { LobbyRealtimeSync } from '@/components/lobby/lobby-realtime-sync';
 import { TeamSlotColumn } from '@/components/lobby/team-slot-column';
 import { join, kick, leave, ready } from '@/routes/lobbies';
@@ -97,32 +96,28 @@ export function TeamPlayLobbyView({ lobby, messages }: Props) {
         });
     };
 
-    // Owner-only private-listing affordance — `lobby.invite_token` is
-    // exposed only to the listing owner by `LobbyResource`, and the gate
-    // on lobby_state hides the banner once the lobby locks (the invite
-    // endpoint 404s past that point anyway).
-    const showInviteBanner =
-        lobby.invite_token !== null &&
-        (lobby.lobby_state === 'recruiting' ||
-            lobby.lobby_state === 'ready_checking');
-
     return (
         <>
-            {isRealtimeActive && <LobbyRealtimeSync listingId={lobby.id} />}
+            {isRealtimeActive && (
+                <LobbyRealtimeSync
+                    listingId={lobby.id}
+                    viewerId={viewerId}
+                    isPublic={lobby.is_public}
+                />
+            )}
 
             <div className="space-y-6">
-                {showInviteBanner && lobby.invite_token !== null && (
-                    <LobbyInviteBanner inviteToken={lobby.invite_token} />
-                )}
-
                 <LobbyHeader lobby={lobby} />
 
                 {/* The headline 3-col layout — Team A | Center | Team B at
-                    lg+. Below lg the columns stack so mobile reads
-                    top-to-bottom: Team A → Center blocks → Team B. The
-                    Money block hosts Ready / Leave actions for the viewer;
-                    slot cards stay display-only. */}
-                <div className="grid gap-4 lg:grid-cols-[1fr_minmax(360px,400px)_1fr] lg:items-start lg:gap-6">
+                    xl+. Below xl the columns stack so the page reads
+                    top-to-bottom: Team A → Center blocks → Team B. Gated at
+                    xl (not lg) because the P8 FACEIT-roster slot card's
+                    min-content (~300px) plus the 400px center column overflows
+                    a 1024px viewport's two 1fr tracks — at lg the right column
+                    spilled off-screen. The Money block hosts Ready / Leave
+                    actions for the viewer; slot cards stay display-only. */}
+                <div className="grid gap-4 xl:grid-cols-[1fr_minmax(360px,400px)_1fr] xl:items-start xl:gap-6">
                     <TeamSlotColumn
                         lobby={lobby}
                         side="a"

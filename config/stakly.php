@@ -76,9 +76,10 @@ return [
     | window to find a matching game; if none lands by the deadline, an
     | admin (M12) takes over.
     |
-    | Default: 4 hours. Frontend `MatchTimer` (resources/js/components/match/
-    | match-timer.tsx) currently hardcodes the same value; if you change one,
-    | change both — there's no shared source yet.
+    | Default: 4 hours. The frontend `MatchTimer` countdown reads this value
+    | via `GameMatchResource::match_deadline_at` (and `LobbyResource` on the
+    | team path) — the backend is the single source, so changing it here also
+    | moves the on-screen clock. No hardcoded copy in the React layer (M39 P2).
     |
     */
 

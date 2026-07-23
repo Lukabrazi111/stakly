@@ -2,18 +2,26 @@ import type { TranslationFn } from '@/lib/i18n';
 import type { TimeControl } from '@/types';
 
 export const timeControlLabels: Record<TimeControl, string> = {
+    bullet: 'Bullet',
     blitz: 'Blitz',
     rapid: 'Rapid',
-    classical: 'Classical',
 };
 
-export function formatTimeControls(
-    values: TimeControl[],
+/**
+ * Display label for a listing's single time control (M41 P3a — one chess
+ * listing = one time control). Returns an empty string for non-chess listings
+ * (`time_control` is null), so callers can guard with `value && …` to render
+ * nothing rather than an empty chip.
+ */
+export function timeControlLabel(
+    value: TimeControl | null | undefined,
     t?: TranslationFn,
 ): string {
-    return values
-        .map((v) => (t ? t(timeControlLabels[v]) : timeControlLabels[v]))
-        .join(', ');
+    if (!value) {
+        return '';
+    }
+
+    return t ? t(timeControlLabels[value]) : timeControlLabels[value];
 }
 
 export function formatTimeRemaining(
@@ -74,26 +82,4 @@ export function getTimeUrgency(isoString: string): TimeUrgency {
     }
 
     return 'normal';
-}
-
-export function formatSkillRange(
-    min: number | null,
-    max: number | null,
-    t?: TranslationFn,
-): string {
-    if (min === null && max === null) {
-        return t ? t('Any skill') : 'Any skill';
-    }
-
-    if (min !== null && max !== null) {
-        return t ? t(':min-:max Elo', { min, max }) : `${min}-${max} Elo`;
-    }
-
-    if (min !== null) {
-        return t ? t(':min+ Elo', { min }) : `${min}+ Elo`;
-    }
-
-    const maxValue = max as number;
-
-    return t ? t('up to :max Elo', { max: maxValue }) : `up to ${maxValue} Elo`;
 }

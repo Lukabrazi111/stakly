@@ -1,20 +1,37 @@
-import { Check, Crown, Share2, Swords, Target } from 'lucide-react';
-import type { ElementType } from 'react';
+import { Check, Copy, Link2, Share2 } from 'lucide-react';
+import { QRCodeSVG } from 'qrcode.react';
 import { useEffect, useState } from 'react';
+import { toast } from 'sonner';
 import { leaderLabel, pickLeader } from '@/components/lobby/lobby-leader';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { Button } from '@/components/ui/button';
+import {
+    Popover,
+    PopoverContent,
+    PopoverTrigger,
+} from '@/components/ui/popover';
 import type { GameId } from '@/config/games';
-import { useClipboard } from '@/hooks/use-clipboard';
 import { useInitials } from '@/hooks/use-initials';
 import { useT } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
+import { show as listingShow } from '@/routes/listings';
+import { invite as lobbyInvite } from '@/routes/lobbies';
 import type { Lobby, LobbyParticipantPayload } from '@/types';
 
-const GAME_META: Record<GameId, { icon: ElementType; label: string }> = {
-    chess: { icon: Crown, label: 'Chess' },
-    cs2: { icon: Target, label: 'CS2' },
-    dota2: { icon: Swords, label: 'Dota 2' },
+// Text-only label — mirrors the shared `GameChip` (no game icon), so the lobby
+// header's mode chip reads consistently with the marketplace / match surfaces.
+const GAME_LABEL: Record<GameId, string> = {
+    chess: 'Chess',
+    cs2: 'CS2',
+    dota2: 'Dota 2',
 };
+
+// Team accent — Team A pink (primary), Team B purple (accent). Mirrors the slot
+// cards so the two sides read as distinct top-to-bottom (M43 P4).
+const TEAM_TONE = {
+    a: { ring: 'ring-primary/60', dot: 'bg-primary' },
+    b: { ring: 'ring-accent/60', dot: 'bg-accent' },
+} as const;
 
 interface Props {
     lobby: Lobby;
@@ -43,7 +60,7 @@ export function LobbyHeader({ lobby }: Props) {
     return (
         <header className="relative border-b border-border/60 pt-12 pb-5 lg:px-14 lg:pb-6">
             <div className="absolute top-0 right-0">
-                <ShareButton />
+                <ShareButton lobby={lobby} />
             </div>
 
             <div className="grid grid-cols-1 items-center gap-5 lg:grid-cols-[1fr_auto_1fr] lg:gap-6">
@@ -96,10 +113,16 @@ function TeamSide({
     const label = leaderLabel(leader, fallback);
     const flexDir = align === 'end' ? 'flex-row-reverse' : 'flex-row';
     const textAlign = align === 'end' ? 'text-right' : 'text-left';
+    const tone = align === 'start' ? TEAM_TONE.a : TEAM_TONE.b;
 
     return (
         <div className={cn('flex min-w-0 items-center gap-3', flexDir)}>
-            <Avatar className="size-11 shrink-0 overflow-hidden rounded-full">
+            <Avatar
+                className={cn(
+                    'size-11 shrink-0 overflow-hidden rounded-full ring-2',
+                    tone.ring,
+                )}
+            >
                 {leader?.user.avatar_thumb_url && (
                     <AvatarImage
                         src={leader.user.avatar_thumb_url}
@@ -114,7 +137,16 @@ function TeamSide({
                 <h2 className="truncate font-display text-base font-semibold tracking-wide text-foreground">
                     {label}
                 </h2>
-                <span className="text-xs text-muted-foreground tabular-nums">
+                <span
+                    className={cn(
+                        'inline-flex items-center gap-1.5 text-xs text-muted-foreground tabular-nums',
+                        align === 'end' && 'flex-row-reverse',
+                    )}
+                >
+                    <span
+                        className={cn('size-1.5 rounded-full', tone.dot)}
+                        aria-hidden="true"
+                    />
                     {fillCount} / {teamSize}
                 </span>
             </div>
@@ -124,13 +156,11 @@ function TeamSide({
 
 function ModeRow({ lobby }: { lobby: Lobby }) {
     const t = useT();
-    const meta = GAME_META[lobby.game];
-    const Icon = meta?.icon ?? Target;
+    const label = GAME_LABEL[lobby.game] ?? lobby.game;
 
     return (
         <div className="flex items-center gap-1.5 rounded-full border border-border/60 bg-background/60 px-3 py-1 text-xs font-medium text-foreground">
-            <Icon className="size-3 text-primary" aria-hidden="true" />
-            <span>{t(meta?.label ?? lobby.game)}</span>
+            <span>{t(label)}</span>
             <span className="text-muted-foreground/60" aria-hidden="true">
                 ·
             </span>
@@ -263,47 +293,126 @@ function TerminalBadge({ tone, label }: { tone: 'muted'; label: string }) {
     );
 }
 
-function ShareButton() {
+/**
+ * Lobby invite/share affordance (M34 P6 — replaces the old `LobbyInviteBanner`).
+ * A popover (mirrors `ShareProfileButton`: QR + copyable link + Copy) that hands
+ * out the link which actually grants access:
+ *   - private + owner → the invite-token link (`/lobbies/{token}`). NOT
+ *     `window.location.href` — that's the `/listings/{id}` page, which 404s for
+ *     invitees after the M34 P5 invite-only hardening.
+ *   - public lobby    → the public listing page.
+ *   - private + non-owner → nothing to share (no token; the listing 404s for
+ *     outsiders) → renders nothing.
+ * Lifecycle-gated to recruiting / ready_checking (the invite endpoint 404s once
+ * the lobby locks, and there's no one to recruit after that).
+ */
+function ShareButton({ lobby }: { lobby: Lobby }) {
     const t = useT();
-    const [copiedText, copy] = useClipboard();
-    const [url, setUrl] = useState('');
+    const [copied, setCopied] = useState(false);
+    const [origin, setOrigin] = useState('');
 
     useEffect(() => {
-        setUrl(window.location.href);
+        setOrigin(window.location.origin);
     }, []);
 
-    const isCopied = copiedText === url;
+    const isLive =
+        lobby.lobby_state === 'recruiting' ||
+        lobby.lobby_state === 'ready_checking';
 
-    const handleShare = async () => {
-        if (typeof navigator !== 'undefined' && 'share' in navigator) {
-            try {
-                await navigator.share({
-                    title: t('Stakly lobby'),
-                    url,
-                });
+    const path =
+        lobby.invite_token !== null
+            ? lobbyInvite({ token: lobby.invite_token }).url
+            : lobby.is_public
+              ? listingShow({ listing: lobby.id }).url
+              : null;
 
-                return;
-            } catch {
-                // user dismissed the share sheet — fall through to copy
-            }
+    if (!isLive || path === null) {
+        return null;
+    }
+
+    const isInvite = lobby.invite_token !== null;
+    const url = `${origin}${path}`;
+    const Icon = isInvite ? Link2 : Share2;
+
+    const handleCopy = async () => {
+        try {
+            await navigator.clipboard.writeText(url);
+            setCopied(true);
+            toast.success(t('Link copied'));
+            setTimeout(() => setCopied(false), 2000);
+        } catch {
+            toast.error(t('Could not copy — try selecting it manually.'));
         }
-
-        copy(url);
     };
 
     return (
-        <button
-            type="button"
-            onClick={handleShare}
-            aria-label={t('Share lobby link')}
-            className="inline-flex size-10 shrink-0 cursor-pointer items-center justify-center rounded-full border border-border/60 bg-card/60 text-muted-foreground transition-colors hover:border-primary/40 hover:bg-primary/10 hover:text-primary"
-        >
-            {isCopied ? (
-                <Check className="size-4 text-success" aria-hidden="true" />
-            ) : (
-                <Share2 className="size-4" aria-hidden="true" />
-            )}
-        </button>
+        <Popover>
+            <PopoverTrigger asChild>
+                <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="rounded-full"
+                >
+                    <Icon className="size-4" aria-hidden="true" />
+                    {isInvite ? t('Invite') : t('Share')}
+                </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-80 space-y-4" align="end">
+                <div>
+                    <h3 className="font-display text-sm font-semibold text-foreground">
+                        {isInvite
+                            ? t('Invite to your lobby')
+                            : t('Share this lobby')}
+                    </h3>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                        {isInvite
+                            ? t(
+                                  'Only people with this link can see your lobby. Share it with teammates to recruit.',
+                              )
+                            : t('Anyone with this link can view your lobby.')}
+                    </p>
+                </div>
+
+                {/* Forced-light QR — phone cameras read dark squares better on white. */}
+                <div className="flex justify-center">
+                    <div className="rounded-xl bg-white p-3 shadow-md">
+                        <QRCodeSVG
+                            value={url}
+                            size={160}
+                            level="M"
+                            marginSize={0}
+                        />
+                    </div>
+                </div>
+
+                <div className="flex items-center gap-2 rounded-lg border border-border/60 bg-card/60 p-2">
+                    <code
+                        className="flex-1 truncate text-xs text-foreground select-all"
+                        title={url}
+                    >
+                        {url}
+                    </code>
+                    <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        onClick={handleCopy}
+                        aria-label={copied ? t('Link copied') : t('Copy link')}
+                        className="size-8 shrink-0"
+                    >
+                        {copied ? (
+                            <Check
+                                className="size-3.5 text-success"
+                                aria-hidden="true"
+                            />
+                        ) : (
+                            <Copy className="size-3.5" aria-hidden="true" />
+                        )}
+                    </Button>
+                </div>
+            </PopoverContent>
+        </Popover>
     );
 }
 

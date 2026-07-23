@@ -1,20 +1,24 @@
-import { router } from '@inertiajs/react';
+import { router, usePage } from '@inertiajs/react';
 import { Swords } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { MatchListRow } from '@/components/match/match-list-row';
 import { MatchListRowSkeleton } from '@/components/match/match-list-row-skeleton';
 import { MatchesFilterChips } from '@/components/match/matches-filter-chips';
 import { MatchesPagination } from '@/components/match/matches-pagination';
+import { MatchesViewTabs } from '@/components/match/matches-view-tabs';
+import { RecruitingLobbyRow } from '@/components/match/recruiting-lobby-row';
 import { PageMeta } from '@/components/site/page-meta';
 import PlayerHubLayout from '@/layouts/player-hub-layout';
 import { useT } from '@/lib/i18n';
 import { index as matchesIndex } from '@/routes/matches';
-import type { MatchesIndexProps } from '@/types';
+import type { MatchesIndexProps, MatchView } from '@/types';
 
 const SKELETON_ROW_COUNT = 4;
 
 export default function MatchesIndex({ matches, filters }: MatchesIndexProps) {
     const t = useT();
+    const { props } = usePage();
+    const activeCount = props.auth.user?.active_matches_count ?? 0;
     const [isLoading, setIsLoading] = useState(false);
 
     useEffect(() => {
@@ -49,7 +53,7 @@ export default function MatchesIndex({ matches, filters }: MatchesIndexProps) {
         };
     }, []);
 
-    const isFiltering = filters.status !== null;
+    const isFiltering = filters.view === 'all' && filters.status !== null;
     const isEmpty = matches.data.length === 0;
 
     return (
@@ -79,8 +83,14 @@ export default function MatchesIndex({ matches, filters }: MatchesIndexProps) {
                     </p>
                 </header>
 
-                <div className="mb-6">
-                    <MatchesFilterChips filters={filters} />
+                <div className="mb-6 space-y-4">
+                    <MatchesViewTabs
+                        filters={filters}
+                        activeCount={activeCount}
+                    />
+                    {filters.view === 'all' && (
+                        <MatchesFilterChips filters={filters} />
+                    )}
                 </div>
 
                 {!isEmpty || isLoading ? (
@@ -104,12 +114,25 @@ export default function MatchesIndex({ matches, filters }: MatchesIndexProps) {
                             ? Array.from({ length: SKELETON_ROW_COUNT }).map(
                                   (_, i) => <MatchListRowSkeleton key={i} />,
                               )
-                            : matches.data.map((match) => (
-                                  <MatchListRow key={match.id} match={match} />
-                              ))}
+                            : matches.data.map((match) =>
+                                  // M44 — a recruiting lobby you're in has no
+                                  // opponent yet, so it renders its own row
+                                  // (fill progress + Return → to the lobby).
+                                  match.status === 'lobby_filling' ? (
+                                      <RecruitingLobbyRow
+                                          key={match.id}
+                                          match={match}
+                                      />
+                                  ) : (
+                                      <MatchListRow
+                                          key={match.id}
+                                          match={match}
+                                      />
+                                  ),
+                              )}
                     </div>
                 ) : (
-                    <EmptyState filtering={isFiltering} />
+                    <EmptyState view={filters.view} filtering={isFiltering} />
                 )}
 
                 <MatchesPagination
@@ -123,11 +146,28 @@ export default function MatchesIndex({ matches, filters }: MatchesIndexProps) {
 }
 
 interface EmptyStateProps {
+    view: MatchView;
     filtering: boolean;
 }
 
-function EmptyState({ filtering }: EmptyStateProps) {
+function EmptyState({ view, filtering }: EmptyStateProps) {
     const t = useT();
+
+    let title: string;
+    let body: string;
+
+    if (view === 'in_progress') {
+        title = t('Nothing live right now');
+        body = t("When you create or take a match, it'll show up here.");
+    } else if (filtering) {
+        title = t('No matches in this view');
+        body = t('Try a different filter, or clear it to see every match.');
+    } else {
+        title = t('No matches yet');
+        body = t(
+            "Create a listing or take someone else's to start your first match.",
+        );
+    }
 
     return (
         <div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed border-border/60 bg-card/40 px-6 py-16 text-center">
@@ -135,17 +175,9 @@ function EmptyState({ filtering }: EmptyStateProps) {
                 <Swords className="size-6" />
             </div>
             <h2 className="font-display text-xl font-semibold text-foreground">
-                {filtering ? t('No matches in this view') : t('No matches yet')}
+                {title}
             </h2>
-            <p className="max-w-sm text-sm text-muted-foreground">
-                {filtering
-                    ? t(
-                          'Try a different filter, or clear it to see every match.',
-                      )
-                    : t(
-                          "Create a listing or take someone else's to start your first match.",
-                      )}
-            </p>
+            <p className="max-w-sm text-sm text-muted-foreground">{body}</p>
         </div>
     );
 }

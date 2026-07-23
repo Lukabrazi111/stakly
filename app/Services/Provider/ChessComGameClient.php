@@ -244,9 +244,62 @@ class ChessComGameClient
             speed: (string) ($data['time_class'] ?? 'unknown'),
             variant: (string) ($data['rules'] ?? 'chess'),
             rated: (bool) ($data['rated'] ?? false),
-            createdAt: CarbonImmutable::createFromTimestamp((int) ($data['start_time'] ?? $data['end_time'] ?? 0)),
+            createdAt: CarbonImmutable::createFromTimestamp(self::parseStartTimestamp($data)),
             endedAt: CarbonImmutable::createFromTimestamp((int) ($data['end_time'] ?? 0)),
         );
+    }
+
+    /**
+     * True game-start unix timestamp. Daily (correspondence) games expose a
+     * top-level `start_time`; LIVE games (bullet/blitz/rapid — the only Stakly
+     * time controls) do NOT — the real chess.com API returns `end_time` only.
+     * Their start lives in the PGN as `[UTCDate]` + `[StartTime]` (both UTC).
+     *
+     * Parsing it is what makes the M46 P2 started-after-creation guard REAL on
+     * chess.com: without it `createdAt` collapses to `end_time`, and the guard
+     * (`createdAt >= match.created_at`) becomes a no-op — redundant with the
+     * archive search's own `end_time >= since` filter — so a game already in
+     * progress when the stake was placed could be auto-settled. Falls back to
+     * `end_time` only when neither source is parseable (malformed data).
+     *
+     * @param  array<string, mixed>  $data
+     */
+    private static function parseStartTimestamp(array $data): int
+    {
+        $startTime = (int) ($data['start_time'] ?? 0);
+        if ($startTime > 0) {
+            return $startTime;
+        }
+
+        $pgn = (string) ($data['pgn'] ?? '');
+        $date = self::pgnTag($pgn, 'UTCDate');
+        $time = self::pgnTag($pgn, 'StartTime');
+
+        if ($date !== null && $time !== null) {
+            try {
+                $parsed = CarbonImmutable::createFromFormat('Y.m.d H:i:s', "{$date} {$time}", 'UTC');
+                if ($parsed instanceof CarbonInterface) {
+                    return $parsed->getTimestamp();
+                }
+            } catch (\Throwable) {
+                // Malformed PGN tags — fall through to the end_time floor.
+            }
+        }
+
+        return (int) ($data['end_time'] ?? 0);
+    }
+
+    /**
+     * Value of a single PGN header tag (e.g. `[StartTime "11:59:50"]`), or
+     * null when the tag is absent.
+     */
+    private static function pgnTag(string $pgn, string $tag): ?string
+    {
+        if (preg_match('/\['.preg_quote($tag, '/').'\s+"([^"]*)"\]/', $pgn, $matches) === 1) {
+            return $matches[1];
+        }
+
+        return null;
     }
 
     /**
