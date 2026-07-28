@@ -1,18 +1,25 @@
-import { AlertTriangle } from 'lucide-react';
+import { AlertTriangle, Clock } from 'lucide-react';
 import { BackLink } from '@/components/site/back-link';
 import { PageMeta } from '@/components/site/page-meta';
 import { BalanceCard } from '@/components/wallet/balance-card';
 import { WithdrawForm } from '@/components/wallet/withdraw-form';
 import PlayerHubLayout from '@/layouts/player-hub-layout';
 import { useT } from '@/lib/i18n';
+import { formatTimeUntil, formatUsdt } from '@/lib/wallet-format';
 import { index as walletIndex } from '@/routes/wallet';
 import type { WalletWithdrawProps } from '@/types';
 
 export default function WalletWithdraw({
     balance,
+    availableBalance,
+    clearingBalance,
+    nextClearanceAt,
     minWithdrawal,
+    platformFee,
+    estimatedNetworkFee,
 }: WalletWithdrawProps) {
     const t = useT();
+    const clearsIn = formatTimeUntil(nextClearanceAt);
 
     return (
         <PlayerHubLayout>
@@ -37,8 +44,40 @@ export default function WalletWithdraw({
                 </header>
 
                 <div className="mb-6">
-                    <BalanceCard balance={balance} variant="compact" />
+                    <BalanceCard
+                        balance={balance}
+                        availableBalance={availableBalance}
+                        clearingBalance={clearingBalance}
+                        nextClearanceAt={nextClearanceAt}
+                        variant="compact"
+                    />
                 </div>
+
+                {clearingBalance > 0 && (
+                    <div className="mb-6 flex gap-3 rounded-xl border border-border/60 bg-card/60 p-4">
+                        <Clock className="size-5 shrink-0 text-warning" />
+                        <div className="space-y-1">
+                            <p className="text-sm font-semibold text-foreground">
+                                {t(':amount USDT is still clearing', {
+                                    amount: formatUsdt(clearingBalance),
+                                })}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                                {t(
+                                    'Recent winnings are held briefly before they can be withdrawn. You can still stake them on new matches in the meantime.',
+                                )}
+                                {clearsIn && (
+                                    <>
+                                        {' '}
+                                        <span className="text-foreground">
+                                            {t('Next unlock')} {t(clearsIn)}.
+                                        </span>
+                                    </>
+                                )}
+                            </p>
+                        </div>
+                    </div>
+                )}
 
                 <div className="mb-6 flex gap-3 rounded-xl border border-warning/30 bg-warning/10 p-4">
                     <AlertTriangle className="size-5 shrink-0 text-warning" />
@@ -54,7 +93,12 @@ export default function WalletWithdraw({
                     </div>
                 </div>
 
-                <WithdrawForm balance={balance} minWithdrawal={minWithdrawal} />
+                <WithdrawForm
+                    availableBalance={availableBalance}
+                    minWithdrawal={minWithdrawal}
+                    platformFee={platformFee}
+                    estimatedNetworkFee={estimatedNetworkFee}
+                />
             </div>
         </PlayerHubLayout>
     );

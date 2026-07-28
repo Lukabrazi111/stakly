@@ -58,6 +58,20 @@ return new class extends Migration
             // Optional human-readable context for debugging / audit.
             $table->text('description')->nullable();
 
+            // When a Payout becomes WITHDRAWABLE (M9 Phase 0b insurance window).
+            // Null = immediately available, which is every non-Payout type.
+            //
+            // Clearing deliberately moves no money: the credit lands in
+            // `usdt_balance` at settlement and only *availability* is deferred,
+            // so the `usdt_balance == SUM(amount)` invariant is untouched and
+            // there's no scheduled job to run — funds clear because time passed.
+            //
+            // Stamped once at INSERT and never updated, preserving the
+            // append-only guarantee. That's also why there's no per-row admin
+            // hold: extending one would require an UPDATE. Account-level
+            // `users.frozen_at` covers that case instead.
+            $table->timestamp('clears_at')->nullable();
+
             // Immutable creation timestamp. No `updated_at` — rows never change.
             $table->timestamp('created_at')->useCurrent();
 
@@ -66,6 +80,9 @@ return new class extends Migration
             $table->index('type');
             $table->index('related_listing_id');
             $table->index('created_at');
+
+            // Serves the available-balance query: uncleared payouts for one user.
+            $table->index(['user_id', 'type', 'clears_at']);
         });
     }
 

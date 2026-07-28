@@ -50,5 +50,7 @@ class DatabaseSeeder extends Seeder
         $this->call(PageSeeder::class);
         $this->call(ListingSeeder::class);
         $this->call(MatchHistorySeeder::class);
+        // Last: needs the test user funded and at least one listing to exist.
+        $this->call(WithdrawalSeeder::class);
     }
 }

@@ -6,6 +6,7 @@ use App\Actions\Message\PostSystemMessageAction;
 use App\Enums\MatchStatus;
 use App\Models\GameMatch;
 use App\Models\User;
+use App\Services\PayoutClearance;
 use App\Services\Wallet;
 use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
@@ -136,6 +137,7 @@ class SettleMatchAction
             listing: $match->listing,
             reference: "match-payout:{$match->id}",
             description: 'Match payout to winner.',
+            clearsAt: PayoutClearance::for($winner, $winnerPayout),
         );
 
         Wallet::fee(

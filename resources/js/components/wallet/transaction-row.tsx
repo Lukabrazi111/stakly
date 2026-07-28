@@ -1,8 +1,10 @@
 import { Link } from '@inertiajs/react';
+import { Clock } from 'lucide-react';
 import { TransactionTypeChip } from '@/components/wallet/transaction-type-chip';
 import { useT } from '@/lib/i18n';
 import {
     formatSignedAmount,
+    formatTimeUntil,
     formatTransactionDate,
     formatUsdt,
 } from '@/lib/wallet-format';
@@ -27,6 +29,8 @@ export function TransactionRow({ transaction }: Props) {
     const isCredit = transaction.amount > 0;
     const description =
         transaction.description ?? t(defaultDescription(transaction.type));
+    // Only payouts carry a clearance; null once the window has passed.
+    const clearsIn = formatTimeUntil(transaction.clears_at);
 
     const linksToMatch =
         MATCH_LINKED_TYPES.has(transaction.type) &&
@@ -83,8 +87,14 @@ export function TransactionRow({ transaction }: Props) {
                         </>
                     )}
                 </div>
-                <div className="mt-0.5 text-xs text-muted-foreground">
-                    {formatTransactionDate(transaction.created_at)}
+                <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+                    <span>{formatTransactionDate(transaction.created_at)}</span>
+                    {clearsIn && (
+                        <span className="inline-flex items-center gap-1 rounded-full border border-warning/30 bg-warning/10 px-2 py-0.5 font-medium text-warning">
+                            <Clock className="size-3" />
+                            {t('Withdrawable')} {t(clearsIn)}
+                        </span>
+                    )}
                 </div>
             </div>
 
@@ -118,6 +128,7 @@ function defaultDescription(type: WalletTransaction['type']): string {
         escrow_release: 'Stake refunded from listing',
         payout: 'Match payout',
         fee: 'Platform fee',
+        withdrawal_reversal: 'Withdrawal returned',
     };
 
     return labels[type];

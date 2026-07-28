@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Enums\WalletTransactionType;
 use Database\Factories\WalletTransactionFactory;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -25,6 +26,7 @@ class WalletTransaction extends Model
         'related_listing_id',
         'reference_id',
         'description',
+        'clears_at',
     ];
 
     protected function casts(): array
@@ -33,7 +35,21 @@ class WalletTransaction extends Model
             'type' => WalletTransactionType::class,
             'amount' => 'decimal:6',
             'balance_after' => 'decimal:6',
+            'clears_at' => 'immutable_datetime',
         ];
+    }
+
+    /**
+     * Payouts still inside their insurance window — credited to the balance
+     * but not yet withdrawable. See `App\Services\PayoutClearance`.
+     *
+     * @param  Builder<self>  $query
+     */
+    public function scopeUncleared($query): void
+    {
+        $query->where('type', WalletTransactionType::Payout)
+            ->whereNotNull('clears_at')
+            ->where('clears_at', '>', now());
     }
 
     public function user(): BelongsTo

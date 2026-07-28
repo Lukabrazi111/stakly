@@ -120,12 +120,22 @@ class User extends Authenticatable implements FilamentUser, HasMedia, MustVerify
             'notification_sound' => 'string',
             'username_changed_at' => 'immutable_datetime',
             'banned_at' => 'immutable_datetime',
+            'frozen_at' => 'immutable_datetime',
         ];
     }
 
     public function isBanned(): bool
     {
         return $this->banned_at !== null;
+    }
+
+    /**
+     * Money-level freeze. Blocks debits (`Wallet::withdraw` / `Wallet::hold`)
+     * while leaving credits flowing — see the `frozen_at` column comment.
+     */
+    public function isFrozen(): bool
+    {
+        return $this->frozen_at !== null;
     }
 
     /**
@@ -156,6 +166,15 @@ class User extends Authenticatable implements FilamentUser, HasMedia, MustVerify
     public function walletTransactions(): HasMany
     {
         return $this->hasMany(WalletTransaction::class);
+    }
+
+    /**
+     * Cash-out requests (M9 Phase 0b). The rows here are a lifecycle record;
+     * the money itself lives in `walletTransactions`.
+     */
+    public function withdrawals(): HasMany
+    {
+        return $this->hasMany(Withdrawal::class);
     }
 
     public function listings(): HasMany

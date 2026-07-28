@@ -63,6 +63,15 @@ return new class extends Migration
             // take-listing enforcement is M21's scope on the same column.
             $table->timestamp('banned_at')->nullable();
 
+            // Money-level freeze (M9 Phase 0b), distinct from `banned_at`.
+            // A ban is a product-access flag; a freeze blocks DEBITS only —
+            // `Wallet::withdraw` + `Wallet::hold` throw, so a frozen user can
+            // neither cash out nor stake into a new match. Credits still flow
+            // so in-flight matches settle and refunds land, which keeps a
+            // freeze from stranding an opponent's escrowed money.
+            $table->timestamp('frozen_at')->nullable();
+            $table->string('frozen_reason')->nullable();
+
             // Bell-dropdown badge anchor: bumped on bell open, decoupled from
             // per-item `notifications.read_at`.
             $table->timestamp('notifications_last_seen_at')->nullable();

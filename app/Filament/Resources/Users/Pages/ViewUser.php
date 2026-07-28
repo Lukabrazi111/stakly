@@ -32,6 +32,7 @@ class ViewUser extends ViewRecord
             $this->verifyEmailAction(),
             $this->resetTwoFactorAction(),
             $this->banToggleAction(),
+            $this->freezeToggleAction(),
             ImpersonateUserAction::make()->record($this->getRecord()),
         ];
     }
@@ -154,6 +155,75 @@ class ViewUser extends ViewRecord
                         ? 'User banned.'
                         : 'Ban lifted.',
                     )
+                    ->success()
+                    ->send();
+            });
+    }
+
+    /**
+     * Money-level freeze (M9 Phase 0b). Separate from the ban toggle because
+     * they solve different problems: a ban removes product access, a freeze
+     * stops money moving OUT while letting credits land, so a frozen player's
+     * opponents can still be paid or refunded.
+     *
+     * This is also the per-payout hold we deliberately don't have — a single
+     * ledger row's clearance can't be extended without an UPDATE on the
+     * append-only ledger, so account-level freeze covers that case instead.
+     */
+    private function freezeToggleAction(): Action
+    {
+        return Action::make('toggle_freeze')
+            ->label(fn (User $record): string => $record->isFrozen() ? 'Unfreeze funds' : 'Freeze funds')
+            ->color(fn (User $record): string => $record->isFrozen() ? 'success' : 'warning')
+            ->icon(fn (User $record): string => $record->isFrozen()
+                ? 'heroicon-o-lock-open'
+                : 'heroicon-o-lock-closed',
+            )
+            ->requiresConfirmation()
+            ->modalHeading(fn (User $record): string => $record->isFrozen()
+                ? 'Unfreeze this user\'s funds?'
+                : 'Freeze this user\'s funds?',
+            )
+            ->modalDescription(fn (User $record): string => $record->isFrozen()
+                ? 'Restores withdrawals and staking. Their balance was never touched.'
+                : 'Blocks withdrawals and new stakes. Deposits, refunds, and payouts still land, so any in-flight match can finish settling.',
+            )
+            ->modalSubmitActionLabel(fn (User $record): string => $record->isFrozen() ? 'Unfreeze' : 'Freeze')
+            ->schema([
+                Textarea::make('reason')
+                    ->label(fn (User $record): string => $record->isFrozen()
+                        ? 'Why lift the freeze?'
+                        : 'Why freeze this user?',
+                    )
+                    ->placeholder(fn (User $record): string => $record->isFrozen()
+                        ? 'e.g. chess.com confirmed the fair-play flag was cleared on appeal.'
+                        : 'e.g. Opponent reported suspected engine use; awaiting chess.com review.',
+                    )
+                    ->required()
+                    ->rows(3)
+                    ->maxLength(1000),
+            ])
+            ->action(function (User $record, array $data): void {
+                $freezing = ! $record->isFrozen();
+
+                DB::transaction(function () use ($record, $freezing, $data): void {
+                    $record->forceFill([
+                        'frozen_at' => $freezing ? now() : null,
+                        'frozen_reason' => $freezing ? $data['reason'] : null,
+                    ])->save();
+
+                    UserModerationLog::create([
+                        'user_id' => $record->id,
+                        'admin_user_id' => auth()->id(),
+                        'action' => $freezing
+                            ? UserModerationLog::ACTION_FREEZE
+                            : UserModerationLog::ACTION_UNFREEZE,
+                        'reason' => $data['reason'],
+                    ]);
+                });
+
+                Notification::make()
+                    ->title($freezing ? 'Funds frozen.' : 'Freeze lifted.')
                     ->success()
                     ->send();
             });

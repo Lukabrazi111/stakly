@@ -147,4 +147,81 @@ return [
         'ru' => ['native_label' => 'Русский', 'og_locale' => 'ru_RU'],
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Withdrawal money knobs (M9 Phase 0b)
+    |--------------------------------------------------------------------------
+    |
+    | All amounts are BCMath-safe strings, never floats (CLAUDE.md). The
+    | margin is Stakly's flat platform cut on a withdrawal — booked to the
+    | platform user at *send* time, never at request, so a rejected
+    | withdrawal can't record phantom revenue.
+    |
+    | The network (gas) fee is NOT configured here: it comes from the active
+    | `PaymentGateway` driver via `estimatePayoutFee()`, so it tracks real
+    | chain conditions once a provider is wired. `MockGateway` reads its own
+    | flat `services.payments.mock.network_fee`.
+    |
+    */
+
+    'withdrawal_margin' => env('STAKLY_WITHDRAWAL_MARGIN', '0.50'),
+
+    'min_withdrawal' => env('STAKLY_MIN_WITHDRAWAL', '10'),
+
+    /*
+    | Declared as the single source of truth for stake floors, but NOT yet
+    | enforced — `StoreListingRequest` still validates `min:1`. Raising it is
+    | a product decision (the billing plan argues for '20', since a ~$1.50
+    | network fee eats an absurd share of a $5 pot). Flip the rule when that
+    | decision lands; nothing else needs to change.
+    */
+    'min_stake' => env('STAKLY_MIN_STAKE', '20'),
+
+    /*
+    |--------------------------------------------------------------------------
+    | Payout clearing / insurance window (M9 Phase 0b)
+    |--------------------------------------------------------------------------
+    |
+    | Match winnings are credited immediately but aren't *withdrawable* until
+    | they clear. Deposits and escrow refunds never clear — they're final
+    | on-chain or the player's own stake back. Uncleared winnings can still be
+    | staked into new matches; they just can't leave the platform.
+    |
+    | The threat model is a provider (chess.com / Lichess) retroactively
+    | closing an account for fair play days-to-weeks after the games — the
+    | chargeback-equivalent for this product. The acute case is already
+    | handled by the auto-detection pipeline; this covers the retrospective
+    | one, where the money would otherwise be long gone.
+    |
+    | Clearing moves NO money: `wallet_transactions.clears_at` is stamped once
+    | at settlement and availability is computed against it. There is no
+    | scheduled job — funds clear because time passed.
+    |
+    | Setting `enabled` to false is a true kill-switch: it makes withdrawals
+    | instant AND releases holds already stamped on existing rows, rather than
+    | stranding them behind a window nobody is enforcing any more.
+    |
+    */
+
+    'withdrawal_insurance_enabled' => (bool) env('STAKLY_WITHDRAWAL_INSURANCE_ENABLED', true),
+
+    'withdrawal_insurance_base_hours' => (int) env('STAKLY_WITHDRAWAL_INSURANCE_BASE_HOURS', 48),
+
+    'withdrawal_insurance_elevated_hours' => (int) env('STAKLY_WITHDRAWAL_INSURANCE_ELEVATED_HOURS', 168),
+
+    /*
+    | Any one of these firing escalates a payout from base to elevated hours.
+    | Deliberately coarse — these are the signals available without building a
+    | risk-scoring system, and they cover the cases where a retroactive
+    | provider ban is most likely to land on money we can't claw back.
+    */
+    'withdrawal_insurance_risk' => [
+        // Account registered less recently than this clears at the base rate.
+        'new_account_days' => (int) env('STAKLY_INSURANCE_RISK_NEW_ACCOUNT_DAYS', 7),
+        // A player who has never completed a withdrawal is unproven.
+        'first_withdrawal' => (bool) env('STAKLY_INSURANCE_RISK_FIRST_WITHDRAWAL', true),
+        // Payouts at or above this amount (USDT string) always get the long window.
+        'large_payout_amount' => env('STAKLY_INSURANCE_RISK_LARGE_PAYOUT', '500'),
+    ],
+
 ];

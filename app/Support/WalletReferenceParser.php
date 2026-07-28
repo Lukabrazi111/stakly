@@ -22,11 +22,16 @@ class WalletReferenceParser
 {
     /**
      * `{prefix} => {kind}` map. `kind` is `'listing'` (route to public
-     * listing page) or `'match'` (route to admin match view).
+     * listing page), `'match'` (admin match view), or `'withdrawal'` (admin
+     * withdrawals list).
      *
      * @var array<string, string>
      */
     private const PREFIXES = [
+        // M9 Phase 0b. All three carry the withdrawal id as the first segment.
+        'wd' => 'withdrawal',
+        'wd-reversal' => 'withdrawal',
+        'wd-margin' => 'withdrawal',
         'listing-create' => 'listing',
         'listing-cancel' => 'listing',
         'listing-expire' => 'listing',
@@ -60,6 +65,14 @@ class WalletReferenceParser
             'match' => [
                 'label' => "Match #{$entity['id']}",
                 'url' => route('filament.admin.resources.disputes.view', $entity['id']),
+            ],
+            // The withdrawals resource is list-only (no View page), so this
+            // deep-links to the filtered index rather than a record route.
+            'withdrawal' => [
+                'label' => "Withdrawal #{$entity['id']}",
+                'url' => route('filament.admin.resources.withdrawals.index', [
+                    'tableSearch' => $entity['id'],
+                ]),
             ],
         };
     }

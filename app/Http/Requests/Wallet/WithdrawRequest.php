@@ -6,6 +6,7 @@ use App\Services\Wallet;
 use Closure;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Validator;
 
 /**
  * Validates a withdrawal request: target TRC20 address + amount.
@@ -20,12 +21,16 @@ use Illuminate\Foundation\Http\FormRequest;
 class WithdrawRequest extends FormRequest
 {
     /**
-     * Minimum withdrawal in USDT. Tron's TRC20 transfer typically burns ~3–7
-     * USDT in energy/bandwidth fees; 10 USDT is a comfortable floor that keeps
-     * users from sending dust transactions where most of the value goes to
-     * gas. Pre-launch this becomes a config value tied to live gas pricing.
+     * Minimum withdrawal in USDT, from `config('stakly.min_withdrawal')`.
+     *
+     * Tron's TRC20 transfer typically burns ~3–7 USDT in energy/bandwidth
+     * fees, so the floor exists to stop dust withdrawals where most of the
+     * value goes to gas.
      */
-    public const MIN_WITHDRAWAL = 10;
+    public static function minWithdrawal(): string
+    {
+        return (string) config('stakly.min_withdrawal');
+    }
 
     /**
      * Tron address shape: literal 'T' + 33 base58 characters (`0`, `O`, `I`,
@@ -52,10 +57,31 @@ class WithdrawRequest extends FormRequest
             // a human types is two-decimal cents.
             'amount' => [
                 'required', 'numeric', 'decimal:0,2',
-                'min:'.self::MIN_WITHDRAWAL,
+                'min:'.self::minWithdrawal(),
                 'max:100000',
                 $this->amountWithinBalance(),
             ],
+        ];
+    }
+
+    /**
+     * A frozen account can't move money out. Surfaced as a 422 on `amount`
+     * rather than letting `Withdrawals::request` throw — the service guard is
+     * the backstop, but an uncaught AccountFrozenException would 500 on a
+     * perfectly foreseeable user action.
+     *
+     * @return array<int, callable>
+     */
+    public function after(): array
+    {
+        return [
+            function (Validator $validator): void {
+                if ($this->user()?->isFrozen()) {
+                    $validator->errors()->add('amount', __(
+                        'Your account is under review and withdrawals are paused. Contact support if you think this is a mistake.'
+                    ));
+                }
+            },
         ];
     }
 
@@ -66,15 +92,21 @@ class WithdrawRequest extends FormRequest
     {
         return [
             'address.regex' => __('Enter a valid TRC20 (Tron) USDT address.'),
-            'amount.min' => __('Minimum withdrawal is :min USDT.', ['min' => self::MIN_WITHDRAWAL]),
+            'amount.min' => __('Minimum withdrawal is :min USDT.', ['min' => self::minWithdrawal()]),
         ];
     }
 
     /**
-     * Closure rule: amount must not exceed the user's current balance.
+     * Closure rule: amount must not exceed the user's AVAILABLE balance —
+     * total minus winnings still inside their insurance window (M9 Phase 0b).
+     * Staking isn't gated this way; only money leaving the platform is.
+     *
      * Uses `bccomp` at scale 6 — same precision as the Wallet service — so
      * we never lose a sub-cent of headroom to float rounding. Mirrors
      * `StoreListingRequest::stakeWithinBalance`.
+     *
+     * This is the friendly 422; `Withdrawals::request` re-checks under a row
+     * lock, since validation and the debit aren't one atomic step.
      */
     private function amountWithinBalance(): Closure
     {
@@ -85,13 +117,28 @@ class WithdrawRequest extends FormRequest
                 return;
             }
 
-            $balance = Wallet::balanceFor($user);
+            $available = Wallet::availableBalance($user);
 
-            if (bccomp((string) $value, $balance, 6) > 0) {
-                $fail(__('Withdrawal exceeds your available balance ($:balance USDT).', [
-                    'balance' => number_format((float) $balance, 2, '.', ''),
-                ]));
+            if (bccomp((string) $value, $available, 6) <= 0) {
+                return;
             }
+
+            $clearing = Wallet::unclearedBalance($user);
+
+            // Distinguish "you don't have it" from "you have it but it's still
+            // clearing" — otherwise the error reads as a bug to the player.
+            if (bccomp($clearing, '0', 6) > 0) {
+                $fail(__('Withdrawal exceeds your available balance ($:available USDT). $:clearing of your winnings is still clearing.', [
+                    'available' => number_format((float) $available, 2, '.', ''),
+                    'clearing' => number_format((float) $clearing, 2, '.', ''),
+                ]));
+
+                return;
+            }
+
+            $fail(__('Withdrawal exceeds your available balance ($:balance USDT).', [
+                'balance' => number_format((float) $available, 2, '.', ''),
+            ]));
         };
     }
 }

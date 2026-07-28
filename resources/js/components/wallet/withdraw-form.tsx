@@ -9,13 +9,21 @@ import { formatUsdt } from '@/lib/wallet-format';
 import { store as withdrawStore } from '@/routes/wallet/withdraw';
 
 interface Props {
-    balance: number;
+    /** Withdrawable balance — total minus winnings still clearing. */
+    availableBalance: number;
     minWithdrawal: number;
+    platformFee: number;
+    estimatedNetworkFee: number;
 }
 
-/** Withdraw form. Backend short-circuits the POST with a flash notice
- *  pending M9; all validation paths still fire. */
-export function WithdrawForm({ balance, minWithdrawal }: Props) {
+/** Withdraw form. Caps against the AVAILABLE balance, not the total: winnings
+ *  inside their insurance window can be staked but not withdrawn. */
+export function WithdrawForm({
+    availableBalance,
+    minWithdrawal,
+    platformFee,
+    estimatedNetworkFee,
+}: Props) {
     const t = useT();
     const { data, setData, post, processing, errors, transform } = useForm<{
         address: string;
@@ -29,7 +37,7 @@ export function WithdrawForm({ balance, minWithdrawal }: Props) {
     transform((d) => ({ ...d, address: d.address.trim() }));
 
     const amountNumber = data.amount === '' ? 0 : Number(data.amount);
-    const exceedsBalance = amountNumber > balance;
+    const exceedsBalance = amountNumber > availableBalance;
     const belowMin = amountNumber > 0 && amountNumber < minWithdrawal;
     const hasAddress = data.address.trim().length > 0;
     const canSubmit =
@@ -41,9 +49,21 @@ export function WithdrawForm({ balance, minWithdrawal }: Props) {
         !belowMin;
 
     const handleMax = () => {
-        // Match the server's `decimal:0,2` rule.
-        setData('amount', balance.toFixed(2));
+        // Match the server's `decimal:0,2` rule. Floored rather than rounded —
+        // `toFixed` rounds up, which would push the amount past the balance and
+        // bounce as a validation error on a button labelled "Max".
+        setData(
+            'amount',
+            (Math.floor(availableBalance * 100) / 100).toFixed(2),
+        );
     };
+
+    // Gas is deducted by the provider from what we send, so the player receives
+    // gross − margin − gas. Shown before submit so the number isn't a surprise.
+    const youReceive = Math.max(
+        0,
+        amountNumber - platformFee - estimatedNetworkFee,
+    );
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
@@ -122,7 +142,7 @@ export function WithdrawForm({ balance, minWithdrawal }: Props) {
                                     : 'font-medium text-foreground'
                             }
                         >
-                            {formatUsdt(balance)} USDT
+                            {formatUsdt(availableBalance)} USDT
                         </span>
                     </span>
                 </div>
@@ -141,6 +161,33 @@ export function WithdrawForm({ balance, minWithdrawal }: Props) {
                 <InputError message={errors.amount} />
             </div>
 
+            {amountNumber > 0 && (
+                <div className="space-y-2 rounded-xl border border-border/60 bg-card/60 p-4 text-sm">
+                    <FeeLine
+                        label={t('Withdraw')}
+                        value={formatUsdt(amountNumber)}
+                    />
+                    <FeeLine
+                        label={t('Network fee (estimated)')}
+                        value={`−${formatUsdt(estimatedNetworkFee)}`}
+                        muted
+                    />
+                    <FeeLine
+                        label={t('Platform fee')}
+                        value={`−${formatUsdt(platformFee)}`}
+                        muted
+                    />
+                    <div className="flex items-baseline justify-between border-t border-border/60 pt-2">
+                        <span className="font-medium text-foreground">
+                            {t("You'll receive")}
+                        </span>
+                        <span className="font-display font-semibold text-success tabular-nums">
+                            {formatUsdt(youReceive)} USDT
+                        </span>
+                    </div>
+                </div>
+            )}
+
             <Button
                 type="submit"
                 variant="gradient"
@@ -151,5 +198,26 @@ export function WithdrawForm({ balance, minWithdrawal }: Props) {
                 {processing ? t('Submitting…') : t('Withdraw')}
             </Button>
         </form>
+    );
+}
+
+function FeeLine({
+    label,
+    value,
+    muted = false,
+}: {
+    label: string;
+    value: string;
+    muted?: boolean;
+}) {
+    return (
+        <div className="flex items-baseline justify-between">
+            <span className="text-muted-foreground">{label}</span>
+            <span
+                className={`tabular-nums ${muted ? 'text-muted-foreground' : 'text-foreground'}`}
+            >
+                {value}
+            </span>
+        </div>
     );
 }

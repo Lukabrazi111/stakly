@@ -10,8 +10,10 @@ import type { LucideIcon } from 'lucide-react';
 import { PageMeta } from '@/components/site/page-meta';
 import { BalanceCard } from '@/components/wallet/balance-card';
 import { TransactionRow } from '@/components/wallet/transaction-row';
+import { WithdrawalStatusChip } from '@/components/wallet/withdrawal-status-chip';
 import PlayerHubLayout from '@/layouts/player-hub-layout';
 import { useT } from '@/lib/i18n';
+import { formatUsdt, truncateAddress } from '@/lib/wallet-format';
 import {
     deposit as depositRoute,
     history as historyRoute,
@@ -21,10 +23,15 @@ import type { WalletIndexProps } from '@/types';
 
 export default function WalletIndex({
     balance,
+    availableBalance,
+    clearingBalance,
+    nextClearanceAt,
     recentTransactions,
+    pendingWithdrawals,
 }: WalletIndexProps) {
     const t = useT();
     const hasTransactions = recentTransactions.data.length > 0;
+    const hasPendingWithdrawals = pendingWithdrawals.data.length > 0;
 
     return (
         <PlayerHubLayout>
@@ -44,7 +51,42 @@ export default function WalletIndex({
                     </p>
                 </header>
 
-                <BalanceCard balance={balance} />
+                <BalanceCard
+                    balance={balance}
+                    availableBalance={availableBalance}
+                    clearingBalance={clearingBalance}
+                    nextClearanceAt={nextClearanceAt}
+                />
+
+                {hasPendingWithdrawals && (
+                    <section className="mt-6">
+                        <h2 className="mb-3 font-display text-sm font-semibold tracking-wide text-muted-foreground uppercase">
+                            {t('Withdrawals in progress')}
+                        </h2>
+                        <div className="space-y-2">
+                            {pendingWithdrawals.data.map((withdrawal) => (
+                                <div
+                                    key={withdrawal.id}
+                                    className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border/60 bg-card/60 px-4 py-3"
+                                >
+                                    <div className="flex items-center gap-3">
+                                        <WithdrawalStatusChip
+                                            status={withdrawal.status}
+                                        />
+                                        <span className="font-mono text-xs text-muted-foreground">
+                                            {truncateAddress(
+                                                withdrawal.destination_address,
+                                            )}
+                                        </span>
+                                    </div>
+                                    <span className="font-display font-semibold tabular-nums">
+                                        ${formatUsdt(withdrawal.amount)}
+                                    </span>
+                                </div>
+                            ))}
+                        </div>
+                    </section>
+                )}
 
                 <div className="mt-6 grid gap-4 md:grid-cols-3">
                     <ActionCard

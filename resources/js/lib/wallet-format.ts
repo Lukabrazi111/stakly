@@ -82,6 +82,40 @@ export function formatTransactionDate(iso: string | null): string {
 }
 
 /**
+ * How long until a timestamp, in coarse human units. Used for the payout
+ * clearing countdown, where "in about 2 days" is more useful than a date —
+ * the player wants to know the wait, not the calendar slot.
+ *
+ * Returns null for a past/absent timestamp, so callers can drop the line
+ * entirely rather than render "in 0 hours".
+ */
+export function formatTimeUntil(iso: string | null): string | null {
+    if (!iso) {
+        return null;
+    }
+
+    const diffMs = new Date(iso).getTime() - Date.now();
+
+    if (diffMs <= 0) {
+        return null;
+    }
+
+    const hours = Math.ceil(diffMs / (1000 * 60 * 60));
+
+    if (hours < 1) {
+        return 'in under an hour';
+    }
+
+    if (hours < 24) {
+        return `in ${hours} hour${hours === 1 ? '' : 's'}`;
+    }
+
+    const days = Math.ceil(hours / 24);
+
+    return `in ${days} day${days === 1 ? '' : 's'}`;
+}
+
+/**
  * Compact display for a Tron address: first 6 + last 6 chars with an ellipsis
  * in the middle. Full address is still copyable from the AddressDisplay's
  * data-attribute / clipboard handler.
