@@ -66,7 +66,12 @@ return new class extends Migration
 
             $table->string('tx_hash')->nullable();
 
-            $table->string('rejected_reason')->nullable();
+            // 1000 to match `user_moderation_logs.reason` and
+            // `admin_impersonations.reason` — one length across every surface
+            // where an admin justifies an action. The force-reverse lever
+            // (M9 Phase 0f) prefixes its own context, so the default 255 was
+            // the tightest of the audit fields despite carrying the most.
+            $table->string('rejected_reason', 1000)->nullable();
 
             // New-address cooldown (M9 Phase 0e). Set when this is the first
             // withdrawal to a given destination: the payout job is delayed

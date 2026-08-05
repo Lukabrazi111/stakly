@@ -19,6 +19,8 @@ export default function WalletWithdraw({
     estimatedNetworkFee,
     twoFactorRequired,
     twoFactorEnrolled,
+    dailyLimit,
+    dailyRemaining,
 }: WalletWithdrawProps) {
     const t = useT();
     const clearsIn = formatTimeUntil(nextClearanceAt);
@@ -102,6 +104,8 @@ export default function WalletWithdraw({
                     estimatedNetworkFee={estimatedNetworkFee}
                     twoFactorRequired={twoFactorRequired}
                     twoFactorEnrolled={twoFactorEnrolled}
+                    dailyLimit={dailyLimit}
+                    dailyRemaining={dailyRemaining}
                 />
             </div>
         </PlayerHubLayout>

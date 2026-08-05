@@ -129,6 +129,10 @@ export interface WalletWithdrawProps extends WalletBalances {
     twoFactorRequired: boolean;
     /** Whether the player has 2FA set up — false means prompt enrolment. */
     twoFactorEnrolled: boolean;
+    /** Rolling 24h withdrawal ceiling; null when disabled (M9 P0f). */
+    dailyLimit: number | null;
+    /** Headroom left in the current 24h window; null when disabled. */
+    dailyRemaining: number | null;
 }
 
 // /wallet/withdrawals — paginated withdrawal history.

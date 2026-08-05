@@ -19,6 +19,10 @@ interface Props {
     twoFactorRequired: boolean;
     /** Whether the player has actually set 2FA up. */
     twoFactorEnrolled: boolean;
+    /** Rolling 24h ceiling; null when disabled (M9 P0f). */
+    dailyLimit: number | null;
+    /** Headroom left in the current window; null when disabled. */
+    dailyRemaining: number | null;
 }
 
 /** Withdraw form. Caps against the AVAILABLE balance, not the total: winnings
@@ -30,6 +34,8 @@ export function WithdrawForm({
     estimatedNetworkFee,
     twoFactorRequired,
     twoFactorEnrolled,
+    dailyLimit,
+    dailyRemaining,
 }: Props) {
     const t = useT();
     const { data, setData, post, processing, errors, transform } = useForm<{
@@ -74,6 +80,8 @@ export function WithdrawForm({
 
     const amountNumber = data.amount === '' ? 0 : Number(data.amount);
     const exceedsBalance = amountNumber > availableBalance;
+    const exceedsDaily =
+        dailyRemaining !== null && amountNumber > dailyRemaining;
     const belowMin = amountNumber > 0 && amountNumber < minWithdrawal;
     const hasAddress = data.address.trim().length > 0;
     const hasCode = !twoFactorRequired || data.two_factor_code.length >= 6;
@@ -83,17 +91,22 @@ export function WithdrawForm({
         data.amount !== '' &&
         amountNumber > 0 &&
         !exceedsBalance &&
+        !exceedsDaily &&
         !belowMin &&
         hasCode;
+
+    // The effective ceiling is whichever binds first: cleared balance, or what
+    // is left of the rolling 24h allowance.
+    const effectiveMax =
+        dailyRemaining === null
+            ? availableBalance
+            : Math.min(availableBalance, dailyRemaining);
 
     const handleMax = () => {
         // Match the server's `decimal:0,2` rule. Floored rather than rounded —
         // `toFixed` rounds up, which would push the amount past the balance and
         // bounce as a validation error on a button labelled "Max".
-        setData(
-            'amount',
-            (Math.floor(availableBalance * 100) / 100).toFixed(2),
-        );
+        setData('amount', (Math.floor(effectiveMax * 100) / 100).toFixed(2));
     };
 
     // Gas is deducted by the provider from what we send, so the player receives
@@ -187,6 +200,22 @@ export function WithdrawForm({
                 {exceedsBalance && (
                     <p className="text-xs text-destructive">
                         {t('Amount exceeds your available balance.')}
+                    </p>
+                )}
+                {dailyLimit !== null && dailyRemaining !== null && (
+                    <p className="text-xs text-muted-foreground">
+                        {t('Daily limit: :remaining of :limit USDT left', {
+                            remaining: formatUsdt(dailyRemaining),
+                            limit: formatUsdt(dailyLimit),
+                        })}
+                    </p>
+                )}
+                {exceedsDaily && !exceedsBalance && (
+                    <p className="text-xs text-destructive">
+                        {t(
+                            'Over your daily limit — :remaining USDT left in the next 24 hours.',
+                            { remaining: formatUsdt(dailyRemaining ?? 0) },
+                        )}
                     </p>
                 )}
                 {belowMin && (

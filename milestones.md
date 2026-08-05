@@ -358,6 +358,23 @@ An address is "known" once the player has a non-reversed withdrawal to it, so on
 - [x] 0e.6 — Surface `hold_until` on the wallet pending list, withdrawals page, and admin queue.
 - [x] 0e.7 — Pest: first send held, repeat send to the same address instant, reversed prior doesn't count as known, cooldown of 0 disables, held row still rejectable, ledger invariant.
 
+**Phase 0f — Velocity caps + money-path cleanup** _(provider-agnostic; in flight 2026-08-05)_
+
+Goal: finish the no-provider half of Phase 3 hardening and close the small gaps an audit of the ledger against `docs/billing.md` surfaced. Nothing here needs the provider pick or sandbox access.
+
+Velocity caps are the backstop for exploits nobody predicted: freeze/KYC/2FA/cooldown each block a *known* attack, a daily ceiling bounds worst-case loss from an unknown one. Rolling 24h rather than calendar-day so a drain can't straddle midnight for double the limit.
+
+- [ ] 0f.1 — `stakly.withdrawal_daily_limit` (default '5000'; `0` disables) + `App\Services\WithdrawalVelocity`, guarded in `Withdrawals::request()` under the same row lock and surfaced as a friendly 422.
+- [ ] 0f.2 — Withdraw page ships the remaining daily allowance so a player sees the ceiling before submitting, not after.
+- [ ] 0f.3 — Enforce `min_withdrawal` in `Withdrawals::request()`. It currently lives only in `WithdrawRequest`, so a service- or admin-initiated call bypasses the 10 USDT floor.
+- [ ] 0f.4 — **D3:** enforce `config('stakly.min_stake')` in `StoreListingRequest` (was declared with zero consumers while the rule stayed `min:1`). ⚠️ Behaviour change — raises the stake floor from $1 to $20; tune via `STAKLY_MIN_STAKE`.
+- [ ] 0f.5 — **D4:** admin levers for payouts the provider already took — "Mark completed" and "Force reverse". Today the only action is Reject, which credits back the full gross; if the chain send actually landed that is a manual double-pay, the exact outcome `ProcessWithdrawal::failed()`'s guard exists to prevent.
+- [ ] 0f.6 — Link `/wallet/withdrawals` from the wallet index. The page has existed since P0b with no inbound link anywhere in the UI.
+- [ ] 0f.7 — Audit-log consistency: `user_moderation_logs.action` constrained to its known values, and `withdrawals.rejected_reason` widened to match the 1000-char moderation reason.
+- [ ] 0f.8 — Pest for every path above.
+
+**Deliberately NOT changed:** `Wallet::findByReference()` matches on `reference_id` alone, not user/type/amount. That's documented, tested behaviour (a replay with a different amount returns the original row) and is what makes retried jobs safe. Every prefix embeds an id, so a cross-user collision isn't reachable. Tightening it would break the idempotency contract to fix a theoretical case.
+
 **Phase 1 — deposit edge (🚫 paused, needs go-ahead).** The only remaining phase that fixes a *functional* hole: deposits cannot be credited at all today, so money can leave Stakly but not enter it. Real `NowPaymentsGateway` methods (dropping `Unwired` one at a time), `users.payments_account_id`, lazy address provisioning (drop the eager `CreateNewUser` call — it would put an HTTP call inside the signup transaction), `POST /webhooks/payments` mirroring the `webhooks/faceit` precedent, idempotent net crediting on `deposit:{txHash}`, `deposit:` prefix in `WalletReferenceParser`. **Unlike the FACEIT webhook this one can't be re-verified downstream — a forged deposit mints money, so the signature check is the only guard.**
 
 **Phase 2 — withdrawal edge (🚫 paused).** Real payout + fee estimate; **a payout webhook to resolve `Sending` rows — nothing completes them today** (latent only because `MockGateway` always returns `Completed`; must ship *with* the real client, not after); D4 admin levers; mass-payout batching, which is what reintroduces `WithdrawalStatus::Approved`.

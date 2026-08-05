@@ -13,6 +13,7 @@ use App\Services\Payments\PaymentGateway;
 use App\Services\Wallet;
 use App\Services\Withdrawals;
 use App\Services\WithdrawalTwoFactor;
+use App\Services\WithdrawalVelocity;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -107,6 +108,14 @@ class WalletController extends Controller
             // when 2FA is required but not set up yet.
             'twoFactorRequired' => WithdrawalTwoFactor::required($user),
             'twoFactorEnrolled' => WithdrawalTwoFactor::hasEnrolled($user),
+            // M9 Phase 0f — shown up front so a player sees the ceiling before
+            // submitting rather than bouncing off a 422.
+            'dailyLimit' => WithdrawalVelocity::enabled()
+                ? (float) WithdrawalVelocity::limit()
+                : null,
+            'dailyRemaining' => WithdrawalVelocity::enabled()
+                ? (float) WithdrawalVelocity::remainingToday($user)
+                : null,
         ]);
     }
 

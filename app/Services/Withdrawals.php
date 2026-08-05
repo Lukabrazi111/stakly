@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Enums\WithdrawalStatus;
 use App\Exceptions\AccountFrozenException;
+use App\Exceptions\DailyLimitExceededException;
 use App\Exceptions\InsufficientBalanceException;
 use App\Exceptions\KycRequiredException;
 use App\Jobs\ProcessWithdrawal;
@@ -39,7 +40,7 @@ final class Withdrawals
     /**
      * Debit the user and queue the payout.
      *
-     * @throws AccountFrozenException|InsufficientBalanceException|InvalidArgumentException|KycRequiredException
+     * @throws AccountFrozenException|DailyLimitExceededException|InsufficientBalanceException|InvalidArgumentException|KycRequiredException
      */
     public static function request(User $user, string $amount, string $address): Withdrawal
     {
@@ -48,6 +49,17 @@ final class Withdrawals
         if (bccomp($amount, $margin, self::SCALE) <= 0) {
             throw new InvalidArgumentException(
                 "Withdrawal of {$amount} does not cover the platform margin of {$margin}."
+            );
+        }
+
+        // The floor also lives in `WithdrawRequest`, but that only covers the
+        // HTTP path — a service- or admin-initiated call would otherwise slip a
+        // dust withdrawal past it, where most of the value burns as gas.
+        $minimum = (string) config('stakly.min_withdrawal');
+
+        if (bccomp($amount, $minimum, self::SCALE) < 0) {
+            throw new InvalidArgumentException(
+                "Withdrawal of {$amount} is below the {$minimum} minimum."
             );
         }
 
@@ -66,6 +78,16 @@ final class Withdrawals
             // the other's withdrawal as not-yet-existing.
             if (KycGate::requiresVerification($locked, $amount)) {
                 throw KycRequiredException::for($locked->id);
+            }
+
+            // Bounds worst-case loss from an exploit none of the guards above
+            // anticipated. Same lock, so a burst of concurrent requests can't
+            // each see a full allowance.
+            if (WithdrawalVelocity::exceedsDailyLimit($locked, $amount)) {
+                throw DailyLimitExceededException::for(
+                    $locked->id,
+                    WithdrawalVelocity::remainingToday($locked),
+                );
             }
 
             // Checked against AVAILABLE, not total: winnings still inside their

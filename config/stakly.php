@@ -316,4 +316,29 @@ return [
 
     'withdrawal_address_cooldown_hours' => (int) env('STAKLY_WITHDRAWAL_ADDRESS_COOLDOWN_HOURS', 24),
 
+    /*
+    |--------------------------------------------------------------------------
+    | Withdrawal velocity cap (M9 Phase 0f)
+    |--------------------------------------------------------------------------
+    |
+    | Maximum USDT a single account may withdraw in any rolling 24 hours.
+    |
+    | This is the backstop for exploits nobody predicted. Freeze, KYC, the 2FA
+    | step-up, and the new-address cooldown each block a KNOWN attack; a daily
+    | ceiling bounds the worst-case loss from an unknown one, so the damage from
+    | any single compromised account is capped no matter how it happened.
+    |
+    | ROLLING 24h, not calendar-day: a calendar reset lets an attacker withdraw
+    | the full limit at 23:59 and again at 00:01 for double the intended cap.
+    |
+    | Counts Pending + Sending + Completed, including the request being made —
+    | Rejected/Failed are excluded because that money came back. Same rule as
+    | the KYC threshold, and checked under the same user row lock.
+    |
+    | Set to 0 to disable.
+    |
+    */
+
+    'withdrawal_daily_limit' => env('STAKLY_WITHDRAWAL_DAILY_LIMIT', '5000'),
+
 ];

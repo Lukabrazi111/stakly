@@ -133,9 +133,9 @@ test('no notification fires when the address is already trusted', function () {
 test('a still-held decoy does not make its address trusted', function () {
     $user = cooldownUser();
 
-    // Attacker sends a tiny amount to their own address to "warm it up",
-    // then immediately tries to drain the balance to the same place.
-    $decoy = Withdrawals::request($user, '1', COOLDOWN_ADDRESS);
+    // Attacker sends the smallest allowed amount to their own address to
+    // "warm it up", then immediately tries to drain to the same place.
+    $decoy = Withdrawals::request($user, '10', COOLDOWN_ADDRESS);
     expect($decoy->isHeld())->toBeTrue();
 
     $drain = Withdrawals::request($user->fresh(), '4000', COOLDOWN_ADDRESS);

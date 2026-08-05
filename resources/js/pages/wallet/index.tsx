@@ -23,6 +23,7 @@ import {
     deposit as depositRoute,
     history as historyRoute,
     withdraw as withdrawRoute,
+    withdrawals as withdrawalsRoute,
 } from '@/routes/wallet';
 import type { WalletIndexProps } from '@/types';
 
@@ -65,9 +66,18 @@ export default function WalletIndex({
 
                 {hasPendingWithdrawals && (
                     <section className="mt-6">
-                        <h2 className="mb-3 font-display text-sm font-semibold tracking-wide text-muted-foreground uppercase">
-                            {t('Withdrawals in progress')}
-                        </h2>
+                        <div className="mb-3 flex items-center justify-between gap-3">
+                            <h2 className="font-display text-sm font-semibold tracking-wide text-muted-foreground uppercase">
+                                {t('Withdrawals in progress')}
+                            </h2>
+                            <Link
+                                href={withdrawalsRoute().url}
+                                className="group inline-flex shrink-0 items-center gap-1.5 text-sm font-medium text-muted-foreground transition-colors hover:text-primary"
+                            >
+                                {t('All withdrawals')}
+                                <ArrowRight className="size-4 transition-transform duration-200 ease-out group-hover:translate-x-0.5" />
+                            </Link>
+                        </div>
                         <div className="space-y-2">
                             {pendingWithdrawals.data.map((withdrawal) => (
                                 <div
@@ -123,6 +133,16 @@ export default function WalletIndex({
                         title={t('History')}
                         description={t('All your transactions')}
                     />
+                </div>
+
+                <div className="mt-3 flex justify-end">
+                    <Link
+                        href={withdrawalsRoute().url}
+                        className="group inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground transition-colors hover:text-primary"
+                    >
+                        {t('Withdrawal history')}
+                        <ArrowRight className="size-4 transition-transform duration-200 ease-out group-hover:translate-x-0.5" />
+                    </Link>
                 </div>
 
                 <section className="mt-10">

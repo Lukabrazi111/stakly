@@ -5,6 +5,7 @@ namespace App\Http\Requests\Wallet;
 use App\Services\KycGate;
 use App\Services\Wallet;
 use App\Services\WithdrawalTwoFactor;
+use App\Services\WithdrawalVelocity;
 use Closure;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
@@ -105,10 +106,23 @@ class WithdrawRequest extends FormRequest
 
                 $amount = $this->input('amount');
 
-                if (is_numeric($amount) && KycGate::requiresVerification($user, (string) $amount)) {
+                if (! is_numeric($amount)) {
+                    return;
+                }
+
+                if (KycGate::requiresVerification($user, (string) $amount)) {
                     $validator->errors()->add('amount', __(
                         'Withdrawals above :threshold USDT need a verified account. Contact support to verify yours.',
                         ['threshold' => (string) config('stakly.kyc_threshold')],
+                    ));
+
+                    return;
+                }
+
+                if (WithdrawalVelocity::exceedsDailyLimit($user, (string) $amount)) {
+                    $validator->errors()->add('amount', __(
+                        'Daily withdrawal limit reached. You can withdraw :remaining USDT more in the next 24 hours.',
+                        ['remaining' => WithdrawalVelocity::remainingToday($user)],
                     ));
                 }
             },
