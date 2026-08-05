@@ -47,6 +47,9 @@ class WalletTransactionResource extends JsonResource
                 return ['id' => $this->listing->gameMatch->id];
             }),
             'description' => $this->description,
+            // Only ever set on Payout rows. Null means the money is already
+            // withdrawable; a future timestamp drives the "clearing" indicator.
+            'clears_at' => $this->clears_at?->toIso8601String(),
             'created_at' => $this->created_at?->toIso8601String(),
         ];
     }

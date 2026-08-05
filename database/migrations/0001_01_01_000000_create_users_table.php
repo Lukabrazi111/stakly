@@ -63,6 +63,25 @@ return new class extends Migration
             // take-listing enforcement is M21's scope on the same column.
             $table->timestamp('banned_at')->nullable();
 
+            // Money-level freeze (M9 Phase 0b), distinct from `banned_at`.
+            // A ban is a product-access flag; a freeze blocks DEBITS only —
+            // `Wallet::withdraw` + `Wallet::hold` throw, so a frozen user can
+            // neither cash out nor stake into a new match. Credits still flow
+            // so in-flight matches settle and refunds land, which keeps a
+            // freeze from stranding an opponent's escrowed money.
+            $table->timestamp('frozen_at')->nullable();
+            $table->string('frozen_reason')->nullable();
+
+            // Identity verification (M9 Phase 0c). Inert unless
+            // `stakly.kyc_enabled` is on, which it is NOT by default — nothing
+            // in the current provider model requires KYC. The column exists so
+            // enabling verification later is a config flip plus an admin
+            // action, not a migration against a live money table. Transitions
+            // are admin-driven; there is no document-upload flow.
+            $table->string('kyc_status', 16)->default('unverified');
+            $table->timestamp('kyc_verified_at')->nullable();
+            $table->string('kyc_note')->nullable();
+
             // Bell-dropdown badge anchor: bumped on bell open, decoupled from
             // per-item `notifications.read_at`.
             $table->timestamp('notifications_last_seen_at')->nullable();

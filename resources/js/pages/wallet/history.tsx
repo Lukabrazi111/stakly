@@ -17,6 +17,7 @@ const TYPE_LABELS: Record<WalletTransactionType, string> = {
     escrow_release: 'Refund',
     payout: 'Payout',
     fee: 'Fee',
+    withdrawal_reversal: 'Returned',
 };
 
 export default function WalletHistory({

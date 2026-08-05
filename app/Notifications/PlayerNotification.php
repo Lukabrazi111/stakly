@@ -38,6 +38,7 @@ abstract class PlayerNotification extends Notification implements ShouldQueue
         'cancellation_rejected',
         'account_banned',
         'account_restored',
+        'withdrawal_held',
     ];
 
     /** Subset exposed in the /settings/notifications UI. The rest always fire (no opt-out). */

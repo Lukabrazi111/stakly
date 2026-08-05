@@ -2,13 +2,16 @@
 
 namespace App\Filament\Resources\Users\Pages;
 
+use App\Enums\KycStatus;
 use App\Filament\Resources\Users\Actions\ImpersonateUserAction;
 use App\Filament\Resources\Users\UserResource;
 use App\Models\User;
 use App\Models\UserModerationLog;
 use App\Notifications\AccountBanned;
 use App\Notifications\AccountRestored;
+use App\Services\KycGate;
 use Filament\Actions\Action;
+use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\ViewRecord;
@@ -32,6 +35,8 @@ class ViewUser extends ViewRecord
             $this->verifyEmailAction(),
             $this->resetTwoFactorAction(),
             $this->banToggleAction(),
+            $this->freezeToggleAction(),
+            $this->kycStatusAction(),
             ImpersonateUserAction::make()->record($this->getRecord()),
         ];
     }
@@ -154,6 +159,136 @@ class ViewUser extends ViewRecord
                         ? 'User banned.'
                         : 'Ban lifted.',
                     )
+                    ->success()
+                    ->send();
+            });
+    }
+
+    /**
+     * Money-level freeze (M9 Phase 0b). Separate from the ban toggle because
+     * they solve different problems: a ban removes product access, a freeze
+     * stops money moving OUT while letting credits land, so a frozen player's
+     * opponents can still be paid or refunded.
+     *
+     * This is also the per-payout hold we deliberately don't have — a single
+     * ledger row's clearance can't be extended without an UPDATE on the
+     * append-only ledger, so account-level freeze covers that case instead.
+     */
+    private function freezeToggleAction(): Action
+    {
+        return Action::make('toggle_freeze')
+            ->label(fn (User $record): string => $record->isFrozen() ? 'Unfreeze funds' : 'Freeze funds')
+            ->color(fn (User $record): string => $record->isFrozen() ? 'success' : 'warning')
+            ->icon(fn (User $record): string => $record->isFrozen()
+                ? 'heroicon-o-lock-open'
+                : 'heroicon-o-lock-closed',
+            )
+            ->requiresConfirmation()
+            ->modalHeading(fn (User $record): string => $record->isFrozen()
+                ? 'Unfreeze this user\'s funds?'
+                : 'Freeze this user\'s funds?',
+            )
+            ->modalDescription(fn (User $record): string => $record->isFrozen()
+                ? 'Restores withdrawals and staking. Their balance was never touched.'
+                : 'Blocks withdrawals and new stakes. Deposits, refunds, and payouts still land, so any in-flight match can finish settling.',
+            )
+            ->modalSubmitActionLabel(fn (User $record): string => $record->isFrozen() ? 'Unfreeze' : 'Freeze')
+            ->schema([
+                Textarea::make('reason')
+                    ->label(fn (User $record): string => $record->isFrozen()
+                        ? 'Why lift the freeze?'
+                        : 'Why freeze this user?',
+                    )
+                    ->placeholder(fn (User $record): string => $record->isFrozen()
+                        ? 'e.g. chess.com confirmed the fair-play flag was cleared on appeal.'
+                        : 'e.g. Opponent reported suspected engine use; awaiting chess.com review.',
+                    )
+                    ->required()
+                    ->rows(3)
+                    ->maxLength(1000),
+            ])
+            ->action(function (User $record, array $data): void {
+                $freezing = ! $record->isFrozen();
+
+                DB::transaction(function () use ($record, $freezing, $data): void {
+                    $record->forceFill([
+                        'frozen_at' => $freezing ? now() : null,
+                        'frozen_reason' => $freezing ? $data['reason'] : null,
+                    ])->save();
+
+                    UserModerationLog::create([
+                        'user_id' => $record->id,
+                        'admin_user_id' => auth()->id(),
+                        'action' => $freezing
+                            ? UserModerationLog::ACTION_FREEZE
+                            : UserModerationLog::ACTION_UNFREEZE,
+                        'reason' => $data['reason'],
+                    ]);
+                });
+
+                Notification::make()
+                    ->title($freezing ? 'Funds frozen.' : 'Freeze lifted.')
+                    ->success()
+                    ->send();
+            });
+    }
+
+    /**
+     * Records an identity-verification outcome (M9 Phase 0c).
+     *
+     * Verification is deliberately admin-driven — there is no document-upload
+     * flow, because picking a KYC vendor is a decision we haven't made. An
+     * operator confirms out-of-band and records the result here.
+     *
+     * The action stays visible even while `stakly.kyc_enabled` is off (its
+     * default) so a backlog can be worked through before the gate is switched
+     * on; the notice below says so rather than hiding the control.
+     */
+    private function kycStatusAction(): Action
+    {
+        return Action::make('set_kyc_status')
+            ->label('Set KYC status')
+            ->color('gray')
+            ->icon('heroicon-o-identification')
+            ->modalHeading('Record identity verification')
+            ->modalDescription(fn (): string => KycGate::enabled()
+                ? 'Gates withdrawals above the configured volume threshold. Verified accounts are never gated.'
+                : 'KYC is currently OFF platform-wide, so this gates nothing today. Recording it now is safe — it takes effect if the switch is turned on.',
+            )
+            ->modalSubmitActionLabel('Record')
+            ->schema([
+                Select::make('kyc_status')
+                    ->label('Status')
+                    ->options(KycStatus::class)
+                    ->default(fn (User $record): string => $record->kyc_status->value)
+                    ->required(),
+                Textarea::make('reason')
+                    ->label('Note')
+                    ->placeholder('e.g. Passport + selfie received by email, matched account name.')
+                    ->required()
+                    ->rows(3)
+                    ->maxLength(1000),
+            ])
+            ->action(function (User $record, array $data): void {
+                $status = KycStatus::from($data['kyc_status']);
+
+                DB::transaction(function () use ($record, $status, $data): void {
+                    $record->forceFill([
+                        'kyc_status' => $status,
+                        'kyc_verified_at' => $status === KycStatus::Verified ? now() : null,
+                        'kyc_note' => $data['reason'],
+                    ])->save();
+
+                    UserModerationLog::create([
+                        'user_id' => $record->id,
+                        'admin_user_id' => auth()->id(),
+                        'action' => UserModerationLog::ACTION_KYC,
+                        'reason' => "{$status->value}: {$data['reason']}",
+                    ]);
+                });
+
+                Notification::make()
+                    ->title("KYC status set to {$status->getLabel()}.")
                     ->success()
                     ->send();
             });

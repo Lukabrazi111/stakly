@@ -188,4 +188,56 @@ return [
         ],
     ],
 
+    /*
+     * Custodial crypto payment provider (M9 — billing / chain integration).
+     * `driver` selects the bound `App\Services\Payments\PaymentGateway`
+     * implementation (see `AppServiceProvider::bindPaymentGateway`). Default
+     * `mock` is provider-agnostic and needs no signup/keys/sandbox — the real
+     * `nowpayments` / `cryptomus` clients are stubs until go-ahead.
+     *
+     * The per-provider `requests_per_minute` + `circuit_breaker` blocks mirror
+     * the game-client shape and are declared ahead of their consumers: the
+     * `payments-api` throttle and breaker reuse land with the real clients,
+     * not with this abstraction.
+     */
+    'payments' => [
+        'driver' => env('PAYMENTS_DRIVER', 'mock'),
+
+        'mock' => [
+            // Fake flat gas used by the mock payout/fee estimate (USDT string).
+            'network_fee' => env('PAYMENTS_MOCK_NETWORK_FEE', '1.500000'),
+            // HMAC-SHA256 key the mock webhook verifier checks against the
+            // `X-Mock-Signature` header — lets the receiver's signature path be
+            // tested without a real provider.
+            'webhook_secret' => env('PAYMENTS_MOCK_WEBHOOK_SECRET'),
+        ],
+
+        'nowpayments' => [
+            'base_url' => env('NOWPAYMENTS_BASE_URL'),
+            'api_key' => env('NOWPAYMENTS_API_KEY'),
+            'ipn_secret' => env('NOWPAYMENTS_IPN_SECRET'),
+            'requests_per_minute' => (int) env('NOWPAYMENTS_REQUESTS_PER_MINUTE', 30),
+            'circuit_breaker' => [
+                'window_seconds' => (int) env('NOWPAYMENTS_BREAKER_WINDOW_SECONDS', 600),
+                'min_attempts' => (int) env('NOWPAYMENTS_BREAKER_MIN_ATTEMPTS', 5),
+                'error_rate_threshold' => (float) env('NOWPAYMENTS_BREAKER_ERROR_RATE_THRESHOLD', 0.5),
+                'cooldown_seconds' => (int) env('NOWPAYMENTS_BREAKER_COOLDOWN_SECONDS', 300),
+            ],
+        ],
+
+        'cryptomus' => [
+            'base_url' => env('CRYPTOMUS_BASE_URL', 'https://api.cryptomus.com'),
+            'merchant_uuid' => env('CRYPTOMUS_MERCHANT_UUID'),
+            'payment_key' => env('CRYPTOMUS_PAYMENT_KEY'),
+            'payout_key' => env('CRYPTOMUS_PAYOUT_KEY'),
+            'requests_per_minute' => (int) env('CRYPTOMUS_REQUESTS_PER_MINUTE', 30),
+            'circuit_breaker' => [
+                'window_seconds' => (int) env('CRYPTOMUS_BREAKER_WINDOW_SECONDS', 600),
+                'min_attempts' => (int) env('CRYPTOMUS_BREAKER_MIN_ATTEMPTS', 5),
+                'error_rate_threshold' => (float) env('CRYPTOMUS_BREAKER_ERROR_RATE_THRESHOLD', 0.5),
+                'cooldown_seconds' => (int) env('CRYPTOMUS_BREAKER_COOLDOWN_SECONDS', 300),
+            ],
+        ],
+    ],
+
 ];

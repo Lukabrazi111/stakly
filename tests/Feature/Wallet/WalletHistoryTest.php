@@ -115,7 +115,9 @@ test('types prop carries all enum cases for filter-chip rendering', function () 
     $this->actingAs($user)
         ->get('/wallet/history')
         ->assertInertia(fn ($page) => $page
-            ->has('types', 6)
+            // Derived from the enum so adding a case doesn't need a magic
+            // number updated here — the point is that ALL cases ship.
+            ->has('types', count(WalletTransactionType::cases()))
         );
 });
 

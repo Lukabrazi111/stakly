@@ -9,6 +9,12 @@ interface Props {
     currentPage: number;
     lastPage: number;
     filters: WalletFilters;
+    /**
+     * Target URL to paginate against. Defaults to the ledger history page;
+     * pass the withdrawals URL when reusing this on that list, or paging
+     * would silently navigate to the wrong page.
+     */
+    url?: string;
 }
 
 const ELLIPSIS = '…';
@@ -42,7 +48,12 @@ function visiblePages(
     return pages;
 }
 
-export function WalletPagination({ currentPage, lastPage, filters }: Props) {
+export function WalletPagination({
+    currentPage,
+    lastPage,
+    filters,
+    url,
+}: Props) {
     const t = useT();
 
     if (lastPage <= 1) {
@@ -57,7 +68,7 @@ export function WalletPagination({ currentPage, lastPage, filters }: Props) {
         // `replace: true` so Back returns to `/wallet` rather than walking
         // through every page the user visited.
         router.get(
-            walletHistory().url,
+            url ?? walletHistory().url,
             buildWalletHistoryQuery(filters, { page }),
             {
                 preserveState: true,

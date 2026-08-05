@@ -3,6 +3,7 @@ import {
     ArrowUpFromLine,
     Coins,
     Lock,
+    RotateCcw,
     Trophy,
     Undo2,
 } from 'lucide-react';
@@ -48,6 +49,11 @@ const TYPE_META: Record<WalletTransactionType, TypeMeta> = {
         label: 'Platform fee',
         icon: Coins,
         classes: 'bg-muted text-muted-foreground border-border',
+    },
+    withdrawal_reversal: {
+        label: 'Withdrawal returned',
+        icon: RotateCcw,
+        classes: 'bg-primary/10 text-primary border-primary/30',
     },
 };
 

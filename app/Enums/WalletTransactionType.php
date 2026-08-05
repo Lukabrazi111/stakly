@@ -9,8 +9,8 @@ use Filament\Support\Contracts\HasLabel;
  * Types of ledger entries on `wallet_transactions`. Each type implies a sign
  * convention applied by `App\Services\Wallet` when computing the row's
  * `amount` column:
- *   Deposit / EscrowRelease / Payout / Fee → positive (credit)
- *   Withdrawal / EscrowHold                → negative (debit)
+ *   Deposit / EscrowRelease / Payout / Fee / WithdrawalReversal → positive (credit)
+ *   Withdrawal / EscrowHold                                     → negative (debit)
  *
  * `HasColor` + `HasLabel` are read by Filament's TextColumn::badge() and
  * infolist TextEntry to auto-style each case — admin wallet ledger (M31) +
@@ -25,6 +25,13 @@ enum WalletTransactionType: string implements HasColor, HasLabel
     case Payout = 'payout';
     case Fee = 'fee';
 
+    /**
+     * Credit-back when a withdrawal is rejected by an admin or fails at the
+     * provider. Kept distinct from `Deposit` so platform revenue reporting and
+     * the deposit-volume figures don't count reversals as new money in.
+     */
+    case WithdrawalReversal = 'withdrawal_reversal';
+
     public function getLabel(): string
     {
         return match ($this) {
@@ -34,6 +41,7 @@ enum WalletTransactionType: string implements HasColor, HasLabel
             self::EscrowRelease => 'Escrow release',
             self::Payout => 'Payout',
             self::Fee => 'Fee',
+            self::WithdrawalReversal => 'Withdrawal reversal',
         };
     }
 
@@ -43,7 +51,7 @@ enum WalletTransactionType: string implements HasColor, HasLabel
             self::Deposit, self::Payout => 'success',
             self::Withdrawal => 'danger',
             self::EscrowHold => 'warning',
-            self::EscrowRelease => 'info',
+            self::EscrowRelease, self::WithdrawalReversal => 'info',
             self::Fee => 'gray',
         };
     }

@@ -161,6 +161,7 @@ Route::prefix('{locale}')
             Route::get('/deposit', [WalletController::class, 'deposit'])->name('deposit');
             Route::get('/withdraw', [WalletController::class, 'withdraw'])->name('withdraw');
             Route::post('/withdraw', [WalletController::class, 'withdrawStore'])->name('withdraw.store');
+            Route::get('/withdrawals', [WalletController::class, 'withdrawals'])->name('withdrawals');
             Route::get('/history', [WalletController::class, 'history'])->name('history');
         });
 

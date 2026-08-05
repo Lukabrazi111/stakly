@@ -43,6 +43,18 @@ class StoreListingRequest extends FormRequest
      */
     public const MAX_ACTIVE_LISTINGS = 2;
 
+    /**
+     * Minimum stake in USDT, from `config('stakly.min_stake')`.
+     *
+     * A TRC20 payout burns real gas, so a pot small enough that the rake is
+     * dwarfed by settlement cost isn't worth running. Config-backed so the
+     * floor moves without touching this rule.
+     */
+    public static function minStake(): string
+    {
+        return (string) config('stakly.min_stake');
+    }
+
     public function authorize(): bool
     {
         return true;
@@ -92,7 +104,9 @@ class StoreListingRequest extends FormRequest
             // but stored on the listing as 100.46, causing a 0.004 over-refund
             // on cancel. Pin the precision at the boundary.
             'stake_amount' => [
-                'required', 'numeric', 'decimal:0,2', 'min:1', 'max:100000',
+                'required', 'numeric', 'decimal:0,2',
+                'min:'.self::minStake(),
+                'max:100000',
                 $this->stakeWithinBalance(),
             ],
             // `time_control` is chess-only and now a SINGLE value (M41 P3a:

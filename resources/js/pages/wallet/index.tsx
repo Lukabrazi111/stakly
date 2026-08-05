@@ -4,27 +4,40 @@ import {
     ArrowRight,
     ArrowUpFromLine,
     History,
+    ShieldAlert,
     Wallet as WalletIcon,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { PageMeta } from '@/components/site/page-meta';
 import { BalanceCard } from '@/components/wallet/balance-card';
 import { TransactionRow } from '@/components/wallet/transaction-row';
+import { WithdrawalStatusChip } from '@/components/wallet/withdrawal-status-chip';
 import PlayerHubLayout from '@/layouts/player-hub-layout';
 import { useT } from '@/lib/i18n';
+import {
+    formatTimeUntil,
+    formatUsdt,
+    truncateAddress,
+} from '@/lib/wallet-format';
 import {
     deposit as depositRoute,
     history as historyRoute,
     withdraw as withdrawRoute,
+    withdrawals as withdrawalsRoute,
 } from '@/routes/wallet';
 import type { WalletIndexProps } from '@/types';
 
 export default function WalletIndex({
     balance,
+    availableBalance,
+    clearingBalance,
+    nextClearanceAt,
     recentTransactions,
+    pendingWithdrawals,
 }: WalletIndexProps) {
     const t = useT();
     const hasTransactions = recentTransactions.data.length > 0;
+    const hasPendingWithdrawals = pendingWithdrawals.data.length > 0;
 
     return (
         <PlayerHubLayout>
@@ -44,7 +57,62 @@ export default function WalletIndex({
                     </p>
                 </header>
 
-                <BalanceCard balance={balance} />
+                <BalanceCard
+                    balance={balance}
+                    availableBalance={availableBalance}
+                    clearingBalance={clearingBalance}
+                    nextClearanceAt={nextClearanceAt}
+                />
+
+                {hasPendingWithdrawals && (
+                    <section className="mt-6">
+                        <div className="mb-3 flex items-center justify-between gap-3">
+                            <h2 className="font-display text-sm font-semibold tracking-wide text-muted-foreground uppercase">
+                                {t('Withdrawals in progress')}
+                            </h2>
+                            <Link
+                                href={withdrawalsRoute().url}
+                                className="group inline-flex shrink-0 items-center gap-1.5 text-sm font-medium text-muted-foreground transition-colors hover:text-primary"
+                            >
+                                {t('All withdrawals')}
+                                <ArrowRight className="size-4 transition-transform duration-200 ease-out group-hover:translate-x-0.5" />
+                            </Link>
+                        </div>
+                        <div className="space-y-2">
+                            {pendingWithdrawals.data.map((withdrawal) => (
+                                <div
+                                    key={withdrawal.id}
+                                    className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border/60 bg-card/60 px-4 py-3"
+                                >
+                                    <div className="flex flex-wrap items-center gap-3">
+                                        <WithdrawalStatusChip
+                                            status={withdrawal.status}
+                                        />
+                                        <span className="font-mono text-xs text-muted-foreground">
+                                            {truncateAddress(
+                                                withdrawal.destination_address,
+                                            )}
+                                        </span>
+                                        {withdrawal.hold_until && (
+                                            <span className="inline-flex items-center gap-1 text-xs text-warning">
+                                                <ShieldAlert className="size-3" />
+                                                {t('New address — sending in :time', {
+                                                    time:
+                                                        formatTimeUntil(
+                                                            withdrawal.hold_until,
+                                                        ) ?? '',
+                                                })}
+                                            </span>
+                                        )}
+                                    </div>
+                                    <span className="font-display font-semibold tabular-nums">
+                                        ${formatUsdt(withdrawal.amount)}
+                                    </span>
+                                </div>
+                            ))}
+                        </div>
+                    </section>
+                )}
 
                 <div className="mt-6 grid gap-4 md:grid-cols-3">
                     <ActionCard
@@ -65,6 +133,16 @@ export default function WalletIndex({
                         title={t('History')}
                         description={t('All your transactions')}
                     />
+                </div>
+
+                <div className="mt-3 flex justify-end">
+                    <Link
+                        href={withdrawalsRoute().url}
+                        className="group inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground transition-colors hover:text-primary"
+                    >
+                        {t('Withdrawal history')}
+                        <ArrowRight className="size-4 transition-transform duration-200 ease-out group-hover:translate-x-0.5" />
+                    </Link>
                 </div>
 
                 <section className="mt-10">

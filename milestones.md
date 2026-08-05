@@ -254,12 +254,150 @@ Not CMS-managed on purpose. The Filament CMS template (`cms/page.tsx`) is intent
 
 ---
 
+## M9 — Chain integration / billing (ledger machinery shipped; provider edges paused for go-ahead)
+
+Custodial deposits/withdrawals via a third-party crypto payment provider. **Provider settled: NowPayments.** Cryptomus stays as a stub because it costs nothing and proves the abstraction is real, not because the choice is still open — the abstraction means reversing it is ~one class. Note the earlier blocker still stands as a risk: NowPayments' sandbox signup was broken at last check, so Phase 1 should start by confirming sandbox access before any client code. Real provider clients + webhook receivers stay paused until explicit go-ahead (CLAUDE.md). The internal `App\Services\Wallet` ledger remains the source of truth regardless of provider.
+
+**Remaining work is tracked in `docs/billing-roadmap.md`** — ordered steps, open decisions (D1 deposit attribution, D2 KYC split, D3 `min_stake`, D4 stuck-payout admin lever), the attacker view for the deposit webhook, and per-phase test requirements. Phases 1–3 below are the summary; the roadmap is the detail.
+
+### Phases
+
+**Phase 0a — Payment gateway abstraction** ✅ _shipped 2026-06-20_
+
+Goal: a swappable `PaymentGateway` driver layer mirroring the existing `GameApi` pattern (config-driven `match()` binding in `AppServiceProvider`), so the rest of the app depends only on a stable contract + canonical DTOs, never on a provider's payload shape or SDK. Switching providers later = `PAYMENTS_DRIVER=cryptomus` + one new class.
+
+- [x] `App\Services\Payments\PaymentGateway` contract (`ensureDepositAccount`, `createPayout`, `estimatePayoutFee`, `verifyWebhookSignature`, `parseWebhookEvent`).
+- [x] Canonical DTOs in `App\Services\Payments\Dto` (`DepositAccount`, `PayoutResult`, `FeeEstimate`, `GatewayWebhookEvent`) + `GatewayEventType` / `GatewayPayoutStatus` enums.
+- [x] `App\Enums\PaymentProvider` (`NowPayments`, `Cryptomus`).
+- [x] `MockGateway` — deterministic implementation (no network); default driver. Replaces the inline mock that Phase 0b's `Withdrawals::send()` would otherwise hardcode.
+- [x] `NowPaymentsGateway` / `CryptomusGateway` — **stubs only**, every method throws "not wired (M9)" via `Concerns\Unwired`. No API/key/HTTP code until go-ahead.
+- [x] `config/services.php` `payments` block (`driver` + per-provider sub-config incl. `circuit_breaker`/`requests_per_minute` shape for later) + `AppServiceProvider::bindPaymentGateway()` singleton.
+- [x] Pest: driver-swap resolution proof (set `services.payments.driver`, assert resolved class) + `MockGateway` behavior.
+- [x] First consumer wired: registration + deposit page provision `users.tron_address` via `PaymentGateway::ensureDepositAccount()` instead of a hardcoded `MockTronAddress::generate()` in `CreateNewUser`. The mock-vs-real seam now lives in one config-driven place; the deposit-page call is idempotent (lazy-creates for any address-less user — the path a real provider will use to avoid an external call inside the signup transaction). `MockTronAddress` is now referenced only by `MockGateway` + the test factory.
+- **Deferred to the real-client slice (not built now):** `ProviderCircuitBreaker` key generalization + `payments-api` `RateLimiter::for(...)`. Both are outbound-call concerns with zero consumers until NowPayments/Cryptomus clients exist — refactoring the game-pipeline-shared breaker now would be risk with no caller.
+
+**Phase 0b — Ledger machinery + payout clearing** ✅ _shipped 2026-07-28_
+
+Makes withdrawals real end-to-end through `MockGateway`, so a provider swap changes only the gateway class. Gives `createPayout` + `estimatePayoutFee` their first consumers.
+
+**Design change (2026-07-28):** the original plan (`tmp/billing-implementation-steps.md`) gated every withdrawal behind a 1-day window plus a manual Filament approve. **Replaced by a G2G/marketplace-style clearing period on winnings.** The hold moves from the withdrawal to the payout — only match winnings clear, because deposits are final on-chain and refunds are the player's own stake. Once cleared, withdrawal is self-service and instant with no admin on the happy path. This is the "Bybit-style cooling-off" already sketched in the archived M8 dispute decisions, with a longer, risk-tiered window.
+
+Threat it defends against: **chess.com / Lichess retroactively closing an account for fair-play violations days-to-weeks after the games** — the chargeback-equivalent for this product. The acute case is already covered by the M46 auto-detection pipeline; this is the retrospective case.
+
+Locked decisions:
+
+- **Clearing sits on payouts, not withdrawals.** No admin approval on the happy path; admin keeps Freeze + Reject for exceptions.
+- **Window is tiered by risk signal** — short base (48h), escalating (168h) on new account / first withdrawal / large pot. Config-driven.
+- **Uncleared winnings are stakeable, not withdrawable.** Money can't leave the platform, but play continues. Safe because every re-stake starts a *fresh* clearance clock on the new winnings, so laundering through an accomplice can't accelerate the exit.
+- **Kill-switch:** `STAKLY_WITHDRAWAL_INSURANCE_ENABLED=false` → instant withdrawals. Applies retroactively (releases existing holds), so it's a true switch rather than one that strands held funds.
+- **Clearing moves no money** — `clears_at` on the payout ledger row, availability computed against it. No second balance column, no new ledger types, no scheduled command, and the `usdt_balance == SUM(wallet_transactions.amount)` invariant plus the append-only guarantee both stay untouched.
+- **No per-payout admin holds.** Extending one row's `clears_at` would mean an `UPDATE` on `wallet_transactions`, which the append-only test forbids. Account-level Freeze covers the abuse case and blocks staking too — the right posture for a suspected cheater.
+- **`min_stake` config key added but not enforced** — `StoreListingRequest` stays at `min:1` pending a separate product decision.
+
+Steps:
+
+- [x] 0.1 — Money config knobs in `config/stakly.php` (`withdrawal_margin`, `min_withdrawal`, `min_stake`, `withdrawal_insurance_*`); `WithdrawRequest::MIN_WITHDRAWAL` → `minWithdrawal()` reading config.
+- [x] 0.2 — Account freeze (`users.frozen_at` / `frozen_reason`, `AccountFrozenException`, guard in `Wallet::record()` blocking debits only, checked on the locked row). +9 tests.
+- [x] 0.3 — Payout clearing (`wallet_transactions.clears_at`, `PayoutClearance` resolver, `Wallet::availableBalance()` / `unclearedBalance()` / `nextClearanceAt()`, wired into `SettleMatchAction` + `SettleTeamMatchAction`). +15 tests.
+- [x] 0.4 — Withdrawal schema + enums (`WithdrawalStatus` — no `Approved`; `WalletTransactionType::WithdrawalReversal`; `withdrawals` table, model/factory; frontend union + chips).
+- [x] 0.5 — `App\Services\Withdrawals` + queued `ProcessWithdrawal`, routing `send()` through `PaymentGateway::createPayout()` with all four `GatewayPayoutStatus` cases mapped. Made `Wallet::fee()`'s `Listing` nullable + added `Wallet::reverseWithdrawal()`. +24 tests. **Double-spend guard:** an exhausted job auto-reverses only while `provider_payout_id` is null — once the provider has the payout the funds may already be on-chain, so those rows are logged `critical` and left for admin instead of being credited back.
+- [x] 0.6 — Controller / routes / `WithdrawalResource` + `GET /wallet/withdrawals`; validation against *available* balance; frozen users get a clean 422 via `WithdrawRequest::after()` instead of a 500.
+- [x] 0.7 — Filament admin (withdrawal list + Reject action, no Approve; user Freeze/Unfreeze writing `user_moderation_logs`); `WalletReferenceParser` `wd:` prefixes. +8 tests.
+- [x] 0.8 — Wallet frontend (total vs available split, clearing countdown, fee breakdown, pending withdrawals, withdrawals page, status chips).
+- [x] 0.9 — `WithdrawalSeeder` (clearing + cleared payouts, one withdrawal per status, a frozen user) — all via `Wallet`/`Withdrawals`.
+- [x] 0.10 — `docs/billing.md`; `tmp/billing-implementation-steps.md` marked superseded.
+
+**Deviations from `tmp/billing-implementation-steps.md`** (written 2026-05-25, before Phase 0a): no `review_until` / admin-approval gate — replaced by payout clearing; `send()` goes through the gateway rather than an inline mock; `config/stakly.php` already existed with `platform_fee_rate` as the rake.
+
+**Phase 0c — Optional KYC gate (off by default)** ✅ _shipped 2026-08-05_
+
+Goal: make identity verification a **switch, not a flow**, so turning it on later is a config flip rather than a refactor — without building any of it now. NOWPayments does not require KYC for crypto-only merchants (only "in a rare case when a certain transaction is marked as suspicious"), and does not require it on our end users in the permanent-address model, so there is nothing forcing this today. `STAKLY_KYC_ENABLED=false` by default: the gate is inert and no existing behaviour changes.
+
+Design: a tiered volume gate, not an all-users wall. Verification is **admin-driven** (operator confirms out-of-band, flips the status) — there is deliberately no document-upload flow or KYC-vendor integration, since that choice needs a provider decision we haven't made. Enabling the switch with nobody verified must therefore gate only players over the threshold, never brick withdrawals platform-wide.
+
+- [x] 0c.1 — `App\Enums\KycStatus` (`Unverified` / `Pending` / `Verified` / `Rejected`); `users.kyc_status`, `kyc_verified_at`, `kyc_note` (edit the users migration directly — no real users yet).
+- [x] 0c.2 — Config knobs `kyc_enabled` (**default false**) + `kyc_threshold` (lifetime withdrawal volume, default '1000').
+- [x] 0c.3 — `App\Services\KycGate` mirroring `PayoutClearance`: `enabled()`, `requiresVerification()`, `lifetimeWithdrawn()`. **Threshold counts Pending + Sending + Completed, excluding Rejected/Failed** — counting only Completed would let a player split one large cash-out into many concurrent requests to stay under the line.
+- [x] 0c.4 — Guard in `Withdrawals::request()` beside the freeze check, under the same row lock; `KycRequiredException` as the backstop.
+- [x] 0c.5 — Friendly 422 via `WithdrawRequest::after()`, same pattern as the frozen-account message.
+- [x] 0c.6 — Filament KYC status action on the admin user page, writing `user_moderation_logs`.
+- [x] 0c.7 — Pest coverage: off-by-default changes nothing, under/over threshold, verified bypass, concurrent-request hole closed, ledger invariant.
+
+**Not built (deliberately):** player-facing verification UI. With the gate off and verification admin-driven, the 422 is the whole player surface. Building a submission flow needs a KYC-vendor decision that doesn't exist yet — revisit if the switch is ever turned on.
+
+**Phase 0d — 2FA step-up on withdrawal** ✅ _shipped 2026-08-05_
+
+Goal: close the highest-severity money path in the product — account takeover → drain to an attacker address. Pulled forward from Phase 3 because it needs neither the provider pick nor sandbox access. **Ships ON by default** (`STAKLY_WITHDRAWAL_REQUIRE_2FA=true`); pre-launch is exactly when it can be afforded, since there are no existing users to lock out.
+
+**Step-up, not a prerequisite.** A fresh TOTP code is required on the withdraw form for *every* withdrawal, not merely "2FA must be enabled." Requiring only enrolment would leave a hijacked live session able to drain freely — that session already passed 2FA at login. The code is what proves a human with the device is present *at withdrawal time*.
+
+Layering note: verification lives at the **HTTP boundary** (`WithdrawRequest`), not inside `Withdrawals::request()`. Unlike freeze and KYC — which are DB state and must be checked under the row lock — a TOTP code is a credential that only exists in a request context. Seeders and admin-initiated withdrawals legitimately have no code to present.
+
+- [x] 0d.1 — `stakly.withdrawal_require_2fa` (**default true**).
+- [x] 0d.2 — `App\Services\WithdrawalTwoFactor`: `enabled()`, `required(User)`, `verify(User, ?string)`. Wraps Fortify's `TwoFactorAuthenticationProvider::verify()`, which already blocks code replay within the window via its cache key.
+- [x] 0d.3 — `two_factor_code` on `WithdrawRequest` + `after()` checks: not-enrolled → enrol first; wrong/missing code → 422.
+- [x] 0d.4 — Withdraw page ships `twoFactorRequired` / `twoFactorEnabled`; form renders the code field, or an enrol prompt linking to `/settings/security` when not enrolled.
+- [x] 0d.5 — Seeded dev user gets a FIXED known TOTP secret so local withdrawals stay testable with the gate on.
+- [x] 0d.6 — Pest: valid code passes, wrong/missing/replayed code refused, unenrolled user blocked, switch off restores old behaviour, no ledger write on any refusal.
+
+**Recovery codes are deliberately NOT accepted here.** A lost device already blocks login, so the recovery path is: recover login → re-enrol in settings → withdraw. Accepting recovery codes at the withdrawal step would widen the attack surface (they're the credential most likely to be screenshotted or stored in plaintext) to solve a lockout that doesn't exist.
+
+**Phase 0e — New-address cooldown** ✅ _shipped 2026-08-05_
+
+Goal: close the gap 0d's step-up leaves open. 2FA proves *someone with the device* is present, but a phished or coerced code still sends funds wherever the request says. A first-time destination address gets a delay plus an email the real owner can act on — turning an instant, irreversible drain into a window where a human can intervene.
+
+**Held, not blocked.** The withdrawal is accepted and debited immediately (so the balance can't be spent twice), but the payout job is dispatched with a delay and the row carries `hold_until`. Blocking outright would mean a legitimate first withdrawal just fails; holding means it completes on its own if nobody objects. Admin Reject during the hold credits the full gross back — already idempotent, no new reversal path.
+
+An address is "known" once the player has a non-reversed withdrawal to it, so only the *first* send to a given address waits. Rejected/Failed don't count — those never left.
+
+- [x] 0e.1 — `stakly.withdrawal_address_cooldown_hours` (default 24; `0` disables, same convention as the insurance window).
+- [x] 0e.2 — `withdrawals.hold_until` nullable timestamp + model cast, so the wait is legible in the UI and admin rather than an unexplained long `Pending`.
+- [x] 0e.3 — `App\Services\WithdrawalAddressCooldown`: `isKnownAddress()`, `holdUntil()`.
+- [x] 0e.4 — `Withdrawals::request()` stamps `hold_until` and dispatches `ProcessWithdrawal` with a matching delay. `send()` already no-ops on terminal, so a reject during the hold needs nothing new.
+- [x] 0e.5 — `WithdrawalHeldNotification` (database + broadcast + mail, mandatory — a money event nobody may silence).
+- [x] 0e.6 — Surface `hold_until` on the wallet pending list, withdrawals page, and admin queue.
+- [x] 0e.7 — Pest: first send held, repeat send to the same address instant, reversed prior doesn't count as known, cooldown of 0 disables, held row still rejectable, ledger invariant.
+
+**Phase 0f — Velocity caps + money-path cleanup** _(provider-agnostic; in flight 2026-08-05)_
+
+Goal: finish the no-provider half of Phase 3 hardening and close the small gaps an audit of the ledger against `docs/billing.md` surfaced. Nothing here needs the provider pick or sandbox access.
+
+Velocity caps are the backstop for exploits nobody predicted: freeze/KYC/2FA/cooldown each block a *known* attack, a daily ceiling bounds worst-case loss from an unknown one. Rolling 24h rather than calendar-day so a drain can't straddle midnight for double the limit.
+
+- [ ] 0f.1 — `stakly.withdrawal_daily_limit` (default '5000'; `0` disables) + `App\Services\WithdrawalVelocity`, guarded in `Withdrawals::request()` under the same row lock and surfaced as a friendly 422.
+- [ ] 0f.2 — Withdraw page ships the remaining daily allowance so a player sees the ceiling before submitting, not after.
+- [ ] 0f.3 — Enforce `min_withdrawal` in `Withdrawals::request()`. It currently lives only in `WithdrawRequest`, so a service- or admin-initiated call bypasses the 10 USDT floor.
+- [ ] 0f.4 — **D3:** enforce `config('stakly.min_stake')` in `StoreListingRequest` (was declared with zero consumers while the rule stayed `min:1`). ⚠️ Behaviour change — raises the stake floor from $1 to $20; tune via `STAKLY_MIN_STAKE`.
+- [ ] 0f.5 — **D4:** admin levers for payouts the provider already took — "Mark completed" and "Force reverse". Today the only action is Reject, which credits back the full gross; if the chain send actually landed that is a manual double-pay, the exact outcome `ProcessWithdrawal::failed()`'s guard exists to prevent.
+- [ ] 0f.6 — Link `/wallet/withdrawals` from the wallet index. The page has existed since P0b with no inbound link anywhere in the UI.
+- [ ] 0f.7 — Audit-log consistency: `user_moderation_logs.action` constrained to its known values, and `withdrawals.rejected_reason` widened to match the 1000-char moderation reason.
+- [ ] 0f.8 — Pest for every path above.
+
+**Deliberately NOT changed:** `Wallet::findByReference()` matches on `reference_id` alone, not user/type/amount. That's documented, tested behaviour (a replay with a different amount returns the original row) and is what makes retried jobs safe. Every prefix embeds an id, so a cross-user collision isn't reachable. Tightening it would break the idempotency contract to fix a theoretical case.
+
+**Phase 1 — deposit edge (🚫 paused, needs go-ahead).** The only remaining phase that fixes a *functional* hole: deposits cannot be credited at all today, so money can leave Stakly but not enter it. Real `NowPaymentsGateway` methods (dropping `Unwired` one at a time), `users.payments_account_id`, lazy address provisioning (drop the eager `CreateNewUser` call — it would put an HTTP call inside the signup transaction), `POST /webhooks/payments` mirroring the `webhooks/faceit` precedent, idempotent net crediting on `deposit:{txHash}`, `deposit:` prefix in `WalletReferenceParser`. **Unlike the FACEIT webhook this one can't be re-verified downstream — a forged deposit mints money, so the signature check is the only guard.**
+
+**Phase 2 — withdrawal edge (🚫 paused).** Real payout + fee estimate; **a payout webhook to resolve `Sending` rows — nothing completes them today** (latent only because `MockGateway` always returns `Completed`; must ship *with* the real client, not after); D4 admin levers; mass-payout batching, which is what reintroduces `WithdrawalStatus::Approved`.
+
+**Phase 3 — hardening (🚫 paused).** 2FA-required-to-withdraw (Fortify TOTP already wired — highest value per effort), withdrawal address cooldown, reconciliation vs provider custody, velocity caps, go-live checklist. **KYC split out** — needs a legal answer that's out of engineering scope, and nothing else depends on it.
+
+**Cross-cutting:** `ProviderCircuitBreaker` is typed on `LinkedAccountProvider` across 13 signatures and there's no `payments-api` limiter — both land with the first real client. A tripped breaker here freezes cash-out for everyone at once, unlike the game pipeline where it only delays settlement.
+
+---
+
 ## ▶ Next up — do this next
 
-_Living "you are here" pointer — the short version of what to work on right now. Update as work lands; full detail lives in the milestone entries above. Last updated 2026-07-07._
+_Living "you are here" pointer — the short version of what to work on right now. Update as work lands; full detail lives in the milestone entries above. Last updated 2026-07-28._
 
-**🎯 NOW. M46 (chess result auto-detection) is COMPLETE + archived** — P2–P5 + the `/review` fixes shipped 2026-07-07; full summary in `milestones_archived.md`. Active focus shifts to **M47 (CS2)**, which is blocked on you.
-- **M47 (CS2):** P1 ⬜ · P2 ⬜ · P3 ⬜ · P4 ⬜ · P5 ⬜ (nothing built).  **→ Next: M47 P1 feasibility spike — MAKE-OR-BREAK, needs YOU to create a real FACEIT custom match** and confirm it (a) runs anti-cheat + (b) shows in the Data API. Gates P2–P4. FACEIT partnership application submitted 2026-07-07, awaiting reply. Full phase detail in the M47 entry above.
+**🎯 M9 Phase 0b (billing execution) is COMPLETE** — shipped 2026-07-28. Players can now cash out: winnings clear on a risk-tiered insurance window, then withdrawal is self-service with no admin in the loop. Full write-up in `docs/billing.md`.
+- **Decisions for you to sanity-check:** base clearing window **48h**, elevated **168h** (new account / first withdrawal / payout ≥ $500). Tune via `STAKLY_WITHDRAWAL_INSURANCE_*`; `STAKLY_WITHDRAWAL_INSURANCE_ENABLED=false` makes withdrawals instant and releases existing holds.
+- **⚠️ Deposits still can't be credited** — no webhook receiver (CLAUDE.md gates it on your go-ahead), so balances come from seeders. `verifyWebhookSignature` / `parseWebhookEvent` are built + tested on `MockGateway` but have no caller. Say the word to add `POST /webhooks/payments` (mock-driver only, no keys, no provider HTTP) — that alone unblocks deposits in dev.
+- **📋 `docs/billing-roadmap.md` is the plan for everything left** — Phases 1–3 as ordered steps, plus the decisions waiting on you: **D1** deposit attribution (recommend permanent per-user addresses, *not* NowPayments Custody — it would put per-user balances on their side, drift from our ledger, *and* may pull end-user KYC in with it), **D3** enforce or delete `min_stake`, **D4** admin levers for payouts the provider already took. **D2 (KYC) is settled** — shipped as Phase 0c, off by default.
+- **🔐 KYC is now a switch you can flip, not a build** — `STAKLY_KYC_ENABLED=false` ships off and gates nothing. Turn it on and withdrawals above `STAKLY_KYC_THRESHOLD` (default 1000 USDT lifetime) need a verified account; verify players from the admin user page. NowPayments doesn't require any of this for crypto-only merchants — it's there so the option exists.
+- **`min_stake` config key added but NOT enforced** — `StoreListingRequest` still validates `min:1`, pending your call on raising it to $20 (D3).
+- **Next in M9:** Phase 1 (deposit edge). Provider settled as NowPayments; start by confirming their sandbox signup works, since it was broken at last check.
+
+**Blocked on you — M47 (CS2):** P1 ⬜ · P2 ⬜ · P3 ⬜ · P4 ⬜ · P5 ⬜ (nothing built). **→ M47 P1 feasibility spike is MAKE-OR-BREAK and needs YOU to create a real FACEIT custom match**, confirming it (a) runs anti-cheat + (b) shows in the Data API. Gates P2–P4. FACEIT partnership application submitted 2026-07-07, awaiting reply. Full phase detail in the M47 entry above.
 - **Post-launch analysis (M46 P1):** once there's real traffic, query `match_auto_fetch_attempts` (ad-hoc SQL) — group by outcome + `outcome_reason` per provider — to see the true failure-mode distribution, then tune the P3 retry windows / P4 player guidance to what the data shows. Nothing to build; the admin "Why it's in review" panel already surfaces this per-match.
 
 **Later — M45: Player country flags** _(spec'd + design decided above; `flag-icons` dep approved):_ Stakly-owned `users.country` (self-reported in profile settings, fake-OK because cosmetic), rendered via self-hosted `flag-icons` on the lobby + match roster cards. Build when ready — start with the migration + `flag-icons` install.

@@ -8,15 +8,16 @@ import type { Paginator } from './listings';
 
 // Mirror of App\Enums\WalletTransactionType. Sign convention applied at the
 // service layer:
-//   Deposit / EscrowRelease / Payout / Fee → positive `amount`
-//   Withdrawal / EscrowHold                → negative `amount`
+//   Deposit / EscrowRelease / Payout / Fee / WithdrawalReversal → positive `amount`
+//   Withdrawal / EscrowHold                                     → negative `amount`
 export type WalletTransactionType =
     | 'deposit'
     | 'withdrawal'
     | 'escrow_hold'
     | 'escrow_release'
     | 'payout'
-    | 'fee';
+    | 'fee'
+    | 'withdrawal_reversal';
 
 // Embedded preview of the related listing (when the ledger row references one).
 // `null` for deposits / withdrawals / fees that aren't tied to a listing.
@@ -49,6 +50,10 @@ export interface WalletTransaction {
     // anyone took them.
     related_match: RelatedMatchSummary | null;
     description: string | null;
+    // Only ever set on `payout` rows. An ISO timestamp in the future means the
+    // winnings are credited but not yet withdrawable (the insurance window);
+    // `null` means immediately available. See App\Services\PayoutClearance.
+    clears_at: string | null;
     created_at: string | null;
 }
 
@@ -56,12 +61,53 @@ export interface WalletFilters {
     type: WalletTransactionType | null;
 }
 
+// Mirror of App\Enums\WithdrawalStatus. There is no `approved` state — the
+// anti-abuse hold sits on the payout's clearing window, not on the withdrawal.
+export type WithdrawalStatus =
+    | 'pending'
+    | 'sending'
+    | 'completed'
+    | 'rejected'
+    | 'failed';
+
+// Mirror of App\Http\Resources\WithdrawalResource.
+export interface Withdrawal {
+    id: number;
+    status: WithdrawalStatus;
+    // Gross debited from the balance.
+    amount: number;
+    platform_fee: number;
+    // Actual gas, only known once the provider confirms.
+    network_fee: number | null;
+    // amount − platform_fee: what heads to the destination address.
+    net_amount: number;
+    destination_address: string;
+    tx_hash: string | null;
+    rejected_reason: string | null;
+    /** Set while a first-time address is inside its security hold (M9 P0e). */
+    hold_until: string | null;
+    created_at: string | null;
+    updated_at: string | null;
+}
+
+// Balance breakdown shared by the wallet index + withdraw pages.
+//   balance   = everything in the account
+//   available = what can actually leave (balance − clearing)
+//   clearing  = winnings still inside their insurance window
+export interface WalletBalances {
+    balance: number;
+    availableBalance: number;
+    clearingBalance: number;
+    // ISO timestamp of the earliest tranche to unlock; null when nothing held.
+    nextClearanceAt: string | null;
+}
+
 // /wallet — overview page (balance + actions + last 5 transactions).
 // `recentTransactions` is a resource collection without pagination meta
 // (controller calls `->get()`, not `->paginate()`).
-export interface WalletIndexProps {
-    balance: number;
+export interface WalletIndexProps extends WalletBalances {
     recentTransactions: { data: WalletTransaction[] };
+    pendingWithdrawals: { data: Withdrawal[] };
 }
 
 // /wallet/deposit — shows the user's TRC20 address + QR code.
@@ -71,12 +117,27 @@ export interface WalletDepositProps {
     tronAddress: string;
 }
 
-// /wallet/withdraw — form page. `minWithdrawal` is sourced from
-// `WithdrawRequest::MIN_WITHDRAWAL` so the frontend never duplicates the
-// constant.
-export interface WalletWithdrawProps {
-    balance: number;
+// /wallet/withdraw — form page. `minWithdrawal` and `platformFee` come from
+// `config('stakly.*')` and `estimatedNetworkFee` from the active
+// PaymentGateway driver, so the frontend never duplicates a money constant.
+// The form caps against `availableBalance`, NOT `balance`.
+export interface WalletWithdrawProps extends WalletBalances {
     minWithdrawal: number;
+    platformFee: number;
+    estimatedNetworkFee: number;
+    /** A fresh TOTP code must accompany every withdrawal (M9 Phase 0d). */
+    twoFactorRequired: boolean;
+    /** Whether the player has 2FA set up — false means prompt enrolment. */
+    twoFactorEnrolled: boolean;
+    /** Rolling 24h withdrawal ceiling; null when disabled (M9 P0f). */
+    dailyLimit: number | null;
+    /** Headroom left in the current 24h window; null when disabled. */
+    dailyRemaining: number | null;
+}
+
+// /wallet/withdrawals — paginated withdrawal history.
+export interface WalletWithdrawalsProps {
+    withdrawals: Paginator<Withdrawal>;
 }
 
 // /wallet/history — paginated ledger view with `?filter[type]=` chip filter.

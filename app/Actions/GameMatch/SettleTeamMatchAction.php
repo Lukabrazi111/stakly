@@ -6,6 +6,7 @@ use App\Actions\Message\PostSystemMessageAction;
 use App\Enums\MatchStatus;
 use App\Models\GameMatch;
 use App\Models\User;
+use App\Services\PayoutClearance;
 use App\Services\Wallet;
 use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
@@ -196,6 +197,9 @@ class SettleTeamMatchAction
                 listing: $match->listing,
                 reference: "match-payout:{$match->id}:player-{$winner->id}",
                 description: 'Match payout to team winner.',
+                // Resolved per player: risk signals are per-account, so two
+                // team-mates on the same match can clear on different clocks.
+                clearsAt: PayoutClearance::for($winner, $amount),
             );
         }
 

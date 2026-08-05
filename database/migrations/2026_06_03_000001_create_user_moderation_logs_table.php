@@ -18,9 +18,12 @@ return new class extends Migration
             // `admin_impersonations` — never lose attribution silently.
             $table->foreignId('admin_user_id')->constrained('users')->restrictOnDelete();
 
-            // 'ban' | 'unban' for now. Append-only — promote to enum + new
-            // action types (mute / restrict / etc.) once M21 lands more
-            // moderation surfaces.
+            // 'ban' | 'unban' | 'freeze' | 'unfreeze' | 'kyc' — the constants
+            // on `App\Models\UserModerationLog`. Append-only. Kept a plain
+            // string rather than a DB enum so adding a moderation surface
+            // doesn't need a migration against an audit table; the write side
+            // is a small closed set of class constants, and nothing reads
+            // `action` back into a typed enum.
             $table->string('action', 16);
 
             // Required at the UI layer in both directions. Capped at the
