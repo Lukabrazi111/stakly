@@ -288,6 +288,10 @@ Browser testing via Pest 4's `visit()` / `click()` / `fill()` is available; smok
 | Doc                                              | What's in it                                                                                |
 | ------------------------------------------------ | ------------------------------------------------------------------------------------------- |
 | [`CLAUDE.md`](./CLAUDE.md)                       | Authoritative project context — stack, architecture, visual system, conventions, AI rules. |
+| [`docs/architecture.md`](./docs/architecture.md) | How the system is shaped — layers, the Action/sentinel contract, outcome pipeline, real-time, provider defence. |
+| [`docs/developer-guide.md`](./docs/developer-guide.md) | How to work in it — feature recipes, frontend/backend conventions, testing helpers, gotchas. |
+| [`docs/billing.md`](./docs/billing.md)           | The money system as it exists — ledger, escrow, payout clearing, withdrawals, gateway.       |
+| [`docs/billing-roadmap.md`](./docs/billing-roadmap.md) | What's left to make payments fully working, and in what order.                          |
 | [`milestones.md`](./milestones.md)               | Active + upcoming work, cross-cutting architectural decisions.                              |
 | [`milestones_archived.md`](./milestones_archived.md) | Shipped milestones, full implementation detail.                                         |
 | [`AGENTS.md`](./AGENTS.md)                       | Mirror of CLAUDE.md for non-Claude agents.                                                  |

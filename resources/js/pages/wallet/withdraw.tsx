@@ -17,6 +17,8 @@ export default function WalletWithdraw({
     minWithdrawal,
     platformFee,
     estimatedNetworkFee,
+    twoFactorRequired,
+    twoFactorEnrolled,
 }: WalletWithdrawProps) {
     const t = useT();
     const clearsIn = formatTimeUntil(nextClearanceAt);
@@ -98,6 +100,8 @@ export default function WalletWithdraw({
                     minWithdrawal={minWithdrawal}
                     platformFee={platformFee}
                     estimatedNetworkFee={estimatedNetworkFee}
+                    twoFactorRequired={twoFactorRequired}
+                    twoFactorEnrolled={twoFactorEnrolled}
                 />
             </div>
         </PlayerHubLayout>

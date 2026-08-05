@@ -123,6 +123,10 @@ export interface WalletWithdrawProps extends WalletBalances {
     minWithdrawal: number;
     platformFee: number;
     estimatedNetworkFee: number;
+    /** A fresh TOTP code must accompany every withdrawal (M9 Phase 0d). */
+    twoFactorRequired: boolean;
+    /** Whether the player has 2FA set up — false means prompt enrolment. */
+    twoFactorEnrolled: boolean;
 }
 
 // /wallet/withdrawals — paginated withdrawal history.

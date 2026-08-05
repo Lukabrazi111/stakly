@@ -12,6 +12,7 @@ use App\Models\WalletTransaction;
 use App\Services\Payments\PaymentGateway;
 use App\Services\Wallet;
 use App\Services\Withdrawals;
+use App\Services\WithdrawalTwoFactor;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -102,6 +103,10 @@ class WalletController extends Controller
             'minWithdrawal' => (float) WithdrawRequest::minWithdrawal(),
             'platformFee' => (float) config('stakly.withdrawal_margin'),
             'estimatedNetworkFee' => (float) $estimate->networkFee,
+            // M9 Phase 0d — the form renders a code field, or an enrol prompt
+            // when 2FA is required but not set up yet.
+            'twoFactorRequired' => WithdrawalTwoFactor::required($user),
+            'twoFactorEnrolled' => WithdrawalTwoFactor::hasEnrolled($user),
         ]);
     }
 

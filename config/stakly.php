@@ -224,4 +224,70 @@ return [
         'large_payout_amount' => env('STAKLY_INSURANCE_RISK_LARGE_PAYOUT', '500'),
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Identity verification / KYC (M9 Phase 0c)
+    |--------------------------------------------------------------------------
+    |
+    | OFF BY DEFAULT, and nothing currently requires it. NOWPayments asks
+    | crypto-only merchants for KYB/KYC only "in a rare case when a certain
+    | transaction is marked as suspicious", and imposes nothing on our end
+    | users under the permanent-address deposit model — players are addresses
+    | sending money, not accounts on their platform. (That changes if we ever
+    | adopt Custody sub-accounts; see `docs/billing-roadmap.md` D1/D2.)
+    |
+    | This exists so verification is a SWITCH, not a rewrite. `KycGate` sits at
+    | the single choke point every cash-out already passes through, so turning
+    | it on is a config flip — no schema change against a live money table.
+    |
+    | It is a TIERED VOLUME gate, not an all-users wall: below the threshold
+    | nothing is asked. That matters because verification is admin-driven
+    | (an operator confirms out-of-band and flips the status) — there is no
+    | document-upload flow, so a blanket gate would brick cash-out for every
+    | player the moment it was enabled.
+    |
+    | Set `kyc_threshold` to '0' to require verification for any withdrawal.
+    |
+    */
+
+    'kyc_enabled' => (bool) env('STAKLY_KYC_ENABLED', false),
+
+    /*
+    | Lifetime withdrawal volume (USDT string) above which a player must be
+    | verified. Counts Pending + Sending + Completed withdrawals INCLUDING the
+    | one being requested — counting only Completed would let a player split
+    | one large cash-out into several concurrent requests to stay under the
+    | line. Rejected/Failed are excluded; those were credited back.
+    */
+    'kyc_threshold' => env('STAKLY_KYC_THRESHOLD', '1000'),
+
+    /*
+    |--------------------------------------------------------------------------
+    | 2FA step-up on withdrawal (M9 Phase 0d)
+    |--------------------------------------------------------------------------
+    |
+    | ON by default. Account takeover -> drain to an attacker address is the
+    | highest-severity money path in the product, and Fortify TOTP is already
+    | wired, so this is close to free.
+    |
+    | STEP-UP, not a prerequisite: a fresh code is required on EVERY withdrawal,
+    | not merely "2FA must be enabled". Requiring only enrolment would leave a
+    | hijacked live session able to drain freely — that session already passed
+    | 2FA at login. The code proves a human with the device is present at
+    | withdrawal time.
+    |
+    | Enforced at the HTTP boundary (`WithdrawRequest`), NOT inside
+    | `Withdrawals::request()`. Freeze and KYC are DB state and must be checked
+    | under the row lock; a TOTP code is a credential that only exists in a
+    | request context, and seeders / admin-initiated withdrawals legitimately
+    | have none to present.
+    |
+    | Turn off locally (`STAKLY_WITHDRAWAL_REQUIRE_2FA=false`) if you'd rather
+    | not run a TOTP app in dev — though the seeded dev user carries a fixed,
+    | known secret precisely so you don't have to.
+    |
+    */
+
+    'withdrawal_require_2fa' => (bool) env('STAKLY_WITHDRAWAL_REQUIRE_2FA', true),
+
 ];

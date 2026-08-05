@@ -64,6 +64,8 @@ Phases 1–7 shipped: schema + policies, take + match creation, confirm UI + set
 
 Four pages: `/wallet` (hero balance + 3 action cards + recent activity), `/wallet/deposit` (TRC20 mock address + QR + network warning), `/wallet/withdraw` (validating form, short-circuited POST), `/wallet/history` (filter chips + paginated rows). `BalanceChip` in `SiteHeader` desktop + inline balance in `MobileMenu`. `users.tron_address` (varchar 34 unique) generated at registration via `App\Support\MockTronAddress`. **Decisions**: multi-page (not tabbed); spendable balance only in UI (held derivable from ledger); mock TRC20 addresses until M9; withdrawal short-circuits with launch-gated toast (no ledger write); `abort_if($user->is_platform, 403)` on every wallet method.
 
+> **Superseded by M9 P0b (2026-07-28):** the withdrawal POST is no longer short-circuited — `withdrawStore` writes for real through `Withdrawals::request()`. The wallet UI also gained a total-vs-available split, a clearing countdown, and a `/wallet/withdrawals` page.
+
 ### M11 — Controller Refactor to Actions Pattern ✅ (shipped 2026-05-17)
 
 Business logic moved from controllers + commands into `app/Actions/<Domain>/` classes. Listing: `Create`, `Cancel`, `Expire`. GameMatch: `TakeListing`, `ConfirmOutcome`, `OpenDispute`, `SettleMatch`, `SettleDrawMatch`, `ResolveDispute`, `ResolveMatchTimeout`. Controllers + artisan commands shrink to thin HTTP/CLI adapters with method-injection. Old `App\Services\MatchSettlement` deleted. **Decisions**: plain PHP classes, no package, no Repositories; `handle()` method; method-injection; Wallet + GameApi stay as primitives; pure queries (read-only index/show) stay in controllers.
@@ -961,7 +963,7 @@ Full name remains freely editable (no cooldown, no audit). It's display-only —
 - **30-day cooldown.** Once renamed, the user can't rename again for 30 days. Matches GitHub / eBay precedent. Stops "rename mid-match to dodge a dispute" abuse.
 - **30-day reservation on the released handle.** Old handle goes into `username_history` and can't be reclaimed by anyone — including the original owner — during the window. Mitigates impersonation: if Alice renames `alice-pro → alice-new`, nobody can grab `alice-pro` for 30 days.
 - **In-flight match blocks rename.** Any `GameMatch` where the user is participant and status ∈ {Pending, Disputed, ManualReview} blocks the field. One blocker key (`in_flight_match`) covers all three sub-states.
-- **M9 withdrawal blocker deferred.** No withdrawal model exists yet (chain paused). Clean spot to add when M9 resumes.
+- **M9 withdrawal blocker deferred.** No withdrawal model exists yet (chain paused). Clean spot to add when M9 resumes. _(Superseded: `App\Models\Withdrawal` landed in M9 P0b — the blocker is now buildable.)_
 - **Active listings DO NOT block.** Listings link to user by FK id, not handle. The 30-day URL redirect covers shared listing-detail links during the window.
 - **Old URL → current owner redirect.** During the 30-day reservation, hitting `/users/{old-handle}` 301-redirects to the current owner's profile via the route's `missing()` callback querying `UsernameHistory::reserved()`.
 - **Atomic rename via `ChangeUsernameAction`.** Row-locks the user inside a transaction, re-checks blockers + availability, writes the reservation row, bumps `username_changed_at` — closes the validate-then-act race.

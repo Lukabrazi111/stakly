@@ -8,6 +8,14 @@ use Illuminate\Database\Seeder;
 
 class DatabaseSeeder extends Seeder
 {
+    /**
+     * Base32 TOTP secret for the seeded dev user. Deliberately fixed and in
+     * source: withdrawals require a live 2FA code by default (M9 Phase 0d), and
+     * a random per-seed secret would mean re-enrolling an authenticator after
+     * every `migrate:fresh --seed`.
+     */
+    public const DEV_TOTP_SECRET = 'STAKLYDEVTOTP234';
+
     public function run(): void
     {
         // Platform user must exist before any Wallet::fee(...) call. Single
@@ -37,6 +45,16 @@ class DatabaseSeeder extends Seeder
                 'username' => 'testuser',
                 'email' => 'test@example.com',
                 'bio' => "Hi! I'm the seeded test profile.\nNew here — let's play.",
+                // Fixed, publicly-known TOTP secret (M9 Phase 0d). Withdrawals
+                // require a fresh code by default, so a random secret would
+                // make local cash-out untestable without enrolling by hand.
+                // Add DEV_TOTP_SECRET to any authenticator app, or print the
+                // current code with:
+                //   sail artisan stakly:dev-totp
+                // Dev-only — this seeder never runs against production data.
+                'two_factor_secret' => encrypt(self::DEV_TOTP_SECRET),
+                'two_factor_recovery_codes' => encrypt(json_encode(['dev-recovery-code'])),
+                'two_factor_confirmed_at' => now(),
             ]);
 
         // Seed test user balance through the service (never set

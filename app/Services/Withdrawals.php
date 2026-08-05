@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Enums\WithdrawalStatus;
 use App\Exceptions\AccountFrozenException;
 use App\Exceptions\InsufficientBalanceException;
+use App\Exceptions\KycRequiredException;
 use App\Jobs\ProcessWithdrawal;
 use App\Models\User;
 use App\Models\Withdrawal;
@@ -37,7 +38,7 @@ final class Withdrawals
     /**
      * Debit the user and queue the payout.
      *
-     * @throws AccountFrozenException|InsufficientBalanceException|InvalidArgumentException
+     * @throws AccountFrozenException|InsufficientBalanceException|InvalidArgumentException|KycRequiredException
      */
     public static function request(User $user, string $amount, string $address): Withdrawal
     {
@@ -57,6 +58,13 @@ final class Withdrawals
 
             if ($locked->isFrozen()) {
                 throw AccountFrozenException::for($locked->id);
+            }
+
+            // Off by default. Under the same lock as the balance check so the
+            // volume tally can't be raced by concurrent requests each seeing
+            // the other's withdrawal as not-yet-existing.
+            if (KycGate::requiresVerification($locked, $amount)) {
+                throw KycRequiredException::for($locked->id);
             }
 
             // Checked against AVAILABLE, not total: winnings still inside their

@@ -2,7 +2,9 @@
 
 namespace App\Http\Requests\Wallet;
 
+use App\Services\KycGate;
 use App\Services\Wallet;
+use App\Services\WithdrawalTwoFactor;
 use Closure;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
@@ -11,10 +13,9 @@ use Illuminate\Validation\Validator;
 /**
  * Validates a withdrawal request: target TRC20 address + amount.
  *
- * In v1 the controller short-circuits before any ledger write happens (see
- * milestones.md M7 locked decisions, "Withdrawal flow = Option B"), but the
- * validation is full-strength so the form's 422 paths can be exercised today
- * without rework when the worker lands at pre-launch.
+ * This is the friendly 422 layer only. `Withdrawals::request()` re-checks the
+ * available balance under a row lock, because validation and the debit aren't
+ * atomic together — that locked re-check is the real guard.
  *
  * Auth + email verification are enforced at the route layer.
  */
@@ -61,14 +62,19 @@ class WithdrawRequest extends FormRequest
                 'max:100000',
                 $this->amountWithinBalance(),
             ],
+            // Presence only — correctness is checked in `after()`, so a wrong
+            // code reports as "that code didn't work" rather than a shape error.
+            'two_factor_code' => [
+                WithdrawalTwoFactor::enabled() ? 'required' : 'nullable',
+                'string',
+            ],
         ];
     }
 
     /**
-     * A frozen account can't move money out. Surfaced as a 422 on `amount`
-     * rather than letting `Withdrawals::request` throw — the service guard is
-     * the backstop, but an uncaught AccountFrozenException would 500 on a
-     * perfectly foreseeable user action.
+     * Foreseeable refusals, surfaced as a 422 on `amount` rather than letting
+     * `Withdrawals::request` throw — the service guards are the backstop, but an
+     * uncaught exception would 500 on a perfectly ordinary user action.
      *
      * @return array<int, callable>
      */
@@ -76,9 +82,62 @@ class WithdrawRequest extends FormRequest
     {
         return [
             function (Validator $validator): void {
-                if ($this->user()?->isFrozen()) {
+                $user = $this->user();
+
+                if ($user === null) {
+                    return;
+                }
+
+                if ($user->isFrozen()) {
                     $validator->errors()->add('amount', __(
                         'Your account is under review and withdrawals are paused. Contact support if you think this is a mistake.'
+                    ));
+
+                    return;
+                }
+
+                // Off by default (M9 Phase 0c). Reported only once the amount
+                // itself is otherwise valid, so a typo'd amount doesn't
+                // announce a verification requirement that may not apply.
+                if ($validator->errors()->has('amount')) {
+                    return;
+                }
+
+                $amount = $this->input('amount');
+
+                if (is_numeric($amount) && KycGate::requiresVerification($user, (string) $amount)) {
+                    $validator->errors()->add('amount', __(
+                        'Withdrawals above :threshold USDT need a verified account. Contact support to verify yours.',
+                        ['threshold' => (string) config('stakly.kyc_threshold')],
+                    ));
+                }
+            },
+            // 2FA step-up (M9 Phase 0d). Checked last and reported on its own
+            // field so it never masks an amount problem the player must fix
+            // anyway — no point burning a one-shot code on a request that was
+            // going to fail regardless.
+            function (Validator $validator): void {
+                $user = $this->user();
+
+                if ($user === null || ! WithdrawalTwoFactor::required($user)) {
+                    return;
+                }
+
+                if (! WithdrawalTwoFactor::hasEnrolled($user)) {
+                    $validator->errors()->add('two_factor_code', __(
+                        'Set up two-factor authentication before withdrawing. You can enable it in security settings.'
+                    ));
+
+                    return;
+                }
+
+                if ($validator->errors()->has('amount') || $validator->errors()->has('address')) {
+                    return;
+                }
+
+                if (! WithdrawalTwoFactor::verify($user, $this->input('two_factor_code'))) {
+                    $validator->errors()->add('two_factor_code', __(
+                        'That code didn\'t work. Check your authenticator app and try the current code.'
                     ));
                 }
             },

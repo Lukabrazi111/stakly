@@ -29,6 +29,12 @@ class UserModerationLog extends Model
 
     public const ACTION_UNFREEZE = 'unfreeze';
 
+    /**
+     * Identity-verification outcome (M9 Phase 0c). Recorded whatever the new
+     * status is — the reason text carries which way it went.
+     */
+    public const ACTION_KYC = 'kyc';
+
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);

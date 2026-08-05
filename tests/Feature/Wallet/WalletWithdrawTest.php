@@ -33,6 +33,14 @@ use Illuminate\Support\Facades\Queue;
 const VALID_TRC20 = 'T123456789ABCDEFGHJKLMNPQRSTUVWXYZ';
 const INVALID_TRC20 = 'NotATronAddress';
 
+// This file covers the form's own rules. The 2FA step-up added in Phase 0d is
+// on by default and would otherwise require enrolling every fixture and
+// minting a live TOTP code per request — it has its own suite in
+// `WithdrawalTwoFactorTest`, so switch it off here.
+beforeEach(function () {
+    config(['stakly.withdrawal_require_2fa' => false]);
+});
+
 test('form page exposes balance and the configured minimum withdrawal', function () {
     $user = User::factory()->create();
     Wallet::deposit($user, '200', reference: "test:deposit:{$user->id}");

@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Enums\Game;
+use App\Enums\KycStatus;
 use App\Enums\LinkedAccountProvider;
 use App\Enums\MatchStatus;
 use App\Notifications\PlayerNotification;
@@ -94,6 +95,17 @@ class User extends Authenticatable implements FilamentUser, HasMedia, MustVerify
     ];
 
     /**
+     * Mirrors the column default so a freshly-created instance carries the
+     * status in memory too — without this `$user->kyc_status` is null until the
+     * model is re-read, and `KycGate` would be dereferencing null on a money path.
+     *
+     * @var array<string, string>
+     */
+    protected $attributes = [
+        'kyc_status' => KycStatus::Unverified->value,
+    ];
+
+    /**
      * Route model binding on `username` so `/users/{user}` resolves via the
      * public handle. Renames are gated by `canChangeUsername()` and old
      * handles stay reserved via `username_history` for
@@ -121,6 +133,8 @@ class User extends Authenticatable implements FilamentUser, HasMedia, MustVerify
             'username_changed_at' => 'immutable_datetime',
             'banned_at' => 'immutable_datetime',
             'frozen_at' => 'immutable_datetime',
+            'kyc_status' => KycStatus::class,
+            'kyc_verified_at' => 'immutable_datetime',
         ];
     }
 

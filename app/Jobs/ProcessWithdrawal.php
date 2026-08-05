@@ -10,6 +10,7 @@ use Illuminate\Contracts\Queue\ShouldQueueAfterCommit;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
+use Illuminate\Support\Facades\Log;
 use Throwable;
 
 /**
@@ -62,14 +63,39 @@ class ProcessWithdrawal implements ShouldBeUnique, ShouldQueueAfterCommit
     }
 
     /**
-     * Every retry is spent. Return the money rather than leaving it debited
-     * with nothing on its way to the user.
+     * Every retry is spent.
+     *
+     * Auto-reversing is only safe while we KNOW the provider never took the
+     * payout. Once `provider_payout_id` is set the funds may already be moving
+     * on-chain, and crediting the balance back would hand the player the money
+     * twice — the job can fail *after* a successful `createPayout` (e.g. the
+     * database blips while `markCompleted` books the margin).
+     *
+     * So: reverse only the untouched case, and leave anything the provider has
+     * seen for a human. It stays visible in the admin withdrawal queue, where
+     * Reject is still available once its real state is known.
      */
     public function failed(?Throwable $exception): void
     {
-        Withdrawals::markFailed(
-            $this->withdrawal->fresh(),
-            $exception?->getMessage() ?? 'Payout failed after exhausting retries.',
-        );
+        $withdrawal = $this->withdrawal->fresh();
+
+        if ($withdrawal === null || $withdrawal->status->isTerminal()) {
+            return;
+        }
+
+        $reason = $exception?->getMessage() ?? 'Payout failed after exhausting retries.';
+
+        if ($withdrawal->provider_payout_id !== null) {
+            Log::critical('Withdrawal payout failed after reaching the provider — NOT auto-reversed.', [
+                'withdrawal_id' => $withdrawal->id,
+                'provider_payout_id' => $withdrawal->provider_payout_id,
+                'status' => $withdrawal->status->value,
+                'reason' => $reason,
+            ]);
+
+            return;
+        }
+
+        Withdrawals::markFailed($withdrawal, $reason);
     }
 }

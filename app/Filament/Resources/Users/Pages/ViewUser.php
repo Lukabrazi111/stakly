@@ -2,13 +2,16 @@
 
 namespace App\Filament\Resources\Users\Pages;
 
+use App\Enums\KycStatus;
 use App\Filament\Resources\Users\Actions\ImpersonateUserAction;
 use App\Filament\Resources\Users\UserResource;
 use App\Models\User;
 use App\Models\UserModerationLog;
 use App\Notifications\AccountBanned;
 use App\Notifications\AccountRestored;
+use App\Services\KycGate;
 use Filament\Actions\Action;
+use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\ViewRecord;
@@ -33,6 +36,7 @@ class ViewUser extends ViewRecord
             $this->resetTwoFactorAction(),
             $this->banToggleAction(),
             $this->freezeToggleAction(),
+            $this->kycStatusAction(),
             ImpersonateUserAction::make()->record($this->getRecord()),
         ];
     }
@@ -224,6 +228,67 @@ class ViewUser extends ViewRecord
 
                 Notification::make()
                     ->title($freezing ? 'Funds frozen.' : 'Freeze lifted.')
+                    ->success()
+                    ->send();
+            });
+    }
+
+    /**
+     * Records an identity-verification outcome (M9 Phase 0c).
+     *
+     * Verification is deliberately admin-driven — there is no document-upload
+     * flow, because picking a KYC vendor is a decision we haven't made. An
+     * operator confirms out-of-band and records the result here.
+     *
+     * The action stays visible even while `stakly.kyc_enabled` is off (its
+     * default) so a backlog can be worked through before the gate is switched
+     * on; the notice below says so rather than hiding the control.
+     */
+    private function kycStatusAction(): Action
+    {
+        return Action::make('set_kyc_status')
+            ->label('Set KYC status')
+            ->color('gray')
+            ->icon('heroicon-o-identification')
+            ->modalHeading('Record identity verification')
+            ->modalDescription(fn (): string => KycGate::enabled()
+                ? 'Gates withdrawals above the configured volume threshold. Verified accounts are never gated.'
+                : 'KYC is currently OFF platform-wide, so this gates nothing today. Recording it now is safe — it takes effect if the switch is turned on.',
+            )
+            ->modalSubmitActionLabel('Record')
+            ->schema([
+                Select::make('kyc_status')
+                    ->label('Status')
+                    ->options(KycStatus::class)
+                    ->default(fn (User $record): string => $record->kyc_status->value)
+                    ->required(),
+                Textarea::make('reason')
+                    ->label('Note')
+                    ->placeholder('e.g. Passport + selfie received by email, matched account name.')
+                    ->required()
+                    ->rows(3)
+                    ->maxLength(1000),
+            ])
+            ->action(function (User $record, array $data): void {
+                $status = KycStatus::from($data['kyc_status']);
+
+                DB::transaction(function () use ($record, $status, $data): void {
+                    $record->forceFill([
+                        'kyc_status' => $status,
+                        'kyc_verified_at' => $status === KycStatus::Verified ? now() : null,
+                        'kyc_note' => $data['reason'],
+                    ])->save();
+
+                    UserModerationLog::create([
+                        'user_id' => $record->id,
+                        'admin_user_id' => auth()->id(),
+                        'action' => UserModerationLog::ACTION_KYC,
+                        'reason' => "{$status->value}: {$data['reason']}",
+                    ]);
+                });
+
+                Notification::make()
+                    ->title("KYC status set to {$status->getLabel()}.")
                     ->success()
                     ->send();
             });

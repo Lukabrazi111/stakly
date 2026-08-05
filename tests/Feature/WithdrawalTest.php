@@ -320,6 +320,55 @@ test('a completed withdrawal cannot be retroactively completed as reversed', fun
 });
 
 // ============================================================================
+// Job failure handling — the double-spend guard.
+// ============================================================================
+
+test('an exhausted job reverses the debit when the provider never saw the payout', function () {
+    Queue::fake();
+    $user = fundedUser();
+    $withdrawal = Withdrawals::request($user, '100', VALID_ADDRESS);
+
+    expect(Wallet::balanceFor($user))->toBe('400.000000');
+
+    (new ProcessWithdrawal($withdrawal))->failed(new RuntimeException('gateway unreachable'));
+
+    expect($withdrawal->fresh()->status)->toBe(WithdrawalStatus::Failed);
+    expect(Wallet::balanceFor($user))->toBe('500.000000');
+    assertLedgerInvariant($user);
+});
+
+test('an exhausted job does NOT reverse once the provider has the payout', function () {
+    Queue::fake();
+    fakeGatewayReturning(GatewayPayoutStatus::Sending);
+
+    $user = fundedUser();
+    $withdrawal = Withdrawals::request($user, '100', VALID_ADDRESS);
+    Withdrawals::send($withdrawal);
+
+    expect($withdrawal->fresh()->provider_payout_id)->not->toBeNull();
+    expect(Wallet::balanceFor($user))->toBe('400.000000');
+
+    (new ProcessWithdrawal($withdrawal))->failed(new RuntimeException('db blip after send'));
+
+    // Money may already be moving on-chain — crediting back here would pay the
+    // player twice. Left for an admin instead.
+    expect($withdrawal->fresh()->status)->toBe(WithdrawalStatus::Sending);
+    expect(Wallet::balanceFor($user))->toBe('400.000000');
+});
+
+test('an exhausted job is a no-op on an already-terminal withdrawal', function () {
+    Queue::fake();
+    $user = fundedUser();
+    $withdrawal = Withdrawals::request($user, '100', VALID_ADDRESS);
+    Withdrawals::send($withdrawal);
+
+    (new ProcessWithdrawal($withdrawal))->failed(new RuntimeException('late failure'));
+
+    expect($withdrawal->fresh()->status)->toBe(WithdrawalStatus::Completed);
+    expect(Wallet::balanceFor($user))->toBe('400.000000');
+});
+
+// ============================================================================
 // Conservation.
 // ============================================================================
 
