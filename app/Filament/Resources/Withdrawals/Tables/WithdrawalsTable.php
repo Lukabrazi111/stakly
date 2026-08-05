@@ -5,6 +5,7 @@ namespace App\Filament\Resources\Withdrawals\Tables;
 use App\Enums\WithdrawalStatus;
 use App\Models\WalletTransaction;
 use App\Models\Withdrawal;
+use App\Services\WithdrawalAddressCooldown;
 use App\Services\Withdrawals;
 use Filament\Actions\Action;
 use Filament\Forms\Components\Textarea;
@@ -91,6 +92,20 @@ class WithdrawalsTable
                     ->label('Requested')
                     ->since()
                     ->tooltip(fn ($state) => $state?->format('M j, Y H:i:s'))
+                    ->sortable(),
+
+                // New-address cooldown (M9 Phase 0e). Surfaced so a long-Pending
+                // row reads as "waiting by design" rather than stuck — and so
+                // an operator handling an "I didn't request this" report can see
+                // at a glance whether there's still time to Reject before it sends.
+                TextColumn::make('hold_until')
+                    ->label('Held until')
+                    ->badge()
+                    ->color('warning')
+                    ->since()
+                    ->tooltip(fn ($state) => $state?->format('M j, Y H:i:s'))
+                    ->placeholder('—')
+                    ->visible(fn (): bool => WithdrawalAddressCooldown::hours() > 0)
                     ->sortable(),
             ])
             ->filters([

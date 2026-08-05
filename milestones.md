@@ -342,6 +342,22 @@ Layering note: verification lives at the **HTTP boundary** (`WithdrawRequest`), 
 
 **Recovery codes are deliberately NOT accepted here.** A lost device already blocks login, so the recovery path is: recover login → re-enrol in settings → withdraw. Accepting recovery codes at the withdrawal step would widen the attack surface (they're the credential most likely to be screenshotted or stored in plaintext) to solve a lockout that doesn't exist.
 
+**Phase 0e — New-address cooldown** ✅ _shipped 2026-08-05_
+
+Goal: close the gap 0d's step-up leaves open. 2FA proves *someone with the device* is present, but a phished or coerced code still sends funds wherever the request says. A first-time destination address gets a delay plus an email the real owner can act on — turning an instant, irreversible drain into a window where a human can intervene.
+
+**Held, not blocked.** The withdrawal is accepted and debited immediately (so the balance can't be spent twice), but the payout job is dispatched with a delay and the row carries `hold_until`. Blocking outright would mean a legitimate first withdrawal just fails; holding means it completes on its own if nobody objects. Admin Reject during the hold credits the full gross back — already idempotent, no new reversal path.
+
+An address is "known" once the player has a non-reversed withdrawal to it, so only the *first* send to a given address waits. Rejected/Failed don't count — those never left.
+
+- [x] 0e.1 — `stakly.withdrawal_address_cooldown_hours` (default 24; `0` disables, same convention as the insurance window).
+- [x] 0e.2 — `withdrawals.hold_until` nullable timestamp + model cast, so the wait is legible in the UI and admin rather than an unexplained long `Pending`.
+- [x] 0e.3 — `App\Services\WithdrawalAddressCooldown`: `isKnownAddress()`, `holdUntil()`.
+- [x] 0e.4 — `Withdrawals::request()` stamps `hold_until` and dispatches `ProcessWithdrawal` with a matching delay. `send()` already no-ops on terminal, so a reject during the hold needs nothing new.
+- [x] 0e.5 — `WithdrawalHeldNotification` (database + broadcast + mail, mandatory — a money event nobody may silence).
+- [x] 0e.6 — Surface `hold_until` on the wallet pending list, withdrawals page, and admin queue.
+- [x] 0e.7 — Pest: first send held, repeat send to the same address instant, reversed prior doesn't count as known, cooldown of 0 disables, held row still rejectable, ledger invariant.
+
 **Phase 1 — deposit edge (🚫 paused, needs go-ahead).** The only remaining phase that fixes a *functional* hole: deposits cannot be credited at all today, so money can leave Stakly but not enter it. Real `NowPaymentsGateway` methods (dropping `Unwired` one at a time), `users.payments_account_id`, lazy address provisioning (drop the eager `CreateNewUser` call — it would put an HTTP call inside the signup transaction), `POST /webhooks/payments` mirroring the `webhooks/faceit` precedent, idempotent net crediting on `deposit:{txHash}`, `deposit:` prefix in `WalletReferenceParser`. **Unlike the FACEIT webhook this one can't be re-verified downstream — a forged deposit mints money, so the signature check is the only guard.**
 
 **Phase 2 — withdrawal edge (🚫 paused).** Real payout + fee estimate; **a payout webhook to resolve `Sending` rows — nothing completes them today** (latent only because `MockGateway` always returns `Completed`; must ship *with* the real client, not after); D4 admin levers; mass-payout batching, which is what reintroduces `WithdrawalStatus::Approved`.

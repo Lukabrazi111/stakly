@@ -31,6 +31,7 @@ class Withdrawal extends Model
         'tx_hash',
         'rejected_reason',
         'reviewed_by',
+        'hold_until',
     ];
 
     protected function casts(): array
@@ -40,7 +41,19 @@ class Withdrawal extends Model
             'amount' => 'decimal:6',
             'platform_fee' => 'decimal:6',
             'network_fee' => 'decimal:6',
+            'hold_until' => 'immutable_datetime',
         ];
+    }
+
+    /**
+     * Still inside its new-address cooldown (M9 Phase 0e) — debited, but the
+     * payout hasn't been handed to the provider yet.
+     */
+    public function isHeld(): bool
+    {
+        return $this->hold_until !== null
+            && $this->hold_until->isFuture()
+            && ! $this->status->isTerminal();
     }
 
     public function user(): BelongsTo

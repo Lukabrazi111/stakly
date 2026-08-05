@@ -15,6 +15,7 @@ shipped and provider-agnostic.
 | Withdrawals (request → send → complete) | ✅ shipped (M9 P0b), against `MockGateway` |
 | Optional KYC gate | ✅ shipped (M9 P0c) — **off by default** |
 | 2FA step-up on withdrawal | ✅ shipped (M9 P0d) — **on by default** |
+| New-address cooldown | ✅ shipped (M9 P0e) — 24h default |
 | Real deposit crediting (webhook) | 🚫 Phase 1 — see [`billing-roadmap.md`](billing-roadmap.md) |
 | Real payouts, fee estimates, batching | 🚫 Phase 2 — see [`billing-roadmap.md`](billing-roadmap.md) |
 | Reconciliation, velocity caps | 🚫 Phase 3 — see [`billing-roadmap.md`](billing-roadmap.md) |
@@ -207,6 +208,53 @@ a `user_moderation_logs` row with action `freeze` / `unfreeze`.
 Player-facing, a frozen account gets a clean 422 on the withdraw form
 (`WithdrawRequest::after()`), not an exception — the service throw
 (`AccountFrozenException`) is the backstop, not the user-facing path.
+
+---
+
+## New-address cooldown
+
+`App\Services\WithdrawalAddressCooldown` — the first withdrawal to a
+never-used destination waits `stakly.withdrawal_address_cooldown_hours`
+(default 24) before the payout is handed to the provider. Set `0` to disable.
+
+Closes the gap the 2FA step-up leaves open: a code proves someone holding the
+device is present, but a phished or coerced code still sends funds wherever the
+request says. The delay plus `WithdrawalHeldNotification` (database + broadcast
++ **mail**, unconditionally — an attacker in the session would simply not read
+the in-app bell) turns an instant irreversible drain into a window where the
+real owner can react.
+
+**Held, not blocked.** The withdrawal is accepted and the balance debited
+immediately, so it can't be spent twice; only the send waits.
+`ProcessWithdrawal` is dispatched with a matching delay and the row carries
+`hold_until`. Blocking outright would just fail every legitimate first
+withdrawal. Admin Reject during the window credits the full gross back through
+the existing idempotent path, and the delayed job then finds a terminal status
+and no-ops — no new cancellation path was needed.
+
+### What counts as a known address
+
+A prior withdrawal to that address, for that user, that is **not reversed** and
+**not still inside its own hold**:
+
+| Prior row | Trusts the address? |
+|---|---|
+| `Completed`, or `Pending`/`Sending` past its hold | yes |
+| `Pending` still inside its hold | **no** |
+| `Rejected` / `Failed` | no — the money came back |
+
+That middle row is the whole point. Without it, a 1 USDT decoy to the attacker's
+address would instantly mark it "known" while still sitting in its own cooldown,
+and the next request could drain the balance with no wait. A still-held row
+proves nothing, because nobody has had the chance to object to it yet. There is
+a test for exactly this.
+
+Resolved under the same user row lock as the balance check, so two concurrent
+requests can't both see the address as unknown and both go straight out.
+
+Enforcement is the job delay, not a guard inside `send()` — `send()` is called
+directly by seeders and would need a bypass anyway, and reaching it otherwise
+already implies code execution.
 
 ---
 

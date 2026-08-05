@@ -4,6 +4,7 @@ import {
     ArrowRight,
     ArrowUpFromLine,
     History,
+    ShieldAlert,
     Wallet as WalletIcon,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
@@ -13,7 +14,11 @@ import { TransactionRow } from '@/components/wallet/transaction-row';
 import { WithdrawalStatusChip } from '@/components/wallet/withdrawal-status-chip';
 import PlayerHubLayout from '@/layouts/player-hub-layout';
 import { useT } from '@/lib/i18n';
-import { formatUsdt, truncateAddress } from '@/lib/wallet-format';
+import {
+    formatTimeUntil,
+    formatUsdt,
+    truncateAddress,
+} from '@/lib/wallet-format';
 import {
     deposit as depositRoute,
     history as historyRoute,
@@ -69,7 +74,7 @@ export default function WalletIndex({
                                     key={withdrawal.id}
                                     className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border/60 bg-card/60 px-4 py-3"
                                 >
-                                    <div className="flex items-center gap-3">
+                                    <div className="flex flex-wrap items-center gap-3">
                                         <WithdrawalStatusChip
                                             status={withdrawal.status}
                                         />
@@ -78,6 +83,17 @@ export default function WalletIndex({
                                                 withdrawal.destination_address,
                                             )}
                                         </span>
+                                        {withdrawal.hold_until && (
+                                            <span className="inline-flex items-center gap-1 text-xs text-warning">
+                                                <ShieldAlert className="size-3" />
+                                                {t('New address — sending in :time', {
+                                                    time:
+                                                        formatTimeUntil(
+                                                            withdrawal.hold_until,
+                                                        ) ?? '',
+                                                })}
+                                            </span>
+                                        )}
                                     </div>
                                     <span className="font-display font-semibold tabular-nums">
                                         ${formatUsdt(withdrawal.amount)}

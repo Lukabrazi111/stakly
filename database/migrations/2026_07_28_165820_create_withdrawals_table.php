@@ -68,6 +68,14 @@ return new class extends Migration
 
             $table->string('rejected_reason')->nullable();
 
+            // New-address cooldown (M9 Phase 0e). Set when this is the first
+            // withdrawal to a given destination: the payout job is delayed
+            // until then, giving the real owner a window to react to the
+            // notification if the request wasn't theirs. Null = sent
+            // immediately. Kept as a column rather than derived so the wait is
+            // legible in the UI and admin instead of an unexplained `Pending`.
+            $table->timestamp('hold_until')->nullable();
+
             $table->foreignId('reviewed_by')
                 ->nullable()
                 ->constrained('users')

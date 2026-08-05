@@ -6,6 +6,7 @@ import { WithdrawalStatusChip } from '@/components/wallet/withdrawal-status-chip
 import PlayerHubLayout from '@/layouts/player-hub-layout';
 import { useT } from '@/lib/i18n';
 import {
+    formatTimeUntil,
     formatTransactionDate,
     formatUsdt,
     truncateAddress,
@@ -105,6 +106,15 @@ function WithdrawalRow({ withdrawal }: { withdrawal: Withdrawal }) {
                     </p>
                 </div>
             </div>
+
+            {withdrawal.hold_until && (
+                <p className="mt-3 rounded-lg border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-warning">
+                    {t(
+                        'Security hold on a new address — sending in :time. Contact support if this was not you.',
+                        { time: formatTimeUntil(withdrawal.hold_until) ?? '' },
+                    )}
+                </p>
+            )}
 
             {withdrawal.rejected_reason && (
                 <p className="mt-3 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">

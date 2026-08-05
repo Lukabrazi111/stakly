@@ -39,6 +39,9 @@ class WithdrawalResource extends JsonResource
             // Surfaced so a user can see WHY their withdrawal was refused —
             // hiding it just generates support tickets.
             'rejected_reason' => $this->rejected_reason,
+            // New-address cooldown (M9 Phase 0e). Exposed so the UI can explain
+            // a long Pending rather than leaving it looking stuck.
+            'hold_until' => $this->isHeld() ? $this->hold_until?->toIso8601String() : null,
             'created_at' => $this->created_at?->toIso8601String(),
             'updated_at' => $this->updated_at?->toIso8601String(),
         ];

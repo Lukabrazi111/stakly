@@ -84,6 +84,8 @@ export interface Withdrawal {
     destination_address: string;
     tx_hash: string | null;
     rejected_reason: string | null;
+    /** Set while a first-time address is inside its security hold (M9 P0e). */
+    hold_until: string | null;
     created_at: string | null;
     updated_at: string | null;
 }

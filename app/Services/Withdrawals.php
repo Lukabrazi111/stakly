@@ -9,6 +9,7 @@ use App\Exceptions\KycRequiredException;
 use App\Jobs\ProcessWithdrawal;
 use App\Models\User;
 use App\Models\Withdrawal;
+use App\Notifications\WithdrawalHeldNotification;
 use App\Services\Payments\Dto\GatewayPayoutStatus;
 use App\Services\Payments\PaymentGateway;
 use Illuminate\Support\Facades\DB;
@@ -83,6 +84,10 @@ final class Withdrawals
                 'platform_fee' => $margin,
                 'destination_address' => $address,
                 'status' => WithdrawalStatus::Pending,
+                // First send to this address waits (M9 Phase 0e). Resolved
+                // under the same lock so two concurrent requests can't each
+                // see the address as unknown and both go instantly.
+                'hold_until' => WithdrawalAddressCooldown::holdUntil($locked, $address),
             ]);
 
             $debit = Wallet::withdraw(
@@ -97,7 +102,20 @@ final class Withdrawals
             return $withdrawal;
         });
 
-        ProcessWithdrawal::dispatch($withdrawal);
+        // Held payouts are dispatched with a matching delay rather than blocked:
+        // the debit already happened, so the balance can't be spent twice, and
+        // the withdrawal completes on its own if nobody objects. `send()` bails
+        // on terminal statuses, so an admin Reject during the window makes the
+        // delayed job a no-op — no new cancellation path needed.
+        $hold = $withdrawal->hold_until;
+
+        $hold === null
+            ? ProcessWithdrawal::dispatch($withdrawal)
+            : ProcessWithdrawal::dispatch($withdrawal)->delay($hold);
+
+        if ($hold !== null) {
+            $user->notify(new WithdrawalHeldNotification($withdrawal));
+        }
 
         return $withdrawal->fresh();
     }

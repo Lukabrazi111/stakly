@@ -27,6 +27,7 @@ is still open.
 | **Reconciliation, velocity caps** | 🚫 [Phase 3](#phase-3--hardening) |
 | Optional KYC gate | ✅ shipped (M9 P0c) — **off by default**, see [D2](#d2--kyc-is-not-a-phase-3-item) |
 | 2FA step-up on withdrawal | ✅ shipped (M9 P0d) — **on by default** |
+| New-address cooldown | ✅ shipped (M9 P0e) — 24h default |
 
 ### The one-line summary
 
@@ -244,9 +245,8 @@ No PII required for any of these.
 1. ~~**2FA required to withdraw.**~~ ✅ **Shipped early as M9 P0d** — pulled
    forward because it needed neither the provider pick nor sandbox access. Step-up
    TOTP on every withdrawal, on by default. See `billing.md`.
-2. **Withdrawal address cooldown.** A newly-seen destination gets a short forced
-   delay plus an email notice. Closes the takeover-and-drain window without
-   touching identity.
+2. ~~**Withdrawal address cooldown.**~~ ✅ **Shipped early as M9 P0e** —
+   first send to a new address is held 24h with a mail notice. See `billing.md`.
 3. **Reconciliation.** Provider custody balance vs `SUM(wallet_transactions.amount)`,
    on a schedule, alerting on drift. This is how you find out something broke at
    all — worth building before the caps below.

@@ -290,4 +290,30 @@ return [
 
     'withdrawal_require_2fa' => (bool) env('STAKLY_WITHDRAWAL_REQUIRE_2FA', true),
 
+    /*
+    |--------------------------------------------------------------------------
+    | New-address cooldown (M9 Phase 0e)
+    |--------------------------------------------------------------------------
+    |
+    | How long a withdrawal to a NEVER-USED destination address waits before the
+    | payout is handed to the provider. Closes the gap the 2FA step-up leaves
+    | open: a code proves someone with the device is present, but a phished or
+    | coerced code still sends funds wherever the request says. The delay plus
+    | the notification turns an instant irreversible drain into a window where
+    | the real owner can react.
+    |
+    | HELD, not blocked. The withdrawal is accepted and the balance debited
+    | immediately (so it can't be spent twice); only the send waits. Blocking
+    | outright would just fail every legitimate first withdrawal. Admin Reject
+    | during the hold credits the full gross back through the existing path.
+    |
+    | An address counts as known once the player has a non-reversed withdrawal
+    | to it, so only the FIRST send to a given address waits.
+    |
+    | Set to 0 to disable — same convention as the insurance window.
+    |
+    */
+
+    'withdrawal_address_cooldown_hours' => (int) env('STAKLY_WITHDRAWAL_ADDRESS_COOLDOWN_HOURS', 24),
+
 ];
